@@ -1,0 +1,49 @@
+-- Minimal build - OFF
+-- Building ESP-IDF components for target esp32s3
+NOTICE: Processing 1 dependencies:
+
+NOTICE: [1/1] idf (5.5.6)
+
+-- Project sdkconfig file C:/Users/jerom/.cline/data/workspaces/chat/spidarium/sdkconfig
+-- Compiler supported targets: xtensa-esp-elf
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/soc/esp32s3/ld/esp32s3.peripherals.ld
+-- Bootloader project name: "bootloader" version: 1
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom/esp32s3/ld/esp32s3.rom.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom/esp32s3/ld/esp32s3.rom.api.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom/esp32s3/ld/esp32s3.rom.bt_funcs.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom/esp32s3/ld/esp32s3.rom.libgcc.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom/esp32s3/ld/esp32s3.rom.wdt.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom/esp32s3/ld/esp32s3.rom.version.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom/esp32s3/ld/esp32s3.rom.libc.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom/esp32s3/ld/esp32s3.rom.newlib.ld
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/bootloader/subproject/main/ld/esp32s3/bootloader.rom.ld
+-- Components: bootloader bootloader_support efuse esp_app_format esp_bootloader_format esp_common esp_hw_support esp_rom esp_security esp_system esptool_py freertos hal log main micro-ecc newlib partition_table soc spi_flash xtensa
+-- Component paths: C:/Espressif/frameworks/esp-idf-v5.5.6/components/bootloader C:/Espressif/frameworks/esp-idf-v5.5.6/components/bootloader_support C:/Espressif/frameworks/esp-idf-v5.5.6/components/efuse C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_app_format C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_bootloader_format C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_common C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_hw_support C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_rom C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_security C:/Espressif/frameworks/esp-idf-v5.5.6/components/esp_system C:/Espressif/frameworks/esp-idf-v5.5.6/components/esptool_py C:/Espressif/frameworks/esp-idf-v5.5.6/components/freertos C:/Espressif/frameworks/esp-idf-v5.5.6/components/hal C:/Espressif/frameworks/esp-idf-v5.5.6/components/log C:/Espressif/frameworks/esp-idf-v5.5.6/components/bootloader/subproject/main C:/Espressif/frameworks/esp-idf-v5.5.6/components/bootloader/subproject/components/micro-ecc C:/Espressif/frameworks/esp-idf-v5.5.6/components/newlib C:/Espressif/frameworks/esp-idf-v5.5.6/components/partition_table C:/Espressif/frameworks/esp-idf-v5.5.6/components/soc C:/Espressif/frameworks/esp-idf-v5.5.6/components/spi_flash C:/Espressif/frameworks/esp-idf-v5.5.6/components/xtensa
+-- Adding linker script C:/Espressif/frameworks/esp-idf-v5.5.6/components/bootloader/subproject/main/ld/esp32s3/bootloader.ld
+
+-- Configuring done (27.2s)
+
+-- Generating done (0.1s)
+
+-- Build files have been written to: C:/Users/jerom/.cline/data/workspaces/chat/spidarium/build/bootloader
+
+ninja: build stopped: subcommand failed.
+
+python.exe : ninja failed with exit code 1, output of the command is in the 
+C:\Users\jerom\.cline\data\workspaces\chat\spidarium\build\log\idf_py_stderr_output_65668 and 
+C:\Users\jerom\.cline\data\workspaces\chat\spidarium\build\log\idf_py_stdout_output_65668
+At C:\Users\jerom\.cline\data\workspaces\chat\spidarium\build.ps1:34 char:8
++ $out = & $py $scriptArgs 2>&1
++        ~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ninja failed wi...ut_output_65668:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+=== idf.py build exited with code 2 ===

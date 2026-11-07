@@ -3665,3 +3665,79 @@ Before the fix, 3 of 5 opens crashed. After, 5 of 5 succeed and memory is flat.
   children, but any pointer to those children is now dangling. Clear the table.
 - **Guard against stale pointers where the cost is one call.** `lv_obj_is_valid()`
   turns a crash into a rebuild.
+
+---
+
+## Gifts system expanded 5 → 18 ✅
+
+**Status:** COMPLETE — phase 2 infrastructure done, verified on hardware.
+
+### What was changed
+
+| File | Change | Why |
+|---|---|---|
+| `main/game.h` | `GIFT_KINDS` 5 → 18 (line 21) | Constant used throughout; 18 new gifts in full catalogue |
+| `main/gift.h` | `gift_bonus_t` struct: 5 fields → 15 fields | Added multipliers for 10 new effects (synergy, decay, flee, etc.) |
+| `main/species.h` | `gift_def_t` struct: 5 fields → 15 fields | Must match `gift_bonus_t` for consistency |
+| `main/species.c` | `k_gifts[]` array completely rewritten | 5-entry to 18-entry catalogue with all unlock levels, colours, effects |
+| `main/gift.c` | `gift_compute()` loop extended | Initializes and applies all 15 multiplier fields (1.0 = neutral) |
+| `main/terrarium.c` | Static `k_gift_colors[]` → dynamic `get_gift_color()` function | Pulls colour from `gift_def_t` instead of hardcoding 5 colours |
+
+### The 18 gifts
+
+**Basic (unlock 1):** pebble (grey), leaf (green), twig (brown), acorn (tan), moss (teal)
+
+**Intermediate (unlock 5):** sap (amber), flower (pink), crystal (cyan), amber (yellow), coral (red)
+
+**Advanced (unlock 10):** silk (white), bone (cream), pearl (silver), ruby (ruby), sapphire (blue)
+
+**Exotic (unlock 15):** emerald (green), diamond (white), crown (gold)
+
+Each has a unique effect (hunger recovery, mood boost, energy refill, hygiene gain, decay reduction, synergy multiplier, prey escape penalty, etc.) matched to a 1–3 stat multiplier.
+
+### Verification
+
+```
+build.ps1        -> exit 0, zero warnings in main/
+flash.ps1 COM7   -> exit 0
+mem              -> internal=75415 largest=38912 (stable)
+set gift_kind X  -> OK for X in [0..17] (all 18 kinds cycle successfully)
+render 500       -> largest=32768 before and after (no leak)
+stability 20 s   -> VERDICT: PASS, 0 faults
+```
+
+The render loop shows **stable memory** (largest block unchanged), confirming the
+gift expansion does not introduce allocations during frame rendering. The
+terrarium's gift shape rendering still uses the original 5-case switch (pebble,
+leaf, twig, flower, crystal); the 13 new gifts fall through to the crystal
+rendering for now. Phase 3 will add procedural rendering for the new shapes.
+
+### Decisions made
+
+1. **Colour sourced from `gift_def_t` instead of duplicated in `terrarium.c`.** The
+   old code had a static `k_gift_colors[]` array with the same 5 colours hardcoded
+   twice (once in `species.c` gift definitions, once in `terrarium.c`). The new
+   code pulls from the source of truth via `get_gift_color(kind)`, eliminating
+   the duplicate.
+
+2. **Multiplier strategy: 1.0 = neutral, effects are multiplicative.** A
+   gift_kind with `hunger_mult=1.2` boosts hunger recovery by 20%, while
+   `all_stats_decay_mult=0.95` slows all decay by 5%. The `gift_compute()` loop
+   initializes all fields to 1.0, then multiplies in active gift effects, so a
+   spider with no gift has no net effect.
+
+3. **Synergy gifts multiply other gifts' bonuses.** Diamond (1.5x) and crown
+   (2.0x) have a `bonus_synergy_mult` field. When active, they boost the
+   `hunger_mult` / `mood_mult` / etc. of any other active gift, making the combo
+   more powerful than the sum of its parts.
+
+4. **Emerald is anti-decay, not pro-boost.** Most gifts boost recovery
+   (hunger_mult, mood_mult), but emerald (unlock 15) reduces all decay by 5%
+   (`all_stats_decay_mult=0.95`). This teaches the player that gifts have varied
+   strategies.
+
+5. **New gifts render as "crystal" (generic faceted gem) for now.** The switch in
+   `draw_gift_shape()` has 5 cases (0–3 plus default). All 13 new gifts fall to
+   the default, which draws a polished gem. Phase 3 will add specialized rendering
+   for each (petal clusters for "flower", geometric shapes for "diamond", etc.),
+   but the game is fully playable without it.

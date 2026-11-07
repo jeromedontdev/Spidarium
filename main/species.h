@@ -82,6 +82,16 @@ typedef struct {
     float       pounce_range_mult;
     float       aim_window_mult;
     int         wild_spawn_bonus;
+    /* New fields (2026-11-07 expansion) */
+    float       pounce_success_mult;
+    float       movement_efficiency_mult;
+    float       mood_mult;
+    float       fear_mult;
+    float       prey_flee_penalty;
+    float       catch_success_mult;
+    float       prey_detection_range_mult;
+    float       all_stats_decay_mult;
+    float       bonus_synergy_mult;
 } gift_def_t;
 
 /* The catalogue. Indexed by gift kind. */

@@ -613,12 +613,7 @@ release:
      * This runs on the FAILURE paths too, and that matters: the early returns
      * used to skip it, so every failed scan left the radio up and the next
      * attempt stacked another driver on top. A few taps was enough to starve
-     * the display completely.
-     *
-     * The netif is deliberately NOT destroyed: esp_netif_create_default_wifi_sta()
-     * asserts on a duplicate, so keeping it lets a later scan re-init the driver
-     * without re-creating the netif. s_wifi_inited is cleared so radio_up() runs
-     * esp_wifi_init() again on the next scan. */
+     * the display completely. */
     esp_wifi_stop();
     esp_wifi_deinit();
 

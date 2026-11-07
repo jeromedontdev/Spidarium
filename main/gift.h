@@ -16,11 +16,21 @@
 #include <stdint.h>
 
 typedef struct {
-    float energy_regen_mult;   /* pebble  */
-    float hygiene_decay_mult;  /* leaf    */
-    float pounce_range_mult;   /* twig    */
-    float aim_window_mult;     /* crystal */
-    int   wild_spawn_bonus;    /* flower, count-based */
+    float energy_regen_mult;   /* pebble, acorn */
+    float hygiene_decay_mult;  /* leaf */
+    float pounce_range_mult;   /* twig, ruby */
+    float aim_window_mult;     /* crystal, sapphire */
+    int   wild_spawn_bonus;    /* flower */
+    /* New multipliers (2026-11-07 expansion) */
+    float pounce_success_mult; /* moss */
+    float movement_efficiency_mult; /* sap */
+    float mood_mult;           /* pearl */
+    float fear_mult;           /* bone */
+    float prey_flee_penalty;   /* moss: negative = fleeing slowed */
+    float catch_success_mult;  /* ruby */
+    float prey_detection_range_mult; /* sapphire */
+    float all_stats_decay_mult; /* emerald: slows decay of all needs */
+    float bonus_synergy_mult;   /* diamond, crown: multiplicative bonus */
 } gift_bonus_t;
 
 /* Recompute the active bonus from the current gift. Call once per logic tick,

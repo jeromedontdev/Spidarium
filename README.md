@@ -209,13 +209,22 @@ read and written only by the CPU belongs in PSRAM.
 
 ## Documentation
 
-- **[docs/serial_console.md](docs/serial_console.md)** — every console command,
-  with real output, the output contract, and the transport traps
-- **[docs/memory_budget.md](docs/memory_budget.md)** — where every kilobyte goes
-- **[PROGRESS.md](PROGRESS.md)** — every development round, with root causes and
-  the reasoning behind each decision
-- **[.github/copilot-instructions.md](.github/copilot-instructions.md)** — the
-  agent operating manual
+**Start here**: [docs/INDEX.md](docs/INDEX.md) — Master documentation index with quick navigation
+
+### Core Manuals
+- **[.github/copilot-instructions.md](.github/copilot-instructions.md)** — The three golden rules and operating constraints
+- **[PROGRESS.md](PROGRESS.md)** — Every development round, with root causes and reasoning
+- **[docs/serial_console.md](docs/serial_console.md)** — Every console command with examples
+- **[docs/memory_budget.md](docs/memory_budget.md)** — Where every kilobyte of RAM goes
+
+### Major Overhaul Documentation (NEW)
+- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** — Five-part roadmap: menu, WiFi, gifts, assets, docs
+- **[docs/MENU_ARCHITECTURE.md](docs/MENU_ARCHITECTURE.md)** — Hierarchical menu system design
+- **[docs/WIFI_ARCHITECTURE.md](docs/WIFI_ARCHITECTURE.md)** — WiFi state machine and user controls
+- **[docs/GIFTS_CATALOG.md](docs/GIFTS_CATALOG.md)** — Complete gift catalogue (5→18 gifts)
+- **[docs/ART_STYLE.md](docs/ART_STYLE.md)** — Visual design guide: colors, icons, sprites
+- **[docs/ASSETS_INVENTORY.md](docs/ASSETS_INVENTORY.md)** — Asset status and creation priority
+- **[docs/AGENT_HANDOFF.md](docs/AGENT_HANDOFF.md)** — Everything new agents need to know
 
 ---
 
@@ -224,8 +233,14 @@ read and written only by the CPU belongs in PSRAM.
 Working: the spider, the hunt, needs and decay, gifts, achievements, themes,
 first-run setup, save/restore, SD backup, WiFi scan, the serial console.
 
-Not done: WiFi password entry (secured networks are listed but not selectable),
-OTA updates.
+Planned: 
+- **Menu System Overhaul** — Hierarchical menus with proper scrolling and styling
+- **WiFi Settings** — User control: on/off toggle, multi-network support, manual selection
+- **Gifts Expansion** — 5→18 unique gifts with unlock levels and special effects
+- **Assets Refresh** — Professional-quality UI icons, prey sprites, decorations
+- **Complete Documentation** — All architectural decisions documented for agent handoff
+
+See **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** for the complete overhaul roadmap and [docs/INDEX.md](docs/INDEX.md) for documentation navigation.
 
 ---
 

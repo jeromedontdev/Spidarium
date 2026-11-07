@@ -1062,6 +1062,53 @@ void game_tick_render(lv_timer_t *timer)
 /* ------------------------------------------------------------------ */
 /* Init                                                                */
 /* ------------------------------------------------------------------ */
+
+/* WiFi menu actions, marshalled from menu callbacks onto the LVGL task. */
+void game_ui_start_wifi_scan(void)
+{
+    game_pause();
+    net_init();
+    if (!net_scan_start()) {
+        ESP_LOGE(TAG, "WiFi scan failed to start");
+    }
+}
+
+void game_ui_connect_wifi(int scan_index)
+{
+    if (scan_index < 0 || scan_index >= net_scan_count()) {
+        return;
+    }
+
+    const char *ssid = net_scan_ssid(scan_index);
+    const char *pass = "";
+
+    if (net_scan_secure(scan_index)) {
+        /* Secure network; for now, we cannot handle password entry from the
+         * menu. Just log and return. In the future, this should open a password
+         * entry popup. */
+        ESP_LOGW(TAG, "Network %s requires password (not yet implemented)", ssid);
+        return;
+    }
+
+    game_pause();
+    net_init();
+    net_connect_to(ssid, pass);
+    game_resume();
+}
+
+void game_ui_forget_wifi(void)
+{
+    net_set_credentials("", "");
+    game_resume();
+}
+
+void game_ui_open_wifi_password_entry(void)
+{
+    /* Placeholder: in a full implementation, this opens a text entry UI.
+     * For now, just resume the game. */
+    game_resume();
+}
+
 void game_init(void)
 {
     state_load();

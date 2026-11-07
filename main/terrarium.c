@@ -4,6 +4,7 @@
 #include "terrarium.h"
 
 #include "game_config.h"
+#include "species.h"
 #include "theme.h"
 
 #include <math.h>
@@ -32,11 +33,13 @@
 #define WEB_SAG             0.16f   /* ring sag between spokes, fraction of radius */
 #define WEB_JITTER          0.05f   /* per-spoke angle wobble, radians */
 
-/* Gift kinds: 0 pebble, 1 leaf, 2 twig, 3 flower, 4 crystal.
- * GIFT_KINDS lives in game.h so the gift picker can cycle it. */
-static const uint32_t k_gift_colors[GIFT_KINDS] = {
-    0x58d68d, 0x7c9cff, 0xf5b342, 0xff7eb6, 0x4fd1c5,
-};
+/* Gift kinds: colors now sourced from species.c k_gifts[] definitions.
+ * GIFT_KINDS lives in game.h so the gift picker can cycle it.
+ * This function pulls the color from the active gift definition. */
+static uint32_t get_gift_color(uint8_t kind)
+{
+    return gift_def(kind)->colour;
+}
 
 static lv_obj_t *s_bg_layer;      /* substrate + web, rebuilt on theme change */
 static lv_obj_t *s_gift_layer;
@@ -240,7 +243,7 @@ static lv_obj_t *make_oval(lv_obj_t *parent, int32_t cx, int32_t cy,
 
 static void draw_gift_shape(lv_obj_t *parent, const gift_t *d)
 {
-    uint32_t col = k_gift_colors[d->kind % GIFT_KINDS];
+    uint32_t col = get_gift_color(d->kind);
     int32_t x = d->x, y = d->y;
     uint8_t v = d->variant % 3;   /* per-piece size/shape variation */
 

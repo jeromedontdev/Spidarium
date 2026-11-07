@@ -17,8 +17,9 @@
 
 /* Gift kinds. There is exactly ONE gift in the tank at a time: the player
  * gives it, and the spider keeps it until it is replaced. This replaces the
- * old 12-slot decor system, which was fiddly to place and read as clutter. */
-#define GIFT_KINDS 5   /* pebble, leaf, twig, flower, crystal */
+ * old 12-slot decor system, which was fiddly to place and read as clutter.
+ * Expanded to 18 gifts in major overhaul (2026-11-07). */
+#define GIFT_KINDS 18  /* pebble, leaf, twig, acorn, moss, sap, flower, crystal, amber, coral, silk, bone, pearl, ruby, sapphire, emerald, diamond, crown */
 #define NUM_LEGS   8
 #define NUM_EYES   8
 #define NUM_STATS  4
@@ -257,6 +258,11 @@ bool game_ui_open_menu(const char *name);
 /* Called by the HUD gift picker when the player chooses a kind. */
 void game_gift_chosen(uint8_t kind);
 
+/* WiFi menu actions, marshalled from menu callbacks onto the LVGL task. */
+void game_ui_start_wifi_scan(void);
+void game_ui_connect_wifi(int scan_index);
+void game_ui_forget_wifi(void);
+void game_ui_open_wifi_password_entry(void);
 
 void game_on_terrarium_tap(lv_event_t *e);
 void game_on_terrarium_press(lv_event_t *e);

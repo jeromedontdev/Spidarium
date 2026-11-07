@@ -57,6 +57,16 @@ void gift_compute(void)
     s_bonus.pounce_range_mult  = 1.0f;
     s_bonus.aim_window_mult    = 1.0f;
     s_bonus.wild_spawn_bonus   = 0;
+    /* New fields (2026-11-07 expansion) */
+    s_bonus.pounce_success_mult = 1.0f;
+    s_bonus.movement_efficiency_mult = 1.0f;
+    s_bonus.mood_mult          = 1.0f;
+    s_bonus.fear_mult          = 1.0f;
+    s_bonus.prey_flee_penalty  = 1.0f;
+    s_bonus.catch_success_mult = 1.0f;
+    s_bonus.prey_detection_range_mult = 1.0f;
+    s_bonus.all_stats_decay_mult = 1.0f;
+    s_bonus.bonus_synergy_mult = 1.0f;
 
     if (!g.gift.used) return;
 
@@ -67,4 +77,14 @@ void gift_compute(void)
     s_bonus.pounce_range_mult  *= d->pounce_range_mult;
     s_bonus.aim_window_mult    *= d->aim_window_mult;
     s_bonus.wild_spawn_bonus   += d->wild_spawn_bonus;
+    /* Apply new multipliers */
+    s_bonus.pounce_success_mult *= d->pounce_success_mult;
+    s_bonus.movement_efficiency_mult *= d->movement_efficiency_mult;
+    s_bonus.mood_mult          *= d->mood_mult;
+    s_bonus.fear_mult          *= d->fear_mult;
+    s_bonus.prey_flee_penalty  *= d->prey_flee_penalty;
+    s_bonus.catch_success_mult *= d->catch_success_mult;
+    s_bonus.prey_detection_range_mult *= d->prey_detection_range_mult;
+    s_bonus.all_stats_decay_mult *= d->all_stats_decay_mult;
+    s_bonus.bonus_synergy_mult *= d->bonus_synergy_mult;
 }
