@@ -1,0 +1,43 @@
+# ESP-IDF build output
+build/
+build-*/
+managed_components/
+dependencies.lock
+
+# sdkconfig is generated from sdkconfig.defaults on first build.
+#
+# It is NOT committed because it is machine-generated and 95 KB of noise. The
+# defaults file is the source of truth -- but note that a setting which exists
+# only in sdkconfig.defaults is NOT applied until sdkconfig is regenerated.
+# When changing a config option, write it to sdkconfig.defaults and delete
+# sdkconfig so the next build picks it up.
+sdkconfig
+sdkconfig.old
+CMakeUserPresets.json
+
+# Editor / tooling
+.vscode/
+.unix/
+__pycache__/
+*.pyc
+
+# Build and monitor logs
+*.log
+
+# Local backups of superseded source
+main_backup_*/
+
+# Test artefacts
+test_results.txt
+wifi_crash.txt
+crash.log
+crash2.log
+
+# Large local photos, not part of the project
+IMG_*.png
+small_IMG_*.png
+
+# Compiled simulator binary
+sim/*.exe
+sim/*.o
+sim/*.obj
