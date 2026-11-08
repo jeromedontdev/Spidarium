@@ -5212,3 +5212,20 @@ preview PNG were added. Actual pet colors, names and device captures are preserv
   or recolor real device screenshots.
 - Ship a new v1.1.0 release with the personal-use license, preserving the
   immutable v1.0.0 tag/archive. Keep third-party licensing separate.
+
+### Publication
+
+Committed/pushed code `e6ef5a2`, then published the immutable
+[v1.1.0 release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.0)
+with ZIP, OTA application and LICENSE. Public ZIP SHA-256 is
+`0977d79ccb06fbccad18d13f1dde679867e12ad30c7ea152d82f63177baed09c`;
+an actual unauthenticated download matches and includes license/schema/report.
+[Pages run 42440255817](https://github.com/jeromedontdev/Spidarium/actions/runs/42440255817)
+passed. The new tag was specifically permitted without removing old protections.
+
+Live HTTPS checks match the new UI/engine, purple preview, font/license,
+all five firmware images and all 134 PNGs. Schema values match exactly; differing
+platform line endings do not change the compiled contract. Browser confirms
+Fullscreen and no old side panel. Existing native pet/credentials and browser
+progress were retained. Publication evidence is committed separately without
+moving either official code tag.

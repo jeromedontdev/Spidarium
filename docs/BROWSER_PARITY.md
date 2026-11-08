@@ -79,3 +79,24 @@ Physical browser USB flashing, unplugged battery runtime and subjective touch/
 art acceptance are not certified by simulated browser transport tests.
 Network availability and HTTPS OTA endpoint behavior depend on the chosen
 network/server. Existing hardware progress/credentials were never erased.
+
+## Publication
+
+- Source/tag: `e6ef5a26d078aea46a547a4d715266baf0d273a3`, `v1.1.0`.
+- [Published release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.0)
+  contains the full-flash ZIP, standalone OTA application and project LICENSE.
+- Public ZIP SHA-256:
+  `0977d79ccb06fbccad18d13f1dde679867e12ad30c7ea152d82f63177baed09c`.
+  Actual unauthenticated download matches; LICENSE, compiled schema and
+  verification report are present.
+- [Pages run 42440255817](https://github.com/jeromedontdev/Spidarium/actions/runs/42440255817)
+  completed successfully. Only the new `v1.1.0` tag was added to the environment
+  policy; existing `main`/`v1.0.0` permissions remain intact.
+- [Live website](https://jeromedontdev.github.io/Spidarium/site/) verified:
+  new UI/engine, purple preview, local font and project license match source;
+  all five firmware hashes and all 134 PNGs match. Compiled schema values are
+  identical; Windows/Linux line-ending differences are not schema differences.
+- Public browser confirms Fullscreen, native-coordinate controls and absence
+  of the old side-panel game. Existing progress is not reset for screenshots.
+- Original v1.0.0 tag/archive remain unchanged. Publication evidence is a
+  documentation-only follow-up; the v1.1.0 code tag is not moved.

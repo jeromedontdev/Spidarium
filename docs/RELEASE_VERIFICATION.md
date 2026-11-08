@@ -1,5 +1,8 @@
 # Spidarium v1.0.0 verification
 
+For the current v1.1.0 release, see [browser parity and publication evidence](BROWSER_PARITY.md).
+The measurements below are the historical, immutable first-release record.
+
 Verified on 2026-11-07 using the Waveshare ESP32-S3-Touch-AMOLED-2.16 on COM7,
 ESP-IDF 5.5.6, Waveshare BSP 2.0.1 and LVGL 9.6.0~1. Component versions are
 pinned and `dependencies.lock` is committed. The existing pet and WiFi
