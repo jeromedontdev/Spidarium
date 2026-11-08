@@ -37,3 +37,4 @@ bool ui_hud_chrome_visible(void);  /* true while either group is showing */
 void ui_hud_dismiss_if_visible(void);
 void ui_hud_set_chrome(bool on);   /* force both (used by the picker) */
 bool ui_hud_test(void);
+void ui_hud_capture_hide(bool hidden);

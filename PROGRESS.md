@@ -5229,3 +5229,68 @@ platform line endings do not change the compiled contract. Browser confirms
 Fullscreen and no old side panel. Existing native pet/credentials and browser
 progress were retained. Publication evidence is committed separately without
 moving either official code tag.
+
+## Round 45 - HUD safe area, mint artwork and playfield screenshots
+
+### Reported
+
+Battery chrome was boxed, always visible and clipped on the device; the browser
+ear was not flush with the corner. Promotional fangs should blend with the site.
+Settings needs SD screenshots of the playfield, plus explicit serial menu/field
+capture for visual agent diagnostics.
+
+### Root cause
+
+Battery inherited card styling and was a HUD sibling excluded from visibility
+control, with an unsafe extreme-corner position. Browser viewport rounding and
+an implicit absolute-position origin inset/clipped the ear. Existing snapshots
+covered only active-screen/spider transfer, not clean field capture or SD output.
+
+### Fix
+
+- Transparent, borderless battery button at (400,132), visible only with care,
+  below identity and inside the display safe area; charging/voltage tap retained.
+- Explicit browser screen origin, square viewport and no battery shadow.
+- Native-rendered promotional mint fangs (accent 7); player colors untouched.
+- Settings Save Screenshot and serial `screenshot sd` share clean field capture.
+  HUD/menu/keyboard/bubble visibility restores synchronously on LVGL; copied
+  RGB565 PSRAM pixels transfer to the existing persistence worker. It exclusively
+  creates numbered BMPs, flushes/fsyncs, reads back every byte and frees pixels.
+  Errors are logged and shown; no formatting, save migration or progress reset.
+  Captures reject during radio operations, preserving the no-radio-plus-render
+  invariant; Settings disables the action until WiFi finishes.
+- Explicit `screenshot menu`/`playfield`/`spider` targets and host `--playfield`.
+  Browser Settings downloads the canvas as PNG. `capturetest` pixel-compares
+  pre/post menus and checks field dimensions and unchanged pet state.
+
+### Verification
+
+- Wrapper build/flash exits 0; no main-code warnings.
+- Hardware suite 39/39; 40-second stability PASS, zero faults.
+- Host tests 21/21; browser tests 73/73 including PNG failure reporting.
+- Actual HUD and clean-field serial PNGs inspected: battery inside, no card box,
+  no HUD/menu/ear in field capture. Diagnostic images stay in ignored build.
+- `capturetest`: menu_restored=1, playfield_differs=1, dimensions=1,
+  state_unchanged=1. Six numbered SD BMPs written and fully verified, each
+  460,866 bytes. Three repeated warm writes keep largest at 63,488 and internal
+  free at 145,623 (zero DMA/internal drift); PSRAM varies by only 8 bytes.
+- `render 500`: zero drift, largest 63,488. `scanloop 5`: five successful scans,
+  zero drift, largest 69,632. Both exceed the 51,200-byte baseline.
+- Browser runtime: battery hidden without HUD, transparent/0px border/no shadow
+  with HUD, logical position (400,132), ear flush and blank when care opens.
+  Screenshot action encodes real 480x480 PNG with correct signature, 12,700
+  bytes in the tested scene, and preserves Settings. The attached browser does
+  not surface download completion events; the actual outgoing Blob was inspected.
+- Final network-return check: open Settings, run a real scan, capture-compare,
+  save the sixth SD image and run `uitest` all pass. Settings refreshes capture
+  availability after the network job without losing its current page.
+
+### Decisions made
+
+Use a lossless RGB565 bitfield BMP rather than adding a PNG encoder to constrained
+firmware. Keep all card I/O on the serialized worker and all LVGL destruction on
+LVGL; copying pixels makes ownership unambiguous and allows the menu to remain
+usable. Snapshot visibility changes occur within one callback, so menus do not
+flash away and logic never advances. The battery sits below identity instead of
+the physical rounded corner. Mint changes only promotional artwork. Publish as
+v1.1.1 without moving earlier release tags or changing save/credential formats.

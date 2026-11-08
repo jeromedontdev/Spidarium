@@ -40,6 +40,7 @@ typedef struct {
     uint8_t sd_operation;
     bool background;
     uint8_t background_id;
+    sd_screenshot_t screenshot;
     uint8_t payload[SAVE_MAX_PAYLOAD];
 } save_job_t;
 static QueueHandle_t s_queue;
@@ -79,9 +80,11 @@ static void save_worker(void *arg)
         bool ok = job.raw ? save_write_raw(job.payload, job.size) :
                   job.background ? background_write(job.background_id) :
                   job.sd_operation ? sd_run_job(job.sd_operation,
-                      job.sd_operation == SD_JOB_BACKUP ? &snapshot : NULL) :
+                      job.sd_operation == SD_JOB_BACKUP ? &snapshot : NULL,
+                      job.sd_operation == SD_JOB_SCREENSHOT ? &job.screenshot : NULL) :
                   job.erase ? save_erase() : save_save(job.payload, job.size);
         atomic_store(&s_last_ok, ok);
+        if (job.sd_operation == SD_JOB_SCREENSHOT) heap_caps_free(job.screenshot.pixels);
         if (job.raw && !ok) atomic_store(&s_restore_pending, false);
         atomic_store(&s_writing, false);
         atomic_fetch_sub(&s_pending, 1);
@@ -144,6 +147,11 @@ bool save_request_sd(uint8_t operation)
 bool save_request_background(uint8_t id)
 {
     return queue_save(&(save_job_t){ .background = true, .background_id = id });
+}
+
+bool save_request_screenshot(const sd_screenshot_t *image)
+{
+    return queue_save(&(save_job_t){ .sd_operation = SD_JOB_SCREENSHOT, .screenshot = *image });
 }
 bool save_busy(void) { return atomic_load(&s_pending) != 0; }
 bool save_writing(void) { return atomic_load(&s_writing); }

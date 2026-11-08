@@ -12,9 +12,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from run_tests import run, wait_ready
 
 
-def capture(connection, destination: Path, spider: bool = False) -> None:
+def capture(connection, destination: Path, spider: bool = False, playfield: bool = False) -> None:
+    if spider and playfield:
+        raise ValueError("Choose spider or playfield, not both")
     connection.reset_input_buffer()
-    connection.write(b"screenshot spider\n" if spider else b"screenshot\n")
+    connection.write(b"screenshot spider\n" if spider else
+                     b"screenshot playfield\n" if playfield else b"screenshot\n")
     connection.flush()
     pending = b""
     width = height = 0
@@ -86,7 +89,10 @@ def main() -> None:
     parser.add_argument("port")
     parser.add_argument("output", type=Path)
     parser.add_argument("--menu")
-    parser.add_argument("--spider", action="store_true")
+    targets = parser.add_mutually_exclusive_group()
+    targets.add_argument("--spider", action="store_true")
+    targets.add_argument("--playfield", action="store_true",
+                         help="Exclude all menus and HUD; leave the device UI unchanged")
     args = parser.parse_args()
     with serial.Serial(args.port, 115200, timeout=0.2) as connection:
         connection.dtr = connection.rts = False
@@ -97,7 +103,7 @@ def main() -> None:
             _, verdict = run(connection, "open " + args.menu, 10)
             if verdict != "OK":
                 raise RuntimeError("Menu did not open")
-        capture(connection, args.output, args.spider)
+        capture(connection, args.output, args.spider, args.playfield)
 
 
 if __name__ == "__main__":

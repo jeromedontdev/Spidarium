@@ -130,7 +130,8 @@ static void cmd_help(void)
     printf("  save                 save now\n");
     printf("  save export|schema  browser backup and field layout\n");
     printf("  save restore HEX    validated pet restore; reboot required\n");
-    printf("  screenshot           capture actual LVGL RGB565 screen\n");
+    printf("  screenshot [menu|playfield|spider|sd] capture screen or save playfield to SD\n");
+    printf("  capturetest          pixel-compare capture restoration (open a menu first)\n");
     printf("  sd backup|status     verified SD backup or card probe\n");
     printf("  sound N              play effect 0..9 (7..9 ambient)\n");
     printf("  battery              report PMIC charge and power policy\n");
@@ -524,9 +525,18 @@ static void cmd_save_tool(const char *arg)
 
 static void cmd_screenshot(const char *arg)
 {
-    if (arg && strcmp(arg, "spider")) { printf("ERR use screenshot [spider]\n"); return; }
-    bool spider = arg != NULL;
-    if (!game_ui_call_value(GAME_UI_SCREEN_CAPTURE, spider ? 1 : 0)) {
+    if (arg && !strcmp(arg, "sd")) {
+        if (!game_ui_call(GAME_UI_SCREEN_SD)) { printf("ERR screenshot SD capture not queued\n"); return; }
+        if (!wait_save()) { printf("ERR screenshot SD persistence failed: %s\n", sd_status_text()); return; }
+        printf("OK screenshot SD: %s\n", sd_status_text());
+        return;
+    }
+    if (arg && strcmp(arg, "spider") && strcmp(arg, "menu") && strcmp(arg, "playfield")) {
+        printf("ERR use screenshot [menu|playfield|spider|sd]\n"); return;
+    }
+    bool spider = arg && !strcmp(arg, "spider");
+    int target = spider ? 1 : arg && !strcmp(arg, "playfield") ? 2 : 0;
+    if (!game_ui_call_value(GAME_UI_SCREEN_CAPTURE, target)) {
         printf("ERR screenshot capture failed\n"); return;
     }
     const lv_draw_buf_t *capture = game_screen_capture();
@@ -743,6 +753,9 @@ static void run_line(char *line)
         printf("%s wake\n", game_ui_call(GAME_UI_WAKE) ? "OK" : "ERR");
     }
     else if (!strcmp(line, "screenshot")) cmd_screenshot(arg);
+    else if (!strcmp(line, "capturetest")) {
+        printf("%s capturetest\n", game_ui_call(GAME_UI_SCREEN_TEST) ? "OK" : "ERR");
+    }
     else if (!strcmp(line, "sound")) {
         char *end = NULL;
         long effect = arg ? strtol(arg, &end, 10) : -1;

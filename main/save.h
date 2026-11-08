@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "sd.h"
 
 /* Allocate the queue and internal flash-writing stack before starting LVGL. */
 bool save_init(void);
@@ -30,6 +31,7 @@ bool save_busy(void);
 bool save_writing(void);
 bool save_last_ok(void);
 bool save_request_sd(uint8_t operation);
+bool save_request_screenshot(const sd_screenshot_t *image);
 bool save_request_background(uint8_t id);
 bool save_background_load(uint8_t *id);
 bool save_request_raw(const void *src, size_t len);

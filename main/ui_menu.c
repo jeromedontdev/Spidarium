@@ -258,6 +258,17 @@ void ui_menu_set_item_checkbox(uint8_t item)
 
 int ui_menu_page(void) { return s_page; }
 
+void ui_menu_capture_hide(bool hidden)
+{
+    static bool backdrop_hidden, menu_hidden;
+    if (hidden) {
+        backdrop_hidden = s_backdrop && lv_obj_is_hidden(s_backdrop);
+        menu_hidden = s_menu && lv_obj_is_hidden(s_menu);
+    }
+    if (s_backdrop) lv_obj_set_hidden(s_backdrop, hidden || backdrop_hidden);
+    if (s_menu) lv_obj_set_hidden(s_menu, hidden || menu_hidden);
+}
+
 void ui_menu_set_page(int page)
 {
     if (!s_items || page < 0 || page >= (s_count + PAGE_ROWS - 1) / PAGE_ROWS) {

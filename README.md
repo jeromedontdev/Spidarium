@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.0](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.0)**
+| **[Download v1.1.1](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.1)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -75,10 +75,16 @@ See [the gift shop](docs/GIFTS_CATALOG.md).
 saved brightness presets, idle dimming, screen-off/touch wake and low-battery
 save/dimming are implemented without changing the charger configuration.
 See [battery management](docs/BATTERY_MANAGEMENT.md).
-The top-right gauge shows level/charging and opens voltage details on tap.
+The unboxed upper-right gauge appears only with the care HUD, below the identity
+panel inside the display's safe area. It shows level/charging and opens voltage details on tap.
 Name and next unlock share a translucent reading panel. Feed disables at three
 live bugs; achievement badges are distinct and every species has splatter art.
 Sound controls live under Settings.
+
+**Playfield screenshots.** Settings > Save Screenshot writes a numbered,
+verified BMP to SD without menus or HUD. The browser downloads a playfield PNG.
+Serial captures can include menus or isolate the playfield for agent diagnostics;
+see [screenshot commands](docs/serial_console.md#screen-capture).
 
 **Manual care by default.** Settings has independent Auto Feed and Auto Hunt
 checkboxes, both off for new and migrated saves. Without them, Feed adds prey
@@ -89,7 +95,7 @@ gift visits continue. These options are persisted in pet backups.
 Serial, download/view/restore a pet backup, or send WiFi settings directly to
 your device. No passwords are stored by the website. Try the playable browser
 simulator separately; it is a model of the game, not native firmware emulation.
-See [website development](site/README.md) and [release notes](docs/RELEASE_v1.1.0.md).
+See [website development](site/README.md) and [release notes](docs/RELEASE_v1.1.1.md).
 
 The browser uses the device-coordinate UI at a larger responsive size, with
 fullscreen and local progress/backup. Its hardware menus clearly redirect to

@@ -10,6 +10,19 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.1: [HUD and screenshot update](RELEASE_v1.1.1.md). Battery chrome is
+  transparent, HUD-only and safely inset; browser ear has an explicit origin
+  and square viewport. Promotional fangs are mint, not player colors.
+  Settings > Save Screenshot and `screenshot sd` share playfield capture.
+  LVGL temporarily hides/restores HUD and menu objects within one callback,
+  copies RGB565 into PSRAM and destroys the LVGL buffer on its own task.
+  The serialized save worker owns the copied pixels after successful enqueue,
+  writes a numbered RGB565 BMP with exclusive creation, flush/fsync and exact
+  readback, then frees pixels. Failure leaves UI restored and reports an error;
+  no card is formatted. `screenshot menu` includes the current menu;
+  `screenshot playfield` excludes UI, and `capturetest` compares restoration.
+  See [serial diagnostics](serial_console.md#screen-capture).
+
 - v1.1.0: [browser parity and measured evidence](BROWSER_PARITY.md).
   Native-coordinate browser HUD/setup/menus/minigames, fullscreen, local
   progress migration with explicit errors, and separate default-off Auto Feed/

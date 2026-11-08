@@ -655,12 +655,31 @@ restoration, including after reboot:
 This test restores the current snapshot, never substitutes a synthetic pet.
 Invalid restore inputs must return ERR without rebooting or altering NVS.
 
-## Actual screen captures
+## Screen capture
 
 `screenshot` captures the active 480x480 LVGL screen; `screenshot spider`
 captures the native 96x96 creature canvas with alpha, not the obsolete setup
 sprite sheets. Snapshot creation/release happen only on LVGL; transfer happens
 on the serial task.
+
+`screenshot menu` is an explicit alias for the active screen, including whatever
+menu is open. `screenshot playfield` captures the tank without any HUD, page ear,
+bubble, menu or keyboard. Visibility is restored before the LVGL callback
+returns, without advancing logic, closing the menu or changing pet state.
+`capturetest` (with a menu open) compares menu pixels before/after clean capture
+and asserts the playfield differs, is 480x480, and leaves pet state unchanged.
+
+Settings > Save Screenshot and `screenshot sd` always select the clean playfield.
+Files are numbered `/sdcard/spidarium-00001.bmp` through `99999`, never overwrite
+existing files, and are RGB565 bitfield BMPs with top-down rows (460,866 bytes at
+480x480). The existing persistence worker mounts on demand without formatting,
+writes/flushes/fsyncs, then compares every header/pixel/padding byte on readback.
+The UI polls Saving/filename/error status and never waits for card I/O.
+Copied PSRAM pixels transfer to the worker only after a successful queue request;
+the LVGL-owned snapshot is destroyed on LVGL, and the worker frees plain pixels.
+Capture allocation, queue, card, write and verification failures are explicit.
+All capture targets reject while WiFi is busy: snapshots must not draw the tank
+while the radio owns internal DMA RAM. Settings disables capture until it finishes.
 
 The stream starts with `SCREEN BEGIN width height rgb565le` (or `bgra8888`),
 then `SCREEN PART row byte_offset hex` chunks and `OK screenshot`. Chunks contain
@@ -673,12 +692,18 @@ explicitly rather than producing a plausible screenshot.
 ```powershell
 & 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\capture_screen.py COM7 docs\screenshots\device-hud.png --menu chrome
 & 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\capture_screen.py COM7 native-spider.png --menu chrome --spider
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\capture_screen.py COM7 build\diagnostic-menu.png --menu settings
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\capture_screen.py COM7 build\diagnostic-playfield.png --menu settings --playfield
+python cmd.py COM7 "screenshot sd"
 ```
 
 The host waits for startup to settle and allows 150 seconds for a full transfer.
 PNG colors are decoded directly from captured pixels; native spider alpha is
 preserved. The snapshot buffer is temporary PSRAM and released after transfer.
 These are explicit diagnostic allocations, not per-frame renderer allocations.
+Keep diagnostic captures out of source control unless deliberately documenting
+a public screenshot. Opening the port may reset the device: use a persistent
+serial connection for comparisons or multi-command diagnoses.
 
 Feed now returns ERR when three live bugs are already present. The button is
 gray/disabled, and both the callback and needs helper guard full-tank calls.

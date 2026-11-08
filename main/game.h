@@ -285,6 +285,8 @@ typedef enum {
     GAME_UI_SCANLOOP_BEGIN,
     GAME_UI_SCANLOOP_END,
     GAME_UI_SCREEN_CAPTURE,
+    GAME_UI_SCREEN_SD,
+    GAME_UI_SCREEN_TEST,
     GAME_UI_SCREEN_RELEASE,
 } game_ui_action_t;
 const lv_draw_buf_t *game_screen_capture(void);

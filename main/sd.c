@@ -39,6 +39,8 @@ static atomic_uint s_generation;
 static bool s_backup_exists;
 static bool s_restored;
 static game_state_t s_restored_state;
+static char s_screenshot_status[96];
+static bool write_screenshot(const sd_screenshot_t *image);
 
 bool sd_busy(void) { return atomic_load(&s_busy); }
 uint32_t sd_generation(void) { return atomic_load(&s_generation); }
@@ -67,7 +69,26 @@ bool sd_request(uint8_t operation)
     }
     return true;
 }
-bool sd_run_job(uint8_t operation, const game_state_t *snapshot)
+bool sd_request_screenshot(const sd_screenshot_t *image)
+{
+    if (!image || !image->pixels || !image->width || !image->height ||
+        image->width > 480 || image->height > 480 || image->stride < image->width * 2) {
+        ESP_LOGE(TAG, "screenshot request rejected: invalid image");
+        return false;
+    }
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&s_busy, &expected, true)) {
+        ESP_LOGW(TAG, "screenshot request rejected: SD busy");
+        return false;
+    }
+    if (!save_request_screenshot(image)) {
+        atomic_store(&s_busy, false);
+        return false;
+    }
+    return true;
+}
+
+bool sd_run_job(uint8_t operation, const game_state_t *snapshot, const sd_screenshot_t *image)
 {
     s_restored = false;
     bool ok = sd_mount();
@@ -82,11 +103,90 @@ bool sd_run_job(uint8_t operation, const game_state_t *snapshot)
         s_restored = ok;
         s_status = ok ? "Save Restored" : "Restore Failed; See Serial Log";
     }
+    if (ok && operation == SD_JOB_SCREENSHOT) {
+        ok = write_screenshot(image);
+        s_status = ok ? s_screenshot_status : "Screenshot Failed; See Serial Log";
+    }
     struct stat info;
     s_backup_exists = s_mounted && stat(BACKUP_PATH, &info) == 0 && info.st_size > 0;
     atomic_store(&s_busy, false);
     atomic_fetch_add(&s_generation, 1);
     return ok;
+}
+
+static void put_u32(uint8_t *dst, uint32_t value)
+{
+    for (int i = 0; i < 4; i++) dst[i] = value >> (i * 8);
+}
+
+static bool write_screenshot(const sd_screenshot_t *image)
+{
+    if (!image || !image->pixels) {
+        ESP_LOGE(TAG, "screenshot job has no pixels");
+        return false;
+    }
+    uint32_t row_bytes = (image->width * 2 + 3) & ~3u;
+    uint32_t size = 66 + row_bytes * image->height;
+    uint8_t header[66] = {'B', 'M'};
+    put_u32(header + 2, size);
+    put_u32(header + 10, sizeof header);
+    put_u32(header + 14, 40);
+    put_u32(header + 18, image->width);
+    put_u32(header + 22, (uint32_t)-(int32_t)image->height);
+    header[26] = 1; header[28] = 16;
+    put_u32(header + 30, 3); /* BI_BITFIELDS, RGB565, top-down rows. */
+    put_u32(header + 34, row_bytes * image->height);
+    put_u32(header + 54, 0xf800);
+    put_u32(header + 58, 0x07e0);
+    put_u32(header + 62, 0x001f);
+    char path[80];
+    FILE *file = NULL;
+    for (unsigned index = 1; index <= 99999; index++) {
+        snprintf(path, sizeof path, SD_MOUNT_POINT "/spidarium-%05u.bmp", index);
+        file = fopen(path, "wx");
+        if (file || errno != EEXIST) break;
+    }
+    if (!file) {
+        ESP_LOGE(TAG, "screenshot open failed (errno=%d)", errno);
+        return false;
+    }
+    uint8_t padding[3] = {0};
+    uint32_t pad = row_bytes - image->width * 2;
+    bool ok = fwrite(header, 1, sizeof header, file) == sizeof header;
+    for (uint32_t y = 0; ok && y < image->height; y++) {
+        ok = fwrite(image->pixels + y * image->stride, 1, image->width * 2, file) == image->width * 2;
+        if (ok && pad) ok = fwrite(padding, 1, pad, file) == pad;
+    }
+    if (fflush(file) != 0 || fsync(fileno(file)) != 0) ok = false;
+    if (fclose(file) != 0) ok = false;
+    if (ok) {
+        file = fopen(path, "rb");
+        if (!file) ok = false;
+        else {
+            uint8_t check[128];
+            ok = fread(check, 1, sizeof header, file) == sizeof header &&
+                 !memcmp(check, header, sizeof header);
+            for (uint32_t y = 0; ok && y < image->height; y++) {
+                for (uint32_t offset = 0; ok && offset < image->width * 2; offset += sizeof check) {
+                    uint32_t chunk = image->width * 2 - offset;
+                    if (chunk > sizeof check) chunk = sizeof check;
+                    ok = fread(check, 1, chunk, file) == chunk &&
+                         !memcmp(check, image->pixels + y * image->stride + offset, chunk);
+                }
+                if (ok && pad) ok = fread(check, 1, pad, file) == pad && !memcmp(check, padding, pad);
+            }
+            if (fgetc(file) != EOF || ferror(file)) ok = false;
+            if (fclose(file) != 0) ok = false;
+        }
+    }
+    if (!ok) {
+        ESP_LOGE(TAG, "screenshot write/readback failed: %s (errno=%d)", path, errno);
+        if (unlink(path) != 0) ESP_LOGW(TAG, "incomplete screenshot cleanup failed: %s", path);
+        return false;
+    }
+    snprintf(s_screenshot_status, sizeof s_screenshot_status, "Saved %s", path + sizeof(SD_MOUNT_POINT));
+    ESP_LOGI(TAG, "screenshot saved and verified: %s (%lu bytes)", path, (unsigned long)size);
+    return true;
 }
 
 void sd_init(void)

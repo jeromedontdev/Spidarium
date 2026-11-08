@@ -1,5 +1,26 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.1 follow-up
+
+The current website uses mint promotional fangs (player colors unchanged),
+an unboxed HUD-only battery at (400,132), and an explicitly positioned square
+playfield whose ear is flush in desktop and fullscreen layouts.
+Settings > Save Screenshot downloads only the 480x480 canvas as PNG.
+Native Settings saves a clean playfield RGB565 BMP to SD; serial can capture
+active menus, clean playfield or the alpha spider. See
+[capture instructions](serial_console.md#screen-capture).
+
+v1.1.1 build/flash passed with no main-code warnings; hardware 39/39,
+host 21/21, browser 73/73, 40-second stability PASS with zero faults.
+Capture comparison proves menu pixels and pet state unchanged; six SD images
+were completely read back and matched. Warm screenshot writes and `render 500`
+have zero internal/DMA drift (largest 63,488); five scans have zero drift
+(largest 69,632). The compiled 24-field save schema is unchanged.
+Browser PNG output was decoded as 480x480 with the exact PNG signature while
+Settings remained visible. Diagnostic captures remain uncommitted.
+
+The evidence below records the immutable original v1.1.0 publication.
+
 ## Contract
 
 The browser is a JavaScript port of the device game, not an ESP32 instruction-set
@@ -13,7 +34,7 @@ Fullscreen preserves the square and exposes Exit Fullscreen.
 
 The game uses actual background/prey/gift/badge PNGs and the direct pixel port
 of `cspider.c`, never obsolete spider animation sheets. Montserrat is bundled
-locally with its OFL notice. Promotional canvases and the preview PNG use purple
+locally with its OFL notice. Promotional canvases and the preview PNG use mint
 fangs; player colors and real device captures are not recolored.
 
 ## Platform adaptations

@@ -40,7 +40,7 @@ Set-Location site
 ```
 
 The portable files are only a local convenience; CI uses ordinary Node/npm.
-`native-spider.png` is the published promotional preview with purple fangs.
+`native-spider.png` is the published promotional preview with mint fangs.
 Hero and gameplay render the native spider directly through `lib/spider-renderer.js`.
 The source simulator works without an npm install; device flashing requires
 the production bundle. `node serve.mjs` alone serves the source.
@@ -81,7 +81,11 @@ Keyboard: M toggles care, arrows aim, Space releases a pounce. Auto Feed and
 Auto Hunt are separate Settings checkboxes, off by default. Manual feeding and
 aim/release are otherwise required. Gifts cost Silk and unlock by level.
 Achievement rows use the unique native icons; unavailable pages are disabled.
-Promotional spiders have purple fangs; each player's chosen colors are preserved.
+Promotional spiders have mint fangs; each player's chosen colors are preserved.
+The unboxed battery icon appears only with care, inside the upper-right safe
+area below the identity panel. The page ear is flush with the square playfield
+corner at all sizes. Settings > Save Screenshot downloads a 480x480 PNG of the
+canvas only: no menu or HUD, no SD-card emulation.
 The locally bundled Montserrat font retains its OFL notice.
 
 WiFi/RTC/OTA, SD-card access and battery/charging telemetry require actual

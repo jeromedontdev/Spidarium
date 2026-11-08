@@ -116,7 +116,7 @@ def package(root: Path, version: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", default="1.1.0")
+    parser.add_argument("--version", default="1.1.1")
     args = parser.parse_args()
     package(Path(__file__).resolve().parents[1], args.version)
 

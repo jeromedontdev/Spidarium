@@ -107,7 +107,7 @@ export class DeviceGame {
       this.refreshHUD();
     };
     this.controls.append(this.ear);
-    const battery = this.button(this.controls, '', 424, 4, 52, 44, () => this.open('Battery and Display'));
+    const battery = this.button(this.hudLayer, '', 400, 132, 52, 44, () => this.open('Battery and Display'));
     battery.classList.add('d-battery'); battery.setAttribute('aria-label', 'Battery and Display: Hardware Telemetry Unavailable');
     this.refreshHUD();
   }
@@ -168,6 +168,7 @@ export class DeviceGame {
         row('Sound', () => this.open('Sound'), '', { submenu: true }),
         row('Auto Feed', () => toggle('autoFeed'), '', { checkbox: true, selected: this.state.autoFeed }),
         row('Auto Hunt', () => toggle('autoHunt'), '', { checkbox: true, selected: this.state.autoHunt }),
+        row('Save Screenshot', () => this.screenshot(), 'Download Playfield PNG'),
       ]; break;
       case 'Sound': rows = ['On', 'Off'].map((label, i) => row(label, () => { this.state.sound = i === 0; void this.audio.unlock(this.state.sound); this.persist(); this.open(name); }, '', { selected: this.state.sound === (i === 0) })); break;
       case 'Backgrounds': rows = E.BACKGROUNDS.map(key => row(title(key), () => {
@@ -418,6 +419,22 @@ export class DeviceGame {
     const url = URL.createObjectURL(new Blob([JSON.stringify(this.state, null, 2)], { type: 'application/json' }));
     const link = element('a', ''); link.href = url; link.download = 'spidarium-browser-save.json'; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000); this.report('Browser save downloaded. Device binary backups use the USB tools below.');
+  }
+  async screenshot() {
+    try {
+      this.draw();
+      const blob = await new Promise((resolve, reject) => this.canvas.toBlob(value =>
+        value ? resolve(value) : reject(new Error('PNG encoding failed')), 'image/png'));
+      const url = URL.createObjectURL(blob);
+      const link = element('a', '');
+      link.href = url;
+      link.download = `spidarium-${Date.now()}.png`;
+      this.root.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      this.report('Playfield screenshot downloaded. Menus and HUD are excluded.');
+    } catch (error) { this.report(`Screenshot failed: ${error.message}`, true); }
   }
   async importProgress() {
     try {

@@ -30,6 +30,15 @@ static lv_obj_t *s_identity, *s_battery, *s_battery_fill, *s_battery_text, *s_ch
 static uint32_t s_battery_key = UINT32_MAX;
 static uint32_t s_bubble_until, s_last_refresh;
 static bool s_top_visible, s_bot_visible;
+void ui_hud_capture_hide(bool hidden)
+{
+    static bool was_hidden[4];
+    lv_obj_t *objects[] = {s_layer, s_battery, s_care_button, s_bubble};
+    for (unsigned i = 0; i < 4; i++) {
+        if (hidden) was_hidden[i] = lv_obj_is_hidden(objects[i]);
+        lv_obj_set_hidden(objects[i], hidden || was_hidden[i]);
+    }
+}
 static ui_menu_item_t s_gifts[GIFT_KINDS];
 static char s_gift_detail[GIFT_KINDS][112];
 static char s_gift_name[GIFT_KINDS][32];
@@ -230,9 +239,8 @@ void ui_hud_init(lv_obj_t *parent)
     s_battery = lv_button_create(parent);
     lv_obj_remove_style_all(s_battery);
     lv_obj_set_size(s_battery, 52, 44);
-    lv_obj_align(s_battery, LV_ALIGN_TOP_RIGHT, -4, 4);
-    lv_obj_set_style_bg_color(s_battery, lv_color_hex(COL_PANEL), 0);
-    ui_style_card(s_battery, 0x76b9ad, true);
+    lv_obj_set_pos(s_battery, ui.W - UI_CORNER - 40, 132);
+    lv_obj_set_style_bg_opa(s_battery, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollable(s_battery, false);
     lv_obj_add_event_cb(s_battery, on_battery, LV_EVENT_CLICKED, NULL);
     s_battery_fill = lv_bar_create(s_battery);
@@ -321,6 +329,7 @@ void ui_hud_set_top(bool on)
     lv_obj_set_hidden(s_level, !on);
     lv_obj_set_hidden(s_progress, !on);
     lv_obj_set_hidden(s_resources, !on);
+    lv_obj_set_hidden(s_battery, !on);
 }
 
 void ui_hud_set_bot(bool on)
@@ -356,7 +365,7 @@ bool ui_hud_test(void)
     bool ok = true;
     ui_hud_set_chrome(false);
     ok = !lv_obj_is_hidden(s_care_button) && lv_obj_is_hidden(ui.btn_decor) &&
-        lv_obj_is_hidden(s_care_label) &&
+        lv_obj_is_hidden(s_care_label) && lv_obj_is_hidden(s_battery) &&
         lv_obj_get_style_bg_opa(s_care_button, 0) == LV_OPA_TRANSP &&
         lv_obj_get_child_count(s_care_button) == 1 &&
         lv_obj_get_x(s_care_button) == -1 && lv_obj_get_y(s_care_button) == -1;
@@ -377,8 +386,11 @@ bool ui_hud_test(void)
         row_left >= lv_obj_get_x(s_care_button) + lv_obj_get_width(s_care_button) + 6 &&
         lv_obj_get_style_bg_opa(s_care_button, 0) == LV_OPA_TRANSP &&
         lv_obj_is_hidden(s_care_label);
-    ok = ok && lv_obj_get_x(s_battery) > row_right &&
-        lv_obj_get_y(s_battery) == 4 && !lv_obj_is_hidden(s_battery) &&
+    ok = ok && lv_obj_get_x(s_battery) >= 0 &&
+        lv_obj_get_x(s_battery) + lv_obj_get_width(s_battery) <= ui.W - 20 &&
+        lv_obj_get_y(s_battery) == 132 && !lv_obj_is_hidden(s_battery) &&
+        lv_obj_get_style_bg_opa(s_battery, 0) == LV_OPA_TRANSP &&
+        lv_obj_get_style_border_width(s_battery, 0) == 0 &&
         lv_obj_get_style_bg_opa(s_identity, 0) == LV_OPA_70;
     for (int i = 0; i < NUM_STATS; i++)
         ok = ok && !lv_obj_is_hidden(s_stats[i]) &&

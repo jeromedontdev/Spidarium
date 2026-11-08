@@ -64,5 +64,6 @@ void ui_menu_set_item_icon(uint8_t item, int asset_index);
 void ui_menu_set_item_checkbox(uint8_t item);
 int ui_menu_page(void);
 void ui_menu_set_page(int page);
+void ui_menu_capture_hide(bool hidden);
 typedef uint32_t (*ui_minigame_reward_cb)(uint8_t score);
 void ui_menu_open_minigame(ui_minigame_reward_cb reward);

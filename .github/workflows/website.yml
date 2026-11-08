@@ -30,7 +30,7 @@ jobs:
       - name: Fetch official firmware, never local saves
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || 'v1.1.0' }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || 'v1.1.1' }}
         run: |
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "spidarium-$RELEASE_TAG.zip" --dir "$RUNNER_TEMP"
           python tools/prepare_website.py "$RUNNER_TEMP/spidarium-$RELEASE_TAG.zip"

@@ -1,8 +1,8 @@
 @font-face { font-family:Montserrat; src:url('./fonts/Montserrat-Medium.ttf') format('truetype'); font-weight:500; font-display:swap; }
 #browser-game { max-width: 800px; margin: 0 auto; }
 .game-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; font-size:11px; letter-spacing:.1em; }
-.game-viewport { width:100%; aspect-ratio:1; position:relative; background:#080e18; overflow:hidden; border-radius:24px; border:2px solid #2b4949; box-shadow:0 12px 60px #0007; }
-.game-screen { position:absolute; width:480px; height:480px; transform-origin:top left; overflow:hidden; font-family:Montserrat,Arial,sans-serif; color:#dde7e6; background:#080e18; touch-action:none; outline:none; }
+.game-viewport { width:100%; aspect-ratio:1; position:relative; background:#080e18; overflow:hidden; border-radius:0; border:2px solid #2b4949; box-shadow:0 12px 60px #0007; }
+.game-screen { position:absolute; left:0; top:0; width:480px; height:480px; transform-origin:top left; overflow:hidden; font-family:Montserrat,Arial,sans-serif; color:#dde7e6; background:#080e18; touch-action:none; outline:none; }
 .game-screen #tank { position:absolute; inset:0; width:480px; height:480px; image-rendering:pixelated; border-radius:0; }
 #device-controls { position:absolute; inset:0; pointer-events:none; }
 .game-screen button, .game-screen input, .game-screen textarea { font:inherit; }
@@ -19,7 +19,7 @@
 .d-ear::before { content:""; position:absolute; width:44px; height:44px; left:0; top:0; clip-path:polygon(100% 0,100% 100%,0 100%); background:#20304499; filter:drop-shadow(2px 2px 2px #000); }
 .d-ear::after { content:""; position:absolute; height:1px; width:59px; background:#b0cccd66; top:23px; left:-7px; transform:rotate(45deg); }
 .d-ear > span { position:absolute; left:24px; top:25px; z-index:1; }
-.game-screen .d-battery { left:424px; top:4px; width:52px; height:44px; border:0; background:none; font-size:11px; }
+.game-screen .d-battery { left:400px; top:132px; width:52px; height:44px; border:0; background:none; box-shadow:none; font-size:11px; }
 .d-battery span { width:26px; height:14px; border:2px solid #92afa9; border-radius:3px; position:relative; }
 .d-battery span::after { content:""; position:absolute; right:-5px; top:3px; width:3px; height:5px; background:#92afa9; }
 .d-battery span::before { content:"?"; position:absolute; inset:0; line-height:10px; color:#dde7e6; }
@@ -73,4 +73,4 @@
 #browser-game:fullscreen .game-toolbar { width:min(calc(100vw - 16px),calc(100vh - 76px)); margin-bottom:4px; height:38px; }
 #browser-game:fullscreen .gesture-hint { display:none; }
 #browser-game:fullscreen .game-message { margin:4px; height:18px; }
-@media(max-width:500px) { .game-toolbar { font-size:9px; } .game-toolbar .button { padding:10px 12px; } .game-viewport { border-radius:12px; } }
+@media(max-width:500px) { .game-toolbar { font-size:9px; } .game-toolbar .button { padding:10px 12px; } }

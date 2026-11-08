@@ -33,6 +33,7 @@
 #include "ui_setup.h"
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_app_desc.h"
 #include "esp_lv_adapter.h"
 
@@ -50,6 +51,8 @@ playfield_t  g_play;
 
 static uint32_t s_last_logic;
 static uint32_t s_last_save;
+static bool game_save_screenshot(void);
+static bool s_screenshot_failed;
 
 /* The two game timers, kept so they can be paused.
  *
@@ -444,6 +447,14 @@ static void on_main_pick(uint8_t id)
  * than cluttering the main list. */
 static void on_settings_pick(uint8_t id)
 {
+    if (id == 8) {
+        int page = ui_menu_page();
+        s_screenshot_failed = !game_save_screenshot();
+        if (s_screenshot_failed) ESP_LOGW(TAG, "playfield screenshot not queued");
+        menu_open(MENU_SETTINGS);
+        ui_menu_set_page(page);
+        return;
+    }
     switch (id) {
     case 0:
         menu_open(MENU_WIFI);
@@ -566,7 +577,10 @@ static void menu_open(int which)
         items[5] = (ui_menu_item_t){ "Sound", NULL, true, false, true, 5 };
         items[6] = (ui_menu_item_t){ "Auto Feed", NULL, true, g.auto_feed, false, 6 };
         items[7] = (ui_menu_item_t){ "Auto Hunt", NULL, true, g.auto_hunt, false, 7 };
-        ui_menu_open("Settings", items, 8, on_settings_pick);
+        items[8] = (ui_menu_item_t){ "Save Screenshot", net_busy() ? "Wait for WiFi" : sd_busy() ? "Saving..." :
+            s_screenshot_failed ? "Capture Failed; See Serial Log" : sd_status_text(),
+            !sd_busy() && !net_busy(), false, false, 8 };
+        ui_menu_open("Settings", items, 9, on_settings_pick);
         ui_menu_set_item_checkbox(6);
         ui_menu_set_item_checkbox(7);
         ui_menu_set_destructive(3);
@@ -836,6 +850,74 @@ static int s_ui_value;
 static atomic_bool s_ui_ok;
 static lv_draw_buf_t *s_capture;
 const lv_draw_buf_t *game_screen_capture(void) { return s_capture; }
+
+static lv_draw_buf_t *capture_target(int target)
+{
+    if (net_busy()) {
+        ESP_LOGW(TAG, "screenshot rejected: radio operation in progress");
+        return NULL;
+    }
+    if (target != 2) return lv_snapshot_take(target == 1 ? cspider_obj() : lv_screen_active(),
+        target == 1 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB565);
+    ui_hud_capture_hide(true);
+    ui_menu_capture_hide(true);
+    lv_draw_buf_t *image = lv_snapshot_take(ui.screen, LV_COLOR_FORMAT_RGB565);
+    ui_menu_capture_hide(false);
+    ui_hud_capture_hide(false);
+    return image;
+}
+
+static bool game_save_screenshot(void)
+{
+    if (sd_busy() || save_restore_pending()) {
+        ESP_LOGW(TAG, "screenshot rejected: SD busy or restore awaiting reboot");
+        return false;
+    }
+    lv_draw_buf_t *capture = capture_target(2);
+    if (!capture) { ESP_LOGE(TAG, "playfield snapshot allocation failed"); return false; }
+    sd_screenshot_t image = { .width = capture->header.w, .height = capture->header.h,
+                             .stride = capture->header.stride };
+    image.pixels = heap_caps_malloc(image.stride * image.height, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (image.pixels) memcpy(image.pixels, capture->data, image.stride * image.height);
+    lv_draw_buf_destroy(capture);
+    if (!image.pixels) { ESP_LOGE(TAG, "screenshot PSRAM allocation failed"); return false; }
+    if (!sd_request_screenshot(&image)) {
+        heap_caps_free(image.pixels);
+        return false;
+    }
+    return true;
+}
+
+static bool capture_test(void)
+{
+    if (!ui_menu_visible() || lv_screen_active() != ui.screen) {
+        ESP_LOGE(TAG, "capture test requires an open menu on the tank");
+        return false;
+    }
+    game_state_t state = g;
+    lv_draw_buf_t *before = capture_target(0);
+    lv_draw_buf_t *field = capture_target(2);
+    lv_draw_buf_t *after = capture_target(0);
+    bool restored = before && after && before->header.w == after->header.w &&
+        before->header.h == after->header.h;
+    bool differs = false;
+    bool dimensions = field && field->header.w == ui.W && field->header.h == ui.H;
+    if (restored && dimensions) {
+        for (unsigned y = 0; y < before->header.h; y++) {
+            restored = restored && !memcmp(before->data + y * before->header.stride,
+                after->data + y * after->header.stride, before->header.w * 2);
+            differs = differs || memcmp(before->data + y * before->header.stride,
+                field->data + y * field->header.stride, before->header.w * 2);
+        }
+    }
+    bool unchanged = !memcmp(&state, &g, sizeof g);
+    if (before) lv_draw_buf_destroy(before);
+    if (field) lv_draw_buf_destroy(field);
+    if (after) lv_draw_buf_destroy(after);
+    ESP_LOGI(TAG, "capture test: menu_restored=%d playfield_differs=%d dimensions=%d state_unchanged=%d",
+        restored, differs, dimensions, unchanged);
+    return restored && differs && dimensions && unchanged;
+}
 enum { UI_PREPARING = -1 };
 
 static void test_gifts(void)
@@ -883,7 +965,7 @@ bool game_ui_call(game_ui_action_t action)
 bool game_ui_call_value(game_ui_action_t action, int value)
 {
     if (action <= GAME_UI_NONE || action > GAME_UI_SCREEN_RELEASE ||
-        (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 1)) ||
+        (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
         ((action == GAME_UI_SET_AUTO_FEED || action == GAME_UI_SET_AUTO_HUNT) && (value < 0 || value > 1)) ||
         (action == GAME_UI_BACKGROUND && (value < 0 || value >= THEME_COUNT)) ||
@@ -1029,9 +1111,14 @@ static void ui_service_request(void)
     switch ((game_ui_action_t)req) {
     case GAME_UI_SCREEN_CAPTURE:
         if (s_capture) lv_draw_buf_destroy(s_capture);
-        s_capture = lv_snapshot_take(s_ui_value == 1 ? cspider_obj() : lv_screen_active(),
-            s_ui_value == 1 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB565);
+        s_capture = capture_target(s_ui_value);
         atomic_store(&s_ui_ok, s_capture != NULL);
+        break;
+    case GAME_UI_SCREEN_SD:
+        atomic_store(&s_ui_ok, game_save_screenshot());
+        break;
+    case GAME_UI_SCREEN_TEST:
+        atomic_store(&s_ui_ok, capture_test());
         break;
     case GAME_UI_SCREEN_RELEASE:
         if (s_capture) lv_draw_buf_destroy(s_capture);
@@ -1420,8 +1507,13 @@ void game_tick_render(lv_timer_t *timer)
     uint32_t gen = net_generation();
     if (gen != seen_gen) {
         seen_gen = gen;
-        /* Only rebuild if the player is still looking at the WiFi list. */
+        /* Preserve navigation while refreshing network-dependent actions. */
         if (s_open_menu == MENU_WIFI) menu_open(MENU_WIFI);
+        else if (s_open_menu == MENU_SETTINGS) {
+            int page = ui_menu_page();
+            menu_open(MENU_SETTINGS);
+            ui_menu_set_page(page);
+        }
     }
     static uint32_t seen_sd_gen;
     uint32_t sd_gen = sd_generation();
@@ -1436,6 +1528,11 @@ void game_tick_render(lv_timer_t *timer)
             terrarium_refresh_gift();
         }
         if (s_open_menu == MENU_SD) menu_open(MENU_SD);
+        else if (s_open_menu == MENU_SETTINGS && ui_menu_visible()) {
+            int page = ui_menu_page();
+            menu_open(MENU_SETTINGS);
+            ui_menu_set_page(page);
+        }
     }
 
     if (s_paused || save_restore_pending() || power_sleeping() || net_busy() || ui_menu_visible() || ui_hud_chrome_visible() ||

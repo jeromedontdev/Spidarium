@@ -48,9 +48,16 @@ bool sd_restore_save(void);
 bool sd_backup_exists(void);
 
 /* Nonblocking UI requests; I/O runs on the serialized persistence worker. */
-enum { SD_JOB_MOUNT = 1, SD_JOB_BACKUP, SD_JOB_RESTORE };
+enum { SD_JOB_MOUNT = 1, SD_JOB_BACKUP, SD_JOB_RESTORE, SD_JOB_SCREENSHOT };
+typedef struct {
+    uint8_t *pixels;
+    uint32_t width, height, stride;
+} sd_screenshot_t;
+/* Ownership of PSRAM pixels transfers only when the request succeeds. */
+bool sd_request_screenshot(const sd_screenshot_t *image);
 bool sd_request(uint8_t operation);
 bool sd_busy(void);
 uint32_t sd_generation(void);
 bool sd_take_restored(game_state_t *state);
-bool sd_run_job(uint8_t operation, const game_state_t *snapshot); /* Persistence-worker-only. */
+bool sd_run_job(uint8_t operation, const game_state_t *snapshot,
+                const sd_screenshot_t *image); /* Persistence-worker-only. */

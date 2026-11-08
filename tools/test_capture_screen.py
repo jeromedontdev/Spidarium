@@ -10,11 +10,13 @@ from capture_screen import capture
 class Connection:
     def __init__(self, text):
         self.data = text.encode("ascii")
+        self.command = b""
 
     def reset_input_buffer(self):
         pass
 
     def write(self, data):
+        self.command += data
         return len(data)
 
     def flush(self):
@@ -59,6 +61,19 @@ class CaptureTests(unittest.TestCase):
     def test_part_without_header_rejected(self):
         with self.assertRaisesRegex(ValueError, "offset"):
             capture(Connection("SCREEN PART 0 0 00f8\n"), self.output)
+
+    def test_playfield_command(self):
+        connection = Connection("SCREEN BEGIN 1 1 rgb565le\nSCREEN PART 0 0 00f8\nOK screenshot\n")
+        capture(connection, self.output, playfield=True)
+        self.assertEqual(connection.command, b"screenshot playfield\n")
+        with Image.open(self.output) as image:
+            self.assertEqual(image.getpixel((0, 0)), (255, 0, 0))
+
+    def test_conflicting_targets_rejected_before_serial_write(self):
+        connection = Connection("")
+        with self.assertRaisesRegex(ValueError, "not both"):
+            capture(connection, self.output, spider=True, playfield=True)
+        self.assertEqual(connection.command, b"")
 
 
 if __name__ == "__main__":

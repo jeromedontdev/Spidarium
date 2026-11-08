@@ -7,7 +7,7 @@ import { renderSpider } from './lib/spider-renderer.js';
 const $ = selector => document.querySelector(selector);
 for (const [id, state, emote] of [['hero-spider', 'idle', 'none'], ['sleeping-spider', 'sleep', 'sleepy']]) {
   const ctx = $(`#${id}`).getContext('2d'), frame = ctx.createImageData(96, 96);
-  renderSpider(frame.data, { state, emote, fangColour: 8 });
+  renderSpider(frame.data, { state, emote, fangColour: 7 });
   ctx.putImageData(frame, 0, 0);
 }
 new DeviceGame($('#browser-game'));
