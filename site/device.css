@@ -17,10 +17,10 @@
 .game-screen .d-care img { position:absolute; left:2px; top:8px; width:48px; height:48px; }
 .game-screen .d-care span { position:absolute; right:8px; top:23px; font-size:14px; }
 .game-screen .d-button.destructive { color:#ff7777; }
-.game-screen .d-ear { position:absolute; left:-44px; top:-44px; width:108px; height:108px; padding:0; border:0; background:none; pointer-events:auto; color:#e8efda; font-size:14px; text-align:right; }
+.game-screen .d-ear { position:absolute; left:-30px; top:-30px; width:80px; height:80px; padding:0; border:0; background:none; pointer-events:auto; color:#e8efda; font-size:14px; text-align:right; }
 .d-ear::before { content:""; position:absolute; inset:0; clip-path:polygon(0 0,100% 0,0 100%); background:#20304499; }
 .d-ear::after { content:""; position:absolute; inset:0; clip-path:polygon(100% 0,100% 100%,0 100%); background:#0b1420cc; }
-.d-ear > span { position:absolute; left:54px; top:54px; z-index:1; font-size:13px; line-height:1; }
+.d-ear > span { position:absolute; left:40px; top:40px; z-index:1; font-size:13px; line-height:1; }
 .game-screen .d-battery { left:412px; top:8px; width:52px; height:44px; border:0; background:none; box-shadow:none; font-size:11px; }
 .d-battery span { width:26px; height:14px; border:2px solid #92afa9; border-radius:3px; position:relative; }
 .d-battery span::after { content:""; position:absolute; right:-5px; top:3px; width:3px; height:5px; background:#92afa9; }
