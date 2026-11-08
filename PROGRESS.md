@@ -5294,3 +5294,18 @@ usable. Snapshot visibility changes occur within one callback, so menus do not
 flash away and logic never advances. The battery sits below identity instead of
 the physical rounded corner. Mint changes only promotional artwork. Publish as
 v1.1.1 without moving earlier release tags or changing save/credential formats.
+
+### Publication
+
+Source commit `4077ddea7ec00241427965a37822ac9c8b9fa79a` is tagged `v1.1.1`.
+[Official release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.1)
+contains the verified five-image ZIP, standalone OTA application and LICENSE.
+Public ZIP SHA-256:
+`d7b9ba22f98b27efc8aeb5920267abfe6262d89dc842730f0dd32367b17d8ee7`.
+Unauthenticated download matches the local package and license.
+[Pages run 42442286938](https://github.com/jeromedontdev/Spidarium/actions/runs/42442286938)
+passed. Only the new tag was added to existing environment protections.
+Live UI/CSS, mint PNG, license, all five firmware hashes and all 134 asset PNGs
+match source. Live browser confirms the unboxed battery is initially hidden,
+the viewport is square and promotional alt text says mint. Temporary preview
+server stopped; diagnostic captures and unrelated build output stay uncommitted.
