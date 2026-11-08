@@ -5517,3 +5517,12 @@ curve. The glyph moved to `(54,54)` to stay inside the visible flap. Measured in
 the browser at 1.24x: ear offset `(-44,-44)`, size `108x108`. Commit `f1f41b4`
 is pushed and [Pages run 42491258734](https://github.com/jeromedontdev/Spidarium/actions/runs/42491258734)
 deployed successfully; live `site/device.css` serves the new rule.
+
+### Round 48 follow-up 3 - ear size
+
+108px at `(-44,-44)` read as too large. The ear is now 80px at `(-30,-30)`,
+which keeps the diagonal through the screen origin so the triangle stays flush
+with the squircle corner, at roughly three quarters the size. Glyph at
+`(40,40)`. Commit `b4478f2` is pushed and
+[Pages run 42491434056](https://github.com/jeromedontdev/Spidarium/actions/runs/42491434056)
+deployed successfully; live `site/device.css` serves the new rule.
