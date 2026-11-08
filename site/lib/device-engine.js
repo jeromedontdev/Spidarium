@@ -384,8 +384,8 @@ export function minigameReward(s,kind,score) {
   if(score===undefined)score=kind;
   if(score&&typeof score==='object')score=score.score;
   score=integer(score,0,8);
-  const before=s.xp;care(s,'play');addXP(s,4+score*3);addSilk(s,2+score*2);
-  return {xp:s.xp-before,silk:2+score*2,score};
+  const before=s.xp;care(s,'play');addXP(s,2+score*4);addSilk(s,score*3);
+  return {xp:s.xp-before,silk:score*3,score};
 }
 export function aimAvailable(s){return ![4,5,6,8].includes(s.state)&&!runtime(s).pounce&&preyCount(s)>0&&s.hunger<95;}
 export function aimWindow(s) {

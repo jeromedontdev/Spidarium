@@ -256,8 +256,10 @@ static uint32_t play_reward(uint8_t score)
 {
     uint32_t before = g.xp;
     needs_play();
-    game_add_xp(4 + score * 3);
-    game_add_silk(2 + score * 2);
+    /* Score drives the payout: a clean sweep is worth roughly four times a
+     * blank run, so playing well is visibly better than tapping through. */
+    game_add_xp(2 + score * 4);
+    game_add_silk(score * 3);
     game_save_now();
     return g.xp - before;
 }

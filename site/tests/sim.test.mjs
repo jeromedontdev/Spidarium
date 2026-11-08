@@ -342,11 +342,11 @@ test('20Hz batching and injected random/time produce deterministic JSON-safe pla
   const paused=a._engine.now_ms;a.paused=true;tick(a,30);assert.equal(a._engine.now_ms,paused);
   assert.throws(()=>tick(a,NaN));assert.throws(()=>tick(a,-1));
 });
-test('native minigame callback includes needs_play +4+score*3XP, +2+score*2Silk',()=>{
+test('native minigame callback includes needs_play +2+score*4XP, +score*3Silk',()=>{
   for(let score=0;score<=8;score++){
     const s=state(),result=minigameReward(s,'hunt',score);
-    assert.deepEqual(result,{score,xp:23+score*3,silk:2+score*2});
+    assert.deepEqual(result,{score,xp:21+score*4,silk:score*3});
     assert.equal(s.mood,70);assert.equal(s.energy,75);assert.equal(s.plays,1);
-    const second=minigameReward(s,score);assert.equal(second.xp,8+score*3);
+    const second=minigameReward(s,score);assert.equal(second.xp,6+score*4);
   }
 });

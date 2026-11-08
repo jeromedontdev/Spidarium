@@ -68,7 +68,7 @@ test('level/wild/gift flee modifiers use native radius and burst rhythm',()=>{
 test('browser object-score callback is compatible and preserves setup/theme/colors',()=>{
   const s=neutral();
   const result=minigameReward(s,1,{score:8,rounds:8});
-  assert.deepEqual(result,{xp:47,silk:18,score:8});
+  assert.deepEqual(result,{xp:53,silk:24,score:8});
   s.setup_complete=true;s.theme='cork';s.bodyColour=3;s.eyeColour=4;s.legColour=5;s.fangColour=8;s.sound=false;
   s.autoFeed=true;s.autoHunt=true;
   const loaded=restoreSim(JSON.parse(JSON.stringify(s)),{random:()=>.5});

@@ -311,8 +311,8 @@ static void play_round_start(void)
     s_play_ready = s_play_kind != 2;
     s_play_pending = false;
     s_play_preview = s_play_kind == 1;
-    s_play_duration = s_play_kind == 2 ? 850 - s_play_round * 55 :
-                      2600 - s_play_round * 160;
+    s_play_duration = s_play_kind == 2 ? 620 - s_play_round * 45 :
+                      2000 - s_play_round * 110;
     s_play_feints = 0;
     s_play_length = 1 + s_play_round / 3;
     s_play_step = s_play_preview_step = 0;
@@ -325,6 +325,16 @@ static void play_round_start(void)
         s_play_colors[i] = i;
     }
     s_play_bugs[s_play_answer] = s_play_bug;
+    /* Shuffle the decoy bugs too, so the correct one is not always the only
+     * species that appears once. */
+    for (int i = 3; i > 0; i--) {
+        int j = esp_random() % (i + 1);
+        uint8_t bug = s_play_bugs[i];
+        s_play_bugs[i] = s_play_bugs[j];
+        s_play_bugs[j] = bug;
+    }
+    for (int i = 0; i < 4; i++)
+        if (s_play_bugs[i] == s_play_bug) s_play_answer = (uint8_t)i;
     for (int i = 3; i > 0; i--) {
         int j = esp_random() % (i + 1);
         uint8_t color = s_play_colors[i];
@@ -332,8 +342,10 @@ static void play_round_start(void)
         s_play_colors[j] = color;
     }
     s_play_deadline = lv_tick_get() + (s_play_preview ? 750 :
-        s_play_kind == 2 ? 1100 + esp_random() % 2400 : s_play_duration);
-    s_play_shift_at = lv_tick_get() + 700 - s_play_round * 40;
+        s_play_kind == 2 ? 900 + esp_random() % 1600 : s_play_duration);
+    /* Bugs shuffle far less often than they used to: the old 700 ms ramp made
+     * the target move before it could be read. */
+    s_play_shift_at = lv_tick_get() + 1500 - s_play_round * 60;
     snprintf(text, sizeof text, "Round %u/%u / Score %u\n%s%s",
              s_play_round + 1, PLAY_ROUNDS, s_play_score,
              s_play_kind == 0 ? "Find: " : s_play_kind == 1 ? "Remember: " : "",
@@ -384,7 +396,7 @@ static void play_round_end(bool correct)
     open_panel("Play Complete");
     char text[112];
     snprintf(text, sizeof text, "%u / %u\n+%lu XP / +%u Silk\nMood +%u / Energy -%u",
-             score, PLAY_ROUNDS, (unsigned long)xp, 2 + score * 2,
+             score, PLAY_ROUNDS, (unsigned long)xp, score * 3,
              PLAY_MOOD_GAIN, PLAY_ENERGY_COST);
     lv_obj_t *result = label(s_menu, text, &lv_font_montserrat_18);
     lv_obj_set_style_text_align(result, LV_TEXT_ALIGN_CENTER, 0);
@@ -435,7 +447,7 @@ static void play_tick(lv_timer_t *timer)
             lv_image_set_src(s_play_images[old], a);
             lv_image_set_src(s_play_images[other], b);
         }
-        s_play_shift_at = now + 700 - s_play_round * 40;
+        s_play_shift_at = now + 1500 - s_play_round * 60;
     }
     if ((int32_t)(now - s_play_deadline) < 0) return;
     if (s_play_pending) {
@@ -460,7 +472,7 @@ static void play_tick(lv_timer_t *timer)
     } else if (s_play_kind == 2 && !s_play_ready) {
         if (s_play_feints < (s_play_round >= 2 ? 2 : 1)) {
             s_play_feints++;
-            s_play_deadline = now + 500 + esp_random() % 1100;
+            s_play_deadline = now + 400 + esp_random() % 700;
             lv_label_set_text(s_play_text[0], s_play_feints == 1 ? "HOLD" : "NOT YET");
             lv_obj_set_style_bg_color(s_play_tiles[0],
                                      lv_color_hex(s_play_feints == 1 ? 0x846421 : 0xb94646), 0);
@@ -735,7 +747,7 @@ static uint32_t test_reward(uint8_t score)
 {
     s_test_rewards++;
     s_test_score = score;
-    return 8 + score * 3;
+    return 6 + score * 4;
 }
 
 static bool test_minigames(void)
@@ -748,7 +760,7 @@ static bool test_minigames(void)
         ok = ok && lv_obj_get_width(s_play_tiles[0]) >= 180 &&
              lv_obj_get_height(s_play_tiles[0]) >= 100;
         for (int round = 0; round < PLAY_ROUNDS; round++) {
-            ok = ok && s_play_duration == (kind == 2 ? 850u - round * 55u : 2600u - round * 160u);
+            ok = ok && s_play_duration == (kind == 2 ? 620u - round * 45u : 2000u - round * 110u);
             if (kind == 1) {
                 ok = ok && s_play_length == 1 + round / 3;
                 lv_obj_send_event(s_play_tiles[s_play_answer], LV_EVENT_CLICKED, NULL);

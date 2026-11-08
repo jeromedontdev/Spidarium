@@ -42,9 +42,9 @@ test('all eight native difficulty ramps and pending delays match', () => {
     const game = new Minigame(kind, 0, () => 0);
     for (let round = 0; round < 8; round++) {
       game.round = round; game.startRound(1000);
-      assert.equal(game.duration, kind === 2 ? 850 - round * 55 : 2600 - round * 160);
+      assert.equal(game.duration, kind === 2 ? 620 - round * 45 : 2000 - round * 110);
       assert.equal(game.length, 1 + Math.floor(round / 3));
-      assert.equal(game.shiftAt, 1700 - round * 40);
+      assert.equal(game.shiftAt, 2500 - round * 60);
       game.endRound(false, 1000);
       if (round < 7) assert.equal(game.deadline, 1600);
     }
@@ -76,8 +76,9 @@ test('reaction feints reject early taps, cancel never pays a reward', () => {
 });
 test('moving hunt target keeps the chosen species and enforces deadline', () => {
   const game = new Minigame(0, 0, () => 0);
-  game.tick(700);
-  assert.equal(game.answer, 1);
+  const before = game.answer;
+  game.tick(1500);
+  assert.notEqual(game.answer, before);
   assert.equal(game.bugs[game.answer], game.bug);
   game.answerAt(game.answer, 2600);
   assert.equal(game.score, 0);
