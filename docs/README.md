@@ -11,24 +11,39 @@ design mockups. The screenshot command copies a one-off RGB565 snapshot on
 LVGL and transfers its rows on the serial task; it is not part of rendering.
 Captured pet values can differ because the existing pet continues normal play.
 
-| Care HUD | Menu |
+| Care HUD | Main menu |
 |---|---|
-| ![Care HUD with translucent identity panel and corner battery gauge](screenshots/device-hud.png) | ![Silk-bordered menu cards and disabled previous-page control](screenshots/device-menu.png) |
+| ![Care HUD with translucent identity panel and corner battery gauge](screenshots/device-hud.png) | ![Main menu with Backgrounds, Achievements, Settings and Prey Species](screenshots/device-main-menu.png) |
 
-![Distinct achievement badges](screenshots/device-achievements.png)
+| Settings | Playfield |
+|---|---|
+| ![Settings rows: WiFi, SD Card, About, Battery, Display, Sound, Auto Feed, Save Screenshot, Wipe Spider](screenshots/device-settings.png) | ![Playfield with no menus or HUD](screenshots/device-playfield.png) |
+
+| Battery | Display |
+|---|---|
+| ![Battery status, runtime estimate and automatic power saving](screenshots/device-battery.png) | ![Brightness slider and screen rotation](screenshots/device-display.png) |
+
+| Sound | Menu cards |
+|---|---|
+| ![Volume slider and sound on/off](screenshots/device-sound.png) | ![Silk-bordered menu cards and disabled previous-page control](screenshots/device-menu.png) |
 
 ## Play and progression
 
 - Drag from the spider toward a bug to pounce; held gestures freeze prey/AI.
 - Feed adds a live bug only when fewer than three are present. A disabled Feed
   button means catch one first; Clean also frees the tank.
-- Play chooses an eight-round minigame with ramped difficulty. Completed games
-  and hunts earn XP and Silk. Cancelled games do not pay rewards.
+- Play chooses an eight-round minigame with ramped difficulty. Bug Hunt shuffles
+  the target every 1.5 s (easing to ~1 s) and shuffles the decoy species too;
+  Color Match shows a colour sequence to repeat; Quick Tap is a reaction test
+  with a 620 ms window easing to ~300 ms. Completed games and hunts earn XP and
+  Silk scaled by score (a clean sweep pays roughly four times a blank run).
+  Cancelled games do not pay rewards.
 - Buy one of eighteen habitat gifts after meeting its level and Silk price;
   owned placement is free. The spider visits equipped furniture.
 - Unlock eight prey species, track ten achievements and keep the pet healthy.
-- Auto Feed and Auto Hunt are independent, default-off Settings checkboxes;
-  manual Feed and aim/release remain necessary unless explicitly enabled.
+- Auto Feed is one default-off Settings switch that drives both wild prey and
+  unattended hunting; manual Feed and aim/release remain necessary unless
+  explicitly enabled.
 
 ## Larger browser world
 
@@ -50,9 +65,12 @@ and percentage represent charge, a bolt represents charging, and tapping it
 opens voltage/power/brightness details. Unknown readings are not fabricated.
 
 Backgrounds, Achievements, Settings and Prey Species are on the main menu.
-Sound belongs in Settings alongside WiFi, SD, About, Battery and Display and
-the red, confirmed New Tank action. Only Back goes back. Prev/Next remain visible
-but gray and inert at page boundaries.
+Settings holds WiFi, SD Card, About, Battery, Display, Sound, Auto Feed, Save
+Screenshot and the red, confirmed Wipe Spider action (always last). Battery and
+Display are separate menus: Battery shows status, the runtime estimate and the
+automatic power-saving policy; Display holds the brightness slider and Screen
+Rotation. Only Back goes back. Prev/Next remain visible but gray and inert at
+page boundaries.
 
 ## Maintain and verify
 
