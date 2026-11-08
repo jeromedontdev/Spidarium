@@ -5506,3 +5506,14 @@ deployed successfully. Live `site/device.css` serves `border-radius:44px` on
 `.game-viewport`/`.game-screen` and `left:-6px; top:-6px` on `.d-ear`; live
 `site/lib/device-ui.js` serves the separate `Battery` and `Display` rows and
 submenus.
+
+### Round 48 follow-up 2 - flush corner triangle
+
+The ear was a 64px box at the screen origin, so its diagonal ran from the corner
+inward and left a visible gap against the squircle. It is now a 108px box at
+`(-44,-44)`: the diagonal passes exactly through the screen's `(0,0)`, so the
+triangle is flush with the corner and the rounded shell clips it to the same
+curve. The glyph moved to `(54,54)` to stay inside the visible flap. Measured in
+the browser at 1.24x: ear offset `(-44,-44)`, size `108x108`. Commit `f1f41b4`
+is pushed and [Pages run 42491258734](https://github.com/jeromedontdev/Spidarium/actions/runs/42491258734)
+deployed successfully; live `site/device.css` serves the new rule.
