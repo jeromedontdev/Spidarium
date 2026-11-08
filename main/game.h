@@ -62,6 +62,10 @@ typedef enum {
     PREY_CRICKET,
     PREY_MOTH,
     PREY_BEETLE,
+    PREY_ROACH,
+    PREY_MEALWORM,
+    PREY_FRUITFLY,
+    PREY_WAXWORM,
     PREY_SPECIES_COUNT,
 } prey_species_t;
 
@@ -89,6 +93,9 @@ typedef enum {
     SFX_ALERT,
     SFX_AIM,
     SFX_PERFECT,
+    SFX_RUSTLE,
+    SFX_CHIRP,
+    SFX_DROP,
     SFX_COUNT,
 } sfx_t;
 
@@ -163,11 +170,15 @@ typedef struct {
     uint8_t  pupil_colour;    /* pupil colour index */
     uint8_t  leg_colour;      /* leg colour index */
     uint8_t  fang_colour;     /* fang colour index */
+    uint32_t silk;
+    uint32_t gifts_owned;
+    uint8_t brightness;
 } game_state_t;
 
 /* Live LVGL object handles. */
 typedef struct {
     lv_obj_t *screen;
+    lv_obj_t *creature_layer;
     lv_obj_t *bg_canvas;
     lv_obj_t *title;
     lv_obj_t *subtitle;
@@ -202,6 +213,7 @@ typedef struct {
 extern game_state_t g;
 extern game_ui_t    ui;
 extern playfield_t  g_play;
+void game_add_silk(uint32_t amount);
 
 void game_init(void);
 
@@ -211,12 +223,8 @@ const temperament_t *game_temperament(void);
 void game_tick_logic(lv_timer_t *timer);   /* 20 Hz */
 void game_tick_render(lv_timer_t *timer);  /* 30 Hz */
 
-/* Stop the game while something exclusive runs (WiFi init/scan/connect).
- *
- * The radio allocates internal DMA-capable RAM and runs its own high-priority
- * tasks; doing that concurrently with the logic and render ticks starved the
- * LCD SPI driver and crashed the device. Pausing makes the network operation
- * the only thing happening. Always pair with game_resume(). */
+/* LVGL-task-only gameplay pause; service timer remains alive.
+ * Network workers use esp_lv_adapter_pause/resume, not these functions. */
 void game_pause(void);
 void game_resume(void);
 bool game_paused(void);
@@ -245,11 +253,36 @@ typedef enum {
     GAME_UI_PLAY,
     GAME_UI_SLEEP,
     GAME_UI_MENU,
+    GAME_UI_SAVE,
+    GAME_UI_TEST_GIFTS,
+    GAME_UI_REFRESH,
+    GAME_UI_RENDER,
+    GAME_UI_SPAWN,
+    GAME_UI_STATE,
+    GAME_UI_SET_HUNGER,
+    GAME_UI_SET_MOOD,
+    GAME_UI_SET_ENERGY,
+    GAME_UI_SET_HYGIENE,
+    GAME_UI_SET_BOND,
+    GAME_UI_SET_SICK,
+    GAME_UI_TEST_UI,
+    GAME_UI_BACKGROUND,
+    GAME_UI_TEST_HUNT,
+    GAME_UI_TEST_GAIT,
+    GAME_UI_TEST_PREY,
+    GAME_UI_SD_BACKUP,
+    GAME_UI_WAKE,
+    GAME_UI_SCANLOOP_BEGIN,
+    GAME_UI_SCANLOOP_END,
+    GAME_UI_SCREEN_CAPTURE,
+    GAME_UI_SCREEN_RELEASE,
 } game_ui_action_t;
+const lv_draw_buf_t *game_screen_capture(void);
 
 /* Request a UI action. Blocks until the render tick has performed it, bounded
  * so a stalled render timer cannot hang the caller. */
-void game_ui_call(game_ui_action_t action);
+bool game_ui_call(game_ui_action_t action);
+bool game_ui_call_value(game_ui_action_t action, int value);
 
 /* Open a menu by name from the console, marshalled onto the LVGL task.
  * Returns false if the name is unknown. */
@@ -273,4 +306,4 @@ void game_on_terrarium_release(lv_event_t *e);
 uint32_t game_now(void);
 void game_add_xp(uint32_t amount);
 void game_award(uint32_t achievement);
-void game_save_now(void);
+bool game_save_now(void);

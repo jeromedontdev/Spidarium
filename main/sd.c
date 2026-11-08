@@ -18,6 +18,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <stdatomic.h>
+#include <unistd.h>
+#include <errno.h>
 
 static const char *TAG = "spidarium.sd";
 
@@ -29,8 +32,62 @@ static const char *TAG = "spidarium.sd";
 #define BACKUP_PATH SD_MOUNT_POINT "/spidarium-save.bin"
 
 static bool         s_mounted;
-static const char  *s_status = "not checked";
+static const char  *s_status = "Not Checked";
 static sdmmc_card_t *s_card;
+static atomic_bool s_busy;
+static atomic_uint s_generation;
+static bool s_backup_exists;
+static bool s_restored;
+static game_state_t s_restored_state;
+
+bool sd_busy(void) { return atomic_load(&s_busy); }
+uint32_t sd_generation(void) { return atomic_load(&s_generation); }
+bool sd_take_restored(game_state_t *state)
+{
+    if (!state) { ESP_LOGE(TAG, "restore copy rejected: null state"); return false; }
+    if (sd_busy() || !s_restored) return false;
+    *state = s_restored_state;
+    s_restored = false;
+    return true;
+}
+bool sd_request(uint8_t operation)
+{
+    if (operation < SD_JOB_MOUNT || operation > SD_JOB_RESTORE) {
+        ESP_LOGW(TAG, "SD request rejected: invalid operation");
+        return false;
+    }
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&s_busy, &expected, true)) {
+        ESP_LOGW(TAG, "SD request rejected: busy");
+        return false;
+    }
+    if (!save_request_sd(operation)) {
+        atomic_store(&s_busy, false);
+        return false;
+    }
+    return true;
+}
+bool sd_run_job(uint8_t operation, const game_state_t *snapshot)
+{
+    s_restored = false;
+    bool ok = sd_mount();
+    if (ok && operation == SD_JOB_BACKUP) {
+        ok = snapshot && save_save(snapshot, sizeof *snapshot);
+        if (ok) ok = sd_backup_save();
+        s_status = ok ? "Backup Saved and Verified" : "Backup Failed; See Serial Log";
+    }
+    if (ok && operation == SD_JOB_RESTORE) {
+        ok = sd_restore_save();
+        if (ok) ok = save_load(&s_restored_state, sizeof s_restored_state);
+        s_restored = ok;
+        s_status = ok ? "Save Restored" : "Restore Failed; See Serial Log";
+    }
+    struct stat info;
+    s_backup_exists = s_mounted && stat(BACKUP_PATH, &info) == 0 && info.st_size > 0;
+    atomic_store(&s_busy, false);
+    atomic_fetch_add(&s_generation, 1);
+    return ok;
+}
 
 void sd_init(void)
 {
@@ -41,7 +98,7 @@ void sd_init(void)
      * cannot get -- which showed up as "Draw bitmap failed: ESP_ERR_NO_MEM" and
      * a corrupted first frame. The card is only mounted when the player
      * actually opens the SD menu, so a unit with no card never pays for it. */
-    s_status = "not checked";
+    s_status = "Not Checked";
 }
 
 /* Mount on demand. Called from the SD menu, not from boot. */
@@ -75,24 +132,24 @@ bool sd_mount(void)
         /* Not an error worth shouting about: most units ship without a card. */
         ESP_LOGI(TAG, "no card (%s)", esp_err_to_name(err));
         s_mounted = false;
-        s_status  = "not present";
+        s_status  = "Card Unavailable; Check Card";
         return false;
     }
 
     s_mounted = true;
-    s_status  = "mounted";
+    s_status  = "Card Ready";
     ESP_LOGI(TAG, "card mounted at %s", SD_MOUNT_POINT);
     return true;
 }
 
 bool sd_present(void)
 {
-    return s_mounted;
+    return !sd_busy() && s_mounted;
 }
 
 const char *sd_status_text(void)
 {
-    return s_status;
+    return sd_busy() ? "Working; Please Wait" : s_status;
 }
 
 uint64_t sd_free_bytes(void)
@@ -108,10 +165,7 @@ uint64_t sd_free_bytes(void)
 
 bool sd_backup_exists(void)
 {
-    if (!s_mounted) return false;
-
-    struct stat st;
-    return stat(BACKUP_PATH, &st) == 0 && st.st_size > 0;
+    return !sd_busy() && s_backup_exists;
 }
 
 bool sd_backup_save(void)
@@ -129,20 +183,36 @@ bool sd_backup_save(void)
 
     FILE *f = fopen(BACKUP_PATH, "wb");
     if (!f) {
-        ESP_LOGE(TAG, "backup: cannot open %s", BACKUP_PATH);
+        ESP_LOGE(TAG, "backup: cannot open %s (errno=%d)", BACKUP_PATH, errno);
         return false;
     }
 
     size_t wrote = fwrite(buf, 1, n, f);
-    fclose(f);
-
-    if (wrote != n) {
-        ESP_LOGE(TAG, "backup: short write (%u of %u)",
-                 (unsigned)wrote, (unsigned)n);
+    bool ok = wrote == n;
+    if (fflush(f) != 0) ok = false;
+    if (fsync(fileno(f)) != 0) ok = false;
+    if (fclose(f) != 0) ok = false;
+    if (!ok) {
+        ESP_LOGE(TAG, "backup: write/flush/close failed (%u of %u, errno=%d)",
+                 (unsigned)wrote, (unsigned)n, errno);
         return false;
     }
-
-    ESP_LOGI(TAG, "backup: wrote %u bytes", (unsigned)n);
+    f = fopen(BACKUP_PATH, "rb");
+    if (!f) { ESP_LOGE(TAG, "backup: cannot reopen for verification"); return false; }
+    uint8_t check[64];
+    size_t offset = 0;
+    while (offset < n) {
+        size_t chunk = n - offset < sizeof check ? n - offset : sizeof check;
+        if (fread(check, 1, chunk, f) != chunk || memcmp(check, buf + offset, chunk)) {
+            ok = false;
+            break;
+        }
+        offset += chunk;
+    }
+    if (fgetc(f) != EOF || ferror(f)) ok = false;
+    if (fclose(f) != 0) ok = false;
+    if (!ok) { ESP_LOGE(TAG, "backup: readback mismatch or I/O failure"); return false; }
+    ESP_LOGI(TAG, "backup: wrote and verified %u bytes", (unsigned)n);
     return true;
 }
 

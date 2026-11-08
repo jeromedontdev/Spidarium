@@ -1,8 +1,8 @@
 /*
  * Spidarium — terrarium background.
  *
- * Procedural, drawn once into a canvas: substrate gradient, glass vignette,
- * web, decor shapes and dust motes. Redrawn only when the decor set changes.
+ * Eight authored pixel-art images in a reusable PSRAM RGB565 canvas.
+ * No mandatory props, large web overlay or randomly moving dust.
  */
 #pragma once
 
@@ -18,6 +18,7 @@ void terrarium_refresh_gift(void);
 
 /* Rebuild the background after a theme change. */
 void terrarium_rebuild(void);
+bool terrarium_test(void);
 
 /* Draw a poop blob at playfield coords. */
 void terrarium_add_poop(int32_t x, int32_t y);
@@ -34,5 +35,5 @@ int terrarium_poop_count(void);
 void terrarium_preview_show(int32_t x, int32_t y, int32_t radius);
 void terrarium_preview_hide(void);
 
-/* Animate the dust motes. Called from the render tick. */
+/* Decompose care-related waste. The background does not animate. */
 void terrarium_tick(uint32_t now_ms);

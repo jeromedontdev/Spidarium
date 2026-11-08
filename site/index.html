@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111715">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="description" content="A tiny world for an eight-legged friend. Play Spidarium in your browser, flash an ESP32-S3, and safely manage your pet save.">
+  <title>Spidarium — a little wild, a little wonderful</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#home" aria-label="Spidarium home"><span class="brand-mark">✳</span> SPIDARIUM<span class="brand-tag">a pocket-sized wilderness</span></a>
+    <nav aria-label="Main navigation"><a href="#play">Play</a><a href="#device">Your device</a><a href="#field-notes">Field notes</a><a class="nav-pill" href="#device">Flash firmware <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="home">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot"></span> SMALL WORLD. EIGHT LEGS. BIG PERSONALITY.</p>
+        <h1 id="hero-title">A little wild.<br>A little <em>wonderful.</em></h1>
+        <p class="hero-description">Meet your new pocket companion. A curious jumping spider, a living terrarium, and a whole lot of tiny adventures.</p>
+        <div class="hero-actions"><a class="button primary" href="#play">Meet your spider <span>↓</span></a><a class="text-link" href="#device">Already have a board? <span>↗</span></a></div>
+        <div class="spec-strip"><span><b>480 × 480</b> AMOLED WORLD</span><span><b>ESP32-S3</b> REAL LITTLE HARDWARE</span><span><b>100% local</b> NO ACCOUNT NEEDED</span></div>
+      </div>
+      <div class="hero-art">
+        <div class="orbit-label label-top">PHIDIPPUS · JUMPING SPIDER</div>
+        <div class="hero-vivarium"><div class="hero-moss"></div><canvas class="hero-spider" id="hero-spider" width="96" height="96" aria-label="The actual native canvas spider: charcoal body, eight angular legs, white eyes and fangs"></canvas><img class="hero-bug" src="../assets/prey_moth_walk_0.png" alt=""><span class="hero-spark spark-a">✦</span><span class="hero-spark spark-b">✧</span><div class="hero-name" id="hero-name"><span class="status-dot"></span> YOUR SPIDER’S LITTLE WORLD</div></div>
+        <div class="orbit-label label-bottom">A TINY FRIEND. NOT JUST A SCREEN.</div>
+        <span class="art-note">gentle care. little leaps.</span>
+      </div>
+    </section>
+    <div class="marquee" aria-hidden="true"><span>FEED THE CURIOSITY</span><span>✳</span><span>COLLECT LITTLE TREASURES</span><span>✳</span><span>MAKE A LITTLE WORLD</span><span>✳</span><span>EIGHT LEGS, ONE FRIEND</span></div>
+    <section class="play-section section-shell" id="play" aria-labelledby="play-title">
+      <div class="section-heading"><div><p class="eyebrow">01 / THE POCKET TERRARIUM</p><h2 id="play-title">Meet your <em id="pet-title">Spider.</em></h2></div><p>An approximate browser game with the native canvas anatomy.<br>Its progress stays here. It is not a firmware emulator.</p></div>
+      <div class="play-layout">
+        <div class="device-preview">
+          <div class="device-top"><span><span class="status-dot"></span> BROWSER HABITAT</span><span id="battery-label">78% ◇</span></div>
+          <div class="canvas-shell"><canvas id="tank" width="480" height="480" aria-label="Interactive terrarium. Feed prey, then drag your spider toward a bug to pounce." tabindex="0"></canvas><div class="tank-top"><span id="tank-name">SPIDER</span><span id="tank-level">LV. 1</span></div><div class="tank-bottom" id="tank-state">CURIOUS & CONTENT</div></div>
+          <p class="gesture-hint">↗ Drag your spider toward a bug. Release to pounce.<br><span>Keyboard: arrow keys aim, Space pounces, Enter plays.</span></p>
+        </div>
+        <div class="control-room">
+          <div class="pet-meta"><span class="eyebrow">YOUR LITTLE COMPANION</span><span class="silk-badge">✦ <b id="silk">24</b> Silk</span></div>
+          <div id="stats" class="stats"></div>
+          <div class="care-grid"><button data-care="feed"><span>♧</span>Feed</button><button data-care="clean"><span>✧</span>Clean</button><button data-care="play"><span>↗</span>Play</button><button data-care="sleep" id="sleep-button"><span>☾</span>Sleep</button></div>
+          <div class="sim-tabs" role="tablist" aria-label="Terrarium menu"><button role="tab" aria-selected="true" data-panel="games">Games</button><button role="tab" aria-selected="false" data-panel="gifts">Gifts</button><button role="tab" aria-selected="false" data-panel="journal">Journal</button><button role="tab" aria-selected="false" data-panel="settings">Settings</button></div>
+          <div id="sim-menu" class="sim-menu" role="tabpanel"></div>
+          <p class="sim-message" id="sim-message" role="status">Welcome home. Feed a bug and try a little leap.</p>
+          <div class="progress-caption"><span id="xp-label">Level 1 · 0 / 40 XP</span><span>care is how we grow</span></div><progress id="xp" max="40" value="0" aria-label="Level progress"></progress>
+        </div>
+      </div>
+    </section>
+    <section class="feature-grid section-shell" aria-label="A world worth caring for">
+      <article><span class="feature-number">I.</span><img src="../assets/prey_cricket_walk_0.png" alt="Pixel cricket"><h3>A proper little hunter.</h3><p>Eight prey species. Little leaps, big lunches. Keep the tank lively without overcrowding it.</p></article>
+      <article><span class="feature-number">II.</span><canvas id="sleeping-spider" width="96" height="96" aria-label="Sleeping native canvas spider"></canvas><h3>Care, not a checklist.</h3><p>Food, mood, energy and a clean home. Give your spider room to rest, play and grow.</p></article>
+      <article><span class="feature-number">III.</span><img src="../assets/decor_plant_0.png" alt="Pixel terrarium plant"><h3>Make it their world.</h3><p>Earn Silk, choose a gift, and watch your little friend visit. A tiny ritual, all your own.</p></article>
+    </section>
+    <section class="device-section section-shell" id="device" aria-labelledby="device-title">
+      <div class="section-heading"><div><p class="eyebrow">02 / FROM BROWSER TO BOARD</p><h2 id="device-title">A real home.<br><em>No cloud required.</em></h2></div><p>Waveshare ESP32-S3-Touch-AMOLED-2.16<br>16 MB flash · 8 MB PSRAM · 480 × 480</p></div>
+      <div class="device-notice" id="serial-support" role="status">Checking Web Serial availability…</div>
+      <div class="hardware-tabs" role="tablist" aria-label="Device tools"><button role="tab" aria-selected="true" data-hardware="flash">01 Flash firmware</button><button role="tab" aria-selected="false" data-hardware="save">02 Your pet save</button><button role="tab" aria-selected="false" data-hardware="wifi">03 WiFi setup</button></div>
+      <div id="hardware-flash" class="hardware-panel">
+        <div><p class="eyebrow">GIVE YOUR BOARD A LITTLE LIFE</p><h3>Flash, right here.</h3><p>Use a USB data cable. Choose the board’s USB Serial/JTAG port (303A:1001). If bootloader entry fails, hold BOOT, tap RESET, then release BOOT and retry.</p><p class="small">Only the five release images are written. NVS is not erased. Back up your pet first, especially before changing firmware versions. Release hashes check integrity, not publisher identity—use a trusted copy of this site.</p></div>
+        <div class="tool-card"><p id="release-info">Load the release manifest to inspect the version and images before connecting.</p><button id="check-release" class="button secondary">Check release</button><ul id="release-files" class="file-list"></ul><label class="check"><input type="checkbox" id="flash-consent"> I backed up my pet and accept that a failed update can require recovery.</label><button id="flash" class="button primary" disabled>Choose board & flash <span>↗</span></button><progress id="flash-progress" max="100" value="0" aria-label="Firmware flash progress"></progress><p id="flash-status" role="status">No firmware written.</p></div>
+      </div>
+      <div id="hardware-save" class="hardware-panel" hidden>
+        <div><p class="eyebrow">A BACKUP FOR YOUR EIGHT-LEGGED FRIEND</p><h3>Keep their story safe.</h3><p>Export the complete, versioned raw save from your device. View a backup offline, or restore an exact compatible blob. WiFi passwords are not in pet backups.</p><div class="console-controls"><button id="connect" class="button secondary">Connect console</button><button id="disconnect" class="button secondary" disabled>Disconnect</button></div><p class="small">Opening the port may reset your device. We wait three seconds, then finish the help response before sending commands. Restoring never automatically reboots.</p></div>
+        <div class="tool-card"><div class="button-row"><button id="export-save" class="button primary" disabled>Export backup ↓</button><button id="read-schema" class="button secondary" disabled>Read device schema</button></div><label class="file-label">View a raw .bin or hex .txt backup<input id="save-file" type="file" accept=".bin,.txt,.hex,application/octet-stream,text/plain"></label><p id="save-summary" role="status">No backup loaded. The bundled schema works without a board.</p><div id="save-view" class="save-view"></div><label class="check"><input id="restore-consent" type="checkbox"> Replace my device’s pet progress with this backup. I understand this cannot be undone.</label><div class="button-row"><button id="restore-save" class="button danger" disabled>Restore this save</button><button id="reboot" class="button secondary" disabled>Reboot device…</button></div></div>
+      </div>
+      <div id="hardware-wifi" class="hardware-panel" hidden>
+        <div><p class="eyebrow">LOCAL BY DESIGN</p><h3>A little connection.</h3><p>Configure a 2.4 GHz network over your local USB connection. Your device joins and saves the network only on success. Neither SSID nor password is logged, stored by this site, or sent to a server.</p><p class="small">Connect the console under “Your pet save” first. After WiFi setup the console log is suppressed until you disconnect, protecting asynchronous radio messages too.</p><a class="text-link" href="#device" id="wifi-console-link">Open console tools →</a></div>
+        <form id="wifi-form" class="tool-card" autocomplete="off"><label>Network name (SSID)<input id="wifi-ssid" type="text" required maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false"></label><label>Password<input id="wifi-password" type="password" maxlength="63" autocomplete="off" autocapitalize="none" spellcheck="false"></label><p class="small">SSID: 1–32 UTF-8 bytes. Password: 8–63 bytes, or blank for an open network. No pipes, line breaks, or trailing whitespace.</p><button id="wifi-submit" class="button primary" disabled>Join & save locally <span>↗</span></button><p id="wifi-status" role="status">No credentials entered.</p></form>
+      </div>
+      <details class="console-log"><summary>Device activity <span id="connection-label">Disconnected</span></summary><pre id="serial-log" aria-label="Redacted serial activity"></pre><button id="clear-log" class="text-button">Clear activity</button></details>
+    </section>
+    <section id="field-notes" class="notes-section section-shell">
+      <p class="eyebrow">03 / FIELD NOTES</p><h2>Small things.<br><em>Thoughtfully made.</em></h2>
+      <div class="notes-grid"><article><h3>Made for this little board.</h3><p>The native game runs on ESP-IDF and LVGL, with hand-built pixel artwork and a direct canvas renderer. The browser habitat is a separate JavaScript game using the same art.</p></article><article><h3>Your data stays yours.</h3><p>No analytics, accounts, external fonts or cloud saves. The simulator uses its own local browser storage. Device backups are files you choose to download. Credentials go only through USB.</p></article><article><h3>A secure browser, a simple cable.</h3><p>Device tools need desktop Chrome or Edge on HTTPS or localhost. Safari, Firefox, mobile browsers and ordinary HTTP can still play the simulator, but cannot flash through Web Serial.</p></article></div>
+      <details><summary>Recovery & safe updates</summary><p>Do not unplug during flashing. If interrupted, enter download mode with BOOT + RESET and reflash. The site will not erase all flash, reboot after restore, or invent a successful write. The save viewer validates version, header and payload length; firmware is the final authority on field validity. Keep your original backup.</p></details>
+    </section>
+  </main>
+  <footer><a class="brand" href="#home"><span class="brand-mark">✳</span> SPIDARIUM</a><span>Not a toy world. A little world to care for.</span><a href="./README.md">Read the field manual ↗</a></footer>
+  <dialog id="game-dialog" aria-labelledby="game-title"><button id="close-game" class="dialog-close" aria-label="Close game">×</button><p class="eyebrow">EIGHT LITTLE ROUNDS</p><h2 id="game-title">Silk & seek</h2><p id="game-instruction"></p><div class="game-status"><span id="game-round"></span><span id="game-score"></span></div><div id="game-board" class="game-board"></div><p id="game-feedback" role="status"></p><button id="next-round" class="button primary" hidden>Next round →</button></dialog>
+</body>
+</html>

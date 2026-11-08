@@ -40,3 +40,11 @@ int sprite_prey_index(prey_species_t species, bool fleeing, bool dead, int frame
 
 /* Resolve a UI icon to an asset index, or -1 if unavailable. */
 int sprite_icon_index(const char *name);
+
+/* Resolve one ACH_* bit to its dedicated badge, or -1 for an invalid bit. */
+int sprite_achievement_index(uint32_t bit);
+
+/* Resolve a gift kind or named terrarium prop to its asset index. */
+int sprite_gift_index(uint8_t kind);
+int sprite_decor_index(const char *name);
+int sprite_background_index(uint8_t scene);

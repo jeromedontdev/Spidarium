@@ -26,7 +26,7 @@ typedef struct {
     float movement_efficiency_mult; /* sap */
     float mood_mult;           /* pearl */
     float fear_mult;           /* bone */
-    float prey_flee_penalty;   /* moss: negative = fleeing slowed */
+    float prey_flee_penalty;   /* moss: below 1 = fleeing slowed */
     float catch_success_mult;  /* ruby */
     float prey_detection_range_mult; /* sapphire */
     float all_stats_decay_mult; /* emerald: slows decay of all needs */
@@ -59,3 +59,9 @@ uint32_t gift_unlock_level(uint8_t kind);
 
 /* True if the kind is unlocked at the current level. */
 bool gift_unlocked(uint8_t kind);
+uint32_t gift_cost(uint8_t kind);
+bool gift_owned(uint8_t kind);
+bool gift_can_place(uint8_t kind);
+bool gift_purchase(uint8_t kind);
+const char *gift_interaction(uint8_t kind);
+bool gift_economy_test(void);

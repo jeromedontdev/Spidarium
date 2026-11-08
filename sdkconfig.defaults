@@ -17,26 +17,14 @@ CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
 CONFIG_SPIRAM_RODATA=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_XIP_FROM_PSRAM=y
-CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
 
-# Allocate WiFi and LWIP buffers in PSRAM, not internal RAM.
-#
-# This is the fix for the display corruption when WiFi starts. The radio's
-# RX/TX pools are large and were being taken from internal RAM, which is the
-# same pool the LCD SPI driver needs for its DMA buffers. With WiFi running,
-# every frame logged "Draw bitmap failed: ESP_ERR_NO_MEM" and the screen became
-# unreadable.
-#
-# Pausing the game did not help, because the allocation is permanent -- the
-# internal RAM is gone for as long as WiFi is up, whether or not the game is
-# ticking. Moving the buffers to PSRAM frees that internal RAM permanently.
+# Prefer PSRAM for eligible network buffers; hardware-required buffers remain
+# internal. Pause the display and stop/deinit the radio on every job exit.
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 
-# WiFi needs a large chunk of INTERNAL RAM for its static RX/TX buffers, and the
-# LCD SPI driver needs internal DMA-capable buffers at the same time. With the
-# default reserve the SPI driver lost the race and every frame logged
-# "Draw bitmap failed: ESP_ERR_NO_MEM". Raising the reserve keeps a floor of
-# internal RAM that WiFi cannot take, so the display always has DMA memory.
+# Reserve internal RAM for capability-specific allocations, not ordinary malloc.
+# This does not prevent the radio from consuming internal DMA memory.
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
 
 # WiFi: fewer static RX buffers. The defaults (10 static + 32 dynamic) are sized
@@ -44,7 +32,12 @@ CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
 # static pool is pure internal-RAM cost.
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
-CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=4
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+# LVGL 9.6 does not match the adapter's draw-thread patch hook. The main LVGL
+# task uses the supported stack_in_psram API instead.
+# CONFIG_ESP_LVGL_ADAPTER_LVGL_THREAD_STACK_IN_PSRAM is not set
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 CONFIG_ESP_WIFI_RX_BA_WIN=6
 
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
@@ -53,6 +46,10 @@ CONFIG_ESP32S3_DATA_CACHE_64KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 
 CONFIG_FREERTOS_HZ=1000
+
+# SD save backups use long filenames; allocate workspace on the heap, not stack.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=64
 
 # LVGL 9 (software renderer)
 CONFIG_LV_USE_CLIB_MALLOC=y
@@ -64,6 +61,7 @@ CONFIG_LV_OBJ_STYLE_CACHE=y
 CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT=2
 CONFIG_LV_FONT_MONTSERRAT_12=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_18=y
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_USE_FONT_COMPRESSED=y
 CONFIG_LV_USE_SYSMON=y
@@ -73,7 +71,8 @@ CONFIG_LV_USE_SYSMON=y
 # LV_USE_CANVAS the renderer does not compile; without RGB565A8 the canvas has
 # no alpha channel and the spider sits in an opaque black box.
 CONFIG_LV_USE_CANVAS=y
-CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_USE_SNAPSHOT=y
+CONFIG_LV_COLOR_DEPTH_UNSET=y
 CONFIG_LV_COLOR_DEPTH=16
 CONFIG_LV_DRAW_SW_SUPPORT_RGB565A8=y
 

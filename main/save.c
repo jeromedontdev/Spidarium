@@ -4,12 +4,21 @@
 #include "save.h"
 
 #include "game_config.h"
+#include "net.h"
+#include "sd.h"
 
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/idf_additions.h"
 
 #include <string.h>
+#include <stdatomic.h>
+#include <math.h>
 
 static const char *TAG = "spidarium.save";
 
@@ -24,6 +33,125 @@ typedef struct {
 #define SAVE_MAX_PAYLOAD 1024
 
 static bool s_nvs_ready;
+typedef struct {
+    size_t size;
+    bool erase;
+    bool raw;
+    uint8_t sd_operation;
+    bool background;
+    uint8_t background_id;
+    uint8_t payload[SAVE_MAX_PAYLOAD];
+} save_job_t;
+static QueueHandle_t s_queue;
+static atomic_uint s_pending;
+static atomic_bool s_writing;
+static atomic_bool s_last_ok = true;
+static atomic_bool s_restore_pending;
+static bool background_write(uint8_t id);
+
+static void save_worker(void *arg)
+{
+    (void)arg;
+    save_job_t job;
+    for (;;) {
+        xQueueReceive(s_queue, &job, portMAX_DELAY);
+        /* A queued save must not start during a radio-exclusive operation.
+         * Publish active before checking busy so the net worker can drain us. */
+        for (;;) {
+            atomic_store(&s_writing, true);
+            if (!net_busy()) break;
+            atomic_store(&s_writing, false);
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        game_state_t snapshot;
+        if (job.sd_operation == SD_JOB_BACKUP) memcpy(&snapshot, job.payload, sizeof snapshot);
+        bool ok = job.raw ? save_write_raw(job.payload, job.size) :
+                  job.background ? background_write(job.background_id) :
+                  job.sd_operation ? sd_run_job(job.sd_operation,
+                      job.sd_operation == SD_JOB_BACKUP ? &snapshot : NULL) :
+                  job.erase ? save_erase() : save_save(job.payload, job.size);
+        atomic_store(&s_last_ok, ok);
+        if (job.raw && !ok) atomic_store(&s_restore_pending, false);
+        atomic_store(&s_writing, false);
+        atomic_fetch_sub(&s_pending, 1);
+        if (!ok) ESP_LOGE(TAG, "queued persistence operation failed");
+    }
+}
+
+bool save_init(void)
+{
+    if (!s_queue) {
+        s_queue = xQueueCreate(4, sizeof(save_job_t));
+        if (!s_queue) { ESP_LOGE(TAG, "save queue allocation failed"); return false; }
+        if (xTaskCreateWithCaps(save_worker, "spidarium_save", 4096, NULL, 2, NULL,
+                               MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
+            vQueueDelete(s_queue);
+            s_queue = NULL;
+            ESP_LOGE(TAG, "save worker allocation failed");
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool queue_save(const save_job_t *job)
+{
+    if (!job->raw && atomic_load(&s_restore_pending)) {
+        ESP_LOGW(TAG, "save request rejected: restored save awaiting reboot");
+        return false;
+    }
+    if (!s_queue) {
+        ESP_LOGE(TAG, "save request rejected: worker not initialized");
+        return false;
+    }
+    atomic_fetch_add(&s_pending, 1);
+    if (xQueueSend(s_queue, job, 0) != pdPASS) {
+        atomic_fetch_sub(&s_pending, 1);
+        ESP_LOGE(TAG, "save request rejected: queue full");
+        return false;
+    }
+    return true;
+}
+
+bool save_request(const void *src, size_t size)
+{
+    if (!src || !size || size > SAVE_MAX_PAYLOAD) {
+        ESP_LOGE(TAG, "save request rejected: invalid payload");
+        return false;
+    }
+    save_job_t job = { .size = size };
+    memcpy(job.payload, src, size);
+    return queue_save(&job);
+}
+bool save_request_erase(void) { return queue_save(&(save_job_t){ .erase = true }); }
+bool save_request_sd(uint8_t operation)
+{
+    save_job_t job = { .sd_operation = operation };
+    if (operation == SD_JOB_BACKUP) memcpy(job.payload, &g, sizeof g);
+    return queue_save(&job);
+}
+bool save_request_background(uint8_t id)
+{
+    return queue_save(&(save_job_t){ .background = true, .background_id = id });
+}
+bool save_busy(void) { return atomic_load(&s_pending) != 0; }
+bool save_writing(void) { return atomic_load(&s_writing); }
+bool save_last_ok(void) { return atomic_load(&s_last_ok); }
+bool save_restore_pending(void) { return atomic_load(&s_restore_pending); }
+bool save_request_raw(const void *src, size_t len)
+{
+    if (!save_raw_valid(src, len)) return false;
+    bool expected = false;
+    if (!atomic_compare_exchange_strong(&s_restore_pending, &expected, true)) {
+        ESP_LOGW(TAG, "raw restore rejected: reboot required");
+        return false;
+    }
+    save_job_t job = { .size = len, .raw = true };
+    memcpy(job.payload, src, len);
+    if (queue_save(&job)) return true;
+    atomic_store(&s_restore_pending, false);
+    return false;
+}
 
 static bool ensure_nvs(void)
 {
@@ -44,6 +172,34 @@ static bool ensure_nvs(void)
     }
     s_nvs_ready = true;
     return true;
+}
+
+bool save_background_load(uint8_t *id)
+{
+    if (!id || !ensure_nvs()) return false;
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(SAVE_NAMESPACE, NVS_READONLY, &h);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return false;
+    if (err == ESP_OK) {
+        err = nvs_get_u8(h, "background", id);
+        nvs_close(h);
+    }
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND)
+        ESP_LOGE(TAG, "background load failed: %s", esp_err_to_name(err));
+    return err == ESP_OK;
+}
+
+static bool background_write(uint8_t id)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(SAVE_NAMESPACE, NVS_READWRITE, &h);
+    if (err == ESP_OK) {
+        err = nvs_set_u8(h, "background", id);
+        if (err == ESP_OK) err = nvs_commit(h);
+        nvs_close(h);
+    }
+    if (err != ESP_OK) ESP_LOGE(TAG, "background save failed: %s", esp_err_to_name(err));
+    return err == ESP_OK;
 }
 
 bool save_load(void *dst, size_t size)
@@ -85,18 +241,29 @@ bool save_load(void *dst, size_t size)
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
-    if (hdr.size != size) {
+    bool legacy = size == sizeof(game_state_t) &&
+                  hdr.size == offsetof(game_state_t, silk);
+    if (hdr.size != size && !legacy) {
         ESP_LOGW(TAG, "save size %u != %u; rejecting",
                  (unsigned)hdr.size, (unsigned)size);
         return false;
     }
-    if (len != sizeof(save_header_t) + size) {
+    if (len != sizeof(save_header_t) + hdr.size) {
         ESP_LOGW(TAG, "save blob length %u != %u; rejecting",
                  (unsigned)len, (unsigned)(sizeof(save_header_t) + size));
         return false;
     }
 
-    memcpy(dst, buf + sizeof(save_header_t), size);
+    memset(dst, 0, size);
+    memcpy(dst, buf + sizeof(save_header_t), hdr.size);
+    if (legacy) {
+        game_state_t *state = dst;
+        state->silk = 20;
+        state->brightness = 50;
+        if (state->gift.used && state->gift.kind < GIFT_KINDS)
+            state->gifts_owned = 1u << state->gift.kind;
+        ESP_LOGI(TAG, "migrated pet: starter Silk=20; placed gift retained");
+    }
     ESP_LOGI(TAG, "loaded %u bytes (v%u)", (unsigned)size, (unsigned)hdr.version);
     return true;
 }
@@ -172,9 +339,10 @@ size_t save_read_raw(void *dst, size_t cap)
     return len;
 }
 
-bool save_write_raw(const void *src, size_t len)
+bool save_raw_valid(const void *src, size_t len)
 {
     if (!src || len < sizeof(save_header_t) || len > SAVE_MAX_PAYLOAD) {
+        ESP_LOGW(TAG, "raw save rejected: invalid length");
         return false;
     }
 
@@ -191,20 +359,62 @@ bool save_write_raw(const void *src, size_t len)
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
+    if (hdr.size != sizeof(game_state_t) && hdr.size != offsetof(game_state_t, silk)) {
+        ESP_LOGW(TAG, "raw write: game-state size %u != %u",
+                 (unsigned)hdr.size, (unsigned)sizeof(game_state_t));
+        return false;
+    }
     if (len != sizeof(save_header_t) + hdr.size) {
         ESP_LOGW(TAG, "raw write: length %u != %u",
                  (unsigned)len, (unsigned)(sizeof(save_header_t) + hdr.size));
         return false;
     }
+    game_state_t state = {0};
+    memcpy(&state, (const uint8_t *)src + sizeof hdr, hdr.size);
+    if (state.hunger > 100 || state.mood > 100 || state.energy > 100 ||
+        state.hygiene > 100 || state.stage > STAGE_ADULT || state.sick > 1 ||
+        state.muted > 1 || state.gift.used > 1 ||
+        (state.gift.used && state.gift.kind >= GIFT_KINDS) ||
+        state.bond > 100 || !memchr(state.name, 0, sizeof state.name) ||
+        !isfinite(state.spider_heading) || state.state > SPIDER_SICK ||
+        (hdr.size == sizeof state && state.brightness != 25 &&
+         state.brightness != 50 && state.brightness != 75)) {
+        ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
+        return false;
+    }
+    return true;
+}
 
+bool save_write_raw(const void *src, size_t len)
+{
+    if (!save_raw_valid(src, len)) return false;
     if (!ensure_nvs()) return false;
 
     nvs_handle_t h;
-    if (nvs_open(SAVE_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return false;
+    esp_err_t err = nvs_open(SAVE_NAMESPACE, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "raw restore open failed: %s", esp_err_to_name(err));
+        return false;
+    }
 
-    esp_err_t err = nvs_set_blob(h, SAVE_KEY, src, len);
+    err = nvs_set_blob(h, SAVE_KEY, src, len);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
 
+    if (err != ESP_OK) ESP_LOGE(TAG, "raw restore failed: %s", esp_err_to_name(err));
     return err == ESP_OK;
+}
+
+bool save_format_test(void)
+{
+    uint8_t blob[sizeof(save_header_t) + sizeof(game_state_t)];
+    save_header_t header = { .magic = SAVE_MAGIC, .version = SAVE_VERSION, .size = sizeof g };
+    memcpy(blob, &header, sizeof header);
+    memcpy(blob + sizeof header, &g, sizeof g);
+    bool ok = save_raw_valid(blob, sizeof blob);
+    header.size = offsetof(game_state_t, silk);
+    memcpy(blob, &header, sizeof header);
+    ok = save_raw_valid(blob, sizeof header + header.size) && ok;
+    ok = !save_raw_valid(blob, sizeof header + header.size - 1) && ok;
+    return ok;
 }

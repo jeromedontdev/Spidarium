@@ -1,18 +1,16 @@
 /*
  * Spidarium — species and gift catalogue.
  *
- * Everything that defines a bug or a gift lives in ONE table per kind, so
- * adding a new one is a single entry rather than edits scattered across
- * prey.c, gift.c, ui_status.c and the enum in game.h.
+ * Gameplay values are table-driven; IDs and sprite assets must also match.
  *
  * To add a bug:
- *   1. Add an entry to k_species[] in species.c.
- *   2. That is it. Spawning, unlocking, the status page and the picker all
- *      read the table.
+ *   1. Append an ID in game.h and matching k_species[] entry in species.c.
+ *   2. Generate five pixel-art frames and add their sprites.c mapping.
+ *   3. Update asset validation/inventory and test unlock boundaries.
  *
  * To add a gift:
  *   1. Add an entry to k_gifts[] in species.c.
- *   2. That is it.
+ *   2. Keep gift IDs, generated art, and sprite mappings aligned.
  *
  * The enums in game.h still exist because the save format and the renderer
  * index by them, but the ORDER of the tables must match the enum order.
@@ -61,6 +59,8 @@ extern const species_def_t k_species[PREY_SPECIES_COUNT];
 
 /* Look up a species definition, clamped to a valid index. */
 const species_def_t *species_get(prey_species_t species);
+bool species_unlocked(prey_species_t species);
+prey_species_t species_choose_unlocked(uint32_t roll);
 
 /* Index of the next species the player has NOT unlocked, or -1 if all are
  * unlocked. This is what the status page needs; prey_unlocked_species()

@@ -36,7 +36,7 @@
  * vigil. The accumulators in needs.c carry the fraction between ticks. */
 #define DECAY_PERIOD_MS        3000u
 
-#define HUNGER_PER_MIN          1.1f   /* ~90 min from full */
+#define HUNGER_PER_MIN          3.0f   /* ~33 min from full; ~2 min to hunt again */
 #define HYGIENE_PER_MIN         0.7f   /* ~143 min */
 #define ENERGY_PER_MIN          0.5f   /* ~200 min awake */
 #define ENERGY_REGEN_ASLEEP_PER_MIN 6.0f
@@ -337,8 +337,8 @@
  * TAP_ASSIST_PX still snaps a tap to a nearby bug for the tap-to-pounce path. */
 #define TAP_ASSIST_PX           64
 
-#define XP_PERFECT              12
-#define XP_GOOD                 7
+#define XP_PERFECT              18
+#define XP_GOOD                 10
 #define XP_MISS                 1
 #define PERFECT_HUNGER_BONUS    5
 #define PERFECT_MOOD_BONUS      4
@@ -382,12 +382,10 @@
 #define HUD_TOP_H              130
 #define STAT_BAR_H             8
 
-/* A fingertip is ~40 px on this panel. 36 px still required precision, so the
- * tray is now 44 px tall. */
-#define BTN_H                  44
+/* Persistent labelled care buttons include native 48px pixel-art icons. */
+#define BTN_H                  64
 
-/* The tray is TWO rows of three (see ui_hud.c): 2*BTN_H + gap + corner. Six
- * buttons in one row were only ~61 px wide each, narrower than a fingertip. */
+/* Two rows of three reserve a stable corner-safe action area. */
 #define HUD_BOTTOM_H           (2 * BTN_H + 8 + UI_CORNER)
 
 /* Stat ring diameter. 34 px was hard to read and the numbers inside were

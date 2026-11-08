@@ -1,6 +1,6 @@
 # Serial test console
 
-A command interpreter on the console UART, so the device can be driven and
+A command interpreter on USB Serial/JTAG, so the device can be driven and
 inspected from a script instead of by tapping the screen.
 
 This exists because several bugs in this project were **invisible from the
@@ -21,12 +21,19 @@ python cmd.py COM7 "scanloop 5"
 python cmd.py COM7 "render 500"
 ```
 
-`cmd.py` opens the port, **waits 3 seconds for the boot to finish**, sends the
-command, and reads until it sees a line starting with `OK` or `ERR`.
+`cmd.py` opens the port, waits up to **45 seconds for console readiness**, sends
+the command, and reads until it sees a line starting with `OK` or `ERR`.
 
-The wait matters: opening the serial port toggles DTR/RTS, which resets the
-ESP32-S3. Anything written during the ~2.6 s boot window is lost, so without the
-wait every command looks like a timeout.
+Default command timeout is 30 seconds, or 150 seconds for `render` because
+forced renders run on LVGL service ticks. An optional third argument overrides
+the timeout: `python cmd.py COM7 "render 2000" 150`.
+
+With saved WiFi credentials, boot includes a bounded sync before display startup
+and may exceed three seconds. Readiness is `OK console ready`, or a reply to
+one help probe if opening the port did not reset the board.
+
+The wait matters: opening the port can reset the board. Commands sent before
+the console driver starts can be lost.
 
 Exit code is `0` if the reply ended with `OK`, `1` if it ended with `ERR` or
 timed out. That makes it usable directly from a test script.
@@ -37,9 +44,14 @@ To run the whole suite at once:
 python run_tests.py COM7
 ```
 
-That runs `help`, `mem`, `stat`, `radio`, `render 200`, `scan`, `scanloop 3` and
-`mem`, prints each result, and writes everything to `test_results.txt`. It ends
-with `SUMMARY passed=N failed=N`.
+The suite has 37 cases covering rendering, five scans, radio-off assertions,
+all gift bonuses, audio/care and committed save, marshalled debug actions,
+menu/editor opens, rejection paths and memory readings.
+It asserts `largest >= 51200`, checks fault logs, and writes `test_results.txt`.
+Pass a second argument to choose the output path. Host parser tests:
+`python tools\test_console_client.py`. The soak tool also exits nonzero for
+faults or a silent port. Examples below are illustrative/historical; use
+[the latest progress round](../PROGRESS.md) for current measurements.
 
 ### Which port is the console on?
 
@@ -131,10 +143,17 @@ OK mem
 
 **`largest` is the number that matters**, not `internal`. A fragmented pool can
 report plenty free and still fail one contiguous DMA allocation — which is
-exactly how the display corruption presented. The LCD's draw buffers need one
-large contiguous block, so a falling `largest` is the early warning.
+exactly how the display corruption presented. Framebuffers already use PSRAM;
+SPI transfer staging still needs internal DMA blocks.
 
 See `docs/memory_budget.md` for where every kilobyte goes.
+
+The render benchmark now uses the same gameplay-quiescence request/restore
+handshake as `scanloop`, waiting 100ms for pending SPI transfers before both
+snapshots. One unmeasured priming frame puts both snapshots under the same
+canvas-render workload, then exactly N measured renders run on LVGL.
+This avoids comparing an idle heap against render-time allocations; the 4KB
+drift limit and 51,200-byte largest-block floor are unchanged.
 
 ---
 
@@ -182,9 +201,11 @@ MEM scan-after internal=60003 largest=51200 dma=52739 psram=6754008
 OK scan found 3
 ```
 
-**The before/after memory lines are the point.** They must be identical. If
-`largest` falls after a scan, the radio did not release its buffers — which is
-the bug that corrupted the display.
+**The before/after memory lines are the point.** One-time netif/event setup
+can reduce free bytes. After warm-up, repeated scans should remain stable;
+`largest` must stay above the baseline and loop drift within 4 KB. A falling
+number requires allocation/teardown evidence, not an automatic leak diagnosis.
+The verified firmware holds `largest=63488` with zero scan-loop drift.
 
 A failed scan reports why:
 
@@ -201,6 +222,12 @@ to be indistinguishable and cost several rounds of debugging.
 ### `scanloop N`
 
 Runs `N` scans back to back (1–20) and checks the memory does not drift.
+The benchmark temporarily quiesces gameplay through an LVGL request and waits
+100ms on the console worker for queued LCD transfers to finish before taking
+idle-display snapshots. This avoids comparing a live SPI DMA staging buffer
+with an idle heap and falsely reporting a leak. Menus close; prior pause/Care
+visibility is restored. The live memory floor and 4KB drift limit are unchanged.
+Any failed scan or failure to restore gameplay reports `ERR`, not success.
 
 ```
 MEM loop-before internal=60003 largest=51200 dma=52739 psram=6754008
@@ -227,6 +254,8 @@ cause. A drift check makes it immediate and local.
 ### `render N`
 
 Runs `N` render ticks (1–2000) and checks the memory does not drift.
+One priming frame precedes the measured N ticks. Menus/minigames close and
+their timers are cancelled; prior gameplay pause/Care visibility is restored.
 
 ```
 MEM render-before internal=60003 largest=51200 dma=52739 psram=6754008
@@ -245,7 +274,9 @@ ERR render leaked 12288 bytes over 500 ticks
 allocations.** The canvas renderer originally went through LVGL's draw layer,
 which allocated temporary blending buffers for every primitive every frame. Those
 came out of internal DMA RAM and starved the LCD after about thirty seconds.
-Rendering 500 ticks in a loop makes that leak obvious in two seconds.
+Rendering 500 ticks requests one extra canvas frame per LVGL service tick
+(roughly 17 seconds), not a tight worker-side loop. The client uses a longer
+timeout for this real frame-paced check.
 
 ---
 
@@ -276,6 +307,104 @@ OK prey
 
 Forces a save to NVS. Prints `OK save`.
 
+### `uitest`
+
+Runs diagnostics on the LVGL task: real paged-card/buttonmatrix callbacks,
+last-page selection, blank-panel/backdrop taps that do not navigate, explicit
+Back navigation, no disabled dash, QWERTY/case/symbol/backspace editing, the 63-character
+password limit, Show/Hide password, page-ear Care/Gift overlay, centered status
+bars with non-overlapping labels and correct values, eight unique enclosures
+and exact packed-background pixels scaled to the 4x4 grid. It uses synthetic text, discards the editor,
+and never attempts a connection or logs passwords.
+It also checks that the HUD layer is above creatures and simulates 120 seconds
+of actual hunger decay, restoring fullness and its fractional accumulator.
+It verifies 76px cards, 56px navigation controls, 64px care buttons and red
+destructive text. Minigame checks cover all three eight-round games, correct/
+incorrect and early taps, timeouts, cancellation, timer cleanup, duplicate-tap
+absorption, shifting bug targets, color previews, feints, ramped deadlines and
+exactly-once scoring. Mock rewards preserve the pet/save. Equipped gift pixels
+are checked at 64x64; the sleep-overlay wake and battery policy are also tested.
+
+```
+OK uitest pages=1 keyboard=1 password=1 hud=1 backgrounds=1
+```
+
+This is not proof of physical typing comfort or aesthetic quality.
+
+### `sd backup`, `sd status`
+
+`sd backup` uses the same copied-snapshot persistence job as the UI: mount,
+commit the live snapshot to NVS, write `/sdcard/spidarium-save.bin`, flush/sync/
+close, reopen and compare every byte. Reports `OK SD backup: Backup Saved and
+Verified` only after completion, or `ERR` with logged failure details.
+It writes a real backup; it is not a synthetic non-mutating diagnostic.
+
+`sd status` probes on the worker and reports card/backup presence. Use it after
+reboot to check the backup persisted without restoring or replacing the pet.
+Long filenames require `CONFIG_FATFS_LFN_HEAP=y` in both live/default configs;
+the former short-name-only configuration mounted the card but rejected the
+backup filename. Never format or erase the card as a workaround.
+
+### `sound N`
+
+Queue one synthesized effect, obeying mute. IDs 0..6 are existing gameplay
+effects; 7 is soft foliage rustle, 8 an insect chirp, 9 a water-drop tone.
+Muted output explicitly says `OK sound muted`; unavailable/full queues return
+`ERR`. During gameplay the new ambience is scheduled every 12-25 seconds on
+the existing audio worker, suppressed during active hunting and network work.
+
+### `battery`, `wake`
+
+`battery` reads an atomic PMIC snapshot: percentage, battery voltage, USB/
+charging state and screen-sleep flag. No battery and failed/unknown telemetry
+are explicitly labelled rather than inventing a percentage. Example:
+
+```
+OK battery 100% / 4152 mV / USB Power policy=1 screen_sleep=0
+```
+
+`wake` is marshalled to LVGL, hides the idle overlay and resets touch inactivity.
+It does not feed, shoot, change needs or grant rewards. Use one open serial
+connection for idle testing: opening a new connection can reboot the board
+and restart the idle clock. Expect brightness 15 after 60 seconds and
+brightness 0 / `screen_sleep=1` after 300 seconds, then `wake` restores the
+selected brightness. See [battery policy](BATTERY_MANAGEMENT.md).
+
+### `hunttest`, `gaittest`, `preytest`
+
+`hunttest` creates a temporary event-driven LVGL pointer, so actual hit testing
+and press/move/release handlers run. It checks a far-away tap does not shoot,
+Care opens and tank dismissal does not shoot, held drag freezes spider/prey,
+release jumps toward the bug, catches it, and subpixel movement resumes without
+snapback. The test restores pet fields, prey and existing poop; no synthetic
+XP/save persists. It requires no active pounce and at least one free poop slot.
+It leaves menus/Care closed, ready to hunt.
+
+`gaittest` checks distance-phase equivalence at 20/30/60 Hz, 100 duplicate
+renders and idle/pounce suppression. Eight golden neutral poses verify the
+original angular anatomy; 10,240 animated samples plus resting emotes check
+signed bend direction, original segment lengths and canvas reach. UI and hunting
+tests assert the 44px page-ear hit target at (-1,-1), press inside the fold at
+(29,29) in its inward-facing dark flap, and verify equal left/right stat-row
+margins without overlapping the ear.
+The X is hidden while the HUD is open and visible only for gift cancellation.
+`preytest` verifies all eight level thresholds, random eligibility and rejected
+locked/invalid explicit spawns, restoring the original level/prey count.
+
+Use `python run_tests.py COM7 results.txt --gameplay` for regression coverage
+without the default suite's care/save/spawn/state changes. The default full
+suite deliberately modifies and saves the pet; do not use it casually on a
+user's existing pet.
+
+### `background [0-7]`
+
+Without an argument, reports the active habitat. With an ID, uses the same
+selection path as Menu > Backgrounds and waits off-LVGL for preference saving.
+IDs: 0 cork, 1 moss, 2 leaf litter, 3 sand, 4 fern, 5 orchid, 6 woodland, 7 minimal.
+IDs remain stable, so older stored landscape selections migrate without reset.
+All are available from level 1. The separate NVS preference survives reboot
+without changing or invalidating the pet save; SD pet backups do not include it.
+
 ---
 
 ### `reset`
@@ -300,6 +429,9 @@ calls, so a test here is a test of the real thing.
 ### `feed` / `clean` / `play` / `sleep`
 
 Press the corresponding HUD button.
+`play` opens a random Bug Hunt, Color Match or Quick Tap minigame. Complete
+eight ramped-difficulty rounds to receive 8-32 base XP, 2-18 Silk and the existing care reward; Back cancels
+without those rewards. Starting a game alone does not save or grant XP.
 
 ```
 >>> feed
@@ -392,6 +524,46 @@ OK refresh
 
 ---
 
+## Network provisioning and RTC commands
+
+```powershell
+python cmd.py COM7 "wifi saved"
+python cmd.py COM7 "wifi add My Network|my-passphrase" 40
+python cmd.py COM7 "wifi sync 0" 40
+python cmd.py COM7 "wifi forget 0"
+python cmd.py COM7 "wifi ota https://your-server/firmware.bin" 150
+python cmd.py COM7 "rtc"
+python cmd.py COM7 "rtcset 1794078000"
+python cmd.py COM7 "gifttest"
+```
+
+`wifi add` uses `|` to separate SSID and password, permitting spaces in either.
+Prefer the masked on-device editor: passwords passed to a shell may remain in
+its history. No passwords are printed. Successful association saves credentials
+and attempts RTC sync; failed association does not persist them.
+
+`wifi saved` prints indices and SSIDs, never passwords. Sync/forget takes an
+index 0-2. OTA requires HTTPS and a saved network; missing credentials and
+non-HTTPS URLs return `ERR`, with no radio startup. Successful download is
+verified before selecting the next boot slot; run `reboot` to apply it.
+The firmware version must differ from the running version.
+
+`rtc` reports `RTC utc=<epoch> system=<epoch>` and fails when the oscillator-stop
+flag/calendar is invalid. `rtcset` is manual RTC recovery/testing, UTC epoch
+2000-2099 only. It does not pretend to be an NTP sync; reboot restores the
+system clock from that RTC. Use an accurate current UTC epoch, not the example
+timestamp. Backup-battery retention requires a physical power-off test.
+
+`gifttest` runs on LVGL, prints all eighteen effective bonuses, verifies removal
+returns neutral values, and restores the original game state without saving.
+It checks bonus computation, not every probabilistic catch or pixel appearance.
+
+Additional menu names: `open saved`, `open password`, `open ota`, `open about`,
+`open species`, `open close`. `open password` begins manual SSID/password entry;
+`open close` dismisses modal menus and the gift picker.
+
+Commands exceeding 383 bytes are rejected, never executed as truncated input.
+
 ## Architecture note: the radio and the display
 
 The rule this device follows, taken from Pocket Tank:
@@ -399,19 +571,20 @@ The rule this device follows, taken from Pocket Tank:
 > **The radio is only on during a check, and the tank is not being drawn while
 > it is.**
 
-The radio allocates internal DMA-capable RAM for its RX/TX pools. The LCD SPI
-driver needs the same pool for its draw buffers. They cannot coexist.
+The radio and LCD SPI driver compete for internal DMA-capable memory. The
+network worker temporarily owns that budget; a paused frame does not free or
+defragment existing allocations.
 
 So a scan:
 
 1. Queues a job on the net task. The caller returns immediately.
-2. `net_radio_active()` becomes true, and `game_tick_render()` stops drawing the
-   tank. LVGL still composites, so the menu stays usable.
+2. The worker requests `esp_lv_adapter_pause(3000)` and waits for acknowledgement.
+   LCD composition, touch, and game timers pause; the last frame remains visible.
 3. The net task brings the radio up, scans, copies the results out.
 4. **`esp_wifi_stop()` then `esp_wifi_deinit()`** — on every path, including
    failure. `stop()` alone leaves the driver's pools allocated, so the internal
    RAM stays gone for the rest of the session.
-5. `net_radio_active()` becomes false and the tank resumes.
+5. The adapter resumes, completion is published, and the UI refreshes results.
 The teardown running on the failure paths is not incidental. The early returns
 used to skip it, so every failed scan left the radio up and the next attempt
 stacked another driver on top. A few taps was enough to starve the display
@@ -434,3 +607,80 @@ LVGL task is not.
 
 For anything that allocates, print the memory before and after and fail on
 drift. That pattern is what makes these commands worth having.
+
+---
+
+## Browser save tools (1.0.0)
+
+The [website](https://jeromedontdev.github.io/Spidarium/) uses the same console,
+not a network service. Only one host may own USB at a time; close monitors before
+using Web Serial. Browser credentials go only to the selected USB device.
+
+| Command | Framed response |
+|---|---|
+| `save schema` | `SAVE SCHEMA {JSON}` followed by `OK save schema` |
+| `save export` | `SAVE HEX <hex>` followed by `OK save export` |
+| `save restore <hex>` | `OK save restore; reboot required`, or `ERR ...` |
+
+The schema is generated from compiled `offsetof(game_state_t, ...)` values,
+not guessed browser offsets. It includes the header magic/version, 12-byte
+header size, accepted 120/132-byte payload sizes and 22 named fields with
+little-endian types/offsets. The website bundles a captured schema so saved
+files can also be inspected offline.
+
+Export snapshots on LVGL, waits for the existing internal-stack persistence
+worker on the console task, then reads the raw NVS blob. A new backup is 144
+bytes; legacy raw backups are 132 bytes. It contains no network credentials.
+Background choice and saved WiFi credentials are separate NVS keys, not pet
+backup fields.
+
+Restore rejects malformed hex, wrong magic/version/size, incomplete blobs and
+invalid pet fields before replacing NVS. Valid data is copied into a worker
+job. The tank freezes and later save requests are rejected until explicit
+`reboot`; this prevents automatic saves from overwriting restored progress.
+A failed restore clears the pending guard. Export while pending reads the
+restored bytes directly instead of saving the old live state. Nothing resets
+or erases WiFi. Back up first: a valid restore deliberately replaces the pet.
+
+The single USB-JTAG driver's RX buffer is 512 bytes to hold a complete 301-byte
+restore command. No second driver is installed. Console stack is now 8KB in
+PSRAM; `mem` reports `STACK console_free=N` (minimum-ever free bytes). Real
+valid/invalid restore tests check at least 2KB headroom and byte-exact
+restoration, including after reboot:
+
+```powershell
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\test_web_device.py COM7
+```
+
+This test restores the current snapshot, never substitutes a synthetic pet.
+Invalid restore inputs must return ERR without rebooting or altering NVS.
+
+## Actual screen captures
+
+`screenshot` captures the active 480x480 LVGL screen; `screenshot spider`
+captures the native 96x96 creature canvas with alpha, not the obsolete setup
+sprite sheets. Snapshot creation/release happen only on LVGL; transfer happens
+on the serial task.
+
+The stream starts with `SCREEN BEGIN width height rgb565le` (or `bgra8888`),
+then `SCREEN PART row byte_offset hex` chunks and `OK screenshot`. Chunks contain
+at most 96 raw bytes and the serial task yields 10ms between them. This avoids
+USB buffering loss and idle-task watchdog starvation. During transfer only
+informational verbosity is reduced; WARN/ERROR remain enabled and the prior
+log level is restored afterward. Corrupt/incomplete/interleaved data fails
+explicitly rather than producing a plausible screenshot.
+
+```powershell
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\capture_screen.py COM7 docs\screenshots\device-hud.png --menu chrome
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\capture_screen.py COM7 native-spider.png --menu chrome --spider
+```
+
+The host waits for startup to settle and allows 150 seconds for a full transfer.
+PNG colors are decoded directly from captured pixels; native spider alpha is
+preserved. The snapshot buffer is temporary PSRAM and released after transfer.
+These are explicit diagnostic allocations, not per-frame renderer allocations.
+
+Feed now returns ERR when three live bugs are already present. The button is
+gray/disabled, and both the callback and needs helper guard full-tank calls.
+`preytest` checks repeated rejection without increasing taps, and re-enablement
+when a bug is no longer alive. Existing prey and pet state are restored by tests.

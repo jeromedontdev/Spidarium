@@ -29,6 +29,11 @@ static const uint32_t k_frame_ms[ANIM_COUNT] = {
     [ANIM_MOLT]   = 400,
 };
 
+typedef struct {
+    const char *name;
+    int index;
+} icon_entry_t;
+
 static const bool k_loops[ANIM_COUNT] = {
     [ANIM_WALK]   = true,
     [ANIM_IDLE]   = true,
@@ -70,6 +75,7 @@ static const int k_spider_base[3][ANIM_COUNT] = {
     },
 };
 
+/* Frame indices of all currently supported prey species. */
 static const int k_prey_base[PREY_SPECIES_COUNT][3] = {
     /* walk, flee, dead */
     [PREY_FLY]     = { MMAP_STORAGE_PREY_FLY_WALK_0_QOI,
@@ -81,12 +87,42 @@ static const int k_prey_base[PREY_SPECIES_COUNT][3] = {
     [PREY_MOTH]    = { MMAP_STORAGE_PREY_MOTH_WALK_0_QOI,
                        MMAP_STORAGE_PREY_MOTH_FLEE_0_QOI,
                        MMAP_STORAGE_PREY_MOTH_DEAD_0_QOI },
+    [PREY_BEETLE]  = { MMAP_STORAGE_PREY_BEETLE_WALK_0_QOI,
+                       MMAP_STORAGE_PREY_BEETLE_FLEE_0_QOI,
+                       MMAP_STORAGE_PREY_BEETLE_DEAD_0_QOI },
+    [PREY_ROACH]   = { MMAP_STORAGE_PREY_ROACH_WALK_0_QOI,
+                       MMAP_STORAGE_PREY_ROACH_FLEE_0_QOI,
+                       MMAP_STORAGE_PREY_ROACH_DEAD_0_QOI },
+    [PREY_MEALWORM]= { MMAP_STORAGE_PREY_MEALWORM_WALK_0_QOI,
+                       MMAP_STORAGE_PREY_MEALWORM_FLEE_0_QOI,
+                       MMAP_STORAGE_PREY_MEALWORM_DEAD_0_QOI },
+    [PREY_FRUITFLY]= { MMAP_STORAGE_PREY_FRUITFLY_WALK_0_QOI,
+                       MMAP_STORAGE_PREY_FRUITFLY_FLEE_0_QOI,
+                       MMAP_STORAGE_PREY_FRUITFLY_DEAD_0_QOI },
+    [PREY_WAXWORM] = { MMAP_STORAGE_PREY_WAXWORM_WALK_0_QOI,
+                       MMAP_STORAGE_PREY_WAXWORM_FLEE_0_QOI,
+                       MMAP_STORAGE_PREY_WAXWORM_DEAD_0_QOI },
 };
 
-typedef struct {
-    const char *name;
-    int index;
-} icon_entry_t;
+static const int k_gift_index[GIFT_KINDS] = {
+    MMAP_STORAGE_GIFT_PEBBLE_QOI, MMAP_STORAGE_GIFT_LEAF_QOI,
+    MMAP_STORAGE_GIFT_TWIG_QOI, MMAP_STORAGE_GIFT_ACORN_QOI,
+    MMAP_STORAGE_GIFT_MOSS_QOI, MMAP_STORAGE_GIFT_SAP_QOI,
+    MMAP_STORAGE_GIFT_FLOWER_QOI, MMAP_STORAGE_GIFT_CRYSTAL_QOI,
+    MMAP_STORAGE_GIFT_AMBER_QOI, MMAP_STORAGE_GIFT_CORAL_QOI,
+    MMAP_STORAGE_GIFT_SILK_QOI, MMAP_STORAGE_GIFT_BONE_QOI,
+    MMAP_STORAGE_GIFT_PEARL_QOI, MMAP_STORAGE_GIFT_RUBY_QOI,
+    MMAP_STORAGE_GIFT_SAPPHIRE_QOI, MMAP_STORAGE_GIFT_EMERALD_QOI,
+    MMAP_STORAGE_GIFT_DIAMOND_QOI, MMAP_STORAGE_GIFT_CROWN_QOI,
+};
+
+static const icon_entry_t k_decor[] = {
+    { "rock_0",   MMAP_STORAGE_DECOR_ROCK_0_QOI },
+    { "rock_1",   MMAP_STORAGE_DECOR_ROCK_1_QOI },
+    { "plant_0",  MMAP_STORAGE_DECOR_PLANT_0_QOI },
+    { "plant_1",  MMAP_STORAGE_DECOR_PLANT_1_QOI },
+    { "wood_log", MMAP_STORAGE_DECOR_WOOD_LOG_QOI },
+};
 
 static const icon_entry_t k_icons[] = {
     { "feed",    MMAP_STORAGE_UI_FEED_QOI    },
@@ -170,6 +206,53 @@ int sprite_icon_index(const char *name)
     if (!name) return -1;
     for (size_t i = 0; i < sizeof k_icons / sizeof k_icons[0]; i++) {
         if (strcmp(k_icons[i].name, name) == 0) return k_icons[i].index;
+    }
+    return -1;
+}
+
+int sprite_achievement_index(uint32_t bit)
+{
+    switch (bit) {
+    case ACH_FIRST_MEAL:    return MMAP_STORAGE_ACHIEVEMENT_FIRST_MEAL_QOI;
+    case ACH_FIRST_PET:     return MMAP_STORAGE_ACHIEVEMENT_FIRST_PET_QOI;
+    case ACH_FIRST_CLEAN:   return MMAP_STORAGE_ACHIEVEMENT_FIRST_CLEAN_QOI;
+    case ACH_FIRST_PLAY:    return MMAP_STORAGE_ACHIEVEMENT_FIRST_PLAY_QOI;
+    case ACH_FIRST_HUNT:    return MMAP_STORAGE_ACHIEVEMENT_FIRST_HUNT_QOI;
+    case ACH_FIRST_MOLT:    return MMAP_STORAGE_ACHIEVEMENT_FIRST_MOLT_QOI;
+    case ACH_TEN_MEALS:     return MMAP_STORAGE_ACHIEVEMENT_TEN_MEALS_QOI;
+    case ACH_ADULT:         return MMAP_STORAGE_ACHIEVEMENT_ADULT_QOI;
+    case ACH_LEVEL_5:       return MMAP_STORAGE_ACHIEVEMENT_LEVEL_5_QOI;
+    case ACH_SURVIVED_SICK: return MMAP_STORAGE_ACHIEVEMENT_SURVIVED_SICK_QOI;
+    case ACH_FIRST_PERFECT: return MMAP_STORAGE_ACHIEVEMENT_FIRST_PERFECT_QOI;
+    default:               return -1;
+    }
+}
+
+int sprite_gift_index(uint8_t kind)
+{
+    return kind < GIFT_KINDS ? k_gift_index[kind] : -1;
+}
+
+int sprite_background_index(uint8_t scene)
+{
+    static const int backgrounds[] = {
+        MMAP_STORAGE_BACKGROUND_CORK_0_QOI,
+        MMAP_STORAGE_BACKGROUND_MOSS_0_QOI,
+        MMAP_STORAGE_BACKGROUND_LEAF_LITTER_0_QOI,
+        MMAP_STORAGE_BACKGROUND_SAND_0_QOI,
+        MMAP_STORAGE_BACKGROUND_FERN_0_QOI,
+        MMAP_STORAGE_BACKGROUND_ORCHID_0_QOI,
+        MMAP_STORAGE_BACKGROUND_WOODLAND_0_QOI,
+        MMAP_STORAGE_BACKGROUND_MINIMAL_0_QOI,
+    };
+    return scene < sizeof backgrounds / sizeof backgrounds[0] ? backgrounds[scene] : -1;
+}
+
+int sprite_decor_index(const char *name)
+{
+    if (!name) return -1;
+    for (size_t i = 0; i < sizeof k_decor / sizeof k_decor[0]; i++) {
+        if (strcmp(k_decor[i].name, name) == 0) return k_decor[i].index;
     }
     return -1;
 }

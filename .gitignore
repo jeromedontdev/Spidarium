@@ -2,15 +2,13 @@
 build/
 build-*/
 managed_components/
-dependencies.lock
 
 # sdkconfig is generated from sdkconfig.defaults on first build.
 #
 # It is NOT committed because it is machine-generated and 95 KB of noise. The
-# defaults file is the source of truth -- but note that a setting which exists
-# only in sdkconfig.defaults is NOT applied until sdkconfig is regenerated.
-# When changing a config option, write it to sdkconfig.defaults and delete
-# sdkconfig so the next build picks it up.
+# active sdkconfig controls an existing build; defaults seed a new configuration.
+# A defaults-only change is not applied to an existing sdkconfig.
+# When changing an option, update both files and verify build/config/sdkconfig.h.
 sdkconfig
 sdkconfig.old
 CMakeUserPresets.json
@@ -41,3 +39,27 @@ small_IMG_*.png
 sim/*.exe
 sim/*.o
 sim/*.obj
+release/
+site/firmware/
+site/dist/
+site/node_modules/
+site/node.exe
+site/npm-tool/
+site/.npm-cache/
+site/*.tgz
+
+# Serial captures and local build probes (never publish save/credential logs).
+*_out*.txt
+*_log.txt
+*_build.txt
+*_flash.txt
+*_test.txt
+scan_*.txt
+stab_*.txt
+stability_*.txt
+boot_log.txt
+final_build.txt
+full_flash.txt
+flash_direct*.txt
+flash_test.txt
+flash_out*.txt

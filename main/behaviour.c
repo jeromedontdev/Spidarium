@@ -8,6 +8,7 @@
 #include "gift.h"
 #include "prey.h"
 #include "spider.h"
+#include "ui_hud.h"
 
 #include "esp_log.h"
 
@@ -32,6 +33,9 @@ static uint32_t s_next_pounce_at;   /* cooldown after a miss */
 
 /* Idle micro-behaviour. */
 static uint32_t s_idle_until;
+static uint32_t s_gift_visit_at, s_gift_hold_until, s_gift_visit_end;
+static bool s_gift_visiting;
+bool behaviour_gift_visiting(void) { return s_gift_visiting; }
 
 /* Aim window: the spider crouches and holds while the player decides. */
 static bool     s_aim_active;
@@ -39,17 +43,10 @@ static uint32_t s_aim_start;
 static int32_t  s_aim_tx, s_aim_ty;
 static bool     s_pounce_by_player;
 
-/* SLINGSHOT aiming.
- *
- * The player drags back from the spider and releases, like a catapult: the
- * drag vector is inverted, so pulling down-left fires up-right. The length of
- * the pull sets the power. This is direct manipulation -- there is no timing
- * meter to read and no sweep to catch, which is what made the previous two
- * attempts feel arbitrary.
- *
- * State is just the current drag, in screen coordinates. */
+/* Direct aiming: drag toward the target, then release to jump. */
 static bool    s_dragging;      /* finger is down and pulling */
 static int32_t s_drag_x, s_drag_y;   /* current finger position */
+static int32_t s_drag_start_x, s_drag_start_y;
 static float   s_aim_power;     /* power of the last released shot, 0..1 */
 static float   s_aim_ideal;     /* power that would land exactly on the bug */
 
@@ -357,6 +354,7 @@ void behaviour_set_state(spider_state_t state)
     s_has_target = false;
     s_pouncing = false;
     s_aim_active = false;
+    s_dragging = false;
 
     if (state == SPIDER_IDLE) {
         s_idle_until = lv_tick_get() + 1200u + (uint32_t)(rand() % 1800);
@@ -382,6 +380,10 @@ void behaviour_note_tap(int32_t x, int32_t y)
 
 void behaviour_pounce_at_ex(int32_t x, int32_t y, bool by_player)
 {
+    if (x < g_play.left) x = g_play.left;
+    if (x > g_play.right) x = g_play.right;
+    if (y < g_play.top) y = g_play.top;
+    if (y > g_play.bottom) y = g_play.bottom;
     s_pounce_tx = x;
     s_pounce_ty = y;
     s_pouncing = true;
@@ -414,8 +416,8 @@ void behaviour_pounce_at_ex(int32_t x, int32_t y, bool by_player)
     /* Every pounce costs energy, whether the player aimed it or the safety
      * valve fired. A miss therefore costs something, which is where the
      * tension comes from without any death state. */
-    g.energy = (g.energy > POUNCE_ENERGY_COST)
-             ? (uint8_t)(g.energy - POUNCE_ENERGY_COST) : 0;
+    int energy_cost = (int)ceilf(POUNCE_ENERGY_COST / gift_bonus()->movement_efficiency_mult);
+    g.energy = g.energy > energy_cost ? (uint8_t)(g.energy - energy_cost) : 0;
 
     /* Cooldown: without this the spider re-pounced every ~600 ms from the
      * same spot after a miss, producing an endless "missed" log and never
@@ -457,10 +459,13 @@ bool behaviour_pounce_by_player(void)
  * spider. Refusing the pull outright makes the state legible. */
 bool behaviour_aim_active(void)
 {
+    if (s_pouncing || g.state == SPIDER_POUNCE || g.state == SPIDER_EAT ||
+        g.state == SPIDER_MOLT || g.state == SPIDER_SLEEP) return false;
     if (prey_count() <= 0) return false;
     if (g.hunger >= HUNGER_FULL) return false;
     return true;
 }
+void behaviour_aim_cancel(void) { s_dragging = false; }
 
 /* True when the spider is too full to hunt. The HUD uses this to explain why a
  * pull does nothing. */
@@ -493,6 +498,8 @@ void behaviour_aim_drag_begin(int32_t x, int32_t y)
     s_dragging = true;
     s_drag_x = x;
     s_drag_y = y;
+    s_drag_start_x = x;
+    s_drag_start_y = y;
 }
 
 /* Update the pull. Called on every press-move. */
@@ -503,8 +510,7 @@ void behaviour_aim_drag_move(int32_t x, int32_t y)
     s_drag_y = y;
 }
 
-/* The pull vector, in screen space, from the spider to the finger. The shot
- * fires in the OPPOSITE direction, like a catapult. */
+/* The shot vector runs from the spider to the finger. */
 void behaviour_aim_drag_vec(float *dx, float *dy)
 {
     if (dx) *dx = (float)(s_drag_x - g.spider_x);
@@ -559,9 +565,16 @@ bool behaviour_aim_dragging(void)
 /* Release the pull and fire. Returns true if a shot was taken. */
 bool behaviour_aim_release(void)
 {
-    if (!behaviour_aim_active() || !s_dragging) return false;
+    if (!behaviour_aim_active() || !s_dragging) {
+        s_dragging = false;
+        return false;
+    }
 
     s_dragging = false;
+    float gesture_dx = s_drag_x - s_drag_start_x;
+    float gesture_dy = s_drag_y - s_drag_start_y;
+    if (gesture_dx * gesture_dx + gesture_dy * gesture_dy <
+        AIM_MIN_PULL_PX * AIM_MIN_PULL_PX) return false;
 
     float dx = (float)(s_drag_x - g.spider_x);
     float dy = (float)(s_drag_y - g.spider_y);
@@ -591,6 +604,7 @@ bool behaviour_aim_release(void)
     if (dist > max_px) dist = max_px;
 
     s_aim_power = dist / max_px;
+    s_aim_ideal = behaviour_aim_ideal_power();
 
     int32_t tx = g.spider_x + (int32_t)(ux * dist);
     int32_t ty = g.spider_y + (int32_t)(uy * dist);
@@ -604,7 +618,7 @@ bool behaviour_aim_release(void)
  * quality comes from aim, not from a random roll. */
 float behaviour_aim_quality(void)
 {
-    float err = fabsf(s_aim_power - behaviour_aim_ideal_power());
+    float err = fabsf(s_aim_power - s_aim_ideal);
     if (err <= AIM_POWER_PERFECT) return 1.0f;
     if (err <= AIM_POWER_GOOD)    return 0.6f;
     return 0.0f;
@@ -634,11 +648,21 @@ void behaviour_pos(float *x, float *y)
     if (y) *y = s_py;
 }
 
+void behaviour_sync_position(void)
+{
+    s_px = g.spider_x;
+    s_py = g.spider_y;
+    s_pos_init = true;
+}
+
 /* ------------------------------------------------------------------ */
 /* Tick                                                                */
 /* ------------------------------------------------------------------ */
 void behaviour_tick(uint32_t now_ms, float dt_s)
 {
+    /* Player aiming owns the creature; AI cannot wander/crouch or auto-fire
+     * midway through a held drag. Prey uses the same signal to hold position. */
+    if (s_dragging && behaviour_aim_active()) return;
     /* Sick spiders move at a fraction of normal speed. */
     float speed_scale = g.sick ? 0.45f : 1.0f;
 
@@ -648,6 +672,48 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
 
     /* Temperament: bold spiders are quicker, lazy ones slower. */
     speed_scale *= game_temperament()->speed_mult;
+
+    bool can_visit = g.gift.used && !g.sick && g.energy >= 20 &&
+                     g.hunger >= 60 && (g.state == SPIDER_IDLE || g.state == SPIDER_WANDER);
+    if (!can_visit) {
+        s_gift_visiting = false;
+        s_gift_hold_until = 0;
+        s_gift_visit_at = now_ms + 15000;
+    } else {
+        if (!s_gift_visit_at) s_gift_visit_at = now_ms + 15000;
+        if (!s_gift_visiting && (int32_t)(now_ms - s_gift_visit_at) >= 0) {
+            s_gift_visiting = true;
+            s_gift_visit_end = now_ms + 20000;
+            s_gift_hold_until = 0;
+        }
+        if (s_gift_visiting) {
+            float d = dist_to(g.gift.x, g.gift.y);
+            if (d > 18 && !s_gift_hold_until) {
+                behaviour_set_state(SPIDER_WANDER);
+                float want = atan2f(g.gift.y - s_py, g.gift.x - s_px);
+                float delta = wrap_pi(want - g.spider_heading);
+                g.spider_heading = wrap_pi(g.spider_heading + delta * 0.15f);
+                advance(MOVE_SPEED * speed_scale, dt_s);
+            } else if (!s_gift_hold_until) {
+                behaviour_set_state(SPIDER_IDLE);
+                s_gift_hold_until = now_ms + 3000;
+                ui_hud_bubble(gift_interaction(g.gift.kind), 0x76d6b1, 3000);
+                ESP_LOGI("spidarium.behaviour", "gift interaction: %s",
+                         gift_kind_name(g.gift.kind));
+            } else if ((int32_t)(now_ms - s_gift_hold_until) >= 0) {
+                g.mood = g.mood > 96 ? 100 : g.mood + 4;
+                g.energy = g.energy > 96 ? 100 : g.energy + 4;
+                s_gift_visiting = false;
+                s_gift_visit_at = now_ms + 60000;
+            }
+
+            if ((int32_t)(now_ms - s_gift_visit_end) >= 0) {
+                s_gift_visiting = false;
+                s_gift_visit_at = now_ms + 60000;
+            }
+            return;
+        }
+    }
 
     switch (g.state) {
 
@@ -707,9 +773,15 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
             if (step > d) step = d;
             g.spider_x = (int16_t)((float)g.spider_x + dx / d * step);
             g.spider_y = (int16_t)((float)g.spider_y + dy / d * step);
+            s_px = g.spider_x;
+            s_py = g.spider_y;
+            s_pos_init = true;
         }
 
         if ((int32_t)(now_ms - s_pounce_end) >= 0) {
+            g.spider_x = (int16_t)s_pounce_tx;
+            g.spider_y = (int16_t)s_pounce_ty;
+            behaviour_sync_position();
             s_pouncing = false;
             /* Hand control to prey.c, which resolves the catch. */
             prey_resolve_pounce();
@@ -735,7 +807,8 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
              * still hunts, just badly -- it must be able to feed itself or
              * SICK becomes permanent, which the spec forbids. Its catch
              * chance is already cut in prey.c. */
-            if (d < AIM_RANGE_PX && (int32_t)(now_ms - s_next_pounce_at) >= 0) {
+            if (d < AIM_RANGE_PX * gift_bonus()->prey_detection_range_mult &&
+                (int32_t)(now_ms - s_next_pounce_at) >= 0) {
                 s_aim_tx = px;
                 s_aim_ty = py;
                 s_aim_start = now_ms;
@@ -948,4 +1021,29 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
      * missed. The pounce owns its position until it resolves. */
     if (!s_pouncing) separate_from_gift();
     clamp_to_playfield();
+}
+
+bool behaviour_gift_test(void)
+{
+    game_state_t original = g;
+    float px = s_px, py = s_py;
+    bool pos_init = s_pos_init, visiting = s_gift_visiting;
+    uint32_t visit_at = s_gift_visit_at, hold = s_gift_hold_until;
+    uint32_t end = s_gift_visit_end, idle = s_idle_until;
+    uint32_t now = lv_tick_get();
+    g.gift.used = 1; g.gift.kind = 0;
+    g.gift.x = 240; g.gift.y = 240;
+    g.spider_x = 245; g.spider_y = 240;
+    g.state = SPIDER_IDLE; g.hunger = 80; g.energy = 50; g.mood = 50; g.sick = 0;
+    s_gift_visiting = false; s_gift_visit_at = now; s_gift_hold_until = 0;
+    behaviour_sync_position();
+    behaviour_tick(now, 0.05f);
+    bool ok = s_gift_visiting && s_gift_hold_until == now + 3000;
+    behaviour_tick(now + 3001, 0.05f);
+    ok = ok && !s_gift_visiting && g.energy == 54 && g.mood == 54 &&
+         s_gift_visit_at == now + 3001 + 60000;
+    g = original; s_px = px; s_py = py; s_pos_init = pos_init;
+    s_gift_visiting = visiting; s_gift_visit_at = visit_at; s_gift_hold_until = hold;
+    s_gift_visit_end = end; s_idle_until = idle;
+    return ok;
 }

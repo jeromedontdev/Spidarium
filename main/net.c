@@ -1,690 +1,534 @@
 /*
- * Spidarium — WiFi station connection, implementation.
- *
- * One saved network, station mode only. The point is OTA, so this does the
- * minimum that makes an OTA possible: associate, get an IP, and stay associated.
- *
- * Credentials are stored in their own NVS namespace rather than in the game
- * save. The game save is versioned and disposable -- a factory reset erases it
- * -- and forgetting the WiFi password because the player started a new spider
- * would be obnoxious.
+ * On-demand network worker. A job owns the radio and pauses the display adapter
+ * with acknowledgement; it never calls lv_* or keeps WiFi running afterwards.
  */
 #include "net.h"
+#include "rtc.h"
+#include "meminfo.h"
+#include "save.h"
+#include "power.h"
+#include "audio.h"
 
-#include "game.h"          /* game_pause / game_resume */
-#include "meminfo.h"       /* mem_report_detail */
-
+#include "esp_app_desc.h"
+#include "esp_crt_bundle.h"
 #include "esp_event.h"
 #include "esp_heap_caps.h"
+#include "esp_https_ota.h"
 #include "esp_log.h"
+#include "esp_lv_adapter.h"
 #include "esp_netif.h"
+#include "esp_ota_ops.h"
+#include "esp_sntp.h"
+#include "esp_system.h"
 #include "esp_wifi.h"
 #include "nvs.h"
-#include "nvs_flash.h"
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 
+#include <stdatomic.h>
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
+
+#define SCAN_MAX 12
+#define NET_STACK 12288
+#define NVS_NS "spidarium_net"
 
 static const char *TAG = "spidarium.net";
+typedef struct { char ssid[33]; char pass[65]; } credential_t;
+typedef struct {
+    uint32_t version;
+    uint32_t count;
+    credential_t networks[NET_SAVED_MAX];
+} credentials_t;
+typedef enum { JOB_SCAN, JOB_JOIN, JOB_SYNC, JOB_FORGET, JOB_OTA } job_kind_t;
+typedef struct {
+    job_kind_t kind;
+    int index;
+    credential_t credential;
+    char url[256];
+} job_t;
 
-#define NVS_NS      "spidarium_net"
-#define KEY_SSID    "ssid"
-#define KEY_PASS    "pass"
-
-/* Reconnect backoff. A failed association is usually a wrong password or an
- * out-of-range AP, neither of which fixes itself in 100 ms, so back off to a
- * slow retry rather than hammering the radio. */
-#define RETRY_MIN_MS   5000u
-#define RETRY_MAX_MS   60000u
-
-/* WiFi work runs on its OWN task, not the LVGL task.
- *
- * esp_wifi_init() and esp_wifi_scan_start() both need far more stack than the
- * LVGL adapter's 8 KB thread provides -- calling them from a menu callback
- * overflowed the stack and crashed the device. Everything that touches the
- * radio is therefore marshalled onto this task, which has room for it. */
-#define NET_TASK_STACK  12288
-#define NET_TASK_PRIO   4
-
-static net_state_t s_state = NET_OFF;
-static char        s_ssid[33];
-static char        s_pass[65];
-static char        s_ip[16];
-static char        s_status[48];
-
-static uint32_t    s_retry_at;
-static uint32_t    s_retry_ms = RETRY_MIN_MS;
-static bool        s_started;
-static bool        s_have_ip;
-
-/* True once esp_netif_create_default_wifi_sta() and esp_wifi_init() have run.
- * Those two are NOT idempotent -- a second call leaks and can fail -- so they
- * are guarded separately from s_started, which only tracks esp_wifi_start(). */
-static bool        s_wifi_inited;
-
-/* True once the station netif exists. Tracked separately from s_wifi_inited
- * because esp_netif_create_default_wifi_sta() ASSERTS on a duplicate rather
- * than returning an error, so a partial failure must not be retried blindly. */
-static bool        s_netif_created;
-
-/* Blocking implementations, defined below. */
-static bool net_scan_start_blocking(void);
-static void net_connect_blocking(void);
-static bool radio_up(void);
-static bool radio_start(void);
-
-/* ------------------------------------------------------------------ */
-/* Exclusive execution                                                 */
-/* ------------------------------------------------------------------ */
-/* WiFi runs as the ONLY thing happening, and the UI NEVER waits for it.
- *
- * Two separate constraints, and getting either wrong breaks the device:
- *
- *   1. The radio must not run concurrently with the game. It allocates
- *      internal DMA-capable RAM and runs its own high-priority tasks, which
- *      starved the LCD SPI driver -- "Draw bitmap failed: ESP_ERR_NO_MEM" and a
- *      corrupted screen.
- *
- *   2. The LVGL task must never block. It has an 8 KB stack and drives the
- *      display; blocking it for the length of a WiFi scan hangs the UI and the
- *      task watchdog then reboots the device. That is exactly what the previous
- *      version did -- it waited on a semaphore for up to 15 seconds.
- *
- * So the job is handed to a worker task and the caller returns IMMEDIATELY. The
- * worker pauses the game, does the radio work, and resumes. The UI polls
- * net_busy() to know when it is done.
- *
- * The pause therefore happens on the worker, not the caller. That is the whole
- * fix: game_pause() is cheap and safe from any task, but the WAIT is what must
- * not happen on the LVGL thread. */
 static TaskHandle_t s_task;
+static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
+static atomic_bool s_busy;
+static atomic_bool s_display_ready;
+static atomic_uint s_generation;
+static atomic_bool s_have_ip;
+static atomic_bool s_disconnected;
+static job_t s_job;
+static credentials_t s_credentials;
+static wifi_ap_record_t s_scan[SCAN_MAX];
+static int s_scan_count;
+static char s_error[80];
+static char s_status[96] = "radio off";
+static char s_ip[16];
+static net_state_t s_state;
+static bool s_inited;
+static bool s_started;
+static esp_netif_t *s_netif;
+static esp_event_handler_instance_t s_wifi_handler;
+static esp_event_handler_instance_t s_ip_handler;
 
-typedef enum {
-    NET_JOB_NONE = 0,
-    NET_JOB_SCAN,
-    NET_JOB_CONNECT
-} net_job_t;
-
-static volatile net_job_t s_job;
-static volatile bool      s_busy;
-
-/* Incremented every time a job finishes. The UI remembers the last value it
- * saw and rebuilds the menu when it changes. A counter rather than a busy-edge
- * because rebuilding the menu calls net_init(), and an edge test would then
- * re-trigger itself forever. */
-static volatile uint32_t s_gen;
-
-static void net_task(void *arg)
+static bool fail(const char *operation, esp_err_t error)
 {
-    (void)arg;
+    snprintf(s_error, sizeof s_error, "%s: %s", operation, esp_err_to_name(error));
+    snprintf(s_status, sizeof s_status, "%s", s_error);
+    s_state = NET_FAILED;
+    ESP_LOGE(TAG, "%s", s_error);
+    return false;
+}
 
-    for (;;) {
-        /* Wait to be handed a job. */
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-        net_job_t job = s_job;
-        s_job = NET_JOB_NONE;
-
-        if (job == NET_JOB_NONE) {
-            s_busy = false;
-            continue;
-        }
-
-        /* The game is NOT paused.
-         *
-         * Pausing was the cause of the freeze: game_tick_render() returned
-         * early while paused, so if the radio work blocked, the UI stopped
-         * rendering permanently. A scan does not need the game stopped -- it
-         * needs the radio, and the radio has its own task. */
-        ESP_LOGI(TAG, "job %d start", (int)job);
-        mem_report_detail("wifi before");
-
-        if (job == NET_JOB_SCAN) {
-            net_scan_start_blocking();
-        } else if (job == NET_JOB_CONNECT) {
-            net_connect_blocking();
-        }
-
-        mem_report_detail("wifi after");
-        ESP_LOGI(TAG, "job %d done, stack free %u", (int)job,
-                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
-
-        s_gen++;
-        s_busy = false;
+static void load_credentials(void)
+{
+    s_credentials = (credentials_t){ .version = 1 };
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READONLY, &h);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return;
+    if (err != ESP_OK) { fail("open credentials", err); return; }
+    size_t size = sizeof s_credentials;
+    err = nvs_get_blob(h, "networks", &s_credentials, &size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        /* Migrate the original single-network format without erasing it. */
+        size_t len = sizeof s_credentials.networks[0].ssid;
+        err = nvs_get_str(h, "ssid", s_credentials.networks[0].ssid, &len);
+        if (err == ESP_OK && s_credentials.networks[0].ssid[0]) {
+            len = sizeof s_credentials.networks[0].pass;
+            err = nvs_get_str(h, "pass", s_credentials.networks[0].pass, &len);
+            if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+            if (err == ESP_OK) s_credentials.count = 1;
+        } else if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    } else if (err == ESP_OK &&
+               (size != sizeof s_credentials || s_credentials.version != 1 ||
+                s_credentials.count > NET_SAVED_MAX)) {
+        err = ESP_ERR_INVALID_SIZE;
+    }
+    nvs_close(h);
+    for (unsigned i = 0; err == ESP_OK && i < s_credentials.count; i++) {
+        if (!memchr(s_credentials.networks[i].ssid, 0, 33) ||
+            !memchr(s_credentials.networks[i].pass, 0, 65) ||
+            !s_credentials.networks[i].ssid[0]) err = ESP_ERR_INVALID_ARG;
+    }
+    if (err != ESP_OK) {
+        s_credentials = (credentials_t){ .version = 1 };
+        fail("read credentials", err);
     }
 }
 
-static void ensure_task(void)
+static bool commit_credentials(const credentials_t *credentials)
 {
-    if (s_task) return;
-
-    BaseType_t ok = xTaskCreate(net_task, "spidarium_net", NET_TASK_STACK,
-                                NULL, NET_TASK_PRIO, &s_task);
-    if (ok != pdPASS) {
-        ESP_LOGE(TAG, "net task create failed (stack %d)", NET_TASK_STACK);
-        s_task = NULL;
-        return;
-    }
-    ESP_LOGI(TAG, "net task started");
-}
-
-/* Queue a job and return immediately. Returns false if one is already running,
- * so a double-tap on "scan" cannot queue two. */
-static bool queue_job(net_job_t job)
-{
-    ensure_task();
-
-    if (!s_task) {
-        ESP_LOGE(TAG, "queue_job(%d): no task", (int)job);
-        return false;
-    }
-
-    if (s_busy) {
-        ESP_LOGW(TAG, "queue_job(%d): busy, ignored", (int)job);
-        return false;
-    }
-
-    ESP_LOGI(TAG, "queue_job(%d)", (int)job);
-    s_busy = true;
-    s_job  = job;
-    xTaskNotifyGive(s_task);
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return fail("open credentials", err);
+    err = nvs_set_blob(h, "networks", credentials, sizeof *credentials);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    if (err != ESP_OK) return fail("save credentials", err);
+    s_credentials = *credentials;
     return true;
 }
 
-bool net_busy(void)
+static void on_wifi(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    return s_busy;
-}
-
-/* True while a radio job is running.
- *
- * The tank must not render while this is true. The radio takes internal
- * DMA-capable RAM that the LCD driver needs for its draw buffers, so drawing
- * the tank at the same time is what corrupted the screen. Pocket Tank's rule is
- * the same one: the tank pauses, turns its radio on, does the check, and the
- * radio goes off again.
- *
- * Deliberately keyed on s_busy and NOT on s_started/s_wifi_inited: those stay
- * true for as long as the driver exists, and freezing the tank on them would
- * leave it frozen forever after a connect. */
-bool net_radio_active(void)
-{
-    return s_busy;
-}
-
-uint32_t net_generation(void)
-{
-    return s_gen;
-}
-
-
-
-/* ------------------------------------------------------------------ */
-/* Credentials                                                         */
-/* ------------------------------------------------------------------ */
-/* Copy `src` into a fixed-size wifi_config field.
- *
- * strncpy() into these fields trips -Werror=stringop-truncation, because the
- * compiler can see that the destination may not be NUL-terminated. The fields
- * are fixed-size arrays that the driver treats as NUL-terminated, so the copy
- * is bounded to one less than the field and the terminator is written
- * explicitly. */
-static void copy_field(uint8_t *dst, size_t cap, const char *src)
-{
-    size_t n = strlen(src);
-    if (n > cap - 1) n = cap - 1;
-    memcpy(dst, src, n);
-    dst[n] = '\0';
-}
-
-static void creds_load(void)
-{
-    s_ssid[0] = '\0';
-    s_pass[0] = '\0';
-
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return;
-
-    size_t len = sizeof s_ssid;
-    if (nvs_get_str(h, KEY_SSID, s_ssid, &len) != ESP_OK) s_ssid[0] = '\0';
-
-    len = sizeof s_pass;
-    if (nvs_get_str(h, KEY_PASS, s_pass, &len) != ESP_OK) s_pass[0] = '\0';
-
-    nvs_close(h);
-}
-
-static void creds_save(void)
-{
-    nvs_handle_t h;
-    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
-
-    if (s_ssid[0]) {
-        nvs_set_str(h, KEY_SSID, s_ssid);
-        nvs_set_str(h, KEY_PASS, s_pass);
-    } else {
-        nvs_erase_key(h, KEY_SSID);
-        nvs_erase_key(h, KEY_PASS);
-    }
-    nvs_commit(h);
-    nvs_close(h);
-}
-
-/* ------------------------------------------------------------------ */
-/* Status text                                                         */
-/* ------------------------------------------------------------------ */
-static void status_update(void)
-{
-    switch (s_state) {
-    case NET_CONNECTED:
-        snprintf(s_status, sizeof s_status, "connected %s", s_ip);
-        break;
-    case NET_CONNECTING:
-        snprintf(s_status, sizeof s_status, "connecting...");
-        break;
-    case NET_FAILED:
-        snprintf(s_status, sizeof s_status, "failed");
-        break;
-    case NET_OFF:
-    default:
-        snprintf(s_status, sizeof s_status, "off");
-        break;
+    (void)arg; (void)base; (void)data;
+    if (id == WIFI_EVENT_STA_DISCONNECTED) {
+        atomic_store(&s_have_ip, false);
+        atomic_store(&s_disconnected, true);
     }
 }
 
-/* ------------------------------------------------------------------ */
-/* Events                                                              */
-/* ------------------------------------------------------------------ */
-static void on_wifi_event(void *arg, esp_event_base_t base,
-                          int32_t id, void *data)
+static void on_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    (void)arg;
-    (void)base;
-
-    if (id == WIFI_EVENT_STA_START) {
-        /* Only associate if there is something to associate with.
-         *
-         * Scanning starts the radio with no credentials. Connecting then fails
-         * immediately, which raises STA_DISCONNECTED and kicks off the retry
-         * backoff -- and that churn is what made the first scan fail. */
-        if (s_ssid[0]) {
-            esp_wifi_connect();
-            s_state = NET_CONNECTING;
-            status_update();
-        }
-    } else if (id == WIFI_EVENT_STA_DISCONNECTED) {
-        s_have_ip = false;
-        s_ip[0] = '\0';
-        s_state = NET_FAILED;
-        status_update();
-
-        /* Back off, then retry. net_tick() drives the actual retry so this
-         * handler never blocks the event task. */
-        s_retry_at = xTaskGetTickCount() * portTICK_PERIOD_MS + s_retry_ms;
-        s_retry_ms *= 2u;
-        if (s_retry_ms > RETRY_MAX_MS) s_retry_ms = RETRY_MAX_MS;
-        ESP_LOGW(TAG, "disconnected, retry in %lu ms",
-                 (unsigned long)(s_retry_ms / 2u));
+    (void)arg; (void)base;
+    if (id == IP_EVENT_STA_GOT_IP) {
+        const ip_event_got_ip_t *event = data;
+        snprintf(s_ip, sizeof s_ip, IPSTR, IP2STR(&event->ip_info.ip));
+        atomic_store(&s_have_ip, true);
     }
 }
 
-static void on_ip_event(void *arg, esp_event_base_t base,
-                        int32_t id, void *data)
-{
-    (void)arg;
-    (void)base;
-
-    if (id != IP_EVENT_STA_GOT_IP) return;
-
-    ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
-    snprintf(s_ip, sizeof s_ip, IPSTR, IP2STR(&ev->ip_info.ip));
-
-    s_have_ip  = true;
-    s_state    = NET_CONNECTED;
-    s_retry_ms = RETRY_MIN_MS;
-    status_update();
-
-    ESP_LOGI(TAG, "connected, ip %s", s_ip);
-}
-
-/* ------------------------------------------------------------------ */
-/* Public API                                                          */
-/* ------------------------------------------------------------------ */
-/* Bring the radio up in station mode.
- *
- * Split into two steps because they have different idempotency rules:
- *
- *   radio_up()    -- netif, event loop, esp_wifi_init(). NOT idempotent, so it
- *                    runs exactly once and is guarded by s_wifi_inited.
- *   radio_start() -- esp_wifi_start(). Safe to call again after a stop, and
- *                    guarded by s_started.
- *
- * The previous version had this logic duplicated in net_init_blocking() and
- * ensure_radio(), and the two disagreed: one required credentials, the other
- * did not. Scanning therefore took a different path from connecting, and the
- * first scan failed because the radio was started without the event handlers
- * being in a consistent state. */
 static bool radio_up(void)
 {
-    if (s_wifi_inited) return true;
-
     esp_err_t err = esp_netif_init();
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "netif init failed: %s", esp_err_to_name(err));
-        return false;
-    }
-
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return fail("netif", err);
     err = esp_event_loop_create_default();
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        ESP_LOGE(TAG, "event loop failed: %s", esp_err_to_name(err));
-        return false;
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return fail("event loop", err);
+    if (!s_netif) {
+        s_netif = esp_netif_create_default_wifi_sta();
+        if (!s_netif) return fail("station netif", ESP_ERR_NO_MEM);
     }
-
-    /* Create the netif EXACTLY ONCE.
-     *
-     * esp_netif_create_default_wifi_sta() ASSERTS if a station netif already
-     * exists -- it does not return an error. That made a failed esp_wifi_init()
-     * fatal on the retry: the netif had been created, the init had not, so
-     * s_wifi_inited stayed false and the next attempt created the netif a
-     * second time and aborted the device.
-     *
-     * Guarded separately so a partial failure can be retried safely. */
-    if (!s_netif_created) {
-        if (!esp_netif_create_default_wifi_sta()) {
-            ESP_LOGE(TAG, "netif create failed");
-            return false;
-        }
-        s_netif_created = true;
+    if (!s_wifi_handler) {
+        err = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                                 on_wifi, NULL, &s_wifi_handler);
+        if (err != ESP_OK) return fail("WiFi event handler", err);
     }
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    err = esp_wifi_init(&cfg);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "wifi init failed: %s", esp_err_to_name(err));
-
-        /* A failed init leaves the driver half-constructed. Deinit it so the
-         * next attempt starts clean -- otherwise the retry hits a duplicate
-         * netif key and asserts, which is a reboot rather than a failed scan. */
-        esp_wifi_deinit();
-        return false;
+    if (!s_ip_handler) {
+        err = esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                                 on_ip, NULL, &s_ip_handler);
+        if (err != ESP_OK) return fail("IP event handler", err);
     }
-
-    esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                        on_wifi_event, NULL, NULL);
-    esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                        on_ip_event, NULL, NULL);
-
-    s_wifi_inited = true;
-    return true;
-}
-
-static bool radio_start(void)
-{
-    if (s_started) return true;
-    if (!radio_up()) return false;
-
-    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_STA);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "set_mode failed: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    err = esp_wifi_start();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "wifi_start failed: %s (largest internal %u)",
-                 esp_err_to_name(err),
-                 (unsigned)heap_caps_get_largest_free_block(
-                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-        return false;
-    }
-
+    wifi_init_config_t config = WIFI_INIT_CONFIG_DEFAULT();
+    err = esp_wifi_init(&config);
+    if (err != ESP_OK) return fail("WiFi init", err);
+    s_inited = true;
+    err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    if (err == ESP_OK) err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err == ESP_OK) err = esp_wifi_start();
+    if (err != ESP_OK) return fail("WiFi start", err);
     s_started = true;
     return true;
 }
 
-/* Apply the stored credentials to the radio. Runs on the net task only. */
-static void net_connect_blocking(void)
+static bool radio_down(void)
 {
-    if (!s_ssid[0]) {
-        /* Clearing credentials stops the radio rather than leaving it hunting
-         * for a network that will never be found. */
-        if (s_started) esp_wifi_stop();
-        s_started = false;
-        s_state   = NET_OFF;
-        s_ip[0]   = '\0';
-        status_update();
-        return;
+    bool ok = true;
+    if (s_started) {
+        esp_err_t err = esp_wifi_stop();
+        if (err != ESP_OK) ok = fail("WiFi stop", err);
+        else s_started = false;
     }
-
-    if (!radio_start()) {
-        s_state = NET_FAILED;
-        status_update();
-        return;
+    if (s_inited && !s_started) {
+        esp_err_t err = esp_wifi_deinit();
+        if (err != ESP_OK) ok = fail("WiFi deinit", err);
+        else s_inited = false;
     }
+    atomic_store(&s_have_ip, false);
+    return ok;
+}
 
-    wifi_config_t wc;
-    memset(&wc, 0, sizeof wc);
-    copy_field(wc.sta.ssid, sizeof wc.sta.ssid, s_ssid);
-    copy_field(wc.sta.password, sizeof wc.sta.password, s_pass);
-    wc.sta.threshold.authmode = WIFI_AUTH_OPEN;
+static bool scan(void)
+{
+    s_scan_count = 0;
+    if (!radio_up()) return false;
+    wifi_scan_config_t config = { .show_hidden = false };
+    esp_err_t err = esp_wifi_scan_start(&config, true);
+    if (err != ESP_OK) return fail("scan", err);
+    uint16_t count = SCAN_MAX;
+    err = esp_wifi_scan_get_ap_records(&count, s_scan);
+    if (err != ESP_OK) return fail("scan results", err);
+    /* Discard any unreturned driver records before teardown. */
+    err = esp_wifi_clear_ap_list();
+    if (err != ESP_OK) return fail("clear scan results", err);
+    s_scan_count = count;
+    snprintf(s_status, sizeof s_status, "%u networks; radio off", count);
+    ESP_LOGI(TAG, "scan found %u networks", count);
+    return true;
+}
 
-    esp_wifi_set_config(WIFI_IF_STA, &wc);
-    esp_wifi_disconnect();
-    esp_wifi_connect();
-
+static bool join(const credential_t *credential)
+{
+    if (!radio_up()) return false;
+    wifi_config_t config = {0};
+    memcpy(config.sta.ssid, credential->ssid, strlen(credential->ssid));
+    memcpy(config.sta.password, credential->pass, strlen(credential->pass));
+    config.sta.pmf_cfg.capable = true;
     s_state = NET_CONNECTING;
-    status_update();
-}
-
-void net_set_credentials(const char *ssid, const char *pass)
-{
-    if (!ssid) ssid = "";
-    if (!pass) pass = "";
-
-    strncpy(s_ssid, ssid, sizeof s_ssid - 1);
-    s_ssid[sizeof s_ssid - 1] = '\0';
-    strncpy(s_pass, pass, sizeof s_pass - 1);
-    s_pass[sizeof s_pass - 1] = '\0';
-
-    creds_save();
-
-    /* Queue the radio work. This function is called from the LVGL thread, so it
-     * must not touch esp_wifi_* directly -- doing so was the same class of bug
-     * as calling lv_timer_pause() from the worker. */
-    queue_job(NET_JOB_CONNECT);
-}
-
-bool net_has_credentials(void)
-{
-    return s_ssid[0] != '\0';
-}
-
-const char *net_ssid(void)
-{
-    return s_ssid;
-}
-
-net_state_t net_state(void)
-{
-    return s_state;
-}
-
-const char *net_status_text(void)
-{
-    return s_status;
-}
-
-const char *net_ip(void)
-{
-    return s_ip;
-}
-
-void net_tick(uint32_t now_ms)
-{
-    if (!s_started || s_state == NET_CONNECTED) return;
-    if (!s_ssid[0]) return;
-
-    if (s_state == NET_FAILED && (int32_t)(now_ms - s_retry_at) >= 0) {
-        ESP_LOGI(TAG, "retrying");
-        s_state = NET_CONNECTING;
-        status_update();
-        esp_wifi_connect();
+    atomic_store(&s_disconnected, false);
+    atomic_store(&s_have_ip, false);
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &config);
+    if (err == ESP_OK) err = esp_wifi_connect();
+    if (err != ESP_OK) return fail("connect", err);
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(15000);
+    while (!atomic_load(&s_have_ip) && !atomic_load(&s_disconnected) &&
+           (int32_t)(deadline - xTaskGetTickCount()) > 0) {
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
+    if (!atomic_load(&s_have_ip))
+        return fail("connect", atomic_load(&s_disconnected) ? ESP_FAIL : ESP_ERR_TIMEOUT);
+    s_state = NET_CONNECTED;
+    return true;
 }
 
-/* ------------------------------------------------------------------ */
-/* Scanning                                                            */
-/* ------------------------------------------------------------------ */
-/* Results are copied out of the driver immediately, because the driver's own
- * list is freed by the next scan or by esp_wifi_clear_ap_list(). Holding a
- * pointer into it across a menu rebuild would be a use-after-free. */
-#define SCAN_MAX 12
-
-static wifi_ap_record_t s_scan[SCAN_MAX];
-static int              s_scan_n;
-
-/* Why the last scan failed, or empty on success. Shown in the menu, because a
- * scan that silently returns nothing is indistinguishable from a scan that
- * found nothing -- and that ambiguity is what made this take several rounds. */
-static char             s_scan_err[40];
-
-/* The radio must be started before it can scan. Scanning is allowed to bring
- * the stack up with no credentials -- it simply will not associate, because
- * on_wifi_event() only connects when an SSID is set. */
-static bool net_scan_start_blocking(void)
+static atomic_bool s_time_received;
+static void on_time(struct timeval *value)
 {
-    s_scan_n = 0;
-    s_scan_err[0] = '\0';
+    (void)value;
+    atomic_store(&s_time_received, true);
+}
 
-    if (!radio_start()) {
-        snprintf(s_scan_err, sizeof s_scan_err, "radio unavailable");
-        ESP_LOGW(TAG, "scan: radio not available");
+static bool sync_time(void)
+{
+    atomic_store(&s_time_received, false);
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_set_time_sync_notification_cb(on_time);
+    esp_sntp_init();
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(10000);
+    while (!atomic_load(&s_time_received) &&
+           (int32_t)(deadline - xTaskGetTickCount()) > 0) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    esp_sntp_stop();
+    if (!atomic_load(&s_time_received)) return fail("NTP sync", ESP_ERR_TIMEOUT);
+    esp_err_t err = pet_rtc_write(time(NULL));
+    if (err != ESP_OK) return fail("write RTC", err);
+    snprintf(s_status, sizeof s_status, "RTC synced; radio off");
+    return true;
+}
+
+static bool ota(const char *url)
+{
+    if (!esp_ota_get_next_update_partition(NULL))
+        return fail("OTA partition missing", ESP_ERR_NOT_FOUND);
+    esp_http_client_config_t http = {
+        .url = url,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .timeout_ms = 10000,
+        .buffer_size = 2048,
+        .buffer_size_tx = 1024,
+        .disable_auto_redirect = true,
+    };
+    esp_https_ota_config_t config = { .http_config = &http };
+    esp_https_ota_handle_t handle = NULL;
+    esp_err_t err = esp_https_ota_begin(&config, &handle);
+    if (err != ESP_OK) return fail("OTA begin", err);
+    esp_app_desc_t candidate;
+    err = esp_https_ota_get_img_desc(handle, &candidate);
+    const esp_app_desc_t *current = esp_app_get_description();
+    if (err == ESP_OK && strncmp(candidate.project_name, current->project_name,
+                                 sizeof candidate.project_name) != 0)
+        err = ESP_ERR_INVALID_ARG;
+    if (err == ESP_OK && strncmp(candidate.version, current->version,
+                                 sizeof candidate.version) == 0) {
+        esp_https_ota_abort(handle);
+        snprintf(s_status, sizeof s_status, "already up to date; radio off");
         return false;
     }
-
-    wifi_scan_config_t sc;
-    memset(&sc, 0, sizeof sc);
-    sc.show_hidden = false;
-
-    /* BLOCKING scan.
-     *
-     * The asynchronous form returns immediately and the results have to be
-     * polled, which meant the menu was rebuilt before the scan had finished and
-     * the driver's AP list was read while it was still being written. Blocking
-     * here is safe because this runs on the net task, not the LVGL task. */
-    esp_err_t err = esp_wifi_scan_start(&sc, true);
-    if (err != ESP_OK) {
-        snprintf(s_scan_err, sizeof s_scan_err, "%s", esp_err_to_name(err));
-        ESP_LOGW(TAG, "scan failed: %s", esp_err_to_name(err));
-        goto release;
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(120000);
+    if (err == ESP_OK) {
+        do {
+            err = esp_https_ota_perform(handle);
+            if ((int32_t)(deadline - xTaskGetTickCount()) <= 0) {
+                err = ESP_ERR_TIMEOUT;
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(1));
+        } while (err == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
     }
-
-    uint16_t n = 0;
-    err = esp_wifi_scan_get_ap_num(&n);
-    if (err != ESP_OK) {
-        snprintf(s_scan_err, sizeof s_scan_err, "%s", esp_err_to_name(err));
-        ESP_LOGW(TAG, "scan count failed: %s", esp_err_to_name(err));
-        goto release;
+    if (err != ESP_OK || !esp_https_ota_is_complete_data_received(handle)) {
+        esp_https_ota_abort(handle);
+        return fail("OTA download", err == ESP_OK ? ESP_ERR_INVALID_SIZE : err);
     }
-
-    if (n > SCAN_MAX) n = SCAN_MAX;
-    if (n > 0) {
-        esp_wifi_scan_get_ap_records(&n, s_scan);
-    }
-    s_scan_n = (int)n;
-    ESP_LOGI(TAG, "scan found %d networks", s_scan_n);
-
-release:
-    /* FULL TEARDOWN, ON EVERY PATH. This is the whole point.
-     *
-     * The results are already copied into s_scan, so nothing from the driver is
-     * needed any more. esp_wifi_stop() alone is NOT enough: it stops the radio
-     * but leaves the driver's RX/TX pools allocated, so the internal
-     * DMA-capable RAM stays gone for the rest of the session. That is what
-     * produced the "screen rendering goes berserk" report -- the LCD could no
-     * longer allocate its draw buffers.
-     *
-     * esp_wifi_deinit() releases those pools. Together with the stop it returns
-     * every byte the radio took, so the display is back to its full budget the
-     * moment the scan ends.
-     *
-     * This runs on the FAILURE paths too, and that matters: the early returns
-     * used to skip it, so every failed scan left the radio up and the next
-     * attempt stacked another driver on top. A few taps was enough to starve
-     * the display completely. */
-    esp_wifi_stop();
-    esp_wifi_deinit();
-
-    s_started     = false;
-    s_wifi_inited = false;
-
-    mem_report_detail("wifi released");
-
-    return s_scan_err[0] == '\0';
+    err = esp_https_ota_finish(handle);
+    if (err != ESP_OK) return fail("OTA verify", err);
+    snprintf(s_status, sizeof s_status, "update installed; reboot to apply");
+    return true;
 }
 
-int net_scan_count(void)
+static void worker(void *arg)
 {
-    /* The scan is blocking, so by the time this is called the results are
-     * already in s_scan. No polling needed. */
-    return s_scan_n;
+    (void)arg;
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        job_t job = s_job;
+        s_error[0] = 0;
+        s_state = NET_OFF;
+        bool paused = false;
+        bool proceed = true;
+        TickType_t power_deadline = xTaskGetTickCount() + pdMS_TO_TICKS(3000);
+        while (power_writing()) {
+            if ((int32_t)(power_deadline - xTaskGetTickCount()) <= 0) {
+                fail("display power drain", ESP_ERR_TIMEOUT);
+                proceed = false;
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (proceed && atomic_load(&s_display_ready)) {
+            /* Adapter API owns the handshake and drains its current handler.
+             * The worker waits; LVGL never waits for the worker. */
+            esp_err_t err = esp_lv_adapter_pause(3000);
+            paused = err == ESP_OK;
+            if (!paused) {
+                fail("display pause", err);
+                /* Clear a timed-out pause request too. */
+                err = esp_lv_adapter_resume();
+                if (err != ESP_OK) {
+                    fail("cancel display pause", err);
+                    esp_restart();
+                }
+                proceed = false;
+            }
+        }
+        mem_report_detail("network before");
+        TickType_t drain_deadline = xTaskGetTickCount() + pdMS_TO_TICKS(3000);
+        while (save_writing() || audio_playing()) {
+            if ((int32_t)(drain_deadline - xTaskGetTickCount()) <= 0) {
+                fail("background drain", ESP_ERR_TIMEOUT);
+                proceed = false;
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (proceed) {
+            if (job.kind == JOB_SCAN) scan();
+            else if (job.kind == JOB_FORGET) {
+                credentials_t updated = s_credentials;
+                for (unsigned i = job.index; i + 1 < updated.count; i++)
+                    updated.networks[i] = updated.networks[i + 1];
+                updated.networks[--updated.count] = (credential_t){0};
+                if (commit_credentials(&updated))
+                    snprintf(s_status, sizeof s_status, "network forgotten; radio off");
+            } else {
+                credential_t credential = job.kind == JOB_JOIN ?
+                    job.credential : s_credentials.networks[job.index];
+                if (join(&credential)) {
+                    bool saved = true;
+                    if (job.kind == JOB_JOIN) {
+                        credentials_t updated = s_credentials;
+                        unsigned index = updated.count;
+                        for (unsigned i = 0; i < updated.count; i++)
+                            if (!strcmp(updated.networks[i].ssid, credential.ssid)) index = i;
+                        if (index == updated.count) updated.count++;
+                        updated.networks[index] = credential;
+                        saved = commit_credentials(&updated);
+                    }
+                    if (saved) {
+                        if (job.kind == JOB_OTA) {
+                            if (time(NULL) >= 1577836800 || sync_time()) ota(job.url);
+                        }
+                        else sync_time();
+                    }
+                }
+            }
+        }
+        bool released = radio_down();
+        if (!released) {
+            /* Do not restart DMA drawing with a driver that still owns RAM. */
+            ESP_LOGE(TAG, "radio teardown failed; rebooting to recover DMA ownership");
+            esp_restart();
+        }
+        if (released && s_state != NET_FAILED) s_state = NET_OFF;
+        mem_report_detail("network released");
+        if (paused) {
+            esp_err_t err = esp_lv_adapter_resume();
+            if (err != ESP_OK) {
+                fail("display resume", err);
+                esp_restart();
+            }
+        }
+        memset(&job, 0, sizeof job);
+        memset(&s_job, 0, sizeof s_job);
+        atomic_store(&s_busy, false);
+        atomic_fetch_add(&s_generation, 1);
+        ESP_LOGI(TAG, "job complete; stack free %u",
+                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    }
 }
 
-const char *net_scan_error(void)
+static bool queue(const job_t *job)
 {
-    return s_scan_err;
+    if (!s_task) {
+        ESP_LOGE(TAG, "network worker unavailable");
+        return false;
+    }
+    portENTER_CRITICAL(&s_mux);
+    bool accepted = !atomic_load(&s_busy);
+    if (accepted) {
+        s_job = *job;
+        atomic_store(&s_busy, true);
+    }
+    portEXIT_CRITICAL(&s_mux);
+    if (!accepted) { ESP_LOGW(TAG, "network job rejected: busy"); return false; }
+    xTaskNotifyGive(s_task);
+    return true;
 }
 
+void net_boot_init(void)
+{
+    pet_rtc_init();
+    load_credentials();
+    if (xTaskCreateWithCaps(worker, "spidarium_net", NET_STACK, NULL, 4,
+                            &s_task, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) != pdPASS) {
+        s_task = NULL;
+        fail("network worker", ESP_ERR_NO_MEM);
+        return;
+    }
+    ESP_LOGI(TAG, "network worker stack internal for NVS and OTA flash writes");
+    if (s_credentials.count) {
+        net_sync_saved(0);
+        /* Before the display exists, app_main can wait for this bounded job. */
+        while (net_busy()) vTaskDelay(pdMS_TO_TICKS(100));
+    } else ESP_LOGI(TAG, "no saved credentials; boot radio remains off");
+}
+
+void net_display_ready(void) { atomic_store(&s_display_ready, true); }
+void net_init(void) { /* Initialized once before display startup. */ }
+void net_tick(uint32_t now_ms) { (void)now_ms; /* No background reconnects. */ }
+bool net_busy(void) { return atomic_load(&s_busy); }
+bool net_radio_active(void) { return net_busy(); }
+uint32_t net_generation(void) { return atomic_load(&s_generation); }
+net_state_t net_state(void) { return net_busy() ? NET_CONNECTING : s_state; }
+const char *net_status_text(void) { return net_busy() ? "working; please wait" : s_status; }
+const char *net_ip(void) { return net_busy() ? "" : s_ip; }
+int net_saved_count(void) { return net_busy() ? 0 : s_credentials.count; }
+const char *net_saved_ssid(int i)
+{
+    return i >= 0 && i < net_saved_count() ? s_credentials.networks[i].ssid : "";
+}
+bool net_has_credentials(void) { return net_saved_count() != 0; }
+const char *net_ssid(void) { return net_saved_ssid(0); }
+int net_scan_count(void) { return net_busy() ? 0 : s_scan_count; }
+const char *net_scan_error(void) { return net_busy() ? "" : s_error; }
 const char *net_scan_ssid(int i)
 {
-    if (i < 0 || i >= s_scan_n) return "";
-    return (const char *)s_scan[i].ssid;
+    return i >= 0 && i < net_scan_count() ? (const char *)s_scan[i].ssid : "";
 }
-
-int net_scan_rssi(int i)
-{
-    if (i < 0 || i >= s_scan_n) return 0;
-    return s_scan[i].rssi;
-}
-
+int net_scan_rssi(int i) { return i >= 0 && i < net_scan_count() ? s_scan[i].rssi : 0; }
 bool net_scan_secure(int i)
 {
-    if (i < 0 || i >= s_scan_n) return false;
-    return s_scan[i].authmode != WIFI_AUTH_OPEN;
+    return i >= 0 && i < net_scan_count() && s_scan[i].authmode != WIFI_AUTH_OPEN;
 }
-
-void net_connect_to(const char *ssid, const char *pass)
+bool net_scan_start(void) { return queue(&(job_t){ .kind = JOB_SCAN }); }
+bool net_sync_saved(int i)
 {
-    net_set_credentials(ssid, pass);
+    if (i < 0 || i >= net_saved_count()) {
+        ESP_LOGW(TAG, "sync rejected: no saved network at index %d", i);
+        return false;
+    }
+    return queue(&(job_t){ .kind = JOB_SYNC, .index = i });
 }
-
-/* ------------------------------------------------------------------ */
-/* Public entry points                                                 */
-/* ------------------------------------------------------------------ */
-/* These are what the UI calls. Each one QUEUES the job and returns at once --
- * they never block. The worker pauses the game, does the radio work, and
- * resumes. Poll net_busy() to know when it has finished. */
-
-/* Load the saved credentials and refresh the status text.
- *
- * This deliberately does NOT touch the radio and does NOT queue a job. It used
- * to queue a NET_JOB_INIT, which set s_busy -- and because the WiFi menu calls
- * net_init() when it opens, tapping "scan" before that job finished hit the
- * "already busy" guard in queue_job() and the scan was silently dropped. That
- * was the "first press does nothing" bug.
- *
- * The radio is now brought up lazily by radio_start(), inside whichever job
- * actually needs it. */
-void net_init(void)
+bool net_forget_saved(int i)
 {
-    creds_load();
-    status_update();
+    if (i < 0 || i >= net_saved_count()) {
+        ESP_LOGW(TAG, "forget rejected: invalid index %d", i);
+        return false;
+    }
+    return queue(&(job_t){ .kind = JOB_FORGET, .index = i });
 }
-
-bool net_scan_start(void)
+bool net_connect_to(const char *ssid, const char *pass)
 {
-    ESP_LOGI(TAG, "net_scan_start");
-    return queue_job(NET_JOB_SCAN);
+    if (!ssid || !pass || !ssid[0] || strlen(ssid) > 32 || strlen(pass) > 63 ||
+        (pass[0] && strlen(pass) < 8)) {
+        ESP_LOGW(TAG, "join rejected: SSID 1..32 bytes; password empty or 8..63 bytes");
+        return false;
+    }
+    if (net_busy()) { ESP_LOGW(TAG, "join rejected: busy"); return false; }
+    bool exists = false;
+    for (int i = 0; i < net_saved_count(); i++)
+        if (!strcmp(ssid, net_saved_ssid(i))) exists = true;
+    if (!exists && net_saved_count() == NET_SAVED_MAX) {
+        ESP_LOGW(TAG, "join rejected: forget a saved network first");
+        return false;
+    }
+    job_t job = { .kind = JOB_JOIN };
+    snprintf(job.credential.ssid, sizeof job.credential.ssid, "%s", ssid);
+    snprintf(job.credential.pass, sizeof job.credential.pass, "%s", pass);
+    return queue(&job);
+}
+bool net_set_credentials(const char *ssid, const char *pass)
+{
+    return ssid && !ssid[0] ? net_forget_saved(0) : net_connect_to(ssid, pass);
+}
+bool net_ota_start(const char *url)
+{
+    if (!url || strncmp(url, "https://", 8) || strlen(url) < 9 || strlen(url) > 255 ||
+        !net_has_credentials()) {
+        ESP_LOGW(TAG, "OTA rejected: requires HTTPS URL and a saved network");
+        return false;
+    }
+    job_t job = { .kind = JOB_OTA, .index = 0 };
+    snprintf(job.url, sizeof job.url, "%s", url);
+    return queue(&job);
 }

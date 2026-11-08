@@ -8,8 +8,8 @@
  * Usage:
  *   ui_menu_open("give a gift", items, count, on_pick);
  *
- * The menu is built on open and destroyed on close. That is safe because it is
- * only ever opened from an event callback, never from the render loop.
+ * Three fixed cards per page: no animated scrolling or hidden off-screen rows.
+ * Open/close and all callbacks run exclusively on the LVGL task.
  */
 #pragma once
 
@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 /* One row. */
 typedef struct {
@@ -48,3 +49,17 @@ void ui_menu_close(void);
 
 /* True while a menu is open. */
 bool ui_menu_visible(void);
+bool ui_menu_showing(const ui_menu_item_t *items);
+
+typedef bool (*ui_menu_input_cb)(const char *text);
+/* Submit returning false leaves the editor open with a validation message. */
+void ui_menu_open_input(const char *title, const char *initial, bool password,
+                       uint32_t max_length, ui_menu_input_cb submit);
+
+/* LVGL-task diagnostic exercising paging and password editing without credentials. */
+bool ui_menu_test(void);
+void ui_menu_format_name(char *dst, size_t size, const char *name);
+void ui_menu_set_destructive(uint8_t id);
+void ui_menu_set_item_icon(uint8_t item, int asset_index);
+typedef uint32_t (*ui_minigame_reward_cb)(uint8_t score);
+void ui_menu_open_minigame(ui_minigame_reward_cb reward);

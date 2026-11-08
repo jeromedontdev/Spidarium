@@ -1,51 +1,32 @@
 /*
  * Spidarium — prey.
  *
- * Drawn procedurally rather than from sprites. The sprite set is authored
- * facing right and LVGL 9.6 cannot mirror an image (scale_x is unsigned and
- * LV_USE_MATRIX is off), so a sprite-based bug always appeared to travel
- * backwards whenever it moved left. Building each bug from a few primitives
- * positioned in body-local coordinates lets it face its actual heading.
+ * The body and animation are supplied by transparent, top-down sprite assets.
+ * The artwork is deliberately orientation-neutral because LVGL matrix support
+ * is disabled; movement and heading remain part of the prey simulation.
  */
 #include "prey.h"
 
 #include "audio.h"
 #include "behaviour.h"
+#include "assets.h"
 #include "game_config.h"
+#include "gift.h"
 #include "species.h"
+#include "sprites.h"
 #include "terrarium.h"
+#include "needs.h"
+#include "ui_hud.h"
 
 #include "esp_log.h"
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 static const char *TAG = "spidarium.prey";
 
 #define PI_F 3.14159265f
-
-/* Body-local part offsets, in (forward, right) pixels. */
-/* Exact part budget. add_part() silently drops anything past this limit, and
- * the old value of 8 was too small for the cricket, which registers 11:
- *
- *   fly      2 wings + body + head            =  4
- *   cricket  body + head + 8 hind legs        = 10
- *   moth     2 wings + body + head            =  4
- *   beetle   body + head + seam + 4 legs      =  7
- *   splat    4 smear + 8 legs + 3 droplets    = 15
- *
- * The cricket's last three legs were therefore being thrown away, which is why
- * crickets looked wrong. This is the same silent-truncation bug that ate the
- * spider's pupils and glints. The splat is the largest at 15, so 16 is the
- * tightest safe value. */
-#define MAX_PARTS 16
-
-typedef struct {
-    lv_obj_t *obj;
-    float     fwd;
-    float     right;
-    int32_t   r;
-} part_t;
 
 typedef struct {
     bool           alive;
@@ -61,8 +42,8 @@ typedef struct {
     int            frame;
     uint32_t       dead_at;
     lv_obj_t      *root;        /* container, positioned at the bug centre */
-    part_t         parts[MAX_PARTS];
-    int            part_n;
+    lv_obj_t      *sprite;
+    int            sprite_index;
 } prey_t;
 
 static prey_t s_prey[MAX_PREY];
@@ -90,165 +71,58 @@ static void clamp_prey(prey_t *p)
     if (p->y > (float)g_play.bottom) p->y = (float)g_play.bottom;
 }
 
-static lv_obj_t *make_dot(lv_obj_t *parent, int32_t r, uint32_t col)
-{
-    lv_obj_t *o = lv_obj_create(parent);
-    lv_obj_remove_style_all(o);
-    lv_obj_set_size(o, r * 2, r * 2);
-    lv_obj_set_style_radius(o, r, 0);
-    lv_obj_set_style_bg_color(o, lv_color_hex(col), 0);
-    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(o, 0, 0);
-    lv_obj_set_scrollable(o, false);
-    lv_obj_set_clickable(o, false);
-    return o;
-}
-
-static void add_part(prey_t *p, int32_t r, uint32_t col, float fwd, float right)
-{
-    if (p->part_n >= MAX_PARTS) return;
-
-    lv_obj_t *o = make_dot(p->root, r, col);
-    p->parts[p->part_n].obj   = o;
-    p->parts[p->part_n].fwd   = fwd;
-    p->parts[p->part_n].right = right;
-    p->parts[p->part_n].r     = r;
-    p->part_n++;
-}
-
 /* ------------------------------------------------------------------ */
 /* Body construction                                                   */
 /* ------------------------------------------------------------------ */
+static void update_sprite(prey_t *p)
+{
+    if (!p->sprite) return;
+    int index = sprite_prey_index(p->species, p->fleeing, p->dead, p->frame);
+    if (index < 0 || index == p->sprite_index) return;
+    const lv_image_dsc_t *image = assets_image(index);
+    if (!image) {
+        lv_obj_set_hidden(p->sprite, true);
+        lv_obj_set_style_bg_color(p->root,
+                                  lv_color_hex(species_get(p->species)->body_col), 0);
+        lv_obj_set_style_bg_opa(p->root, LV_OPA_COVER, 0);
+        p->sprite_index = index;
+        return;
+    }
+
+    lv_image_set_src(p->sprite, image);
+    lv_obj_set_hidden(p->sprite, false);
+    lv_obj_set_style_bg_opa(p->root, LV_OPA_TRANSP, 0);
+    p->sprite_index = index;
+}
+
 static void build_body(prey_t *p)
 {
-    p->part_n = 0;
-
-    /* Root container: a fixed-size transparent box the parts live in.
-     *
-     * Created once per slot and reused. It is only ever destroyed by prey_tick
-     * when a corpse expires, and that path nulls the pointer, so a non-NULL
-     * root here is always a live object.
-     *
-     * The guard below is belt-and-braces: if a root is ever destroyed without
-     * nulling the pointer, lv_obj_clean() on it corrupts LVGL's event list and
-     * the device dies with "LoadProhibited in lv_event_mark_deleted". Checking
-     * the object is still valid costs one call and turns a crash into a
-     * rebuild. */
     if (p->root && !lv_obj_is_valid(p->root)) {
         ESP_LOGW(TAG, "prey %d: stale root, rebuilding", (int)(p - s_prey));
         p->root = NULL;
+        p->sprite = NULL;
+        p->sprite_index = -1;
     }
 
     if (!p->root) {
-        p->root = lv_obj_create(ui.screen);
+        p->root = lv_obj_create(ui.creature_layer);
         lv_obj_remove_style_all(p->root);
         lv_obj_set_size(p->root, PREY_SPRITE_W, PREY_SPRITE_H);
         lv_obj_set_style_bg_opa(p->root, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(p->root, 0, 0);
+        lv_obj_set_style_radius(p->root, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_scrollable(p->root, false);
         lv_obj_set_clickable(p->root, false);
     }
 
-    /* Clear any parts from a previous species. */
-    lv_obj_clean(p->root);
-
-    /* Everything about the body comes from the species table, so a new bug is
-     * one row in species.c rather than a new case here. */
-    const species_def_t *sp = species_get(p->species);
-
-    const uint32_t body = sp->body_col;
-    const uint32_t dark = sp->dark_col;
-    const uint32_t wing = sp->wing_col;
-    const uint32_t legc = 0x2e271f;
-
-    if (p->dead) {
-        /* SPLAT.
-         *
-         * The old corpse was a tidy bug lying on its back, which at this size
-         * read as "the bug is still there, just rotated" -- the player could not
-         * tell a kill from a bug that had wandered off. A splat is unambiguous:
-         * a wide flattened smear with legs splayed outward and a few droplets
-         * thrown clear.
-         *
-         * Everything is drawn flat (no rotation) because a splat has no
-         * orientation. */
-        const uint32_t goo = sp->body_col;
-
-        /* The smear: a wide, low body plus two lobes so it reads as squashed
-         * rather than as a circle. */
-        add_part(p, 7, goo,  0.0f,  0.0f);
-        add_part(p, 5, goo,  0.0f, -7.0f);
-        add_part(p, 5, goo,  0.0f, +7.0f);
-        add_part(p, 4, dark, 0.0f,  0.0f);
-
-        /* Legs splayed outward from the centre, all at different angles. */
-        static const float splat_leg[8][2] = {
-            {  7.0f, -9.0f }, {  7.0f,  9.0f },
-            {  2.0f, -11.0f }, {  2.0f,  11.0f },
-            { -4.0f, -10.0f }, { -4.0f,  10.0f },
-            { -8.0f, -6.0f }, { -8.0f,  6.0f },
-        };
-        for (int i = 0; i < 8; i++) {
-            add_part(p, 1, legc, splat_leg[i][0], splat_leg[i][1]);
-        }
-
-        /* Droplets thrown clear of the smear. */
-        add_part(p, 1, goo,  10.0f, -4.0f);
-        add_part(p, 1, goo, -10.0f,  5.0f);
-        add_part(p, 1, goo,   4.0f, 12.0f);
-
-        return;
+    if (!p->sprite || !lv_obj_is_valid(p->sprite)) {
+        p->sprite = lv_image_create(p->root);
+        lv_obj_center(p->sprite);
+        lv_obj_set_clickable(p->sprite, false);
+        lv_obj_set_scrollable(p->sprite, false);
+        p->sprite_index = -1;
     }
-
-    /* Wings first so the body sits on top of them. */
-    if (sp->has_wings) {
-        add_part(p, sp->body_r + 1, wing, -1.0f, -6.0f);
-        add_part(p, sp->body_r + 1, wing, -1.0f, +6.0f);
-    }
-
-    /* Body and head. */
-    add_part(p, sp->body_r, body, 0.0f, 0.0f);
-    add_part(p, sp->head_r, dark, 6.0f, 0.0f);
-
-    /* Beetle wing-case seam. */
-    if (sp->has_seam) {
-        add_part(p, 1, 0x14110e, 0.0f, 0.0f);
-    }
-
-    /* Cricket hind legs, swept back. */
-    if (sp->has_hind_legs) {
-        add_part(p, 2, legc, -6.0f, -6.0f);
-        add_part(p, 2, legc, -6.0f, +6.0f);
-        add_part(p, 1, legc, 2.0f, -5.0f);
-        add_part(p, 1, legc, 2.0f, +5.0f);
-    } else if (sp->has_seam) {
-        /* Beetle: four short legs. */
-        add_part(p, 1, legc, 3.0f, -6.0f);
-        add_part(p, 1, legc, 3.0f, +6.0f);
-        add_part(p, 1, legc, -3.0f, -6.0f);
-        add_part(p, 1, legc, -3.0f, +6.0f);
-    }
-}
-
-/* Place every part by rotating its body-local offset through the heading. */
-static void layout_body(prey_t *p)
-{
-    float fx = cosf(p->heading), fy = sinf(p->heading);
-    float rx = -fy,              ry = fx;
-
-    const float c = (float)PREY_SPRITE_W * 0.5f;
-
-    for (int i = 0; i < p->part_n; i++) {
-        part_t *q = &p->parts[i];
-        if (!q->obj) continue;
-
-        float sx = fx * q->fwd + rx * q->right;
-        float sy = fy * q->fwd + ry * q->right;
-
-        lv_obj_set_pos(q->obj,
-                       (int32_t)(c + sx) - q->r,
-                       (int32_t)(c + sy) - q->r);
-    }
+    update_sprite(p);
 }
 
 /* ------------------------------------------------------------------ */
@@ -280,13 +154,17 @@ uint32_t prey_unlock_level(prey_species_t species)
     return species_get(species)->unlock_level;
 }
 
-void prey_spawn_species_ex(prey_species_t species, bool wild)
+bool prey_spawn_species_ex(prey_species_t species, bool wild)
 {
+    if (!species_unlocked(species)) {
+        ESP_LOGW(TAG, "spawn rejected: species %d invalid or level locked", species);
+        return false;
+    }
     int slot = -1;
     for (int i = 0; i < MAX_PREY; i++) {
         if (!s_prey[i].alive) { slot = i; break; }
     }
-    if (slot < 0) return;
+    if (slot < 0) { ESP_LOGI(TAG, "spawn skipped: tank already has three prey"); return false; }
 
     prey_t *p = &s_prey[slot];
     p->alive       = true;
@@ -295,6 +173,7 @@ void prey_spawn_species_ex(prey_species_t species, bool wild)
     p->wild        = wild;
     p->species     = species;
     p->frame       = 0;
+    p->sprite_index = -1;
     p->frame_at    = lv_tick_get();
     p->retarget_at = 0;
     p->dead_at     = 0;
@@ -312,28 +191,90 @@ void prey_spawn_species_ex(prey_species_t species, bool wild)
 
     build_body(p);
     lv_obj_set_hidden(p->root, false);
-    layout_body(p);
     lv_obj_set_pos(p->root, (int32_t)p->x - PREY_PIVOT_X,
                    (int32_t)p->y - PREY_PIVOT_Y);
+    return true;
 }
 
-void prey_spawn_species(prey_species_t species)
+bool prey_spawn_species(prey_species_t species)
 {
-    prey_spawn_species_ex(species, false);
+    return prey_spawn_species_ex(species, false);
 }
 
-void prey_spawn(void)
+bool prey_spawn(void)
 {
-    int n = prey_unlocked_species();
-    prey_spawn_species((prey_species_t)(rand() % n));
+    return prey_spawn_species(species_choose_unlocked((uint32_t)rand()));
 }
 
-void prey_spawn_wild(void)
+bool prey_spawn_wild(void)
 {
-    int n = prey_unlocked_species();
-    prey_spawn_species_ex((prey_species_t)(rand() % n), true);
+    return prey_spawn_species_ex(species_choose_unlocked((uint32_t)rand()), true);
 }
 
+bool prey_progression_test(void)
+{
+    uint32_t level = g.level;
+    int original_count = prey_count();
+    prey_t original[MAX_PREY];
+    memcpy(original, s_prey, sizeof original);
+    memset(s_prey, 0, sizeof s_prey);
+    bool ok = true;
+    const uint32_t levels[] = {1, 2, 4, 6, 10, 13, 16, 20};
+    for (int stage = 0; stage < PREY_SPECIES_COUNT; stage++) {
+        g.level = levels[stage] - 1;
+        ok = ok && !species_unlocked(stage);
+        g.level = levels[stage];
+        ok = prey_spawn_species(stage) && ok;
+        ok = ok && prey_count() == 1 && s_prey[0].species == stage;
+        ok = ok && prey_unlocked_species() == stage + 1;
+        ok = ok && prey_next_locked_species() ==
+            (stage + 1 == PREY_SPECIES_COUNT ? -1 : stage + 1);
+        bool seen[PREY_SPECIES_COUNT] = {false};
+        for (uint32_t roll = 0; roll < 64; roll++) {
+            prey_species_t species = species_choose_unlocked(roll);
+            ok = ok && species_unlocked(species);
+            seen[species] = true;
+        }
+        for (int i = 0; i <= stage; i++) ok = ok && seen[i];
+        for (int i = stage + 1; i < PREY_SPECIES_COUNT; i++)
+            ok = !prey_spawn_species_ex(i, true) && ok;
+        if (s_prey[0].root) lv_obj_delete(s_prey[0].root);
+        memset(s_prey, 0, sizeof s_prey);
+    }
+    ok = !prey_spawn_species_ex(-1, false) && ok;
+    ok = !prey_spawn_species_ex(PREY_SPECIES_COUNT, false) && ok;
+    for (int i = 0; i < MAX_PREY; i++) s_prey[i].alive = true;
+    uint32_t taps = g.taps;
+    for (int i = 0; i < 5; i++) game_on_feed(NULL);
+    needs_feed();
+    ui_hud_tick(lv_tick_get() + 10000);
+    ok = ok && prey_count() == MAX_PREY && g.taps == taps &&
+         lv_obj_has_state(ui.btn_feed, LV_STATE_DISABLED);
+    s_prey[0].alive = false;
+    ui_hud_tick(lv_tick_get() + 11000);
+    ok = ok && !lv_obj_has_state(ui.btn_feed, LV_STATE_DISABLED);
+    memset(s_prey, 0, sizeof s_prey);
+    g.level = level;
+    memcpy(s_prey, original, sizeof original);
+    ui_hud_tick(lv_tick_get() + 12000);
+    return ok && prey_count() == original_count;
+}
+
+bool prey_hunt_test(bool (*exercise)(int32_t x, int32_t y))
+{
+    prey_t original[MAX_PREY];
+    memcpy(original, s_prey, sizeof original);
+    memset(s_prey, 0, sizeof s_prey);
+    s_prey[0].alive = true;
+    s_prey[0].species = PREY_FLY;
+    s_prey[0].x = 240;
+    s_prey[0].y = 240;
+    bool ok = exercise(240, 240);
+    for (int i = 0; i < MAX_PREY; i++)
+        if (s_prey[i].root) lv_obj_delete(s_prey[i].root);
+    memcpy(s_prey, original, sizeof original);
+    return ok;
+}
 void prey_clear(void)
 {
     for (int i = 0; i < MAX_PREY; i++) {
@@ -341,19 +282,11 @@ void prey_clear(void)
             lv_obj_del(s_prey[i].root);
             s_prey[i].root = NULL;
         }
-        /* Clear the part table as well.
-         *
-         * The parts are children of root, so deleting root frees them. Leaving
-         * the pointers behind meant a later build_body() for this slot could
-         * touch freed objects -- a use-after-free that corrupted LVGL's event
-         * list and crashed in lv_event_mark_deleted. */
-        for (int k = 0; k < s_prey[i].part_n; k++) {
-            s_prey[i].parts[k].obj = NULL;
-        }
+        s_prey[i].sprite = NULL;
+        s_prey[i].sprite_index = -1;
         s_prey[i].alive = false;
         s_prey[i].dead = false;
         s_prey[i].dead_at = 0;
-        s_prey[i].part_n = 0;
     }
 }
 
@@ -467,6 +400,9 @@ void prey_resolve_pounce(void)
     /* Temperament: a bold spider commits harder to a catch. */
     p *= game_temperament()->catch_mult;
 
+    const gift_bonus_t *gift = gift_bonus();
+    p *= gift->catch_success_mult * gift->pounce_success_mult;
+
     if (p < 0.20f) p = 0.20f;
     if (p > 0.95f) p = 0.95f;
 
@@ -510,12 +446,10 @@ void prey_resolve_pounce(void)
         prey_t *pr = &s_prey[best];
         pr->dead = true;
         pr->fleeing = false;
-        /* The splat lingers longer than the old corpse did. 1.5s was enough to
-         * notice a bug lying on its back, but a splat is the only confirmation
-         * the player gets that the catch landed, so it needs to be readable. */
+        pr->frame = 0;
+        /* The distinct down pose lingers long enough to confirm the catch. */
         pr->dead_at = lv_tick_get() + 2200;
         build_body(pr);
-        layout_body(pr);
 
         g.state        = SPIDER_EAT;
         g.eat_until_ms = (int32_t)(lv_tick_get() + EAT_MS);
@@ -552,6 +486,7 @@ void prey_resolve_pounce(void)
         uint32_t xp = (uint32_t)((float)base_xp *
                                  (1.0f + (float)bonus * STREAK_BONUS_PER));
         game_add_xp(xp);
+        game_add_silk(q == CATCH_PERFECT ? 5 : 3);
 
         g.meals++;
         /* ACH_FIRST_MEAL was defined and displayed on the status page but
@@ -596,6 +531,8 @@ void prey_resolve_pounce(void)
 /* ------------------------------------------------------------------ */
 void prey_tick(uint32_t now_ms, float dt_s)
 {
+    const gift_bonus_t *gift = gift_bonus();
+
     for (int i = 0; i < MAX_PREY; i++) {
         prey_t *p = &s_prey[i];
         if (!p->alive) continue;
@@ -609,21 +546,11 @@ void prey_tick(uint32_t now_ms, float dt_s)
                     lv_obj_del(p->root);
                     p->root = NULL;
                 }
-                /* Clear the part table too.
-                 *
-                 * The parts are children of p->root, so deleting the root frees
-                 * them. Leaving the pointers in p->parts[] meant the next
-                 * build_body() for this slot called lv_obj_clean() on a root
-                 * that had already been destroyed -- a use-after-free that
-                 * corrupted LVGL's event list and crashed with
-                 * "LoadProhibited in lv_event_mark_deleted". */
-                for (int k = 0; k < p->part_n; k++) {
-                    p->parts[k].obj = NULL;
-                }
+                p->sprite = NULL;
+                p->sprite_index = -1;
                 p->alive = false;
                 p->dead = false;
                 p->dead_at = 0;
-                p->part_n = 0;
             }
             continue;
         }
@@ -646,9 +573,11 @@ void prey_tick(uint32_t now_ms, float dt_s)
 
         /* Wild prey are warier and quicker off the mark. */
         float flee_r = PREY_AGGRO_RADIUS * alert_mult * sp->flee_radius_mult
-                     * (p->wild ? WILD_FLEE_RADIUS_MULT : 1.0f);
+                     * (p->wild ? WILD_FLEE_RADIUS_MULT : 1.0f)
+                     * gift->fear_mult;
         float flee_s = PREY_FLEE_SPEED * speed_mult * sp->flee_speed_mult
-                     * (p->wild ? WILD_FLEE_SPEED_MULT : 1.0f);
+                     * (p->wild ? WILD_FLEE_SPEED_MULT : 1.0f)
+                     * gift->prey_flee_penalty;
         /* Never let the alert radius grow past the aim range: the spider must
          * be able to get close enough to crouch, or the hunt deadlocks. */
         if (flee_r > (float)PREY_FLEE_RADIUS_MAX) {
@@ -672,13 +601,6 @@ void prey_tick(uint32_t now_ms, float dt_s)
          * timing, not in chasing a moving target with a timing meter. */
         if (behaviour_aim_dragging()) {
             /* Still update the flutter so it does not look frozen dead. */
-            if (sp->move == MOVE_FLUTTER) {
-                float lateral = sinf((float)now_ms * MOTH_FLUTTER_HZ)
-                              * MOTH_FLUTTER_PX * dt_s;
-                p->x += -sinf(p->heading) * lateral;
-                p->y +=  cosf(p->heading) * lateral;
-                clamp_prey(p);
-            }
             continue;
         }
 
@@ -774,8 +696,7 @@ void prey_tick(uint32_t now_ms, float dt_s)
         }
         clamp_prey(p);
 
-        /* Wing/leg flutter: alternate the lateral offsets so the bug reads as
-         * moving rather than sliding. */
+        /* Alternate the authored sprite frames so the bug reads as moving. */
         if ((now_ms - p->frame_at) >=
             (p->fleeing ? PREY_FLEE_FRAME_MS : PREY_WALK_FRAME_MS)) {
             p->frame_at = now_ms;
@@ -792,7 +713,7 @@ void prey_render(uint32_t now_ms)
         prey_t *p = &s_prey[i];
         if (!p->alive || !p->root) continue;
 
-        layout_body(p);
+        update_sprite(p);
         lv_obj_set_pos(p->root, (int32_t)p->x - PREY_PIVOT_X,
                        (int32_t)p->y - PREY_PIVOT_Y);
     }

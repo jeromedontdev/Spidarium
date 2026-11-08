@@ -30,10 +30,7 @@ static const char *TAG = "spidarium.cspider";
 /* ------------------------------------------------------------------ */
 /* Geometry                                                            */
 /* ------------------------------------------------------------------ */
-/* The canvas is square and centred on the spider. It must be large enough for
- * the legs at full stretch: BODY_R + LEG_LEN * (SEG1 + SEG2) = 16 + 22*1.30 =
- * 44.6 px from the centre, so 96 px gives 48 px of half-width and a little
- * margin. */
+/* Bounded leg tips fit inside the 48px half-width at every heading. */
 #define CANVAS_SIZE   96
 #define CANVAS_C      (CANVAS_SIZE / 2)
 
@@ -66,9 +63,8 @@ static const char *TAG = "spidarium.cspider";
 #define LEG_LEN      22.0f
 #define LEG_SEG1     0.58f
 #define LEG_SEG2     0.72f
-#define LEG_WIDTH    3
-#define NUM_LEGS     8
 #define BODY_R       16
+#define LEG_WIDTH    3
 
 /* ------------------------------------------------------------------ */
 /* State                                                               */
@@ -106,14 +102,141 @@ static uint8_t *s_buf;
 static cspider_emote_t s_emote;
 
 /* Gait, carried over from the widget renderer. */
-static float    s_phase;
-static float    s_last_x, s_last_y;
-static bool     s_last_valid;
-static float    s_speed_smooth;
+typedef struct {
+    float phase, x, y;
+    bool valid;
+    uint32_t moved_at;
+} gait_t;
+static gait_t s_gait;
 
-#define GAIT_RATE   0.30f
-#define GAIT_SWING  0.42f
-#define GAIT_LIFT   0.30f
+#define STRIDE_PX 24.0f
+typedef struct { float hf, hr, kf, kr, ff, fr; } leg_pose_t;
+
+static bool walk_state(spider_state_t state)
+{
+    return state == SPIDER_WANDER || state == SPIDER_STALK || state == SPIDER_SICK;
+}
+
+static bool gait_update(gait_t *gait, float x, float y, uint32_t now,
+                         spider_state_t state)
+{
+    float dx = x - gait->x, dy = y - gait->y;
+    float distance = sqrtf(dx * dx + dy * dy);
+    if (gait->valid && walk_state(state) && distance > 0 && distance <= 12) {
+        gait->phase = fmodf(gait->phase + distance * (2 * PI_F / STRIDE_PX), 2 * PI_F);
+        gait->moved_at = now;
+    }
+    gait->x = x;
+    gait->y = y;
+    gait->valid = true;
+    return walk_state(state) && gait->moved_at && now - gait->moved_at < 100;
+}
+
+/* Original angular anatomy, with distance-driven timing and no inverted bends. */
+static leg_pose_t leg_pose(int k, int side, float phase, bool walking,
+                           cspider_emote_t emote, uint32_t now)
+{
+    float base = side * (PI_F * 0.5f + (k - 1.5f) * 0.42f);
+    float gait = phase + k * (PI_F * 0.5f) + (side < 0 ? 0 : PI_F);
+    float swing = walking ? 0.42f * sinf(gait) : 0;
+    float bend = 0.55f + (walking ? 0.30f * sinf(gait + PI_F * 0.5f) : 0);
+    float wave = sinf((now % 1200u) * (2 * PI_F / 1200));
+    switch (emote) {
+    case CSP_EMOTE_HAPPY:
+        if (k == 0) {
+            swing += 1.10f * wave;
+            bend -= 0.55f + 0.35f * wave;
+        }
+        break;
+    case CSP_EMOTE_SAD:
+        bend += 0.60f;
+        swing *= 0.35f;
+        break;
+    case CSP_EMOTE_ALERT:
+        bend -= 0.45f + 0.10f * wave;
+        swing *= 0.25f;
+        break;
+    case CSP_EMOTE_SLEEPY:
+        bend -= 0.30f + 0.05f * wave;
+        swing *= 0.15f;
+        break;
+    default:
+        break;
+    }
+    /* Original happy/alert modulation could cross zero and reverse the knee. */
+    float angle = fmaxf(0.15f, fminf(1.25f, swing + bend));
+    float dir1 = base + side * angle, dir2 = base - side * angle;
+    leg_pose_t pose = {BODY_R * cosf(base), BODY_R * sinf(base), 0, 0, 0, 0};
+    pose.kf = pose.hf + LEG_LEN * LEG_SEG1 * cosf(dir1);
+    pose.kr = pose.hr + LEG_LEN * LEG_SEG1 * sinf(dir1);
+    pose.ff = pose.kf + LEG_LEN * LEG_SEG2 * cosf(dir2);
+    pose.fr = pose.kr + LEG_LEN * LEG_SEG2 * sinf(dir2);
+    return pose;
+}
+
+bool cspider_gait_test(void)
+{
+    static const leg_pose_t original[] = {
+        {9.426316f, 12.928440f, 10.446028f, 25.647630f, 25.091787f, 31.681479f},
+        {3.335358f, 15.648495f, -0.919937f, 27.678044f, 9.992579f, 39.159447f},
+        {-3.335358f, 15.648495f, -12.125996f, 24.897402f, -6.843560f, 39.830636f},
+        {-9.426316f, 12.928440f, -21.224289f, 17.789041f, -22.490138f, 33.578380f},
+    };
+    float phases[3];
+    const int frames[] = {20, 30, 60};
+    bool ok = true;
+    for (int k = 0; k < 4; k++)
+        for (int side = -1; side <= 1; side += 2) {
+            leg_pose_t p = leg_pose(k, side, 0, false, CSP_EMOTE_NONE, 0);
+            ok = ok && fabsf(p.hf - original[k].hf) < 0.001f &&
+                fabsf(p.hr - side * original[k].hr) < 0.001f &&
+                fabsf(p.kf - original[k].kf) < 0.001f &&
+                fabsf(p.kr - side * original[k].kr) < 0.001f &&
+                fabsf(p.ff - original[k].ff) < 0.001f &&
+                fabsf(p.fr - side * original[k].fr) < 0.001f;
+        }
+    for (int rate = 0; rate < 3; rate++) {
+        gait_t gait = {0};
+        gait_update(&gait, 0, 0, 1000, SPIDER_WANDER);
+        for (int i = 1; i <= frames[rate]; i++)
+            gait_update(&gait, 18.0f * i / frames[rate], 0,
+                         1000 + 1000 * i / frames[rate], SPIDER_WANDER);
+        phases[rate] = gait.phase;
+        for (int i = 0; i < 100; i++) gait_update(&gait, 18, 0, 2000, SPIDER_WANDER);
+        ok = ok && fabsf(gait.phase - phases[rate]) < 0.0001f;
+        gait_update(&gait, 100, 0, 2100, SPIDER_POUNCE);
+        ok = ok && fabsf(gait.phase - phases[rate]) < 0.0001f;
+        ok = ok && !gait_update(&gait, 100, 0, 2200, SPIDER_IDLE);
+    }
+    ok = ok && fabsf(phases[0] - phases[1]) < 0.001f &&
+        fabsf(phases[0] - phases[2]) < 0.001f;
+    for (int step = 0; step < 256; step++)
+        for (int emote = CSP_EMOTE_NONE; emote <= CSP_EMOTE_SLEEPY; emote++)
+            for (int k = 0; k < 4; k++)
+                for (int side = -1; side <= 1; side += 2) {
+                    leg_pose_t p = leg_pose(k, side, step * (2 * PI_F / 256), true,
+                                            emote, step * 10);
+                    float bend = (p.kf - p.hf) * (p.fr - p.kr) -
+                                 (p.kr - p.hr) * (p.ff - p.kf);
+                    float expected = -side;
+                    float upper = hypotf(p.kf - p.hf, p.kr - p.hr);
+                    float lower = hypotf(p.ff - p.kf, p.fr - p.kr);
+                    ok = ok && bend * expected > 40 &&
+                        fabsf(upper - LEG_LEN * LEG_SEG1) < 0.001f &&
+                        fabsf(lower - LEG_LEN * LEG_SEG2) < 0.001f;
+                    ok = ok && hypotf(p.ff, p.fr) <= BODY_R + LEG_LEN * (LEG_SEG1 + LEG_SEG2);
+                    {
+                        leg_pose_t r = leg_pose(k, side, 0, false, emote, step * 10);
+                        float signed_bend = (r.kf - r.hf) * (r.fr - r.kr) -
+                                            (r.kr - r.hr) * (r.ff - r.kf);
+                        ok = ok && isfinite(r.kf) && isfinite(r.kr) &&
+                            signed_bend * expected > 40 &&
+                            fabsf(hypotf(r.kf - r.hf, r.kr - r.hr) - LEG_LEN * LEG_SEG1) < 0.001f &&
+                            fabsf(hypotf(r.ff - r.kf, r.fr - r.kr) - LEG_LEN * LEG_SEG2) < 0.001f;
+                    }
+                }
+    return ok;
+}
 
 /* ------------------------------------------------------------------ */
 /* Drawing helpers — DIRECT PIXEL WRITES                               */
@@ -337,9 +460,7 @@ void cspider_init(lv_obj_t *parent)
      * transparent, which is exactly what is wanted here. */
     memset(s_buf, 0, CANVAS_BYTES);
 
-    s_phase = 0.0f;
-    s_last_valid = false;
-    s_speed_smooth = 0.0f;
+    memset(&s_gait, 0, sizeof s_gait);
 
     ESP_LOGI(TAG, "canvas spider ready (%dx%d)", CANVAS_SIZE, CANVAS_SIZE);
 }
@@ -373,29 +494,10 @@ void cspider_render(uint32_t now_ms)
 {
     if (!s_canvas) return;
 
-    /* --- gait -------------------------------------------------------
-     * Same logic as the widget renderer: advance the phase on a steady time
-     * base, but only while the spider is genuinely translating. */
-    float bx = (float)g.spider_x;
-    float by = (float)g.spider_y;
-
-    if (s_last_valid) {
-        float dx = bx - s_last_x;
-        float dy = by - s_last_y;
-        float dist = sqrtf(dx * dx + dy * dy);
-        if (dist < 40.0f) {
-            s_speed_smooth += (dist - s_speed_smooth) * 0.25f;
-        }
-    }
-    s_last_x = bx;
-    s_last_y = by;
-    s_last_valid = true;
-
-    bool moving = s_speed_smooth > 0.15f;
-    if (moving) {
-        s_phase += GAIT_RATE;
-        while (s_phase > 2.0f * PI_F) s_phase -= 2.0f * PI_F;
-    }
+    float position_x, position_y;
+    behaviour_pos(&position_x, &position_y);
+    bool moving = gait_update(&s_gait, position_x, position_y, now_ms,
+                              (spider_state_t)g.state);
 
     /* --- squash/stretch ---------------------------------------------
      * The old renderer applied this by moving every part. Here it is two
@@ -451,59 +553,14 @@ void cspider_render(uint32_t now_ms)
         int side = (i < 4) ? -1 : 1;
         int k    = i & 3;
 
-        float off  = (float)(k - 1.5f) * 0.42f;
-        float base = heading + (float)side * (PI_F * 0.5f + off);
-
-        float gait = s_phase
-                   + (float)k * (PI_F * 0.5f)
-                   + (float)((side < 0) ? 0.0f : PI_F);
-
-        float swing = moving ? GAIT_SWING * sinf(gait) : 0.0f;
-        float bend  = 0.55f + (moving ? GAIT_LIFT * sinf(gait + PI_F * 0.5f) : 0.0f);
-
-        /* Emotes modulate the gait, exactly as before. */
-        if (s_emote != CSP_EMOTE_NONE) {
-            float t = (float)(now_ms % 1200u) / 1200.0f;
-            float wave = sinf(t * 2.0f * PI_F);
-
-            switch (s_emote) {
-            case CSP_EMOTE_HAPPY:
-                if (k == 0) {
-                    swing += 1.10f * wave;
-                    bend  -= 0.55f + 0.35f * wave;
-                }
-                break;
-            case CSP_EMOTE_SAD:
-                bend  += 0.60f;
-                swing *= 0.35f;
-                break;
-            case CSP_EMOTE_ALERT:
-                bend  -= 0.45f + 0.10f * wave;
-                swing *= 0.25f;
-                break;
-            case CSP_EMOTE_SLEEPY:
-                bend  -= 0.30f + 0.05f * wave;
-                swing *= 0.15f;
-                break;
-            default:
-                break;
-            }
-        }
-
-        float dir1 = base + (float)side * (swing + bend);
-        float dir2 = base - (float)side * (swing + bend);
-
-        float hx = (float)CANVAS_C + (float)BODY_R * cosf(base);
-        float hy = (float)CANVAS_C + (float)BODY_R * sinf(base);
-        float kx = hx + LEG_LEN * LEG_SEG1 * cosf(dir1);
-        float ky = hy + LEG_LEN * LEG_SEG1 * sinf(dir1);
-        float fx = kx + LEG_LEN * LEG_SEG2 * cosf(dir2);
-        float fy = ky + LEG_LEN * LEG_SEG2 * sinf(dir2);
-
-        draw_line((int32_t)hx, (int32_t)hy,
-                  (int32_t)kx, (int32_t)ky, LEG_WIDTH, col_leg);
-        draw_line((int32_t)kx, (int32_t)ky,
-                  (int32_t)fx, (int32_t)fy, LEG_WIDTH, col_leg);
+        leg_pose_t pose = leg_pose(k, side, s_gait.phase, moving, s_emote,
+                                   now_ms);
+        int32_t hx, hy, kx, ky, fx, fy;
+        to_canvas(pose.hf, pose.hr, heading, 1, 1, &hx, &hy);
+        to_canvas(pose.kf, pose.kr, heading, 1, 1, &kx, &ky);
+        to_canvas(pose.ff, pose.fr, heading, 1, 1, &fx, &fy);
+        draw_line(hx, hy, kx, ky, LEG_WIDTH, col_leg);
+        draw_line(kx, ky, fx, fy, LEG_WIDTH, col_leg);
     }
 
     /* --- abdomen ---------------------------------------------------- */

@@ -1,0 +1,143 @@
+{
+  "magic": 1397770564,
+  "version": 2,
+  "headerSize": 12,
+  "payloadSizes": [
+    120,
+    132
+  ],
+  "fields": [
+    {
+      "name": "hunger",
+      "offset": 0,
+      "type": "u8",
+      "length": 0
+    },
+    {
+      "name": "mood",
+      "offset": 1,
+      "type": "u8",
+      "length": 0
+    },
+    {
+      "name": "energy",
+      "offset": 2,
+      "type": "u8",
+      "length": 0
+    },
+    {
+      "name": "hygiene",
+      "offset": 3,
+      "type": "u8",
+      "length": 0
+    },
+    {
+      "name": "age_ticks",
+      "offset": 4,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "meals",
+      "offset": 8,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "cleans",
+      "offset": 16,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "plays",
+      "offset": 20,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "xp",
+      "offset": 24,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "stage",
+      "offset": 46,
+      "type": "u8",
+      "length": 0
+    },
+    {
+      "name": "sick",
+      "offset": 47,
+      "type": "u8",
+      "length": 0
+    },
+    {
+      "name": "muted",
+      "offset": 48,
+      "type": "u8",
+      "length": 0
+    },
+    {
+      "name": "level",
+      "offset": 52,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "achievements",
+      "offset": 56,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "days_lived",
+      "offset": 60,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "best_streak",
+      "offset": 94,
+      "type": "u16",
+      "length": 0
+    },
+    {
+      "name": "bond",
+      "offset": 98,
+      "type": "u16",
+      "length": 0
+    },
+    {
+      "name": "name",
+      "offset": 100,
+      "type": "string",
+      "length": 16
+    },
+    {
+      "name": "colour",
+      "offset": 116,
+      "type": "u8",
+      "length": 0
+    },
+    {
+      "name": "silk",
+      "offset": 120,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "gifts_owned",
+      "offset": 124,
+      "type": "u32",
+      "length": 0
+    },
+    {
+      "name": "brightness",
+      "offset": 128,
+      "type": "u8",
+      "length": 0
+    }
+  ]
+}

@@ -14,12 +14,13 @@
 #include "esp_log.h"
 
 #include <stdlib.h>
+#include <math.h>
 
 static const char *TAG = "spidarium.needs";
 
 /* Decay accumulators: stats are integers, so fractional decay is carried
  * between ticks to give each stat a distinct curve. */
-static float s_hunger_acc;
+static double s_hunger_acc;
 static float s_hygiene_acc;
 static float s_energy_acc;
 
@@ -36,6 +37,36 @@ static uint8_t clamp100(int v)
     return (uint8_t)v;
 }
 
+static void hunger_decay(float minutes)
+{
+    s_hunger_acc += HUNGER_PER_MIN * minutes
+                   * game_temperament()->hunger_decay_mult
+                   * gift_bonus()->all_stats_decay_mult;
+    if (s_hunger_acc >= 1.0f) {
+        int whole = (int)s_hunger_acc;
+        s_hunger_acc -= whole;
+        g.hunger = clamp100((int)g.hunger - whole);
+    }
+}
+
+bool needs_hunger_test(void)
+{
+    uint8_t hunger = g.hunger;
+    double accumulator = s_hunger_acc;
+    float rate = HUNGER_PER_MIN * game_temperament()->hunger_decay_mult *
+        gift_bonus()->all_stats_decay_mult;
+    g.hunger = 100;
+    s_hunger_acc = 0;
+    for (int i = 0; i < 40; i++) hunger_decay(0.05f);
+    int loss = 100 - g.hunger;
+    bool ok = HUNGER_PER_MIN == 3.0f && loss == (int)(rate * 2) &&
+        fabs(s_hunger_acc - (rate * 2 - loss)) < 0.001;
+    g.hunger = hunger;
+    s_hunger_acc = accumulator;
+    ESP_LOGI(TAG, "hunger test: loss_120s=%d rate=%.2f restored=1", loss, (double)rate);
+    return ok;
+}
+
 uint32_t needs_days_lived(void)
 {
     return g.age_ticks / TICKS_PER_DAY;
@@ -44,10 +75,10 @@ uint32_t needs_days_lived(void)
 const char *needs_stage_name(void)
 {
     switch (g.stage) {
-    case STAGE_SPIDERLING: return "spiderling";
-    case STAGE_JUVENILE:   return "juvenile";
-    case STAGE_ADULT:      return "adult";
-    default:               return "spiderling";
+    case STAGE_SPIDERLING: return "Spiderling";
+    case STAGE_JUVENILE:   return "Juvenile";
+    case STAGE_ADULT:      return "Adult";
+    default:               return "Spiderling";
     }
 }
 
@@ -72,6 +103,7 @@ void needs_recompute_mood(void)
     if (g.hunger  < MOOD_LOW_THRESHOLD) base -= penalty;
     if (g.hygiene < MOOD_LOW_THRESHOLD) base -= penalty;
     if (g.energy  < MOOD_LOW_THRESHOLD) base -= penalty;
+    base = (int)((float)base * gift_bonus()->mood_mult);
 
     /* Ease toward the target rather than snapping. */
     int cur = (int)g.mood;
@@ -84,6 +116,10 @@ void needs_recompute_mood(void)
 /* ------------------------------------------------------------------ */
 void needs_feed(void)
 {
+    if (prey_count() >= MAX_PREY) {
+        ESP_LOGW(TAG, "feed rejected: tank already has %d live prey", MAX_PREY);
+        return;
+    }
     /* Feeding spawns prey; the spider must catch it. */
     prey_spawn();
     audio_play(SFX_TAP);
@@ -204,8 +240,7 @@ void needs_tick(uint32_t now_ms, float dt_s)
     float minutes = (float)DECAY_PERIOD_MS / 60000.0f * (float)GAME_TIME_SCALE;
 
     /* Temperament: a greedy spider burns through food faster. */
-    s_hunger_acc += HUNGER_PER_MIN * minutes
-                   * game_temperament()->hunger_decay_mult;
+    hunger_decay(minutes);
 
     /* Bond erodes while the spider is sick: neglect costs affection. */
     if (g.sick && g.bond > 0) {
@@ -220,7 +255,8 @@ void needs_tick(uint32_t now_ms, float dt_s)
     } else {
         /* A leaf gift slows the tank getting dirty. */
         s_hygiene_acc += HYGIENE_PER_MIN * minutes
-                       * gift_bonus()->hygiene_decay_mult;
+                       * gift_bonus()->hygiene_decay_mult
+                       * gift_bonus()->all_stats_decay_mult;
     }
 
     if (g.state == SPIDER_SLEEP) {
@@ -228,14 +264,11 @@ void needs_tick(uint32_t now_ms, float dt_s)
         s_energy_acc -= ENERGY_REGEN_ASLEEP_PER_MIN * minutes
                       * gift_bonus()->energy_regen_mult;
     } else {
-        s_energy_acc += ENERGY_PER_MIN * minutes;
+        s_energy_acc += ENERGY_PER_MIN * minutes
+                      * gift_bonus()->all_stats_decay_mult
+                      / gift_bonus()->movement_efficiency_mult;
     }
 
-    if (s_hunger_acc >= 1.0f) {
-        int whole = (int)s_hunger_acc;
-        s_hunger_acc -= (float)whole;
-        g.hunger = clamp100((int)g.hunger - whole);
-    }
     if (s_hygiene_acc >= 1.0f) {
         int whole = (int)s_hygiene_acc;
         s_hygiene_acc -= (float)whole;

@@ -24,15 +24,33 @@
 
 #include "game.h"
 #include "assets.h"
+#include "net.h"
+#include "save.h"
+#include "theme.h"
+#include "power.h"
 
 static const char *TAG = "spidarium";
 
 void app_main(void)
 {
     ESP_ERROR_CHECK(nvs_flash_init());
+    ESP_ERROR_CHECK(save_init() ? ESP_OK : ESP_FAIL);
+    theme_init();
+
+    /* Restore RTC and run one bounded sync only if credentials exist.
+     * The display is not started until the radio has been deinitialized. */
+    net_boot_init();
 
     ESP_LOGI(TAG, "Starting display + LVGL");
-    bsp_display_start();
+    bsp_display_cfg_t display_cfg = {
+        .lv_adapter_cfg = ESP_LV_ADAPTER_DEFAULT_CONFIG(),
+        .rotation = ESP_LV_ADAPTER_ROTATE_0,
+        .tear_avoid_mode = ESP_LV_ADAPTER_TEAR_AVOID_MODE_NONE,
+        .touch_flags = {.swap_xy = 1, .mirror_x = 0, .mirror_y = 1},
+    };
+    display_cfg.lv_adapter_cfg.stack_in_psram = true;
+    ESP_ERROR_CHECK(bsp_display_start_with_config(&display_cfg) ? ESP_OK : ESP_FAIL);
+    net_display_ready();
 
     /* Mount the QOI sprite partition. If this fails the game still runs with
      * primitive rendering, so a missing/blank storage partition is not fatal. */
@@ -42,4 +60,5 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Spidarium booting");
     game_init();
+    if (!power_init()) ESP_LOGW(TAG, "battery monitoring unavailable");
 }

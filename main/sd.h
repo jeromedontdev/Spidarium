@@ -13,6 +13,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "game.h"
 
 #define SD_MOUNT_POINT "/sdcard"
 
@@ -45,3 +46,11 @@ bool sd_restore_save(void);
 
 /* True if a backup file exists on the card. */
 bool sd_backup_exists(void);
+
+/* Nonblocking UI requests; I/O runs on the serialized persistence worker. */
+enum { SD_JOB_MOUNT = 1, SD_JOB_BACKUP, SD_JOB_RESTORE };
+bool sd_request(uint8_t operation);
+bool sd_busy(void);
+uint32_t sd_generation(void);
+bool sd_take_restored(game_state_t *state);
+bool sd_run_job(uint8_t operation, const game_state_t *snapshot); /* Persistence-worker-only. */

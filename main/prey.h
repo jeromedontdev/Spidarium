@@ -1,7 +1,7 @@
 /*
  * Spidarium — prey.
  *
- * Fly / cricket / moth with wander + flee AI, and the catch resolution that
+ * Eight level-gated species with wander/flee AI and the catch resolution that
  * turns a pounce into a meal (or a miss).
  */
 #pragma once
@@ -11,17 +11,19 @@
 #include <stdbool.h>
 
 /* Spawn prey of a random unlocked species at a random playfield point. */
-void prey_spawn(void);
+bool prey_spawn(void);
 
-/* Spawn a specific species (used by progression unlocks). */
-void prey_spawn_species(prey_species_t species);
+/* Spawn an unlocked species; return false and log when rejected/full. */
+bool prey_spawn_species(prey_species_t species);
 
 /* Spawn a specific species with an explicit wild flag. Wild prey are leaner
  * and warier: they keep the tank alive without feeding the spider for free. */
-void prey_spawn_species_ex(prey_species_t species, bool wild);
+bool prey_spawn_species_ex(prey_species_t species, bool wild);
 
 /* Spawn a random unlocked species as wild prey. */
-void prey_spawn_wild(void);
+bool prey_spawn_wild(void);
+bool prey_progression_test(void);
+bool prey_hunt_test(bool (*exercise)(int32_t x, int32_t y));
 
 /* Advance all prey one logic tick. */
 void prey_tick(uint32_t now_ms, float dt_s);

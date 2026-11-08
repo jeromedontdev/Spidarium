@@ -1,235 +1,121 @@
 # Memory budget
 
-Where every kilobyte goes, and why. Written after three separate bugs in this
-project turned out to be the same bug: **internal RAM running out**, presenting
-as `Draw bitmap failed: ESP_ERR_NO_MEM` and a corrupted screen.
+## Policy
 
-| Bug | What actually happened |
+8 MB octal PSRAM absorbs CPU-only allocations. Internal SRAM (512 KB total)
+must retain contiguous DMA-capable blocks for SPI and hardware-required radio
+buffers. `free` alone is insufficient: record `largest` before and after
+operations. Pausing does not defragment or release existing allocations.
+
+| Consumer | Placement |
 |---|---|
-| SD card probing at boot | `esp_vfs_fat_sdmmc_mount()` allocated DMA-capable buffers the LCD driver then could not get |
-| WiFi scanning | The radio's RX/TX pools took internal RAM the LCD needs every frame |
-| Menu rendering | A 50%-alpha full-screen backdrop forced a full-framebuffer blend every frame |
+| LCD framebuffers, two 480 x 50 x 2 buffers | PSRAM, 96,000 bytes |
+| Spider RGB565A8 canvas, 96 x 96 x 3 | PSRAM, 27,648 bytes |
+| Enlarged equipped gift, 64 x 64 x 3 | Explicit PSRAM, 12,288 bytes; reused |
+| Battery worker stack | Explicit PSRAM, 3,072 bytes; no flash writes |
+| Static RGB565 pixel-art habitat, 480 x 480 x 2 | Explicit PSRAM, 460,800 bytes, allocated once |
+| Eight authored enclosure source images, 240 x 240 x 3 each | Explicit PSRAM, 1,382,400 bytes total, decoded at boot |
+| Decoded art and general CPU heap | PSRAM preferred |
+| Audio / console stacks | Explicit PSRAM capability allocation |
+| Console command stack (browser restore and screen capture) | PSRAM, 8,192 bytes; measured minimum-free headroom |
+| Explicit diagnostic screen snapshot | Temporary PSRAM, 480x480 RGB565 or 96x96 ARGB; freed after transfer |
+| Network / save / SD worker stacks | Internal: flash operations disable caches |
+| Synthesized PCM audio buffer | PSRAM, 12,800 bytes |
+| Main LVGL adapter stack | PSRAM through `stack_in_psram` |
+| LVGL draw-worker stacks / task control blocks | Internal |
+| SPI descriptors and DMA staging | Internal DMA-capable |
+| Eligible WiFi/LwIP buffers | PSRAM preference; not every radio buffer |
+| TLS working allocations | PSRAM (`MBEDTLS_EXTERNAL_MEM_ALLOC`) |
+| Instructions and rodata | PSRAM mapping enabled |
+| Ordinary writable static BSS | Internal unless explicitly attributed |
 
-None of them said "out of memory" in a way that pointed at the cause. This
-document exists so the next one is obvious before it ships.
+`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0` prefers PSRAM for ordinary allocations.
+`CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536` reserves internal memory for
+capability-specific consumers; it does not exclude WiFi from that pool.
+Static WiFi RX/TX counts are four, dynamic RX/TX sixteen.
+External-stack permission alone does not relocate any task.
+Keep both configuration files aligned and inspect `build\config\sdkconfig.h`.
 
----
+The adapter's draw-thread PSRAM Kconfig option fails its LVGL 9.6 source-layout
+check. Leave it disabled; the supported main-task API is independent.
 
-## The two pools
+## Measurements and gate
 
-The ESP32-S3 has **512 KB of internal SRAM** and, on this board, **8 MB of octal
-PSRAM**. They are not interchangeable.
+The historical acceptance target is internal/DMA `largest >= 51200` bytes,
+including after menu, rendering and repeated scanning tests. Drift allowance
+for `scanloop` and `render` is at most 4,096 bytes. Do not lower a test threshold
+to hide a regression.
 
-| | Internal SRAM | PSRAM |
-|---|---|---|
-| Size | 512 KB | 8 MB |
-| Speed | Fast, no cache miss | Slower, goes through cache |
-| DMA-capable for the LCD | **Yes** | No |
-| Task stacks | Yes | Yes (with `stack_in_psram`) |
-| WiFi/LWIP buffers | Yes | Yes (with `SPIRAM_TRY_ALLOCATE_WIFI_LWIP`) |
+Round 28, after the persistent HUD, modal gates and static PSRAM background:
 
-**Internal SRAM is the scarce resource.** Everything that matters competes for
-it. PSRAM is plentiful and should absorb anything that does not need to be
-internal.
+| Point | Internal free | DMA free | Largest |
+|---|---:|---:|---:|
+| Console before tests | 183,735 | 175,947 | 81,920 |
+| Render before | 183,991 | 176,203 | 81,920 |
+| Render after | 183,991 | 176,203 | 81,920 |
+| First scan teardown | 160,391 | 152,603 | 63,488 |
+| Five additional scans | 160,391 | 152,603 | 63,488 |
+| After 44 console checks | 172,423 | 164,635 | 81,920 |
+| Standalone memory check after reset | 169,399 | 161,611 | 63,488 |
 
----
+Final `render 500` and `scanloop 5` both reported zero largest-block drift.
+All 44 success/rejection checks passed; a 40-second soak had zero faults.
+Snapshots include concurrent driver/background activity and can differ;
+do not infer individual allocation causes from these totals alone.
+First-time network infrastructure consumes free bytes and may reduce the largest
+block once (81,920 to 63,488 observed); subsequent five scans stayed stable.
+The 51,200-byte gate is not weakened. The eight-scene background reuses its
+460,800-byte PSRAM buffer; changing scenes performs no new canvas allocations.
+Before tuning, recovered firmware had largest 30,720 at boot and 26,624 after
+its first scan; that build failed the baseline gate and was not accepted.
+Use the newest [progress evidence](../PROGRESS.md) for complete firmware results.
 
-## Measured baseline
+Round 29 replaces procedural backgrounds with eight packed images and makes
+the Care toggle a small icon with aligned status bars. Final COM7 measurements:
 
-From `mem_report_detail("boot complete")` on real hardware, with the game
-running and WiFi not yet started:
+| Point | Internal free | DMA free | Largest |
+|---|---:|---:|---:|
+| Console before regression suite | 167,983 | 160,195 | 63,488 |
+| Quiescent five-scan baseline | 176,639 | 168,851 | 73,728 |
+| Quiescent five-scan end | 176,639 | 168,851 | 73,728 |
+| After 39 console cases | 173,311 | 165,523 | 73,728 |
+| Standalone post-reset detailed report | 169,007 | 161,219 | 63,488 |
 
-```
-internal  free  51983  largest  40960
-dma-cap   free  44711  largest  40960
-psram     free 6791324  largest 6684672
-```
+Final render/scan-loop drift was zero; 40-second soak passed with zero faults.
+All eight scene preferences survived reset and passed exact-pixel diagnostics.
+Approximately 3.01 MB PSRAM remains free. All images are decoded before LVGL:
+background selection only copies source pixels into the existing canvas.
 
-Read this as: **~51 KB of internal RAM free, and the largest single block is
-40 KB.** That 40 KB figure is the one that matters — it is what the LCD driver
-has to fit a DMA buffer into.
+Live SPI transfers temporarily allocate/free internal DMA staging buffers, so
+different unsynchronized memory reads can differ within one console report.
+The scan-loop benchmark now quiesces gameplay through the LVGL task and lets
+pending transfers finish before comparing idle snapshots. Its 4KB threshold
+was not weakened, and the separate live 51,200-byte floor still applies.
 
-### Why "largest block" and not "free"
+## Flash budget
 
-A pool can report plenty free and still fail one large allocation if it is
-fragmented. The LCD needs a contiguous DMA buffer, so `largest` is the number
-that predicts whether the display will work. `mem_report_detail()` warns when it
-drops below 32 KB.
+| Region | Offset | Size |
+|---|---:|---:|
+| NVS | 0x9000 | 24 KB |
+| PHY | 0xf000 | 4 KB |
+| OTA metadata | 0x10000 | 8 KB |
+| Factory app | 0x20000 | 3 MB |
+| OTA 0 | 0x320000 | 3 MB |
+| OTA 1 | 0x620000 | 3 MB |
+| Asset storage | 0x920000 | 6 MB |
 
----
+The integrated app is 1,886,816 bytes. Asset partition capacity is not the
+packed image size: the final 123-entry MMAP write is 155,620 bytes.
+Initial migration must flash the table and assets with the app.
 
-## Flash
+## Repeatable checks
 
-| Region | Size | Used | Notes |
-|---|---|---|---|
-| `factory` app | 8 MB | 1.54 MB | `spidarium.bin` = 0x18ae70 = 1,617,520 bytes |
-| `storage` (SPIFFS) | 7 MB | 50 KB | QOI sprites, mmap'd |
-| `nvs` | 24 KB | < 4 KB | game save + WiFi credentials |
-| `phy_init` | 4 KB | — | |
-
-**81% of the app partition is free** (0x675190 bytes). Flash is not a constraint.
-This is the opposite of Pocket Tank, which fits a 7.56 MB model into its budget —
-they had to care, we do not.
-
----
-
-## Internal SRAM consumers
-
-Approximate, in descending order of size. The first three are the ones that
-have actually caused bugs.
-
-### 1. WiFi and LWIP — up to ~40 KB, now in PSRAM
-
-The radio's RX/TX pools are the single largest consumer. Defaults were 10 static
-RX + 32 dynamic RX + 32 dynamic TX buffers.
-
-**Fixed** by `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y`, which moves them to PSRAM.
-Also reduced the pool sizes, since this device sends almost nothing:
-
-```
-CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM   10 -> 4
-CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM  32 -> 16
-CONFIG_ESP32_WIFI_DYNAMIC_TX_BUFFER_NUM  32 -> 16
-```
-
-**Rule: WiFi must never take internal RAM.** If a future change reintroduces
-that, the display breaks.
-
-### 2. LCD draw buffers — ~48 KB, must be internal
-
-The panel is 480×480 RGB565. The board config uses `buffer_height = 50` with
-`require_double_buffer = true`:
-
-```
-480 px wide × 50 px tall × 2 bytes × 2 buffers = 96,000 bytes
-```
-
-These are allocated with `MALLOC_CAP_INTERNAL` because the SPI driver DMAs from
-them. **This is the allocation that fails first**, and it is why the 40 KB
-largest-block figure matters.
-
-### 3. LVGL heap — grows with object count
-
-`CONFIG_LV_USE_BUILTIN_MALLOC` is off, so LVGL uses the C library allocator and
-its objects come from the general heap. The project creates:
-
-```
-26 x lv_obj_create      (spider parts, terrarium layers, panels)
-21 x lv_label_create
- 8 x lv_button_create
- 3 x lv_line_create
- 2 x lv_arc_create
- 2 x lv_image_create
+```powershell
+python cmd.py COM7 "mem"
+python cmd.py COM7 "scanloop 5"
+python cmd.py COM7 "render 500"
+python run_tests.py COM7 results.txt --gameplay
 ```
 
-The spider alone registers **46 parts** (`MAX_PARTS = 2*FUZZ_COUNT + 18`), each
-an `lv_obj`. That is the largest single block of LVGL objects in the project and
-it is why `MAX_PARTS` silently dropping parts was such a persistent bug.
-
-`CONFIG_LV_DRAW_LAYER_SIMPLE_BUF_SIZE = 24576` — LVGL allocates a 24 KB scratch
-buffer for layers. This is internal RAM.
-
-### 4. Task stacks
-
-| Task | Stack | Where |
-|---|---|---|
-| LVGL worker | 8 KB | internal |
-| `spidarium_net` | 8 KB | internal |
-| main / idle / timer | IDF defaults | internal |
-
-The LVGL worker's 8 KB is why WiFi calls cannot run on it — `esp_wifi_init()`
-needs more. That is why `net.c` has its own task.
-
-### 5. Everything else
-
-Audio (I2S buffers), the game state struct (~200 bytes), the prey array
-(3 × ~400 bytes), the terrarium's static point arrays. Together these are small
-— a few KB — and have never caused a problem.
-
----
-
-## PSRAM consumers
-
-Barely used. 6.79 MB free of 8 MB.
-
-| Consumer | Size |
-|---|---|
-| LVGL frame buffers | ~96 KB (if `use_psram` is honoured) |
-| WiFi/LWIP pools | ~40 KB |
-| Everything else | negligible |
-
-**There is 6.7 MB of headroom.** Any future feature that needs a large buffer
-should go here, not into internal RAM.
-
----
-
-## Rules
-
-These are the rules that would have prevented all three bugs.
-
-1. **Anything over ~4 KB that is not DMA'd by the LCD goes in PSRAM.**
-   Use `heap_caps_malloc(size, MALLOC_CAP_SPIRAM)`.
-
-2. **Never allocate internal RAM at boot for something optional.**
-   SD card, WiFi, and anything else the player might not use should be
-   initialised on demand. Both of those caused bugs by probing at boot.
-
-3. **Check `largest`, not `free`.** A fragmented pool fails large allocations
-   while looking healthy. `mem_report_detail()` prints both.
-
-4. **Call `mem_report_detail()` after adding any subsystem.** The boot line is
-   the baseline; a new line that drops `largest` below 32 KB is a bug.
-
-5. **A full-screen translucent overlay is expensive.** It forces LVGL to blend
-   the whole framebuffer every frame. Use an opaque backdrop.
-
----
-
-## Where this is heading
-
-The long-term goal is to move toward Pocket Tank's architecture. Their split is
-worth understanding because it is a direct answer to the problems this project
-keeps hitting:
-
-| | Spidarium now | Pocket Tank |
-|---|---|---|
-| Rendering | LVGL scene graph, ~60 objects | Hand-written RGB565 software renderer |
-| Spider/fish | 46 `lv_obj` parts, repositioned per frame | Drawn into a framebuffer each frame |
-| Menus | LVGL widgets | Same renderer, pixel font |
-| Model | none | 7.56 MB 4-bit LLM in flash, mmap'd |
-| Internal RAM | ~51 KB free, 40 KB largest block | Documented per-stage budget |
-
-**What that would buy us:** no `MAX_PARTS` budget, no draw callbacks for
-triangles, no `LV_USE_MATRIX` limitation on scaling, and no scene-graph overhead
-for what is really a sprite. The spider becomes a few dozen `fill_circle` calls.
-
-**What it would cost:** rewriting `spider.c`, `terrarium.c`, `prey.c` rendering
-and the HUD. Roughly a week. Not worth doing for its own sake, but worth doing
-if the spider's rendering keeps fighting the toolkit.
-
-**What to take from them now, without a rewrite:**
-
-- This document, and the `mem_report_detail()` calls that keep it honest.
-- Their habit of a per-stage frame profile in the boot log.
-- Their rule that the model owns its decisions with no fallback heuristics —
-  the same principle as `mind.c` publishing intent without driving the FSM.
-
----
-
-## Quick reference
-
-```
-mem_report_detail("where")   // full breakdown, warns below 32 KB largest
-mem_report("where")          // one line, for frequent checkpoints
-```
-
-Expected boot output:
-
-```
---- memory at boot complete ---
-  internal  free  51983  largest  40960
-  dma-cap   free  44711  largest  40960
-  psram     free 6791324  largest 6684672
-```
-
-If `internal largest` is below 32768, the LCD will start dropping frames.
+Use [whole-game architecture](PSRAM_THREADING_ARCHITECTURE.md) for ownership,
+and [serial console](serial_console.md) for output interpretation.

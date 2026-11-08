@@ -56,7 +56,9 @@ for l in errors:
 print("=== total lines: %d ===" % len(lines))
 if not lines:
     print("VERDICT: FAIL - no serial output captured (port silent or wrong port)")
+    sys.exit(1)
 elif errors:
     print("VERDICT: FAIL - see faults above")
+    sys.exit(1)
 else:
     print("VERDICT: PASS - clean boot window")

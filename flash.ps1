@@ -11,8 +11,8 @@ $env:IDF_TOOLS_PATH        = 'C:\Espressif\tools'
 $env:IDF_TARGET            = 'esp32s3'
 $env:ESP_ROM_ELF_DIR       = 'C:\Espressif\tools\esp-rom-elfs\20260528'
 $env:IDF_PYTHON_ENV_PATH   = 'C:\Espressif\python_env\idf5.5_py3.11_env'
-$env:IDF_CCACHE_ENABLE     = '1'
-$env:ESP_IDF_VERSION       = '5.5'
+$env:IDF_CCACHE_ENABLE     = '0'
+$env:ESP_IDF_VERSION       = '5.5.6'
 $env:PYTHONNOUSERSITE      = 'True'
 $env:PYTHONPATH            = $null
 $env:PYTHONHOME            = $null
@@ -32,11 +32,12 @@ $bin = @(
 )
 $env:PATH = ($bin -join ';') + ';' + $env:PATH
 
-Set-Location 'C:\Users\jerom\.cline\data\workspaces\chat\spidarium'
+Set-Location $PSScriptRoot
 
 Write-Host "Flashing target 'esp32s3' on port $port..."
 $out  = & $py (Join-Path $idf 'tools\idf.py') -p $port flash 2>&1
 $code = $LASTEXITCODE
-$out | Tee-Object -FilePath 'C:\Users\jerom\.cline\data\workspaces\chat\spidarium\build\_flash.log' |
+$out | Tee-Object -FilePath (Join-Path $PSScriptRoot 'build\_flash.log') |
     Select-Object -Last 45
 Write-Host "=== idf.py flash exited with code $code (port $port) ==="
+exit $code

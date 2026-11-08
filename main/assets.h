@@ -21,9 +21,9 @@ bool assets_init(void);
 /* True once assets_init() has succeeded. */
 bool assets_ready(void);
 
-/* Look up a sprite by its generated enum index. Returns NULL if assets are
- * not mounted or the index is out of range. The returned descriptor points
- * into memory-mapped flash and must not be freed. */
+/* Look up an image by its generated enum index. Returns NULL if assets are
+ * not mounted or the index is out of range. The persistent descriptor and
+ * decoded RGB565A8 pixels live in PSRAM and must not be freed. */
 const lv_image_dsc_t *assets_image(int index);
 
 /* Convenience: number of files in the asset partition. */

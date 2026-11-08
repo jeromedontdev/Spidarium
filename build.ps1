@@ -10,6 +10,7 @@ $env:IDF_TARGET          = 'esp32s3'
 $env:ESP_ROM_ELF_DIR     = 'C:\Espressif\tools\esp-rom-elfs\20260528'
 $env:IDF_PYTHON_ENV_PATH = 'C:\Espressif\python_env\idf5.5_py3.11_env'
 $env:IDF_CCACHE_ENABLE   = '0'
+$env:ESP_IDF_VERSION    = '5.5.6'
 
 $bin = @(
   'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts'
@@ -28,10 +29,11 @@ $bin = @(
 )
 $env:PATH = ($bin -join ';') + ';' + $env:PATH
 
-Set-Location 'C:\Users\jerom\.cline\data\workspaces\chat\spidarium'
+Set-Location $PSScriptRoot
 
 $scriptArgs = @((Join-Path $idf 'tools\idf.py')) + @('build')
 $out = & $py $scriptArgs 2>&1
 $code = $LASTEXITCODE
-$out | Tee-Object -FilePath 'C:\Users\jerom\.cline\data\workspaces\chat\spidarium\build.log' | Select-Object -Last 40
+$out | Tee-Object -FilePath (Join-Path $PSScriptRoot 'build.log') | Select-Object -Last 40
 Write-Host "=== idf.py build exited with code $code ==="
+exit $code

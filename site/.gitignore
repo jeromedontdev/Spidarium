@@ -1,0 +1,6 @@
+node_modules/
+dist/
+node.exe
+npm-tool/
+.npm-cache/
+*.tgz

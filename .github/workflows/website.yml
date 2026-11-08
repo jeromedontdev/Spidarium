@@ -1,0 +1,54 @@
+name: Publish website
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Test browser logic
+        working-directory: site
+        run: npm ci && npm test
+      - name: Fetch official firmware, never local saves
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || 'v1.0.0' }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "spidarium-$RELEASE_TAG.zip" --dir "$RUNNER_TEMP"
+          python tools/prepare_website.py "$RUNNER_TEMP/spidarium-$RELEASE_TAG.zip"
+      - name: Build website and bundled flasher
+        working-directory: site
+        run: npm run build
+      - name: Copy published pixel artwork
+        run: python tools/prepare_website.py --assets-only
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

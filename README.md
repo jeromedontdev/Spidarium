@@ -8,6 +8,12 @@ You keep a spider. It wanders, hunts, sleeps, moults and gets sick if you neglec
 it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
+**[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
+| **[Download v1.0.0](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.0.0)**
+| [Screenshots and feature guide](docs/README.md)
+
+![Actual device care HUD](docs/screenshots/device-hud.png)
+
 ---
 
 ## What makes it interesting
@@ -23,13 +29,72 @@ picture, not a widget tree.
 allocate temporary blending buffers for every primitive every frame; those came
 out of internal DMA RAM and starved the LCD after about thirty seconds.
 
-**The radio is only on during a check.** WiFi allocates internal DMA-capable RAM
-for its RX/TX pools, and the LCD SPI driver needs the same pool. They cannot
-coexist, so a scan stops the tank rendering, does its work, and tears the driver
-down completely — on every path, including failure.
+**The radio is on only for bounded jobs.** A worker pauses the whole display
+adapter with acknowledgement, drains persistence, scans/connects/synchronizes
+or downloads an update, then stops and deinitializes WiFi on every exit.
+Boot sync happens only with saved credentials. Fresh NTP UTC sets the external
+RTC; its backup power keeps time while the device is off.
 
-**The whole device is drivable over serial.** Every UI action has a console
-command, so a feature can be tested from a script instead of by tapping.
+**Eighteen gifts and consistent artwork.** All gift bonuses have gameplay
+consumers. Non-spider art follows a deterministic pixel-art generator and
+[style contract](docs/ART_STYLE.md); existing spider art is preserved.
+See [asset maintenance](assets/README.md).
+
+**Hunting gets the whole enclosure.** A translucent top-left page ear reveals
+centered compact status boxes along the top row, plus Feed/Clean/Play/Sleep/Gift/Menu
+actions. Tapping the ear again or an empty tank tap closes the overlay without firing;
+choosing a gift exposes placement with an X icon to cancel.
+Drag toward a bug to jump; AI and prey hold still during the gesture.
+Rounded silk-bordered cards use visibly disabled Prev/Next paging rather than
+slow scrolling. Only Back navigates back; blank taps are ignored. The QWERTY
+keyboard includes WiFi Show/Hide
+password. Eight authored retro pixel-art backgrounds depict enclosure substrate,
+acrylic vents, edge plants/climbing twigs and upper-wall silk sleeping sacs, rather
+than procedural floor patterns or landscape horizons.
+Floors are darkened for creature contrast; bent legs have visible knee joints.
+The selected enclosure survives reboot. Eight prey species unlock at levels
+1/2/4/6/10/13/16/20; existing pet progress is preserved. Distance-driven,
+alternating leg motion keeps front joints forward regardless of render cadence.
+See [UI details](docs/MENU_ARCHITECTURE.md).
+
+**Play is a random minigame.** Bug Hunt, Color Match and Quick Tap use big
+touch targets and eight increasingly difficult rounds, with no immediate repeat.
+Bug targets shift, colors test memory and Quick Tap has false cues.
+Completion pays score-based XP and Silk; Back cancels without care rewards. Care shows XP and the next
+unlock, hunting pays more XP, and existing level/save progress is preserved.
+Care buttons and menu cards are taller; New Tank is red and lives in Settings,
+behind its confirmation screen.
+
+**Gifts are earned habitat furniture.** Buy with Silk from games/hunts, then
+reposition owned items for free. Larger 64px shelters/perches/toys have explicit
+purposes, unlocks through level 40 and visible spider visits. Existing placed
+gifts and pet progress survive the save migration.
+See [the gift shop](docs/GIFTS_CATALOG.md).
+
+**Battery-aware display.** Real AXP2101 battery/USB/charging telemetry,
+saved brightness presets, idle dimming, screen-off/touch wake and low-battery
+save/dimming are implemented without changing the charger configuration.
+See [battery management](docs/BATTERY_MANAGEMENT.md).
+The top-right gauge shows level/charging and opens voltage details on tap.
+Name and next unlock share a translucent reading panel. Feed disables at three
+live bugs; achievement badges are distinct and every species has splatter art.
+Sound controls live under Settings.
+
+**Browser tools, without an account.** Install the official firmware over Web
+Serial, download/view/restore a pet backup, or send WiFi settings directly to
+your device. No passwords are stored by the website. Try the playable browser
+simulator separately; it is a model of the game, not native firmware emulation.
+See [website development](site/README.md) and [release notes](docs/RELEASE_v1.0.0.md).
+
+**PSRAM and task ownership apply throughout the game.** CPU-only buffers, TLS,
+audio/console and main LVGL stacks use PSRAM. Network/persistence stacks remain
+internal because flash operations disable caches. Audio, persistence and SD
+operations use copied-job worker queues. Only LVGL's task mutates its objects.
+See [the design policy](docs/PSRAM_THREADING_ARCHITECTURE.md).
+
+**Core actions are drivable over serial.** Care actions, menu/editor opens,
+network jobs and diagnostics can be exercised from scripts. Physical appearance
+and touchscreen ergonomics still need board-level inspection.
 
 ---
 
@@ -43,15 +108,18 @@ command, so a feature can be tested from a script instead of by tapping.
 | Flash | 16 MB |
 | PSRAM | 8 MB octal @ 80 MHz |
 | Audio | ES8311 codec, I²S |
+| RTC | PCF85063A, I²C address 0x51, UTC calendar |
 
 ---
 
 ## Build
 
 Requires ESP-IDF v5.5.6.
+The release pins Waveshare BSP 2.0.1 and LVGL 9.6.0~1 and commits
+`dependencies.lock` for repeatable component resolution.
 
 ```powershell
-powershell -File build.ps1
+powershell -File build.ps1 *> build_out.txt 2>&1
 powershell -File flash.ps1 COM7
 ```
 
@@ -64,16 +132,32 @@ environment. Use them rather than calling `idf.py` directly.
 the first build. That file carries every setting the project needs, including the
 ones that are easy to lose:
 
-- `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` — without it WiFi allocates from
-  internal RAM and fails with `ESP_ERR_NO_MEM`
+- `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` — prefers PSRAM for eligible network
+  buffers; hardware-required internal buffers still exist
 - `CONFIG_LV_USE_CANVAS=y` and `CONFIG_LV_DRAW_SW_SUPPORT_RGB565A8=y` — the
   renderer does not work without them
-- `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536` — keeps a floor of internal RAM
-  the radio cannot take, so the display always has DMA memory
+- `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0` — prefers PSRAM for ordinary malloc
+- `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536` — reserves internal memory for
+  capability-specific allocations, including hardware radio/DMA consumers
+- `CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y` — TLS allocations use PSRAM
 
 **A setting that exists only in `sdkconfig.defaults` is not applied until
-`sdkconfig` is regenerated.** If you change a config option, write it to the
-defaults and delete `sdkconfig`.
+`sdkconfig` is regenerated.** Change both the active file and defaults, then
+verify the generated header. Do not delete the active configuration casually.
+
+### OTA migration and use
+
+The partition table now has three 3 MB app regions (factory plus two OTA slots),
+OTA metadata and 6 MB assets. Initial migration requires the full flash wrapper,
+not an application-only update. NVS/PHY offsets are preserved.
+
+Settings > WiFi supports scans, secure-network passwords, manual SSID,
+three saved networks, explicit time sync, forget and a manual HTTPS update URL.
+Credentials are saved after successful association; WiFi does not stay connected.
+No production update server is configured. OTA validates HTTPS, project identity
+and image completion, then requires a reboot to apply. It does not provide a
+signed release manifest, semantic downgrade prevention or functional rollback.
+See [network details and verification limits](docs/WIFI_ARCHITECTURE.md).
 
 ---
 
@@ -120,17 +204,10 @@ falling, not as a corrupted screen thirty seconds later.
 
 ## Memory
 
-Measured at boot:
-
-```
-internal  free  57451  largest  47104
-dma-cap   free  49663  largest  47104
-psram     free 6758372  largest 6684672
-```
-
 **Watch `largest`, not `free`.** A fragmented pool reports plenty free and still
-fails one contiguous DMA allocation. The LCD's draw buffers need one large
-contiguous block, so a falling `largest` is the early warning.
+fails one contiguous DMA allocation. Framebuffers are in PSRAM, but SPI staging
+still needs internal DMA-capable blocks. The acceptance target is `largest`
+at least 51,200 bytes; see the latest [verification round](PROGRESS.md).
 
 Where things live:
 
@@ -139,8 +216,11 @@ Where things live:
 | LCD draw buffers | PSRAM | `use_psram = true`, 96,000 bytes |
 | Code + rodata | PSRAM | `SPIRAM_FETCH_INSTRUCTIONS`, `SPIRAM_RODATA` |
 | Spider canvas | PSRAM | CPU-only; 96×96 RGB565A8 = 27,648 bytes |
-| WiFi RX/TX pools | PSRAM | `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` |
-| Task stacks | internal | must be DMA-adjacent |
+| Eligible WiFi/LwIP buffers | PSRAM preferred | Hardware buffers remain internal |
+| Main LVGL, audio and console stacks | PSRAM | Explicit supported APIs |
+| Network and save/SD stacks | internal | Required for cache-disabled flash operations |
+| LVGL draw-worker stacks, task control blocks | internal | Platform allocation |
+| TLS working buffers | PSRAM | `MBEDTLS_EXTERNAL_MEM_ALLOC` |
 
 Full budget: **[docs/memory_budget.md](docs/memory_budget.md)**.
 
@@ -166,6 +246,7 @@ main/
   ui_menu.c       generic list menu
   ui_setup.c      first-run colour picker
   net.c           WiFi: scan, connect, credentials
+  rtc.c           battery-backed UTC calendar
   sd.c            SD card backup/restore
   meminfo.c       memory reporting
   test_console.c  serial command interpreter

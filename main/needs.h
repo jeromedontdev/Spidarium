@@ -34,3 +34,4 @@ const char *needs_stage_name(void);
 
 /* Days lived, derived from age_ticks. */
 uint32_t needs_days_lived(void);
+bool needs_hunger_test(void);

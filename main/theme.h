@@ -1,9 +1,8 @@
 /*
  * Spidarium — background themes.
  *
- * The tank's look is a table entry, so adding a theme is one row in theme.c.
- * Customisation is what keeps a virtual pet interesting over weeks, so this is
- * deliberately the easiest thing in the codebase to extend.
+ * Palette entries pair with logical-pixel scenes in terrarium.c.
+ * The selected background persists separately from the pet-save payload.
  */
 #pragma once
 
@@ -13,17 +12,19 @@
 typedef struct {
     const char *name;
     uint32_t    unlock_level;
-    uint32_t    substrate_top;   /* gradient top */
-    uint32_t    substrate_bot;   /* gradient bottom */
-    uint32_t    glass;           /* vignette / tank walls */
-    uint32_t    web;             /* silk colour */
-    uint32_t    dust;            /* floating motes */
+    uint32_t    substrate_top;   /* sky / upper scene color */
+    uint32_t    substrate_bot;   /* ground / lower scene color */
+    uint32_t    glass;           /* far silhouette */
+    uint32_t    web;             /* near silhouette */
+    uint32_t    dust;            /* fixed highlight */
 } theme_def_t;
 
-#define THEME_COUNT 4
+#define THEME_COUNT 8
 
 /* The catalogue. Indexed by theme id. */
 extern const theme_def_t k_themes[THEME_COUNT];
+/* Load the separate background preference before LVGL starts. */
+void theme_init(void);
 
 /* Look up a theme, clamped to a valid index. */
 const theme_def_t *theme_get(uint8_t id);

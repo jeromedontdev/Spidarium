@@ -55,3 +55,4 @@ typedef enum {
 } cspider_emote_t;
 
 void cspider_set_emote(cspider_emote_t e);
+bool cspider_gait_test(void);

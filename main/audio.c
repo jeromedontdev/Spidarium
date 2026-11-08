@@ -4,15 +4,21 @@
 #include "audio.h"
 
 #include "game_config.h"
+#include "net.h"
 
 #include "bsp/esp-bsp.h"
 #include "esp_codec_dev.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/idf_additions.h"
 
 #include <math.h>
 #include <string.h>
+#include <stdatomic.h>
+#include "esp_random.h"
 
 static const char *TAG = "spidarium.audio";
 
@@ -25,7 +31,29 @@ static esp_codec_dev_handle_t s_spk;
 static bool                   s_ready;
 
 /* One reusable buffer: SFX are short and playback is serialized. */
-static int16_t s_buf[MAX_SAMPLES];
+static int16_t *s_buf;
+static QueueHandle_t s_queue;
+static atomic_bool s_playing;
+static atomic_bool s_muted;
+
+static void play_sfx(sfx_t sfx);
+
+static void audio_worker(void *arg)
+{
+    (void)arg;
+    sfx_t sfx;
+    for (;;) {
+        xQueueReceive(s_queue, &sfx, portMAX_DELAY);
+        for (;;) {
+            atomic_store(&s_playing, true);
+            if (!net_busy()) break;
+            atomic_store(&s_playing, false);
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        if (!atomic_load(&s_muted)) play_sfx(sfx);
+        atomic_store(&s_playing, false);
+    }
+}
 
 /* ------------------------------------------------------------------ */
 /* Envelope helpers                                                    */
@@ -126,6 +154,21 @@ bool audio_init(void)
 
     esp_codec_dev_set_out_vol(s_spk, AUDIO_VOLUME);
 
+    s_buf = heap_caps_malloc(MAX_SAMPLES * sizeof *s_buf,
+                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_queue = s_buf ? xQueueCreate(4, sizeof(sfx_t)) : NULL;
+    atomic_store(&s_muted, g.muted != 0);
+    if (!s_queue ||
+        xTaskCreateWithCaps(audio_worker, "spidarium_audio", 4096, NULL, 2, NULL,
+                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+        if (s_queue) vQueueDelete(s_queue);
+        s_queue = NULL;
+        heap_caps_free(s_buf);
+        s_buf = NULL;
+        esp_codec_dev_close(s_spk);
+        ESP_LOGE(TAG, "audio PSRAM buffer or worker allocation failed");
+        return false;
+    }
     s_ready = true;
     ESP_LOGI(TAG, "audio ready (%d Hz mono)", AUDIO_SAMPLE_RATE);
     return true;
@@ -134,6 +177,7 @@ bool audio_init(void)
 void audio_set_muted(bool muted)
 {
     g.muted = muted ? 1 : 0;
+    atomic_store(&s_muted, muted);
 }
 
 bool audio_muted(void)
@@ -141,11 +185,40 @@ bool audio_muted(void)
     return g.muted != 0;
 }
 
-void audio_play(sfx_t sfx)
+bool audio_play(sfx_t sfx)
 {
-    if (!s_ready || !s_spk) return;
-    if (g.muted) return;
+    if (!s_ready || !s_spk) {
+        ESP_LOGW(TAG, "audio request rejected: audio unavailable");
+        return false;
+    }
+    if (g.muted) return false;
+    if (sfx < 0 || sfx >= SFX_COUNT) {
+        ESP_LOGW(TAG, "audio request rejected: invalid effect %d", (int)sfx);
+        return false;
+    }
+    if (xQueueSend(s_queue, &sfx, 0) != pdPASS) {
+        ESP_LOGW(TAG, "audio request rejected: queue full");
+        return false;
+    }
+    return true;
+}
 
+bool audio_playing(void) { return atomic_load(&s_playing); }
+
+void audio_tick(uint32_t now_ms)
+{
+    static uint32_t next;
+    if (!s_ready || audio_muted() || net_busy()) return;
+    if (!next) next = now_ms + 12000;
+    if ((int32_t)(now_ms - next) < 0) return;
+    next = now_ms + 12000 + esp_random() % 13000;
+    if (!audio_playing() && uxQueueMessagesWaiting(s_queue) == 0 &&
+        g.state != SPIDER_AIM && g.state != SPIDER_POUNCE && g.state != SPIDER_EAT)
+        audio_play((sfx_t)(SFX_RUSTLE + esp_random() % 3));
+}
+
+static void play_sfx(sfx_t sfx)
+{
     int n = 0;
 
     switch (sfx) {
@@ -183,6 +256,16 @@ void audio_play(sfx_t sfx)
         /* Bright chime: a perfect catch. */
         n = render_sweep(880.0f, 1760.0f, SFX_MS_PERFECT, 0.30f);
         break;
+    case SFX_RUSTLE:
+        n = render_noise(280, 0.035f);
+        for (int i = 1; i < n; i++) s_buf[i] = (s_buf[i] + 3 * s_buf[i - 1]) / 4;
+        break;
+    case SFX_CHIRP:
+        n = render_sweep(1600, 2200, 160, 0.045f);
+        break;
+    case SFX_DROP:
+        n = render_sweep(900, 280, 220, 0.055f);
+        break;
 
     default:
         return;
@@ -190,5 +273,6 @@ void audio_play(sfx_t sfx)
 
     if (n <= 0) return;
 
-    esp_codec_dev_write(s_spk, s_buf, n * (int)sizeof(int16_t));
+    int err = esp_codec_dev_write(s_spk, s_buf, n * (int)sizeof(int16_t));
+    if (err != ESP_CODEC_DEV_OK) ESP_LOGE(TAG, "audio write failed (%d)", err);
 }

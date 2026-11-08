@@ -13,6 +13,7 @@
 
 #include "behaviour.h"
 #include "game_config.h"
+#include "gift.h"
 #include "prey.h"
 
 #include <math.h>
@@ -357,7 +358,6 @@ static lv_obj_t *s_power_ideal;
 
 static bool     s_ready;
 static float    s_phase;
-static float    s_last_x, s_last_y;   /* previous frame, for distance */
 static float    s_speed_smooth;       /* smoothed per-frame displacement */
 static bool     s_last_valid;
 
@@ -959,10 +959,7 @@ void spider_render(uint32_t now_ms)
 
     /* --- slingshot aim visuals ---------------------------------------
      *
-     * While the player pulls, draw a line from the spider to the finger (the
-     * "band") and a second line in the OPPOSITE direction showing where the
-     * shot will go. The forward line's length is the power, so the player can
-     * see the shot before releasing it.
+     * The line points toward the finger and shows the range-limited landing.
      *
      * The power meter is gone: with direct manipulation the pull IS the meter,
      * and a separate bar was a second thing to read for no benefit. */
@@ -988,7 +985,7 @@ void spider_render(uint32_t now_ms)
                 float ux = dx / d;
                 float uy = dyv / d;
 
-                float max_px = POUNCE_MAX_PX;
+                float max_px = POUNCE_MAX_PX * gift_bonus()->pounce_range_mult;
                 float len = d;
                 if (len > max_px) len = max_px;
 
@@ -996,6 +993,10 @@ void spider_render(uint32_t now_ms)
                 int32_t y0 = g.spider_y + dy;
                 int32_t x1 = x0 + (int32_t)(ux * len);
                 int32_t y1 = y0 + (int32_t)(uy * len);
+                if (x1 < g_play.left) x1 = g_play.left;
+                if (x1 > g_play.right) x1 = g_play.right;
+                if (y1 < g_play.top) y1 = g_play.top;
+                if (y1 > g_play.bottom) y1 = g_play.bottom;
 
                 int32_t minx = (x0 < x1) ? x0 : x1;
                 int32_t miny = (y0 < y1) ? y0 : y1;

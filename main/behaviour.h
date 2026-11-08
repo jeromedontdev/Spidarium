@@ -56,14 +56,13 @@ uint32_t behaviour_aim_total_ms(void);
  * The target is clamped to POUNCE_MAX_PX from the spider. */
 bool behaviour_player_pounce(int32_t x, int32_t y);
 
-/* --- Slingshot aim --------------------------------------------------
- * Drag back from the spider and release. The drag vector is inverted, so
- * pulling down-left fires up-right; pull length sets power. */
+/* Drag from the spider toward a bug; release jumps along the drag vector. */
 
 /* Press / move / release. Release returns true if a shot was taken. */
 void behaviour_aim_drag_begin(int32_t x, int32_t y);
 void behaviour_aim_drag_move(int32_t x, int32_t y);
 bool behaviour_aim_release(void);
+void behaviour_aim_cancel(void);
 
 /* True while the finger is down and pulling. */
 bool behaviour_aim_dragging(void);
@@ -94,3 +93,6 @@ bool behaviour_resting(void);
  * spider actually moved, which is what drives the leg gait. g.spider_x/y are
  * int16_t and quantise to whole pixels, so they are too coarse for that. */
 void behaviour_pos(float *x, float *y);
+void behaviour_sync_position(void);
+bool behaviour_gift_visiting(void);
+bool behaviour_gift_test(void);

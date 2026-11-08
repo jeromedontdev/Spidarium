@@ -14,12 +14,15 @@
 #include "cspider.h"
 #include "game_config.h"
 #include "gift.h"
+#include "power.h"
+#include "sprites.h"
 #include "meminfo.h"
 #include "mind.h"
 #include "needs.h"
 #include "net.h"
 #include "prey.h"
 #include "save.h"
+#include "species.h"
 #include "sd.h"
 #include "spider.h"
 #include "test_console.h"
@@ -30,11 +33,13 @@
 #include "ui_setup.h"
 
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "esp_lv_adapter.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdatomic.h>
 
 static const char *TAG = "spidarium";
 
@@ -83,6 +88,10 @@ uint32_t game_now(void)
     return lv_tick_get();
 }
 
+void game_add_silk(uint32_t amount)
+{
+    g.silk = amount > UINT32_MAX - g.silk ? UINT32_MAX : g.silk + amount;
+}
 void game_add_xp(uint32_t amount)
 {
     g.xp += amount;
@@ -110,9 +119,11 @@ void game_award(uint32_t achievement)
     game_add_xp(XP_ACHIEVEMENT);
 }
 
-void game_save_now(void)
+bool game_save_now(void)
 {
-    save_save(&g, sizeof g);
+    bool accepted = save_request(&g, sizeof g);
+    if (!accepted) ESP_LOGE(TAG, "game save not queued");
+    return accepted;
 }
 
 /* ------------------------------------------------------------------ */
@@ -130,6 +141,8 @@ static void state_defaults(void)
     g.stage   = STAGE_SPIDERLING;
     g.level   = 1;
     g.muted   = 0;
+    g.silk = 20;
+    g.brightness = 50;
 
     /* Sentinel: rolled in game_init() AFTER srand(). Rolling here would give
      * every fresh boot the same temperament, because this runs before the RNG
@@ -144,14 +157,8 @@ static void state_defaults(void)
     g.leg_colour   = 2;   /* grey  */
 }
 
-static void state_load(void)
+static void state_finish_load(void)
 {
-    state_defaults();
-
-    if (!save_load(&g, sizeof g)) {
-        ESP_LOGI(TAG, "starting from defaults");
-    }
-
     /* Runtime-only fields never survive a reboot. */
     g.state        = SPIDER_IDLE;
     g.eat_until_ms = 0;
@@ -161,6 +168,9 @@ static void state_load(void)
 
     /* Guard against a corrupt-but-valid-header blob. */
     if (g.level == 0) g.level = 1;
+    if (g.brightness < 10 || g.brightness > 100) g.brightness = 50;
+    if (g.gift.used && g.gift.kind < GIFT_KINDS)
+        g.gifts_owned |= 1u << g.gift.kind;
     if (g.stage > STAGE_ADULT) g.stage = STAGE_SPIDERLING;
     if (g.hunger > 100) g.hunger = 100;
     if (g.mood > 100) g.mood = 100;
@@ -168,16 +178,28 @@ static void state_load(void)
     if (g.hygiene > 100) g.hygiene = 100;
 }
 
+static void state_load(void)
+{
+    state_defaults();
+    if (!save_load(&g, sizeof g)) ESP_LOGI(TAG, "starting from defaults");
+    state_finish_load();
+}
+
 /* ------------------------------------------------------------------ */
 /* Playfield                                                           */
 /* ------------------------------------------------------------------ */
+static void keep_gift_in_playfield(void)
+{
+    if (!g.gift.used) return;
+    if (g.gift.x < g_play.left) g.gift.x = g_play.left;
+    if (g.gift.x > g_play.right) g.gift.x = g_play.right;
+    if (g.gift.y < g_play.top) g.gift.y = g_play.top;
+    if (g.gift.y > g_play.bottom) g.gift.y = g_play.bottom;
+}
+
 static void compute_playfield(void)
 {
-    /* The whole screen, inset only by the spider's own visual radius. The old
-     * field was UI_CORNER..W-UI_CORNER by HUD_TOP_H..H-HUD_BOTTOM_H, which
-     * confined the spider to a narrow middle band and left most of the tank
-     * unused. The HUD floats over the playfield, so the spider may pass behind
-     * it -- that is what "the whole screen" means. */
+    /* Only the top-left Care button stays visible; hunting uses the full field. */
     g_play.left   = PLAY_MARGIN;
     g_play.right  = ui.W - PLAY_MARGIN;
     g_play.top    = PLAY_MARGIN;
@@ -198,6 +220,7 @@ static void compute_playfield(void)
         g.spider_x = (int16_t)((g_play.left + g_play.right) / 2);
         g.spider_y = (int16_t)((g_play.top + g_play.bottom) / 2);
     }
+    keep_gift_in_playfield();
 }
 
 /* ------------------------------------------------------------------ */
@@ -206,6 +229,11 @@ static void compute_playfield(void)
 void game_on_feed(lv_event_t *e)
 {
     (void)e;
+    if (prey_count() >= MAX_PREY) {
+        ESP_LOGW(TAG, "feed rejected: tank full");
+        ui_hud_bubble("Tank Full / Catch a Bug First", 0xf5c86b, 1800);
+        return;
+    }
     g.taps++;
     needs_feed();
     /* No bubble: the spider reacting IS the feedback. */
@@ -219,12 +247,22 @@ void game_on_clean(lv_event_t *e)
     game_save_now();
 }
 
+static uint32_t play_reward(uint8_t score)
+{
+    uint32_t before = g.xp;
+    needs_play();
+    game_add_xp(4 + score * 3);
+    game_add_silk(2 + score * 2);
+    game_save_now();
+    return g.xp - before;
+}
+
 void game_on_play(lv_event_t *e)
 {
     (void)e;
     g.taps++;
-    needs_play();
-    game_save_now();
+    behaviour_aim_cancel();
+    ui_menu_open_minigame(play_reward);
 }
 
 void game_on_sleep(lv_event_t *e)
@@ -264,20 +302,19 @@ void game_gift_chosen(uint8_t kind)
 {
     if (kind >= GIFT_KINDS) return;
 
-    if (!gift_unlocked(kind)) {
-
+    if (!gift_can_place(kind)) {
+        ESP_LOGW(TAG, "gift selection rejected: locked or unaffordable");
+        ui_hud_bubble("Earn Silk by Playing", 0xf5c86b, 1800);
         return;
     }
 
     g.gift_selected = kind;
     ui_hud_gift_menu_hide();
+    ui_hud_set_chrome(false);
 
     /* Enter placement mode: the next tank tap decides where it goes. */
     g.gift_mode = 1;
     ui_hud_set_gift_mode(true);
-
-    char buf[40];
-    snprintf(buf, sizeof buf, "%s: tap to place", gift_kind_name(kind));
 
 }
 
@@ -297,6 +334,12 @@ enum {
     MENU_SETTINGS,
     MENU_WIFI,
     MENU_SD,
+    MENU_WIFI_SAVED,
+    MENU_WIFI_NETWORK,
+    MENU_OTA,
+    MENU_SPECIES,
+    MENU_ABOUT,
+    MENU_POWER,
 };
 
 static void menu_open(int which);
@@ -304,19 +347,67 @@ static void menu_open(int which);
 /* Which menu is currently on screen, or -1 when none is. Tracked here because
  * ui_menu only knows that *a* menu is open, not which one. */
 static int s_open_menu = -1;
+static int s_saved_network;
+static char s_join_ssid[33];
+static char s_wifi_message[80];
+
+static void back_to_wifi(void) { menu_open(MENU_WIFI); }
+static void back_to_settings(void) { menu_open(MENU_SETTINGS); }
+
+static bool on_password(const char *password)
+{
+    if (!net_connect_to(s_join_ssid, password)) return false;
+    menu_open(MENU_WIFI);
+    return true;
+}
+
+static bool on_ssid(const char *ssid)
+{
+    if (!ssid[0] || strlen(ssid) > 32) return false;
+    snprintf(s_join_ssid, sizeof s_join_ssid, "%s", ssid);
+    ui_menu_open_input("WiFi Password", "", true, 63, on_password);
+    ui_menu_set_back(back_to_wifi);
+    return true;
+}
+
+static bool on_ota_url(const char *url)
+{
+    if (!net_ota_start(url)) return false;
+    menu_open(MENU_WIFI);
+    return true;
+}
+
+static void on_saved_network(uint8_t id)
+{
+    s_saved_network = id;
+    menu_open(MENU_WIFI_NETWORK);
+}
+
+static void on_network_action(uint8_t id)
+{
+    bool accepted = id == 0 ? net_sync_saved(s_saved_network) :
+                             net_forget_saved(s_saved_network);
+    if (!accepted) snprintf(s_wifi_message, sizeof s_wifi_message, "Request rejected; network missing or busy");
+    menu_open(MENU_WIFI);
+}
 
 /* Factory reset: wipe the save, put the state back to defaults, and drop the
  * player into the new-tank screen so they can start over. This exists so new
  * tanks can be retested without reflashing the device. */
 static void do_factory_reset(void)
 {
-    save_erase();
+    if (!save_request_erase()) {
+        ESP_LOGE(TAG, "factory reset not queued");
+        return;
+    }
     state_defaults();
+    audio_set_muted(false);
 
     /* The live objects still carry the old spider's colours, so push the new
      * defaults into them before showing the setup screen. */
     spider_refresh_colours();
     terrarium_rebuild();
+    terrarium_refresh_gift();
 
     ui_setup_show();
 }
@@ -325,7 +416,6 @@ static void on_theme_pick(uint8_t id)
 {
     if (!theme_set(id)) return;
     terrarium_rebuild();
-    game_save_now();
     menu_open(MENU_THEME);   /* stay in the submenu so the choice is visible */
 }
 
@@ -344,6 +434,7 @@ static void on_main_pick(uint8_t id)
     case MENU_ACHIEVEMENTS: menu_open(MENU_ACHIEVEMENTS); break;
     case MENU_RESET:        menu_open(MENU_RESET);        break;
     case MENU_SETTINGS:     menu_open(MENU_SETTINGS);     break;
+    case MENU_SPECIES:      menu_open(MENU_SPECIES);      break;
     default: break;
     }
 }
@@ -355,39 +446,46 @@ static void on_settings_pick(uint8_t id)
 {
     switch (id) {
     case 0:
-        /* Entering the WiFi page starts a scan straight away.
-         *
-         * The player came here to find networks, so making them tap "scan" as
-         * well is a second step for no reason. The menu opens showing
-         * "scanning..." and rebuilds itself with the results when the job
-         * finishes. */
-        net_scan_start();
         menu_open(MENU_WIFI);
         break;
-    case 1: menu_open(MENU_SD);   break;
+    case 1:
+        if (!sd_request(SD_JOB_MOUNT)) ESP_LOGW(TAG, "SD probe not queued");
+        menu_open(MENU_SD);
+        break;
+    case 2: menu_open(MENU_ABOUT); break;
+    case 3: menu_open(MENU_RESET); break;
+    case 4: menu_open(MENU_POWER); break;
+    case 5: menu_open(MENU_SOUND); break;
     default: break;
     }
 }
 
-/* WiFi actions.
- *
- * Row 0 is "scan"; rows 1..N are the networks the scan found. Picking a
- * network connects to it. Open networks connect immediately; secured ones need
- * a password, which there is no on-screen flow for yet, so they are shown but
- * disabled with a "needs password" note rather than silently failing. */
 static void on_wifi_pick(uint8_t id)
 {
+    s_wifi_message[0] = 0;
     if (id == 0) {
-        net_scan_start();
+        if (!net_scan_start())
+            snprintf(s_wifi_message, sizeof s_wifi_message, "Scan rejected: worker unavailable or busy");
         menu_open(MENU_WIFI);
         return;
     }
-
-    int i = (int)id - 1;
+    if (id == 1) {
+        ui_menu_open_input("Network Name (SSID)", "", false, 32, on_ssid);
+        ui_menu_set_back(back_to_wifi);
+        return;
+    }
+    if (id == 2) { menu_open(MENU_WIFI_SAVED); return; }
+    if (id == 3) { menu_open(MENU_OTA); return; }
+    int i = (int)id - 4;
     if (i >= 0 && i < net_scan_count()) {
-        if (!net_scan_secure(i)) {
-            net_connect_to(net_scan_ssid(i), "");
+        snprintf(s_join_ssid, sizeof s_join_ssid, "%s", net_scan_ssid(i));
+        if (net_scan_secure(i)) {
+            ui_menu_open_input("WiFi Password", "", true, 63, on_password);
+            ui_menu_set_back(back_to_wifi);
+            return;
         }
+        if (!net_connect_to(s_join_ssid, ""))
+            snprintf(s_wifi_message, sizeof s_wifi_message, "Connection rejected; saved list may be full");
     }
     menu_open(MENU_WIFI);
 }
@@ -396,14 +494,9 @@ static void on_wifi_pick(uint8_t id)
 static void on_sd_pick(uint8_t id)
 {
     if (id == 0) {
-        sd_backup_save();
+        if (!sd_request(SD_JOB_BACKUP)) ESP_LOGW(TAG, "SD backup not queued");
     } else if (id == 1) {
-        if (sd_restore_save()) {
-            /* The restored blob is on disk; reload it into the live state. */
-            state_load();
-            spider_refresh_colours();
-            terrarium_rebuild();
-        }
+        if (!sd_request(SD_JOB_RESTORE)) ESP_LOGW(TAG, "SD restore not queued");
     }
     menu_open(MENU_SD);
 }
@@ -415,6 +508,12 @@ static void on_reset_pick(uint8_t id)
     if (id == 0) do_factory_reset();
 }
 
+static void on_power_pick(uint8_t id)
+{
+    g.brightness = id;
+    game_save_now();
+    menu_open(MENU_POWER);
+}
 /* BACK from a submenu returns to the main menu; BACK from the main menu just
  * closes (ui_menu_set_back is not set there, so the menu closes itself). */
 static void back_to_main(void)
@@ -424,7 +523,7 @@ static void back_to_main(void)
 
 static void menu_open(int which)
 {
-    static ui_menu_item_t items[16];
+    static ui_menu_item_t items[20];
 
     /* Remember which menu is on screen so the render tick can tell whether the
      * WiFi list is still the one being looked at. Without this, a scan that
@@ -433,123 +532,145 @@ static void menu_open(int which)
 
     switch (which) {
     case MENU_MAIN: {
-        items[0] = (ui_menu_item_t){ "themes",       NULL, true, false, true, MENU_THEME };
-        items[1] = (ui_menu_item_t){ "sound",        NULL, true, false, true, MENU_SOUND };
-        items[2] = (ui_menu_item_t){ "achievements", NULL, true, false, true, MENU_ACHIEVEMENTS };
-        items[3] = (ui_menu_item_t){ "settings",     NULL, true, false, true, MENU_SETTINGS };
-        items[4] = (ui_menu_item_t){ "new tank",     NULL, true, false, true, MENU_RESET };
-        ui_menu_open("menu", items, 5, on_main_pick);
+        items[0] = (ui_menu_item_t){ "Backgrounds", NULL, true, false, true, MENU_THEME };
+        items[1] = (ui_menu_item_t){ "Achievements", NULL, true, false, true, MENU_ACHIEVEMENTS };
+        items[2] = (ui_menu_item_t){ "Settings",     NULL, true, false, true, MENU_SETTINGS };
+        items[3] = (ui_menu_item_t){ "Prey Species", NULL, true, false, true, MENU_SPECIES };
+        ui_menu_open("Spidarium", items, 4, on_main_pick);
         break;
     }
 
     case MENU_SETTINGS: {
-        items[0] = (ui_menu_item_t){ "wifi", net_status_text(), true, false, true, 0 };
-        items[1] = (ui_menu_item_t){ "sd card", sd_status_text(), true, false, true, 1 };
-        ui_menu_open("settings", items, 2, on_settings_pick);
+        items[0] = (ui_menu_item_t){ "WiFi", NULL, true, false, true, 0 };
+        items[1] = (ui_menu_item_t){ "SD Card", NULL, true, false, true, 1 };
+        items[2] = (ui_menu_item_t){ "About", NULL, true, false, true, 2 };
+        items[3] = (ui_menu_item_t){ "New Tank", NULL, true, false, true, 3 };
+        items[4] = (ui_menu_item_t){ "Battery and Display", NULL, true, false, true, 4 };
+        items[5] = (ui_menu_item_t){ "Sound", NULL, true, false, true, 5 };
+        ui_menu_open("Settings", items, 6, on_settings_pick);
+        ui_menu_set_destructive(3);
         ui_menu_set_back(back_to_main);
+        break;
+    }
+    case MENU_POWER: {
+        static char status[80];
+        power_status(status, sizeof status);
+        items[0] = (ui_menu_item_t){ "Battery", status, false, false, false, 0 };
+        items[1] = (ui_menu_item_t){ "Dim / 25%", NULL, true, g.brightness == 25, false, 25 };
+        items[2] = (ui_menu_item_t){ "Balanced / 50%", NULL, true, g.brightness == 50, false, 50 };
+        items[3] = (ui_menu_item_t){ "Bright / 75%", NULL, true, g.brightness == 75, false, 75 };
+        items[4] = (ui_menu_item_t){ "Automatic Power Saving", "Dim After 1 Minute; Screen Off After 5", false, false, false, 0 };
+        ui_menu_open("Battery and Display", items, 5, on_power_pick);
+        ui_menu_set_back(back_to_settings);
         break;
     }
 
     case MENU_WIFI: {
         int n = 0;
-
-        /* A FRESH MENU PER STATE.
-         *
-         * The menu is rebuilt from scratch each time the state changes, rather
-         * than being mutated in place. That is simpler to reason about and it
-         * means the player always sees exactly one of three things: the scan
-         * running, the networks found, or why the scan failed.
-         *
-         * net_init() only loads credentials and refreshes the status text; it
-         * does not touch the radio. */
-        net_init();
-
         if (net_busy()) {
-            items[n++] = (ui_menu_item_t){ "scanning...", NULL,
+            items[n++] = (ui_menu_item_t){ "Working; Please Wait", NULL,
                                            false, false, false, 0 };
-            ui_menu_open("wifi", items, n, on_wifi_pick);
-            ui_menu_set_back(back_to_main);
+            ui_menu_open("WiFi", items, n, on_wifi_pick);
+            ui_menu_set_back(back_to_settings);
             break;
         }
-
-        /* A failed scan says so. Silently showing an empty list is what made
-         * this bug take several rounds: "found nothing" and "could not scan"
-         * looked identical. */
-        const char *err = net_scan_error();
-        if (err[0]) {
-            items[n++] = (ui_menu_item_t){ "scan failed", err,
-                                           false, false, false, 0 };
-        }
-
-        items[n++] = (ui_menu_item_t){ "scan", net_status_text(),
+        items[n++] = (ui_menu_item_t){ "Network Status", s_wifi_message[0] ? s_wifi_message : net_status_text(),
+                                       false, false, false, 0 };
+        items[n++] = (ui_menu_item_t){ "Scan Networks", NULL,
                                        true, false, false, 0 };
-
+        items[n++] = (ui_menu_item_t){ "Add Network", NULL,
+                                       true, false, true, 1 };
+        items[n++] = (ui_menu_item_t){ "Saved Networks", NULL,
+                                       true, false, true, 2 };
+        items[n++] = (ui_menu_item_t){ "Firmware Update", net_has_credentials() ? NULL : "Save a Network First",
+                                       net_has_credentials(), false, true, 3 };
+        static char details[12][32];
         int found = net_scan_count();
-        for (int i = 0; i < found && n < 15; i++) {
+        for (int i = 0; i < found && n < 20; i++) {
             const char *ssid = net_scan_ssid(i);
             if (!ssid[0]) continue;   /* hidden network */
-
             bool secure = net_scan_secure(i);
+            snprintf(details[i], sizeof details[i], "%d dBm / %s", net_scan_rssi(i),
+                     secure ? "Secured" : "Open");
             items[n].label      = ssid;
-            items[n].detail     = secure ? "needs password" : "open";
-            /* Secured networks are listed but not selectable: there is no
-             * password entry yet, and a row that silently does nothing is
-             * worse than a row that says why. */
-            items[n].enabled    = !secure;
+            items[n].detail     = details[i];
+            items[n].enabled    = true;
             items[n].selected   = (strcmp(ssid, net_ssid()) == 0);
-            items[n].is_submenu = false;
-            items[n].id         = (uint8_t)(i + 1);
+            items[n].is_submenu = secure;
+            items[n].id         = (uint8_t)(i + 4);
             n++;
         }
-
-        ui_menu_open("wifi", items, n, on_wifi_pick);
-        ui_menu_set_back(back_to_main);
+        ui_menu_open("WiFi", items, n, on_wifi_pick);
+        ui_menu_set_back(back_to_settings);
         break;
     }
+    case MENU_WIFI_SAVED: {
+        int count = net_saved_count();
+        for (int i = 0; i < count; i++)
+            items[i] = (ui_menu_item_t){ net_saved_ssid(i), NULL,
+                                         true, false, true, i };
+        if (!count) items[0] = (ui_menu_item_t){ "No Saved Networks", NULL,
+                                                 false, false, false, 0 };
+        ui_menu_open("Saved Networks", items, count ? count : 1, on_saved_network);
+        ui_menu_set_back(back_to_wifi);
+        break;
+    }
+    case MENU_WIFI_NETWORK:
+        items[0] = (ui_menu_item_t){ "Sync RTC Now", NULL, true, false, false, 0 };
+        items[1] = (ui_menu_item_t){ "Forget Network", NULL, true, false, false, 1 };
+        ui_menu_open(net_saved_ssid(s_saved_network), items, 2, on_network_action);
+        ui_menu_set_back(back_to_wifi);
+        break;
+    case MENU_OTA:
+        ui_menu_open_input("Update URL (HTTPS)", "", false, 255, on_ota_url);
+        ui_menu_set_back(back_to_wifi);
+        break;
 
     case MENU_SD: {
         /* Mount on demand. Probing at boot stole DMA buffers from the LCD
          * driver and logged a burst of sdmmc errors on units with no card. */
-        sd_mount();
         bool have = sd_present();
-        items[0] = (ui_menu_item_t){ "back up save",
-                                     have ? "to /sdcard" : "no card",
+        items[0] = (ui_menu_item_t){ "Back Up Save",
+                                     sd_status_text(),
                                      have, false, false, 0 };
-        items[1] = (ui_menu_item_t){ "restore save",
-                                     sd_backup_exists() ? "from /sdcard" : "no backup",
+        items[1] = (ui_menu_item_t){ "Restore Save",
+                                     sd_backup_exists() ? NULL : "No Backup",
                                      have && sd_backup_exists(), false, false, 1 };
-        ui_menu_open("sd card", items, 2, on_sd_pick);
-        ui_menu_set_back(back_to_main);
+        ui_menu_open("SD Card", items, 2, on_sd_pick);
+        ui_menu_set_back(back_to_settings);
         break;
     }
 
     case MENU_RESET: {
-        items[0] = (ui_menu_item_t){ "start a new tank", "erases this spider", true, false, false, 0 };
-        ui_menu_open("new tank", items, 1, on_reset_pick);
-        ui_menu_set_back(back_to_main);
+        items[0] = (ui_menu_item_t){ "Start a New Tank", "Erases This Spider", true, false, false, 0 };
+        ui_menu_open("New Tank", items, 1, on_reset_pick);
+        ui_menu_set_destructive(0);
+        ui_menu_set_back(back_to_settings);
         break;
     }
 
     case MENU_THEME: {
+        static char names[THEME_COUNT][32];
         for (int i = 0; i < THEME_COUNT; i++) {
             const theme_def_t *t = theme_get((uint8_t)i);
-            items[i].label     = t->name;
-            items[i].detail    = theme_unlocked((uint8_t)i) ? NULL : "locked";
+            ui_menu_format_name(names[i], sizeof names[i], t->name);
+            items[i].label     = names[i];
+            items[i].detail    = theme_unlocked((uint8_t)i) ? NULL : "Locked";
             items[i].enabled   = theme_unlocked((uint8_t)i);
             items[i].selected  = (theme_current() == t);
             items[i].is_submenu = false;
             items[i].id        = (uint8_t)i;
         }
-        ui_menu_open("themes", items, THEME_COUNT, on_theme_pick);
+        ui_menu_open("Backgrounds", items, THEME_COUNT, on_theme_pick);
         ui_menu_set_back(back_to_main);
         break;
     }
 
     case MENU_SOUND: {
-        items[0] = (ui_menu_item_t){ "sound on",  NULL, true, !audio_muted(), false, 0 };
-        items[1] = (ui_menu_item_t){ "sound off", NULL, true,  audio_muted(), false, 1 };
-        ui_menu_open("sound", items, 2, on_sound_pick);
-        ui_menu_set_back(back_to_main);
+        items[0] = (ui_menu_item_t){ "Sound On",  NULL, true, !audio_muted(), false, 0 };
+        items[1] = (ui_menu_item_t){ "Sound Off", NULL, true,  audio_muted(), false, 1 };
+        ui_menu_open("Sound", items, 2, on_sound_pick);
+        ui_menu_set_back(back_to_settings);
         break;
     }
 
@@ -557,29 +678,55 @@ static void menu_open(int which)
         /* Read-only list: the achievements are shown, not toggled. */
         /* "first pet" is gone: the pet mechanic was removed, so the
          * achievement could never be earned again. */
-        static const char *const names[9] = {
-            "first meal", "first clean", "first play", "first hunt",
-            "first molt", "ten meals", "adulthood", "level 5",
-            "survived sickness",
+        static const char *const names[10] = {
+            "First Meal", "First Clean", "First Play", "First Hunt",
+            "First Molt", "Ten Meals", "Adulthood", "Level 5",
+            "Survived Sickness", "Perfect Hunt",
         };
-        static const uint32_t bits[9] = {
+        static const uint32_t bits[10] = {
             ACH_FIRST_MEAL, ACH_FIRST_CLEAN, ACH_FIRST_PLAY,
             ACH_FIRST_HUNT, ACH_FIRST_MOLT, ACH_TEN_MEALS, ACH_ADULT,
-            ACH_LEVEL_5, ACH_SURVIVED_SICK,
+            ACH_LEVEL_5, ACH_SURVIVED_SICK, ACH_FIRST_PERFECT,
         };
-        for (int i = 0; i < 9; i++) {
+        for (int i = 0; i < 10; i++) {
             bool got = (g.achievements & bits[i]) != 0;
             items[i].label     = names[i];
-            items[i].detail    = got ? "earned" : NULL;
+            items[i].detail    = got ? "Earned" : NULL;
             items[i].enabled   = false;   /* read-only */
             items[i].selected  = got;
             items[i].is_submenu = false;
             items[i].id        = (uint8_t)i;
         }
-        ui_menu_open("achievements", items, 9, NULL);
+        ui_menu_open("Achievements", items, 10, NULL);
+        for (int i = 0; i < 10; i++) ui_menu_set_item_icon(i, sprite_achievement_index(bits[i]));
         ui_menu_set_back(back_to_main);
         break;
     }
+    case MENU_SPECIES:
+        static char species_detail[PREY_SPECIES_COUNT][64];
+        static char species_names[PREY_SPECIES_COUNT][32];
+        for (int i = 0; i < PREY_SPECIES_COUNT; i++) {
+            const species_def_t *species = species_get((prey_species_t)i);
+            snprintf(species_detail[i], sizeof species_detail[i], "%s / level %lu",
+                species_unlocked(i) ? "Available" : "Locked",
+                (unsigned long)species->unlock_level);
+            ui_menu_format_name(species_names[i], sizeof species_names[i], species->name);
+            items[i] = (ui_menu_item_t){ species_names[i],
+                species_detail[i], false, species_unlocked(i), false, i };
+        }
+        static char species_title[48];
+        snprintf(species_title, sizeof species_title, "Prey / Lv %lu", (unsigned long)g.level);
+        ui_menu_open(species_title, items, PREY_SPECIES_COUNT, NULL);
+        ui_menu_set_back(back_to_main);
+        break;
+    case MENU_ABOUT:
+        items[0] = (ui_menu_item_t){ "Spidarium", esp_app_get_description()->version,
+                                     false, false, false, 0 };
+        items[1] = (ui_menu_item_t){ "ESP32-S3 / 480x480 AMOLED", "8 MB PSRAM / 16 MB Flash",
+                                     false, false, false, 0 };
+        ui_menu_open("About", items, 2, NULL);
+        ui_menu_set_back(back_to_settings);
+        break;
 
     default:
         break;
@@ -589,27 +736,20 @@ static void menu_open(int which)
 /* ------------------------------------------------------------------ */
 /* Pause                                                               */
 /* ------------------------------------------------------------------ */
-/* Stop the game while something exclusive runs.
- *
- * WiFi is the only user. The radio allocates internal DMA-capable RAM and runs
- * its own high-priority tasks; doing that while the 20 Hz logic tick and the
- * 30 Hz render tick are also running starved the LCD SPI driver and crashed the
- * device. Pausing both timers makes the network operation the only thing
- * happening, which is how WiFi and OTA were handled previously.
- *
- * The timers are paused rather than deleted, so resuming is cheap and the
- * spider's state is untouched. */
+/* LVGL-task-only gameplay pause. Keep the service/render timer alive so the
+ * UI can process requests and resume. Network exclusivity uses the adapter's
+ * worker-side pause/acknowledgement API instead, including LCD composition. */
 void game_pause(void)
 {
     if (s_paused) return;
     s_paused = true;
 
     if (s_logic_timer)  lv_timer_pause(s_logic_timer);
-    if (s_render_timer) lv_timer_pause(s_render_timer);
 
-    ESP_LOGI(TAG, "game paused");
+    ESP_LOGI(TAG, "game paused (WiFi/OTA exclusive access to DMA RAM)");
 }
 
+/* LVGL-task-only; reset elapsed time rather than simulating the pause. */
 void game_resume(void)
 {
     if (!s_paused) return;
@@ -620,14 +760,13 @@ void game_resume(void)
     s_last_logic = lv_tick_get();
 
     if (s_logic_timer)  lv_timer_resume(s_logic_timer);
-    if (s_render_timer) lv_timer_resume(s_render_timer);
 
-    ESP_LOGI(TAG, "game resumed");
+    ESP_LOGI(TAG, "game resumed (DMA RAM shared again)");
 }
 
 bool game_paused(void)
 {
-    return s_paused;
+    return s_paused || save_restore_pending() || net_busy();
 }
 
 void game_on_menu(lv_event_t *e)
@@ -640,18 +779,24 @@ void game_on_menu(lv_event_t *e)
 /* Open a menu by name, for the serial console.
  *
  * This calls the same menu_open() the UI calls, so a test through here exercises
- * the real path -- including the WiFi page's scan-on-open behaviour, which is
- * where the "radio unavailable" report came from. */
+ * the real path, including the SD page's queued on-demand probe. */
 bool game_open_menu(const char *name)
 {
     if      (!strcmp(name, "main"))     menu_open(MENU_MAIN);
     else if (!strcmp(name, "settings")) menu_open(MENU_SETTINGS);
     else if (!strcmp(name, "wifi"))     menu_open(MENU_WIFI);
-    else if (!strcmp(name, "sd"))       menu_open(MENU_SD);
+    else if (!strcmp(name, "saved"))    menu_open(MENU_WIFI_SAVED);
+    else if (!strcmp(name, "ota"))      menu_open(MENU_OTA);
+    else if (!strcmp(name, "password")) game_ui_open_wifi_password_entry();
+    else if (!strcmp(name, "species"))  menu_open(MENU_SPECIES);
+    else if (!strcmp(name, "about"))    menu_open(MENU_ABOUT);
+    else if (!strcmp(name, "sd"))       on_settings_pick(1);
     else if (!strcmp(name, "theme"))    menu_open(MENU_THEME);
     else if (!strcmp(name, "sound"))    menu_open(MENU_SOUND);
     else if (!strcmp(name, "ach"))      menu_open(MENU_ACHIEVEMENTS);
     else if (!strcmp(name, "reset"))    menu_open(MENU_RESET);
+    else if (!strcmp(name, "close"))    { ui_menu_close(); ui_hud_gift_menu_hide(); }
+    else if (!strcmp(name, "power")) menu_open(MENU_POWER);
     else return false;
     return true;
 }
@@ -665,35 +810,296 @@ bool game_open_menu(const char *name)
  *
  * So the console posts a request and the render tick performs it. That is the
  * request-plus-acknowledgement pattern the rest of the project uses. */
-static volatile int s_ui_req = GAME_UI_NONE;
+static atomic_int s_ui_req = GAME_UI_NONE;
+static int s_ui_value;
+static atomic_bool s_ui_ok;
+static lv_draw_buf_t *s_capture;
+const lv_draw_buf_t *game_screen_capture(void) { return s_capture; }
+enum { UI_PREPARING = -1 };
 
-void game_ui_call(game_ui_action_t action)
+static void test_gifts(void)
 {
-    s_ui_req = (int)action;
+    game_state_t original = g;
+    int tested = 0;
+    for (int kind = 0; kind < GIFT_KINDS; kind++) {
+        g.gift.used = 1;
+        g.gift.kind = kind;
+        gift_compute();
+        const gift_bonus_t *bonus = gift_bonus();
+        bool effective = bonus->energy_regen_mult != 1.0f ||
+            bonus->hygiene_decay_mult != 1.0f || bonus->pounce_range_mult != 1.0f ||
+            bonus->aim_window_mult != 1.0f || bonus->wild_spawn_bonus != 0 ||
+            bonus->pounce_success_mult != 1.0f || bonus->movement_efficiency_mult != 1.0f ||
+            bonus->mood_mult != 1.0f || bonus->fear_mult != 1.0f ||
+            bonus->prey_flee_penalty != 1.0f || bonus->catch_success_mult != 1.0f ||
+            bonus->prey_detection_range_mult != 1.0f || bonus->all_stats_decay_mult != 1.0f;
+        if (effective) tested++;
+        printf("GIFT %d %s effective=%d eR=%.2f hD=%.2f range=%.2f catch=%.2f decay=%.2f\n",
+               kind, gift_kind_name(kind), effective, bonus->energy_regen_mult,
+               bonus->hygiene_decay_mult, bonus->pounce_range_mult,
+               bonus->catch_success_mult * bonus->pounce_success_mult,
+               bonus->all_stats_decay_mult);
+    }
+    g.gift.used = 0;
+    gift_compute();
+    bool removed = gift_bonus()->energy_regen_mult == 1.0f &&
+                   gift_bonus()->all_stats_decay_mult == 1.0f &&
+                   gift_bonus()->catch_success_mult == 1.0f;
+    g = original;
+    gift_compute();
+    bool economy = gift_economy_test();
+    bool visits = behaviour_gift_test();
+    printf("%s gifts tested=%d removed_neutral=%d economy=%d visits=%d Silk=%lu\n",
+           tested == GIFT_KINDS && removed && economy && visits ? "OK" : "ERR", tested, removed,
+           economy, visits, (unsigned long)g.silk);
+}
+
+bool game_ui_call(game_ui_action_t action)
+{
+    return game_ui_call_value(action, 0);
+}
+
+bool game_ui_call_value(game_ui_action_t action, int value)
+{
+    if (action <= GAME_UI_NONE || action > GAME_UI_SCREEN_RELEASE ||
+        (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 1)) ||
+        (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
+        (action == GAME_UI_BACKGROUND && (value < 0 || value >= THEME_COUNT)) ||
+        (action == GAME_UI_STATE && (value < 0 || value > SPIDER_SICK)) ||
+        (action == GAME_UI_SPAWN && (value < -1 || value >= PREY_SPECIES_COUNT))) {
+        ESP_LOGW(TAG, "UI request rejected: invalid action or value");
+        return false;
+    }
+    int expected = GAME_UI_NONE;
+    if (!atomic_compare_exchange_strong(&s_ui_req, &expected, UI_PREPARING)) {
+        ESP_LOGW(TAG, "UI request rejected: busy");
+        return false;
+    }
+    s_ui_value = value;
+    atomic_store(&s_ui_ok, true);
+    atomic_store(&s_ui_req, action);
 
     /* Wait for the render tick to pick it up. Bounded, so a stalled render
      * timer cannot hang the console forever. */
     for (int i = 0; i < 100 && s_ui_req != GAME_UI_NONE; i++) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+    if (s_ui_req != GAME_UI_NONE) {
+        ESP_LOGW(TAG, "UI request acknowledgement timed out");
+        return false;
+    }
+    return atomic_load(&s_ui_ok);
+}
+
+typedef struct { lv_point_t point; lv_indev_state_t state; } test_pointer_t;
+
+static void test_pointer_read(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    test_pointer_t *pointer = lv_indev_get_user_data(indev);
+    data->point = pointer->point;
+    data->state = pointer->state;
+}
+
+static void test_pointer_send(lv_indev_t *indev, test_pointer_t *pointer,
+                              int x, int y, lv_indev_state_t state)
+{
+    pointer->point = (lv_point_t){x, y};
+    pointer->state = state;
+    lv_indev_read(indev);
+}
+
+static bool test_hunt_pointer(int32_t target_x, int32_t target_y)
+{
+    test_pointer_t pointer = {0};
+    lv_indev_t *indev = lv_indev_create();
+    if (!indev) { ESP_LOGE(TAG, "hunt test: pointer allocation failed"); return false; }
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(indev, test_pointer_read);
+    lv_indev_set_user_data(indev, &pointer);
+    lv_indev_set_mode(indev, LV_INDEV_MODE_EVENT);
+    lv_obj_update_layout(ui.screen);
+    test_pointer_send(indev, &pointer, target_x, target_y, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, target_x, target_y, LV_INDEV_STATE_RELEASED);
+    bool tap = !behaviour_pouncing() && !behaviour_aim_dragging();
+
+    /* Hit the real Care button, then tap the tank to dismiss without shooting. */
+    test_pointer_send(indev, &pointer, 29, 29, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 29, 29, LV_INDEV_STATE_RELEASED);
+    bool overlay = ui_hud_chrome_visible();
+    test_pointer_send(indev, &pointer, target_x, target_y, LV_INDEV_STATE_PRESSED);
+    overlay = overlay && !behaviour_aim_dragging();
+    test_pointer_send(indev, &pointer, target_x, target_y, LV_INDEV_STATE_RELEASED);
+    overlay = overlay && !ui_hud_chrome_visible() && !behaviour_pouncing();
+
+    int start_x = g.spider_x, start_y = g.spider_y;
+    test_pointer_send(indev, &pointer, start_x, start_y, LV_INDEV_STATE_PRESSED);
+    bool press = behaviour_aim_dragging();
+    test_pointer_send(indev, &pointer, target_x, target_y, LV_INDEV_STATE_PRESSED);
+    behaviour_tick(game_now() + 5000, 0.25f);
+    prey_tick(game_now() + 5000, 0.25f);
+    int32_t px = 0, py = 0;
+    bool held = behaviour_aim_dragging() && g.spider_x == start_x && g.spider_y == start_y &&
+        prey_nearest(&px, &py) && px == target_x && py == target_y;
+    test_pointer_send(indev, &pointer, target_x, target_y, LV_INDEV_STATE_RELEASED);
+    bool released = behaviour_pouncing() && !behaviour_aim_dragging() &&
+        behaviour_pounce_by_player() && g.energy < 80;
+    uint32_t now = game_now();
+    for (int i = 1; i <= 8; i++) behaviour_tick(now + i * 50, 0.05f);
+    bool landed = !behaviour_pouncing() && g.state == SPIDER_EAT &&
+        abs(g.spider_x - target_x) <= 1 && abs(g.spider_y - target_y) <= 1;
+    float x, y;
+    behaviour_pos(&x, &y);
+    bool subpixel = fabsf(x - g.spider_x) < 1 && fabsf(y - g.spider_y) < 1;
+    behaviour_set_state(SPIDER_WANDER);
+    behaviour_seek_to(target_x + 40, target_y);
+    behaviour_tick(now + 450, 0.05f);
+    subpixel = subpixel && abs(g.spider_x - target_x) < 8 && abs(g.spider_y - target_y) < 8;
+    lv_indev_delete(indev);
+    bool ok = press && held && tap && overlay && released && landed && subpixel;
+    printf("HUNT press=%d held=%d tap=%d overlay=%d released=%d landed=%d subpixel=%d\n",
+           press, held, tap, overlay, released, landed, subpixel);
+    return ok;
+}
+
+static bool test_hunt(void)
+{
+    if (behaviour_pouncing() || terrarium_poop_count() == MAX_POOP) {
+        ESP_LOGW(TAG, "hunt test requires no active jump and a free poop slot");
+        return false;
+    }
+    game_state_t original = g;
+    lv_obj_t *poop[MAX_POOP];
+    memcpy(poop, ui.poop, sizeof poop);
+    int original_prey = prey_count();
+    ui_menu_close();
+    ui_hud_set_chrome(false);
+    behaviour_set_state(SPIDER_IDLE);
+    g.spider_x = 176;
+    g.spider_y = 240;
+    g.spider_heading = 0;
+    g.hunger = 50;
+    g.energy = 80;
+    g.gift_mode = 0;
+    behaviour_sync_position();
+    bool ok = prey_hunt_test(test_hunt_pointer);
+    behaviour_set_state(SPIDER_IDLE);
+    for (int i = 0; i < MAX_POOP; i++)
+        if (ui.poop[i] && ui.poop[i] != poop[i]) {
+            lv_obj_delete(ui.poop[i]);
+            ui.poop[i] = poop[i];
+        }
+    g = original;
+    behaviour_sync_position();
+    spider_launch_pounce(0, 0);
+    ok = ok && prey_count() == original_prey && !memcmp(&g, &original, sizeof g);
+    printf("%s hunttest restored=%d\n", ok ? "OK" : "ERR",
+           !memcmp(&g, &original, sizeof g));
+    return ok;
 }
 
 /* Called from game_tick_render(), on the LVGL task. */
 static void ui_service_request(void)
 {
+    static bool scanloop_paused, scanloop_chrome;
     int req = s_ui_req;
-    if (req == GAME_UI_NONE) return;
-
-    s_ui_req = GAME_UI_NONE;
+    if (req <= GAME_UI_NONE) return;
 
     switch ((game_ui_action_t)req) {
-    case GAME_UI_FEED:  game_on_feed(NULL);  break;
+    case GAME_UI_SCREEN_CAPTURE:
+        if (s_capture) lv_draw_buf_destroy(s_capture);
+        s_capture = lv_snapshot_take(s_ui_value == 1 ? cspider_obj() : lv_screen_active(),
+            s_ui_value == 1 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB565);
+        atomic_store(&s_ui_ok, s_capture != NULL);
+        break;
+    case GAME_UI_SCREEN_RELEASE:
+        if (s_capture) lv_draw_buf_destroy(s_capture);
+        s_capture = NULL;
+        break;
+    case GAME_UI_FEED:
+        atomic_store(&s_ui_ok, prey_count() < MAX_PREY);
+        game_on_feed(NULL);
+        break;
     case GAME_UI_CLEAN: game_on_clean(NULL); break;
     case GAME_UI_PLAY:  game_on_play(NULL);  break;
+    case GAME_UI_WAKE: power_wake(); break;
     case GAME_UI_SLEEP: game_on_sleep(NULL); break;
     case GAME_UI_MENU:  game_on_menu(NULL);  break;
+    case GAME_UI_SAVE:  atomic_store(&s_ui_ok, game_save_now()); break;
+    case GAME_UI_TEST_GIFTS: test_gifts();   break;
+    case GAME_UI_REFRESH:
+        spider_refresh_colours();
+        terrarium_rebuild();
+        break;
+    case GAME_UI_RENDER: cspider_render(game_now()); break;
+    case GAME_UI_SD_BACKUP:
+        atomic_store(&s_ui_ok, sd_request(SD_JOB_BACKUP));
+        break;
+    case GAME_UI_SPAWN:
+        atomic_store(&s_ui_ok, s_ui_value < 0 ? prey_spawn() :
+                     prey_spawn_species((prey_species_t)s_ui_value));
+        break;
+    case GAME_UI_STATE: behaviour_set_state((spider_state_t)s_ui_value); break;
+    case GAME_UI_SET_HUNGER:  g.hunger = (uint8_t)s_ui_value; break;
+    case GAME_UI_SET_MOOD:    g.mood = (uint8_t)s_ui_value; break;
+    case GAME_UI_SET_ENERGY:  g.energy = (uint8_t)s_ui_value; break;
+    case GAME_UI_SET_HYGIENE: g.hygiene = (uint8_t)s_ui_value; break;
+    case GAME_UI_SET_BOND:    g.bond = (uint8_t)s_ui_value; break;
+    case GAME_UI_SET_SICK:    g.sick = s_ui_value != 0; break;
+    case GAME_UI_BACKGROUND:
+        atomic_store(&s_ui_ok, theme_set(s_ui_value));
+        if (atomic_load(&s_ui_ok)) terrarium_rebuild();
+        break;
+    case GAME_UI_TEST_HUNT: atomic_store(&s_ui_ok, test_hunt()); break;
+    case GAME_UI_TEST_GAIT: {
+        bool ok = cspider_gait_test();
+        printf("%s gaittest cadence=20/30/60 repeated=100 front_poses=10240\n",
+               ok ? "OK" : "ERR");
+        atomic_store(&s_ui_ok, ok);
+        break;
+    }
+    case GAME_UI_TEST_PREY: {
+        bool ok = prey_progression_test();
+        printf("%s preytest levels=1,2,4,6,10,13,16,20 spawn_gates=%d\n",
+               ok ? "OK" : "ERR", ok);
+        atomic_store(&s_ui_ok, ok);
+        break;
+    }
+    case GAME_UI_SCANLOOP_BEGIN:
+        scanloop_paused = s_paused;
+        scanloop_chrome = ui_hud_chrome_visible();
+        behaviour_aim_cancel();
+        ui_menu_close();
+        ui_hud_set_chrome(false);
+        game_pause();
+        break;
+    case GAME_UI_SCANLOOP_END:
+        ui_hud_set_chrome(scanloop_chrome);
+        if (!scanloop_paused) game_resume();
+        break;
+    case GAME_UI_TEST_UI: {
+        ui_menu_close();
+        ui_hud_set_chrome(true);
+        bool menu_ok = ui_menu_test();
+        bool hud_ok = ui_hud_test();
+        bool backgrounds_ok = terrarium_test();
+        bool hunger_ok = needs_hunger_test();
+        hunger_ok = power_ui_test() && hunger_ok;
+        hunger_ok = save_format_test() && hunger_ok;
+        gift_t original_gift = g.gift;
+        g.gift.used = 1;
+        g.gift.x = 0;
+        g.gift.y = ui.H;
+        keep_gift_in_playfield();
+        bool gift_bounds = g.gift.x == g_play.left && g.gift.y == g_play.bottom;
+        g.gift = original_gift;
+        printf("%s uitest pages=%d keyboard=%d password=%d hud=%d backgrounds=%d\n",
+               menu_ok && hud_ok && backgrounds_ok && gift_bounds && hunger_ok ? "OK" : "ERR",
+               menu_ok, menu_ok, menu_ok, hud_ok, backgrounds_ok);
+        break;
+    }
     default: break;
     }
+    s_ui_req = GAME_UI_NONE;
 }
 
 /* Open a menu by name from the console, marshalled onto the LVGL task.
@@ -703,13 +1109,16 @@ static void ui_service_request(void)
  * lv_event_mark_deleted" -- the same class of bug as calling lv_timer_pause()
  * from a worker. So the request is posted and the render tick performs it. */
 static char s_ui_menu_name[16];
-static volatile bool s_ui_menu_req;
-static volatile bool s_ui_menu_done;
-static volatile bool s_ui_menu_ok;
+static atomic_bool s_ui_menu_req;
+static atomic_bool s_ui_menu_done;
+static atomic_bool s_ui_menu_ok;
 
 bool game_ui_open_menu(const char *name)
 {
-    if (!name || strlen(name) >= sizeof s_ui_menu_name) return false;
+    if (!name || strlen(name) >= sizeof s_ui_menu_name || s_ui_menu_req) {
+        ESP_LOGW(TAG, "menu request rejected: invalid name or busy");
+        return false;
+    }
 
     strncpy(s_ui_menu_name, name, sizeof s_ui_menu_name - 1);
     s_ui_menu_name[sizeof s_ui_menu_name - 1] = '\0';
@@ -723,7 +1132,8 @@ bool game_ui_open_menu(const char *name)
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    return s_ui_menu_ok;
+    if (!s_ui_menu_done) ESP_LOGW(TAG, "menu acknowledgement timed out");
+    return s_ui_menu_done && s_ui_menu_ok;
 }
 /* Called from game_tick_render(), on the LVGL task. */
 static void ui_service_menu_request(void)
@@ -759,10 +1169,12 @@ static void ui_service_menu_request(void)
  * means the dismissing tap never begins a pull in the first place. */
 void game_on_terrarium_press(lv_event_t *e)
 {
-    if (ui_hud_chrome_visible()) return;
+    (void)e;
+    if (ui_hud_chrome_visible() || ui_menu_visible() || g.gift_mode || game_paused()) return;
     if (!behaviour_aim_active()) return;
 
     lv_indev_t *indev = lv_indev_active();
+    if (!indev) return;
     lv_point_t p = {0, 0};
     if (indev) lv_indev_get_point(indev, &p);
 
@@ -771,6 +1183,11 @@ void game_on_terrarium_press(lv_event_t *e)
 
 void game_on_terrarium_pressing(lv_event_t *e)
 {
+    (void)e;
+    if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused()) {
+        behaviour_aim_cancel();
+        return;
+    }
     if (!behaviour_aim_dragging()) return;
 
     lv_indev_t *indev = lv_indev_active();
@@ -782,7 +1199,12 @@ void game_on_terrarium_pressing(lv_event_t *e)
 
 void game_on_terrarium_release(lv_event_t *e)
 {
-    if (!behaviour_aim_dragging()) return;
+    (void)e;
+    if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused() || g.gift_mode ||
+        !behaviour_aim_dragging()) {
+        behaviour_aim_cancel();
+        return;
+    }
 
     if (behaviour_aim_release()) {
         g.taps++;
@@ -803,11 +1225,16 @@ void game_on_terrarium_tap(lv_event_t *e)
      * to give, asking them to confirm the spot as well is just friction. */
     if (g.gift_mode) {
         if (indev) {
+            if (!gift_purchase(g.gift_selected)) {
+                ui_hud_bubble("Not Enough Silk", 0xf5c86b, 1800);
+                return;
+            }
             g.gift.kind    = g.gift_selected;
             g.gift.variant = (uint8_t)(rand() % 3);
             g.gift.used    = 1;
             g.gift.x       = (int16_t)p.x;
             g.gift.y       = (int16_t)p.y;
+            keep_gift_in_playfield();
 
             terrarium_refresh_gift();
             game_save_now();
@@ -818,26 +1245,12 @@ void game_on_terrarium_tap(lv_event_t *e)
         }
         return;
     }
-
-    /* The edge-band reveal is gone. It used to check the top and bottom 56px
-     * strips here and reveal the chrome, which meant a slingshot drag starting
-     * near an edge revealed the tray instead of pulling. The chrome is now
-     * toggled by the hamburger button, which is a real object with its own
-     * click handler, so nothing needs to be intercepted here. */
-
-    /* Tapping the tank dismisses the chrome if it is up.
-     *
-     * The chrome is a floating overlay, so a tap that reaches this handler is
-     * by definition a tap that missed every button. Dismissing here means the
-     * tray can be closed by tapping anywhere, which is what the player expects
-     * of a menu they opened by accident.
-     *
-     * This runs BEFORE the aim/pet logic and returns, so the dismissing tap
-     * does not also start a slingshot pull. */
     if (ui_hud_chrome_visible()) {
         ui_hud_dismiss_if_visible();
         return;
     }
+
+    /* Care has its own hit target; edge drags no longer reveal a tray. */
 
     /* Remember where the player touched: a bonded spider turns toward it. */
     if (indev) behaviour_note_tap(p.x, p.y);
@@ -870,6 +1283,11 @@ void game_on_terrarium_tap(lv_event_t *e)
 void game_tick_logic(lv_timer_t *timer)
 {
     (void)timer;
+    if (s_paused || save_restore_pending() || power_sleeping() || net_busy() || ui_menu_visible() || ui_hud_chrome_visible() ||
+        lv_screen_active() != ui.screen) {
+        s_last_logic = lv_tick_get();
+        return;
+    }
 
     uint32_t now = lv_tick_get();
     float dt = (float)(now - s_last_logic) / 1000.0f;
@@ -884,6 +1302,7 @@ void game_tick_logic(lv_timer_t *timer)
 
     /* WiFi reconnect backoff. Cheap when connected or off. */
     net_tick(now);
+    audio_tick(now);
 
     /* The radio is NOT started automatically.
      *
@@ -906,9 +1325,7 @@ void game_tick_logic(lv_timer_t *timer)
     behaviour_tick(now, dt);
     prey_tick(now, dt);
 
-    /* A deeply bonded spider occasionally brings the player a gift of its own.
-     * This is the payoff for bond 75. It only fires when there is no gift yet,
-     * so it never overwrites something the player chose. */
+    /* A bonded spider contributes Silk, not free items that bypass the shop. */
     static uint32_t next_gift;
     if (g.bond >= BOND_GIFT && !g.gift.used) {
         if (next_gift == 0) {
@@ -916,15 +1333,9 @@ void game_tick_logic(lv_timer_t *timer)
         } else if (now >= next_gift) {
             next_gift = now + 120000u + (uint32_t)(rand() % 120000);
 
-            g.gift.used    = 1;
-            g.gift.kind    = (uint8_t)(rand() % GIFT_KINDS);
-            g.gift.variant = (uint8_t)(rand() % 3);
-            g.gift.x       = (int16_t)(g.spider_x + (rand() % 41) - 20);
-            g.gift.y       = (int16_t)(g.spider_y + (rand() % 41) - 20);
-            terrarium_refresh_gift();
-
+            game_add_silk(2);
             audio_play(SFX_TAP);
-            ESP_LOGI(TAG, "bond gift: kind %u", (unsigned)g.gift.kind);
+            ESP_LOGI(TAG, "bond reward: +2 Silk");
         }
     } else if (g.bond < BOND_GIFT) {
         next_gift = 0;
@@ -958,9 +1369,9 @@ void game_tick_logic(lv_timer_t *timer)
     if (g.days_lived != last_visitor_day) {
         last_visitor_day = g.days_lived;
         if (g.days_lived > 0) {
-            int top = prey_unlocked_species();
-            prey_species_t rare = (prey_species_t)((top < PREY_SPECIES_COUNT)
-                                                 ? top : PREY_SPECIES_COUNT - 1);
+            prey_species_t rare = PREY_FLY;
+            for (int i = 0; i < PREY_SPECIES_COUNT; i++)
+                if (species_unlocked(i)) rare = (prey_species_t)i;
             prey_spawn_species_ex(rare, true);
 
             audio_play(SFX_ALERT);
@@ -992,39 +1403,10 @@ void game_tick_logic(lv_timer_t *timer)
 
 void game_tick_render(lv_timer_t *timer)
 {
+    power_tick();
     (void)timer;
 
     uint32_t now = lv_tick_get();
-
-    /* THE TANK IS NOT DRAWN WHILE THE RADIO IS ON.
-     *
-     * This is the rule Pocket Tank follows and the one this device needs: the
-     * radio is only on during a check, and the tank is not being drawn while it
-     * is. The radio takes internal DMA-capable RAM that the LCD driver needs for
-     * its draw buffers, so drawing the tank at the same time is what made the
-     * screen go berserk.
-     *
-     * Note what is NOT skipped: this function still runs, and LVGL still
-     * composites. Only the tank's own drawing stops. The menu is drawn by LVGL
-     * from its own object tree, so the WiFi list stays visible and interactive
-     * while the scan runs -- the player sees "scanning..." on a frozen tank
-     * rather than a corrupted one.
-     *
-     * The logic timer is paused too, so the spider does not move while the radio
-     * has the CPU. */
-    if (net_radio_active()) {
-        if (!s_paused) {
-            s_paused = true;
-            if (s_logic_timer) lv_timer_pause(s_logic_timer);
-        }
-        return;
-    }
-
-    if (s_paused) {
-        s_paused = false;
-        s_last_logic = now;
-        if (s_logic_timer) lv_timer_resume(s_logic_timer);
-    }
 
     /* Perform any UI action the serial console asked for. This runs on the LVGL
      * task, which is the only thread allowed to touch lv_*. */
@@ -1051,7 +1433,27 @@ void game_tick_render(lv_timer_t *timer)
         /* Only rebuild if the player is still looking at the WiFi list. */
         if (s_open_menu == MENU_WIFI) menu_open(MENU_WIFI);
     }
+    static uint32_t seen_sd_gen;
+    uint32_t sd_gen = sd_generation();
+    if (sd_gen != seen_sd_gen) {
+        seen_sd_gen = sd_gen;
+        if (sd_take_restored(&g)) {
+            state_finish_load();
+            keep_gift_in_playfield();
+            audio_set_muted(g.muted != 0);
+            spider_refresh_colours();
+            terrarium_rebuild();
+            terrarium_refresh_gift();
+        }
+        if (s_open_menu == MENU_SD) menu_open(MENU_SD);
+    }
 
+    if (s_paused || save_restore_pending() || power_sleeping() || net_busy() || ui_menu_visible() || ui_hud_chrome_visible() ||
+        lv_screen_active() != ui.screen) {
+        if (!s_paused && !net_busy() && !ui_menu_visible() &&
+            lv_screen_active() == ui.screen) ui_hud_tick(now);
+        return;
+    }
     terrarium_tick(now);
     cspider_render(now);
     spider_render(now);   /* aim visuals only */
@@ -1063,11 +1465,9 @@ void game_tick_render(lv_timer_t *timer)
 /* Init                                                                */
 /* ------------------------------------------------------------------ */
 
-/* WiFi menu actions, marshalled from menu callbacks onto the LVGL task. */
+/* LVGL callers queue requests; the network worker owns pause and teardown. */
 void game_ui_start_wifi_scan(void)
 {
-    game_pause();
-    net_init();
     if (!net_scan_start()) {
         ESP_LOGE(TAG, "WiFi scan failed to start");
     }
@@ -1076,37 +1476,22 @@ void game_ui_start_wifi_scan(void)
 void game_ui_connect_wifi(int scan_index)
 {
     if (scan_index < 0 || scan_index >= net_scan_count()) {
+        ESP_LOGW(TAG, "invalid WiFi scan selection %d", scan_index);
         return;
     }
 
-    const char *ssid = net_scan_ssid(scan_index);
-    const char *pass = "";
-
-    if (net_scan_secure(scan_index)) {
-        /* Secure network; for now, we cannot handle password entry from the
-         * menu. Just log and return. In the future, this should open a password
-         * entry popup. */
-        ESP_LOGW(TAG, "Network %s requires password (not yet implemented)", ssid);
-        return;
-    }
-
-    game_pause();
-    net_init();
-    net_connect_to(ssid, pass);
-    game_resume();
+    on_wifi_pick((uint8_t)(scan_index + 4));
 }
 
 void game_ui_forget_wifi(void)
 {
-    net_set_credentials("", "");
-    game_resume();
+    if (!net_forget_saved(0)) ESP_LOGW(TAG, "forget WiFi rejected");
 }
 
 void game_ui_open_wifi_password_entry(void)
 {
-    /* Placeholder: in a full implementation, this opens a text entry UI.
-     * For now, just resume the game. */
-    game_resume();
+    ui_menu_open_input("Network Name (SSID)", "", false, 32, on_ssid);
+    ui_menu_set_back(back_to_wifi);
 }
 
 void game_init(void)
@@ -1168,12 +1553,17 @@ void game_init(void)
                         LV_EVENT_RELEASED, NULL);
 
     terrarium_init(scr);
+    ui.creature_layer = lv_obj_create(scr);
+    lv_obj_remove_style_all(ui.creature_layer);
+    lv_obj_set_size(ui.creature_layer, ui.W, ui.H);
+    lv_obj_set_clickable(ui.creature_layer, false);
+    lv_obj_set_scrollable(ui.creature_layer, false);
 
     /* The creature is a single canvas, not a scene graph. cspider draws the
      * whole spider into one 96x96 buffer each frame; spider_init() now only
      * creates the slingshot aim visuals. */
-    cspider_init(scr);
-    spider_init(scr);
+    cspider_init(ui.creature_layer);
+    spider_init(ui.creature_layer);
 
     ui_hud_init(scr);
 
@@ -1191,16 +1581,8 @@ void game_init(void)
     /* --- audio -------------------------------------------------------- */
     audio_init();
 
-    /* --- connectivity and storage -------------------------------------
-     * Both are optional. net_init() stays off when no credentials are saved,
-     * and sd_init() does not touch the hardware at all.
-     *
-     * WiFi is NOT started here. Bringing the radio up allocates internal
-     * DMA-capable buffers, and doing that while the LCD driver is still
-     * claiming its own produced an intermittent "Draw bitmap failed:
-     * ESP_ERR_NO_MEM" on the first frame -- roughly one boot in three. The
-     * radio is started from the first logic tick instead, by which point the
-     * display has finished its initial draw. */
+    /* Network worker and RTC were initialized before display startup. */
+    net_init();
     sd_init();
 
     /* --- timers ------------------------------------------------------- */

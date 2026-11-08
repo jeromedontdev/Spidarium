@@ -1,8 +1,7 @@
 /*
  * Spidarium — species and gift catalogue, definitions.
  *
- * THIS IS THE FILE TO EDIT when adding content. Each table entry is one bug or
- * one gift; nothing else needs to change.
+ * Gameplay values live here; append matching IDs/art/mappings for new content.
  */
 #include "species.h"
 
@@ -25,6 +24,14 @@ const species_def_t k_species[PREY_SPECIES_COUNT] = {
 
     { "beetle",    6, MOVE_SLOW,    0.55f, 1.00f, 1.00f, 0.50f,
       0x2b2620, 0x3f352a, 0x3a332b, 7, 3, false, false, true },
+    { "roach",    10, MOVE_WANDER, 0.75f, 1.25f, 0.85f, 0.85f,
+      0x936044, 0x493329, 0xb58158, 7, 3, false, true, true },
+    { "mealworm", 13, MOVE_SLOW,   0.30f, 0.40f, 0.65f, 1.10f,
+      0xc7a267, 0x745138, 0xe5c38e, 6, 2, false, false, false },
+    { "fruit fly",16, MOVE_ERRATIC,1.25f, 1.20f, 1.10f, 0.85f,
+      0xb68c58, 0x58362f, 0xc5d4c6, 3, 2, true, false, false },
+    { "waxworm",  20, MOVE_SLOW,   0.20f, 0.30f, 0.55f, 1.20f,
+      0xdfd5ac, 0x8a6f4e, 0xf1e7c7, 7, 2, false, false, false },
 };
 
 const species_def_t *species_get(prey_species_t species)
@@ -32,6 +39,23 @@ const species_def_t *species_get(prey_species_t species)
     int i = (int)species;
     if (i < 0 || i >= PREY_SPECIES_COUNT) i = 0;
     return &k_species[i];
+}
+bool species_unlocked(prey_species_t species)
+{
+    return species >= 0 && species < PREY_SPECIES_COUNT &&
+        g.level >= k_species[species].unlock_level;
+}
+
+prey_species_t species_choose_unlocked(uint32_t roll)
+{
+    int count = 0;
+    for (int i = 0; i < PREY_SPECIES_COUNT; i++)
+        if (species_unlocked(i)) count++;
+    if (count == 0) return PREY_FLY;
+    int choice = roll % count;
+    for (int i = 0; i < PREY_SPECIES_COUNT; i++)
+        if (species_unlocked(i) && choice-- == 0) return (prey_species_t)i;
+    return PREY_FLY;
 }
 
 int species_next_locked(void)
@@ -66,15 +90,15 @@ const gift_def_t k_gifts[GIFT_KINDS] = {
     { "twig",    "leaps further",      3, 0xf5b342, 1.00f, 1.00f, 1.20f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
     { "acorn",   "builds energy",      2, 0xc9a876, 1.30f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 0.95f, 1.00f },
     { "moss",    "natural camouflage", 1, 0x6b8e23, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.15f, 1.00f, 1.00f, 1.00f, 0.85f, 1.00f, 1.00f, 1.00f, 1.00f },
-    { "sap",     "stickier legs",      3, 0xd4a574, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.10f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
+    { "sap",     "uses less energy",   3, 0xd4a574, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.10f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
 
     /* Tier 4-6: Uncommon (Specialization) */
     { "flower",  "more wild bugs",     5, 0xff7eb6, 1.00f, 1.00f, 1.00f, 1.00f, 1,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
     { "crystal", "longer aim window",  7, 0x4fd1c5, 1.00f, 1.00f, 1.00f, 1.25f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
     { "amber",   "warmth bonus",       4, 0xffb347, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.10f, 1.00f, 1.00f, 1.00f, 1.00f, 0.95f, 1.00f },
-    { "coral",   "water affinity",     5, 0xff6b9d, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
-    { "silk",    "web reinforcement",  6, 0xe6e6fa, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
-    { "bone",    "predator resist",    4, 0xf5f5dc, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 0.70f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
+    { "coral",   "less grime",         5, 0xff6b9d, 1.00f, 0.80f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
+    { "silk",    "steadier catches",   6, 0xe6e6fa, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.20f, 1.00f, 1.00f, 1.00f },
+    { "bone",    "calmer prey",        4, 0xf5f5dc, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 0.70f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },
 
     /* Tier 7-10: Rare (Mastery) */
     { "pearl",   "iridescent glow",    7, 0xfdeef4, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.10f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },

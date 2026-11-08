@@ -19,13 +19,15 @@ idf_component_register(
          "ui_setup.c"
          "audio.c"
          "net.c"
+         "rtc.c"
+         "power.c"
          "sd.c"
          "meminfo.c"
          "test_console.c"
     INCLUDE_DIRS "."
     REQUIRES esp_mmap_assets esp_lv_fs esp_lv_decoder esp_codec_dev
     PRIV_REQUIRES nvs_flash esp_lvgl_adapter
-                  esp_wifi esp_netif esp_event
+                  esp_wifi esp_netif esp_event esp_https_ota mbedtls
                   sdmmc fatfs app_update
                   driver
 )
@@ -47,3 +49,6 @@ spiffs_create_partition_assets(
     FLASH_IN_PROJECT
     IMPORT_INC_PATH "${CMAKE_CURRENT_LIST_DIR}"
 )
+
+# The packer also writes the enum header consumed by sprites.c.
+add_dependencies(${COMPONENT_LIB} assets_storage_bin)
