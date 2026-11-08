@@ -62,6 +62,12 @@ void ui_menu_format_name(char *dst, size_t size, const char *name);
 void ui_menu_set_destructive(uint8_t id);
 void ui_menu_set_item_icon(uint8_t item, int asset_index);
 void ui_menu_set_item_checkbox(uint8_t item);
+
+/* Turn a row into a 0..100 slider. The row's `selected` flag is ignored; the
+ * slider shows `value` and reports every change through `cb` with the new
+ * 0..100 value. The row's own pick callback is not used. */
+typedef void (*ui_menu_slider_cb)(uint8_t id, uint8_t value);
+void ui_menu_set_item_slider(uint8_t item, uint8_t value, ui_menu_slider_cb cb);
 int ui_menu_page(void);
 void ui_menu_set_page(int page);
 void ui_menu_capture_hide(bool hidden);

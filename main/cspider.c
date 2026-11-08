@@ -132,14 +132,20 @@ static bool gait_update(gait_t *gait, float x, float y, uint32_t now,
     return walk_state(state) && gait->moved_at && now - gait->moved_at < 100;
 }
 
-/* Original angular anatomy, with distance-driven timing and no inverted bends. */
+/* Original angular anatomy, with distance-driven timing and no inverted bends.
+ *
+ * The front pair (k == 0) leads the walk: it swings wider and bends further
+ * than the trailing pairs, so the legs nearest the eyes visibly reach and
+ * plant instead of trailing the rear legs. The extra amplitude is applied
+ * before the 0.15..1.25 radian clamp, so it can never invert a knee. */
 static leg_pose_t leg_pose(int k, int side, float phase, bool walking,
                            cspider_emote_t emote, uint32_t now)
 {
     float base = side * (PI_F * 0.5f + (k - 1.5f) * 0.42f);
     float gait = phase + k * (PI_F * 0.5f) + (side < 0 ? 0 : PI_F);
-    float swing = walking ? 0.42f * sinf(gait) : 0;
-    float bend = 0.55f + (walking ? 0.30f * sinf(gait + PI_F * 0.5f) : 0);
+    float lead = k == 0 ? 1.55f : k == 1 ? 1.15f : 1.0f;
+    float swing = walking ? 0.42f * lead * sinf(gait) : 0;
+    float bend = 0.55f + (walking ? 0.30f * lead * sinf(gait + PI_F * 0.5f) : 0);
     float wave = sinf((now % 1200u) * (2 * PI_F / 1200));
     switch (emote) {
     case CSP_EMOTE_HAPPY:

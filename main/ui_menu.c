@@ -29,6 +29,8 @@ static lv_obj_t *s_row[PAGE_ROWS], *s_label[PAGE_ROWS], *s_detail[PAGE_ROWS];
 static lv_obj_t *s_marker[PAGE_ROWS];
 static lv_obj_t *s_icons[PAGE_ROWS];
 static lv_obj_t *s_checks[PAGE_ROWS];
+static lv_obj_t *s_sliders[PAGE_ROWS];
+static ui_menu_slider_cb s_slider_cb[20];
 static bool s_check_items[20];
 static int s_icon_indices[20];
 static ui_menu_pick_cb s_cb;
@@ -155,7 +157,9 @@ bool ui_menu_showing(const ui_menu_item_t *items) { return s_menu && s_items == 
 static void open_panel(const char *title)
 {
     ui_menu_close();
-    lv_obj_t *screen = lv_screen_active();
+    /* Menus must live inside the rotation wrapper, or they stay upright while
+     * the playfield turns. */
+    lv_obj_t *screen = power_rotation_layer(lv_screen_active());
     s_backdrop = lv_obj_create(screen);
     lv_obj_remove_style_all(s_backdrop);
     lv_obj_set_size(s_backdrop, ui.W, ui.H);
@@ -215,7 +219,10 @@ static void refresh_page(void)
             if (it->selected) lv_obj_add_state(s_checks[i], LV_STATE_CHECKED);
             else lv_obj_remove_state(s_checks[i], LV_STATE_CHECKED);
         }
-        lv_label_set_text(s_marker[i], s_check_items[index] ? "" : it->selected ? LV_SYMBOL_OK :
+        bool slider = s_slider_cb[index] != NULL;
+        lv_obj_set_hidden(s_sliders[i], !slider);
+        if (slider) lv_slider_set_value(s_sliders[i], it->id, LV_ANIM_OFF);
+        lv_label_set_text(s_marker[i], s_check_items[index] || slider ? "" : it->selected ? LV_SYMBOL_OK :
             it->enabled && it->is_submenu ? LV_SYMBOL_RIGHT : "");
         lv_obj_set_hidden(s_detail[i], !it->detail || !it->detail[0]);
         lv_obj_set_pos(s_label[i], text_x, it->detail && it->detail[0] ? multiline ? 2 : 16 : 30);
@@ -253,6 +260,18 @@ void ui_menu_set_item_checkbox(uint8_t item)
         return;
     }
     s_check_items[item] = true;
+    refresh_page();
+}
+
+void ui_menu_set_item_slider(uint8_t item, uint8_t value, ui_menu_slider_cb cb)
+{
+    if (!s_items || item >= s_count || item >= 20 || !cb) {
+        ESP_LOGE("spidarium.menu", "slider rejected: invalid row %u", item);
+        return;
+    }
+    s_slider_cb[item] = cb;
+    /* The row's id carries the current value so refresh_page() can show it. */
+    ((ui_menu_item_t *)s_items)[item].id = value > 100 ? 100 : value;
     refresh_page();
 }
 
@@ -536,6 +555,17 @@ static void on_row(lv_event_t *e)
     if (cb) cb(id);
 }
 
+/* Slider rows report live; the menu stays open so the value can be dragged. */
+static void on_slider(lv_event_t *e)
+{
+    int row = (int)(uintptr_t)lv_event_get_user_data(e);
+    int index = s_page * PAGE_ROWS + row;
+    if (index >= s_count || !s_slider_cb[index]) return;
+    ui_menu_slider_cb cb = s_slider_cb[index];
+    uint8_t id = s_items[index].id;
+    cb(id, (uint8_t)lv_slider_get_value(s_sliders[row]));
+}
+
 void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
                   ui_menu_pick_cb cb)
 {
@@ -549,6 +579,7 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
     for (int i = 0; i < 20; i++) {
         s_icon_indices[i] = -1;
         s_check_items[i] = false;
+        s_slider_cb[i] = NULL;
     }
     s_cb = cb;
     for (int i = 0; i < count; i++)
@@ -576,6 +607,19 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
         lv_obj_align(s_checks[i], LV_ALIGN_RIGHT_MID, -14, 0);
         lv_obj_set_clickable(s_checks[i], false);
         lv_obj_set_hidden(s_checks[i], true);
+        s_sliders[i] = lv_slider_create(s_row[i]);
+        lv_obj_set_size(s_sliders[i], 132, 12);
+        lv_obj_align(s_sliders[i], LV_ALIGN_RIGHT_MID, -14, 0);
+        lv_slider_set_range(s_sliders[i], 0, 100);
+        lv_obj_set_style_bg_color(s_sliders[i], lv_color_hex(0x30404b), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_sliders[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_sliders[i], lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_opa(s_sliders[i], LV_OPA_COVER, LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(s_sliders[i], lv_color_hex(COL_TEXT), LV_PART_KNOB);
+        lv_obj_set_style_pad_all(s_sliders[i], 4, LV_PART_KNOB);
+        lv_obj_add_event_cb(s_sliders[i], on_slider, LV_EVENT_VALUE_CHANGED,
+                            (void *)(uintptr_t)i);
+        lv_obj_set_hidden(s_sliders[i], true);
     }
     s_prev = button(s_menu, 12, MENU_HEIGHT - 68, 120, 56, LV_SYMBOL_LEFT " Prev",
                     on_page, (void *)(intptr_t)-1);

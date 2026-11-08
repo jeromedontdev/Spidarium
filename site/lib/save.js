@@ -9,8 +9,8 @@ export const toHex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, 
 
 export function validateSchema(schema) {
   if (!schema || !Number.isInteger(schema.magic) || schema.magic < 0 || schema.magic > 0xffffffff ||
-      ![2, 3].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
-      !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 132) ||
+      ![2, 3, 4].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
+      !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 136) ||
       !Array.isArray(schema.fields)) throw new Error('Unsupported save schema');
   const names = new Set();
   for (const field of schema.fields) {
@@ -26,12 +26,12 @@ export function validateSchema(schema) {
 
 export function decodeSave(bytes, schema) {
   validateSchema(schema);
-  if (!(bytes instanceof Uint8Array) || bytes.length < 12 || bytes.length > 144) throw new Error('Save must be a raw 12-byte header and 120/132-byte payload');
+  if (!(bytes instanceof Uint8Array) || bytes.length < 12 || bytes.length > 148) throw new Error('Save must be a raw 12-byte header and 120/136-byte payload');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const header = { magic: view.getUint32(0, true), version: view.getUint16(4, true), reserved: view.getUint16(6, true), size: view.getUint32(8, true) };
   if (header.magic !== schema.magic) throw new Error('Save magic does not match Spidarium');
-  if (!(header.version === schema.version || schema.version === 3 && header.version === 2) || header.reserved !== 0) throw new Error('Unsupported save version or reserved header');
-  if (header.version === 3 && header.size !== 132) throw new Error('Version 3 requires the full save payload');
+  if (!(header.version === schema.version || header.version >= 2 && header.version < schema.version) || header.reserved !== 0) throw new Error('Unsupported save version or reserved header');
+  if (header.version >= 3 && header.size !== Math.max(...schema.payloadSizes)) throw new Error('Version 3+ requires the full save payload');
   if (!schema.payloadSizes.includes(header.size) || bytes.length !== header.size + 12) throw new Error('Save payload length mismatch');
   const fields = {};
   for (const field of schema.fields) {
@@ -40,12 +40,14 @@ export function decodeSave(bytes, schema) {
     if (['auto_feed', 'auto_hunt'].includes(field.name) && header.version < 3) {
       fields[field.name] = 0; continue;
     }
+    if (field.name === 'volume' && header.version < 4) { fields.volume = 70; continue; }
     if (field.offset + width > header.size) { fields[field.name] = '(not present in older save)'; continue; }
     fields[field.name] = field.type === 'string'
       ? new TextDecoder().decode(bytes.subarray(offset, offset + width)).split('\0')[0]
       : view[getters[field.type]](offset, true);
     if (typeof fields[field.name] === 'number' && !Number.isFinite(fields[field.name])) throw new Error(`Invalid number in ${field.name}`);
     if (['auto_feed', 'auto_hunt'].includes(field.name) && fields[field.name] > 1) throw new Error(`Invalid checkbox in ${field.name}`);
+    if (field.name === 'volume' && fields.volume > 100) throw new Error('Invalid volume in save');
   }
   return { header, fields };
 }

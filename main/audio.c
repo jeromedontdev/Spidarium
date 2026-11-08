@@ -35,6 +35,8 @@ static int16_t *s_buf;
 static QueueHandle_t s_queue;
 static atomic_bool s_playing;
 static atomic_bool s_muted;
+static atomic_int  s_volume = AUDIO_VOLUME;
+static atomic_int  s_volume_applied = -1;
 
 static void play_sfx(sfx_t sfx);
 
@@ -49,6 +51,13 @@ static void audio_worker(void *arg)
             if (!net_busy()) break;
             atomic_store(&s_playing, false);
             vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        /* Volume changes are codec writes, so they belong here and never on
+         * the LVGL task. */
+        int volume = atomic_load(&s_volume);
+        if (volume != atomic_load(&s_volume_applied)) {
+            esp_codec_dev_set_out_vol(s_spk, volume);
+            atomic_store(&s_volume_applied, volume);
         }
         if (!atomic_load(&s_muted)) play_sfx(sfx);
         atomic_store(&s_playing, false);
@@ -152,7 +161,9 @@ bool audio_init(void)
         return false;
     }
 
-    esp_codec_dev_set_out_vol(s_spk, AUDIO_VOLUME);
+    esp_codec_dev_set_out_vol(s_spk, g.volume <= 100 ? g.volume : AUDIO_VOLUME);
+    atomic_store(&s_volume, g.volume <= 100 ? g.volume : AUDIO_VOLUME);
+    atomic_store(&s_volume_applied, atomic_load(&s_volume));
 
     s_buf = heap_caps_malloc(MAX_SAMPLES * sizeof *s_buf,
                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -183,6 +194,18 @@ void audio_set_muted(bool muted)
 bool audio_muted(void)
 {
     return g.muted != 0;
+}
+
+void audio_set_volume(uint8_t volume)
+{
+    if (volume > 100) volume = 100;
+    g.volume = volume;
+    atomic_store(&s_volume, volume);
+}
+
+uint8_t audio_volume(void)
+{
+    return g.volume <= 100 ? g.volume : AUDIO_VOLUME;
 }
 
 bool audio_play(sfx_t sfx)

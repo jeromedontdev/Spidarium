@@ -107,8 +107,8 @@ export class DeviceGame {
       this.refreshHUD();
     };
     this.controls.append(this.ear);
-    const battery = this.button(this.hudLayer, '', 400, 132, 52, 44, () => this.open('Battery and Display'));
-    battery.classList.add('d-battery'); battery.setAttribute('aria-label', 'Battery and Display: Hardware Telemetry Unavailable');
+    const battery = this.button(this.hudLayer, '', 412, 8, 52, 44, () => this.open('Battery'));
+    battery.classList.add('d-battery'); battery.setAttribute('aria-label', 'Battery: Hardware Telemetry Unavailable');
     this.refreshHUD();
   }
   refreshHUD() {
@@ -154,7 +154,12 @@ export class DeviceGame {
   open(name, page = 0) {
     this.close(); this.modal = this.panel(name === 'Gifts' ? `Gifts / ${this.state.silk} Silk` : name, () => this.back(name)); this.modal.name = name; this.modal.page = page;
     this.refreshHUD();
-    const toggle = field => { this.state[field] = !this.state[field]; this.persist(); this.open(name, page); };
+    const toggle = field => {
+      this.state[field] = !this.state[field];
+      // Auto Feed is one switch: wild prey and unattended hunting move together.
+      if (field === 'autoFeed') this.state.autoHunt = this.state.autoFeed;
+      this.persist(); this.open(name, page);
+    };
     const row = (label, click, detail = '', extra = {}) => ({ label, click, detail, ...extra });
     let rows;
     switch (name) {
@@ -163,14 +168,18 @@ export class DeviceGame {
         row('WiFi', () => this.open('WiFi'), '', { submenu: true }),
         row('SD Card', () => this.open('SD Card'), '', { submenu: true }),
         row('About', () => this.open('About'), '', { submenu: true }),
-        row('New Tank', () => this.newTank(), '', { destructive: true }),
-        row('Battery and Display', () => this.open('Battery and Display'), '', { submenu: true }),
+        row('Battery', () => this.open('Battery'), '', { submenu: true }),
+        row('Display', () => this.open('Display'), '', { submenu: true }),
         row('Sound', () => this.open('Sound'), '', { submenu: true }),
-        row('Auto Feed', () => toggle('autoFeed'), '', { checkbox: true, selected: this.state.autoFeed }),
-        row('Auto Hunt', () => toggle('autoHunt'), '', { checkbox: true, selected: this.state.autoHunt }),
+        row('Auto Feed', () => toggle('autoFeed'), 'Wild Prey and Unattended Hunting', { checkbox: true, selected: this.state.autoFeed }),
         row('Save Screenshot', () => this.screenshot(), 'Download Playfield PNG'),
+        row('Wipe Spider', () => this.newTank(), 'Erases This Spider', { destructive: true }),
       ]; break;
-      case 'Sound': rows = ['On', 'Off'].map((label, i) => row(label, () => { this.state.sound = i === 0; void this.audio.unlock(this.state.sound); this.persist(); this.open(name); }, '', { selected: this.state.sound === (i === 0) })); break;
+      case 'Sound': rows = [
+        row('Volume', null, `${this.state.volume}%`, { slider: { value: this.state.volume, min: 0, max: 100, step: 5, change: value => { this.state.volume = value; this.persist(); } } }),
+        row('Sound On', () => { this.state.sound = true; void this.audio.unlock(true); this.persist(); this.open(name); }, '', { selected: this.state.sound }),
+        row('Sound Off', () => { this.state.sound = false; void this.audio.unlock(false); this.persist(); this.open(name); }, '', { selected: !this.state.sound }),
+      ]; break;
       case 'Backgrounds': rows = E.BACKGROUNDS.map(key => row(title(key), () => {
         this.state.theme = key; this.persist(); this.open(name, page);
       }, '', { selected: this.state.theme === key })); break;
@@ -188,8 +197,15 @@ export class DeviceGame {
       }); break;
       case 'WiFi': this.copy('WiFi, time sync and OTA use the board’s radio.\n\nThis browser has no ESP32 radio. Use Your Device → WiFi Setup below to set real credentials over local USB. The game never sends WiFi credentials or makes a simulated connection.', () => { this.close(); document.querySelector('[data-hardware="wifi"]').click(); document.querySelector('#device').scrollIntoView(); }, 'Open Device Tools'); return;
       case 'SD Card': rows = [row('Back Up Save', () => this.download()), row('Restore Save', () => this.root.querySelector('#browser-save-file').click())]; break;
-      case 'Battery and Display': this.copy('Battery voltage and charging come from the board’s PMIC.\n\nNo battery percentage is invented here. Browser brightness is controlled by your screen. On the physical board, this menu shows voltage, charging, brightness and dim/sleep settings.'); return;
-      case 'About': this.copy('Spidarium / Browser Edition\n\nDevice-coordinate UI and native game rules.\n480 × 480, scaled without changing targets.\nProgress stays in this browser.\n\nHardware: Waveshare ESP32-S3\nESP-IDF 5.5.6 / LVGL 9.6\n\nPersonal, Non-Commercial License.'); return;
+      case 'Battery': rows = [
+        row('Battery', null, 'Hardware Telemetry Unavailable'),
+        row('Runtime', null, this.runtimeText()),
+        row('Automatic Power Saving', null, 'Device Only'),
+      ]; break;
+      case 'Display': rows = [
+        row('Brightness', null, 'Controlled by Your Screen'),
+        row('Screen Rotation', () => this.rotate(), this.rotationName(), { submenu: true }),
+      ]; break;      case 'About': this.copy('Spidarium / Browser Edition\n\nDevice-coordinate UI and native game rules.\n480 × 480, scaled without changing targets.\nProgress stays in this browser.\n\nHardware: Waveshare ESP32-S3\nESP-IDF 5.5.6 / LVGL 9.6\n\nPersonal, Non-Commercial License.'); return;
       default: throw new Error(`Unknown menu: ${name}`);
     }
     this.list(rows, page);
@@ -207,7 +223,7 @@ export class DeviceGame {
     rows.slice(page * 3, page * 3 + 3).forEach((item, i) => {
       const button = this.button(this.modal.panel, '', 12, 76 + i * 84, 376, 76, item.click ?? (() => {}));
       button.replaceChildren(); button.classList.add('d-row');
-      button.disabled = item.enabled === false || !item.click;
+      button.disabled = item.enabled === false || (!item.click && !item.slider);
       if (item.selected) button.classList.add('selected');
       if (item.destructive) button.classList.add('destructive');
       if (item.detail) button.classList.add('has-detail');
@@ -218,12 +234,30 @@ export class DeviceGame {
       if (item.checkbox) {
         const check = element('input', ''); check.type = 'checkbox'; check.checked = item.selected; check.tabIndex = -1; check.setAttribute('aria-hidden', 'true');
         button.setAttribute('role', 'checkbox'); button.setAttribute('aria-checked', String(item.selected)); button.append(check);
+      } else if (item.slider) {
+        const { value, min, max, step, change } = item.slider;
+        const input = element('input', 'd-slider'); input.type = 'range';
+        input.min = String(min); input.max = String(max); input.step = String(step); input.value = String(value);
+        input.setAttribute('aria-label', item.label);
+        input.addEventListener('input', () => { change(Number(input.value)); });
+        input.addEventListener('change', () => { this.open(this.modal.name, page); });
+        button.append(input);
+        button.disabled = false;
       } else if (item.selected || item.submenu) button.append(element('span', 'row-marker', item.selected ? '✓' : '›'));
     });
     const name = this.modal.name;
     this.button(this.modal.panel, 'Prev', 12, 332, 120, 56, () => this.open(name, page - 1)).disabled = page === 0;
     this.button(this.modal.panel, 'Next', 264, 332, 120, 56, () => this.open(name, page + 1)).disabled = page === pages - 1;
     this.modal.panel.append(element('span', 'd-pages', `${page + 1}/${pages}`));
+  }
+  // The browser has no PMIC, so runtime is stated as unavailable rather than
+  // invented. The device reports a real estimate from its battery gauge.
+  runtimeText() { return 'Needs Device Battery Gauge'; }
+  rotationName() { return ['Upright', 'Sideways Left', 'Upside Down', 'Sideways Right'][this.rotation ?? 0]; }
+  rotate() {
+    this.rotation = ((this.rotation ?? 0) + 1) & 3;
+    this.controls.style.setProperty('--d-rotation', `${this.rotation * 90}deg`);
+    this.open('Display');
   }
   newTank() {
     if (!confirm('Start a new browser spider? Download a backup first. The physical board is not touched.')) return;
@@ -389,7 +423,13 @@ export class DeviceGame {
       const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
       if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
     }
-    ctx.fillStyle = '#6b7a3a'; for (const poop of s.poop ?? []) ctx.fillRect(poop.x - 3, poop.y - 3, 6, 6);
+    ctx.fillStyle = '#4a3520'; for (const poop of s.poop ?? []) {
+      ctx.beginPath(); ctx.ellipse(poop.x, poop.y + 2, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#6b4a2a'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 1, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#7d5a33'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 3, 3, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#8f6a3d'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 4, 1.5, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#4a3520';
+    }
     renderSpider(this.spiderPixels.data, this.spiderOptions()); this.spiderCtx.putImageData(this.spiderPixels, 0, 0);
     ctx.drawImage(this.spiderCanvas, s.spider_x - 48, s.spider_y - 48);
     if (s.state === E.STATES.AIM) {

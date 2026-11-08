@@ -77,8 +77,9 @@ It is a JavaScript port, **not an ESP32 instruction-set or LVGL emulator**.
 
 Tap the top-left page ear to open care. Only Back navigates menus; empty areas
 do not dismiss them. HUD/menu opening pauses the tank, as on the device.
-Keyboard: M toggles care, arrows aim, Space releases a pounce. Auto Feed and
-Auto Hunt are separate Settings checkboxes, off by default. Manual feeding and
+Keyboard: M toggles care, arrows aim, Space releases a pounce. Auto Feed is one
+Settings switch, off by default, that drives both wild prey and unattended
+hunting. Manual feeding and
 aim/release are otherwise required. Gifts cost Silk and unlock by level.
 Achievement rows use the unique native icons; unavailable pages are disabled.
 Promotional spiders have mint fangs; each player's chosen colors are preserved.

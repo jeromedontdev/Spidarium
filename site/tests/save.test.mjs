@@ -51,7 +51,7 @@ test('WiFi validation enforces byte lengths, open networks and protocol injectio
 });
 test('bundled hardware-compiled schema decodes both actual ABI payload sizes', async () => {
   const actual = validateSchema(JSON.parse(await readFile(new URL('../save-schema.json', import.meta.url), 'utf8')));
-  assert.equal(actual.fields.length, 24);
+  assert.equal(actual.fields.length, 25);
   for (const size of actual.payloadSizes) {
     const bytes = new Uint8Array(12 + size), view = new DataView(bytes.buffer);
     view.setUint32(0, actual.magic, true); view.setUint16(4, size === 120 ? 2 : actual.version, true); view.setUint32(8, size, true);
@@ -64,6 +64,7 @@ test('bundled hardware-compiled schema decodes both actual ABI payload sizes', a
     assert.equal(parsed.fields.name, 'Schema Test'); assert.equal(parsed.fields.hunger, 83);
     if (size === 132) assert.equal(parsed.fields.silk, 12345);
     else assert.match(parsed.fields.silk, /older save/);
+    assert.equal(parsed.fields.volume, size === 132 ? 0 : 70);
   }
 });
 test('v3 checkbox bytes validate while v2 padding always means off', () => {

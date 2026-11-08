@@ -145,6 +145,24 @@ void terrarium_preview_show(int32_t x, int32_t y, int32_t radius)
 
 void terrarium_preview_hide(void) { lv_obj_set_hidden(s_preview_ring, true); }
 
+/* A dropping is a small three-lobe mound, not a flat square: a wide base, a
+ * narrower middle and a rounded tip, in warm brown with a darker underside.
+ * Built from four reused child objects so nothing is allocated per frame. */
+static lv_obj_t *poop_blob(lv_obj_t *parent, int x, int y, int w, int h, int radius,
+                           uint32_t color)
+{
+    lv_obj_t *obj = lv_obj_create(parent);
+    lv_obj_remove_style_all(obj);
+    lv_obj_set_size(obj, w, h);
+    lv_obj_set_pos(obj, x - w / 2, y - h / 2);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(obj, radius, 0);
+    lv_obj_set_clickable(obj, false);
+    lv_obj_set_scrollable(obj, false);
+    return obj;
+}
+
 void terrarium_add_poop(int32_t x, int32_t y)
 {
     int slot = -1;
@@ -157,7 +175,13 @@ void terrarium_add_poop(int32_t x, int32_t y)
         }
         slot = MAX_POOP - 1;
     }
-    ui.poop[slot] = dot(s_poop_layer, x, y, 3, 0x6b7a3a);
+    /* The slot handle is the base lobe; the other lobes are its children, so
+     * deleting the slot removes the whole dropping. */
+    lv_obj_t *base = poop_blob(s_poop_layer, x, y + 2, 12, 7, 3, 0x4a3520);
+    poop_blob(base, 6, 3, 9, 6, 3, 0x6b4a2a);
+    poop_blob(base, 6, 1, 6, 5, 3, 0x7d5a33);
+    poop_blob(base, 6, 0, 3, 3, 2, 0x8f6a3d);
+    ui.poop[slot] = base;
     s_poop_at[slot] = lv_tick_get();
 }
 

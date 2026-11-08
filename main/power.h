@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "lvgl.h"
+
 bool power_init(void);
 void power_tick(void);
 bool power_sleeping(void);
@@ -14,6 +16,26 @@ typedef struct {
 } power_reading_t;
 power_reading_t power_reading(void);
 void power_status(char *text, unsigned size);
+
+/* Estimated remaining runtime on battery, e.g. "About 4 h 20 m Left". Reports
+ * "Charging" / "On USB Power" / "Battery Status Unavailable" instead when the
+ * estimate does not apply. This is a heuristic from the PMIC percentage and the
+ * current brightness, not a coulomb count. */
+void power_runtime_text(char *text, unsigned size);
+
+/* Screen orientation. Rotation is an LVGL transform on the active screen, so it
+ * works regardless of what the panel driver does with MADCTL. The panel is
+ * square, so no resolution change is needed and taps stay aligned. */
+uint8_t power_rotation(void);
+const char *power_rotation_name(uint8_t rotation);
+bool power_rotation_set(uint8_t rotation);
+void power_rotation_cycle(void);
+/* Re-apply the stored rotation to a freshly created screen. */
+void power_rotation_apply(lv_obj_t *screen);
+
+/* The object every UI layer should be parented to. */
+lv_obj_t *power_rotation_layer(lv_obj_t *screen);
+
 bool power_test(void);
 bool power_ui_test(void);
 void power_wake(void);

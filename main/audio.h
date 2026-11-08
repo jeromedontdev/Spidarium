@@ -23,4 +23,9 @@ bool audio_playing(void);
 /* Mute state, persisted in game_state_t. */
 void audio_set_muted(bool muted);
 bool audio_muted(void);
+
+/* Speaker volume 0..100, persisted in game_state_t. Applied on the audio
+ * worker's next effect so no codec write happens on the LVGL task. */
+void audio_set_volume(uint8_t volume);
+uint8_t audio_volume(void);
 void audio_tick(uint32_t now_ms);

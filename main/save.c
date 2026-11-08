@@ -59,6 +59,9 @@ static void migrate_automation(game_state_t *state, uint16_t version)
         if (state->auto_feed > 1) state->auto_feed = 0;
         if (state->auto_hunt > 1) state->auto_hunt = 0;
     }
+    /* Volume arrived in v4. Older blobs leave the byte zeroed, which would be
+     * silent, so fall back to the compiled default. */
+    if (version < 4 || state->volume > 100) state->volume = AUDIO_VOLUME;
 }
 
 static void save_worker(void *arg)
@@ -404,9 +407,8 @@ bool save_raw_valid(const void *src, size_t len)
         state.bond > 100 || !memchr(state.name, 0, sizeof state.name) ||
         !isfinite(state.spider_heading) || state.state > SPIDER_SICK ||
         (hdr.version == SAVE_VERSION && (state.auto_feed > 1 || state.auto_hunt > 1)) ||
-        (hdr.size == sizeof state && state.brightness != 25 &&
-         state.brightness != 50 && state.brightness != 75)) {
-        ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
+        (hdr.version >= 4 && state.volume > 100) ||
+        (hdr.size == sizeof state && (state.brightness < 10 || state.brightness > 100))) {        ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
         return false;
     }
     return true;
@@ -458,6 +460,13 @@ bool save_format_test(void)
     memcpy(blob, &header, sizeof header);
     memcpy(blob + sizeof header, &state, sizeof state);
     ok = !save_raw_valid(blob, sizeof blob) && ok;
+    state = g;
+    state.volume = 101;
+    memcpy(blob + sizeof header, &state, sizeof state);
+    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    state.volume = 0;
+    memcpy(blob + sizeof header, &state, sizeof state);
+    ok = save_raw_valid(blob, sizeof blob) && ok;
     memcpy(blob + sizeof header, &g, sizeof g);
     header.size = offsetof(game_state_t, silk);
     memcpy(blob, &header, sizeof header);

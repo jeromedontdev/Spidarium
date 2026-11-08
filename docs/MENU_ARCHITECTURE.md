@@ -20,13 +20,16 @@ Menu
       Scanned networks   choose -> password editor if secured
     SD card              backup / restore (optional)
     About                firmware and hardware information
-    New Tank             red text; confirmation before reset
-    Battery and Display  live battery/charging status; brightness presets
-    Sound                persisted on/off
+    Battery              status, runtime estimate, automatic power saving
+    Display              brightness slider, screen rotation
+    Sound                volume slider, sound on/off
+    Auto Feed            one switch: wild prey and unattended hunting together
+    Save Screenshot      playfield PNG to SD
+    Wipe Spider          red text; confirmation before reset; always last
   Prey species           read-only unlock list
 ```
 
-Back from WiFi/SD/About/New Tank/Battery/Sound returns to Settings. Back from saved network/editor
+Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Back from saved network/editor
 returns to WiFi. Other submenus return to the root; root Back closes.
 Only the explicit Back control navigates back. Blank panel/backdrop taps are
 absorbed without navigating; disabled cards do not dismiss the menu.
@@ -56,7 +59,7 @@ Menu headings/actions and definition names use proper capitalization; preserve
 the exact case of user names, SSIDs, passwords and URLs.
 Long SSIDs/details are ellipsized instead of overflowing the Back button or row.
 `ui_menu_set_destructive(id)` colors an action red across pages; it resets on
-close/open. Settings' New Tank and its confirmation action both use it.
+close/open. Settings' Wipe Spider and its confirmation action both use it.
 
 `ui_menu_open_input(title, initial, password, max_length, submit)` builds a
 one-line textarea and a QWERTY keyboard (10/9/8 keys in its letter rows).
@@ -176,13 +179,30 @@ It also checks shifting targets, preview-tap suppression and exact ramped deadli
 ## Battery and idle display
 
 [Battery management](BATTERY_MANAGEMENT.md) reads the board's AXP2101 on its
-own worker. Settings offers 25/50/75% brightness; the stored preference defaults
-to 50%. After one minute idle the display dims to at most 15%, and after five
+own worker. Settings offers a 10..100% brightness slider; the stored preference
+defaults to 50%. After one minute idle the display dims to at most 15%, and after five
 minutes a black tap-absorbing overlay and 0% brightness stop tank simulation/
 rendering. Touch wakes without hunting; serial `wake` exercises the same path.
 Low battery (<=10% without USB) limits brightness to 5% and requests a save.
 USB/charging/voltage/percentage are visible in Settings and Care. Charger current
 and voltage configuration are not changed.
+
+Battery and Display are separate menus. Battery shows status, the runtime
+estimate and the automatic power-saving policy. Display holds the brightness
+slider and the Screen Rotation control. The estimate is a stated heuristic, not
+a coulomb count: the PMIC percentage is scaled by a nominal 300-minute
+full-charge runtime and divided by a brightness factor (10% -> 1.6x, 100% ->
+0.6x). It reads "Charging", "On USB Power" or "Battery Status Unavailable"
+instead of inventing a number.
+
+Rotation is an LVGL transform, not a panel command. The adapter never re-reads
+MADCTL after init, so `bsp_display_rotation_set()` had no visible effect; the
+whole UI now hangs off a full-size wrapper object that is rotated about its
+centre. Every layer must be parented to `power_rotation_layer()` — the playfield
+layers, the HUD, the sleep overlay and the menu panel/backdrop. A layer parented
+straight to `lv_screen_active()` stays upright while everything else turns. The
+panel is square, so no resolution change is needed and taps still map to the
+same coordinates.
 
 ## Care pacing and audio
 

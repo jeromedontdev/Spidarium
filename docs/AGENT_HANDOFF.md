@@ -34,6 +34,21 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   changes require real capture and exact restore tests, not guessed offsets.
   Root LICENSE permits personal, non-commercial use; retain all third-party
   notices and do not describe it as OSI open source.
+- v1.1.2 (Round 46): save schema v4 appends `volume` at offset 131, which still
+  fits the existing tail padding, so the payload stays 132 bytes and the legacy
+  120-byte payload is unchanged. The compiled schema now has 25 fields with
+  `minVersion:4` for `volume`. Settings is WiFi, SD Card, About, Battery,
+  Display, Sound, Auto Feed, Save Screenshot, Wipe Spider (destructive, last).
+  Auto Feed is one switch driving both `auto_feed` and `auto_hunt`. Sound and
+  Display use `ui_menu_set_item_slider()`; Battery shows a heuristic runtime
+  estimate and Display holds the Screen Rotation control. Rotation is an LVGL
+  transform on a full-size wrapper holding the whole UI, because the adapter
+  never re-reads MADCTL after init and `bsp_display_rotation_set()` had no
+  visible effect. Every layer — playfield, HUD, sleep overlay, menu panel and
+  backdrop — must be parented to `power_rotation_layer()`; anything parented
+  straight to `lv_screen_active()` stays upright while the rest turns. The panel
+  is square, so taps still map to the same coordinates. Do not claim a measured
+  runtime without hardware evidence.
 - First release: [v1.0.0 notes](RELEASE_v1.0.0.md),
   [measured verification](RELEASE_VERIFICATION.md) and [actual screenshots](README.md).
   Website source lives in `site/`; Pages consumes the official, hash-verified
@@ -57,7 +72,7 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   ordinary large VFS printf writes or a second UART driver.
 
 - [Menus](MENU_ARCHITECTURE.md): three taller cards per page, larger navigation,
-  red New Tank under Settings, top-left page ear/aligned status bars and unobstructed drag hunting,
+  red Wipe Spider (last row) under Settings, top-left page ear/aligned status bars and unobstructed drag hunting,
   QWERTY keyboard with Show/Hide WiFi password,
   shared first-run name editor, manual SSID, saved networks, OTA URL,
   About, battery controls and prey selection. No flash writes or SD mounting in menu callbacks.

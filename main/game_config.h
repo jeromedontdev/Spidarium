@@ -315,8 +315,8 @@
  * measured 20-30 px from the bug centre and fell outside the perfect band. The
  * radii are now measured against the spider's whole footprint rather than a
  * point, so landing any part of the body on the bug counts. */
-#define CATCH_PERFECT_PX        44.0f
-#define CATCH_GOOD_PX           78.0f
+#define CATCH_PERFECT_PX        30.0f
+#define CATCH_GOOD_PX           54.0f
 
 /* The spider's body radius, used to measure a catch from the EDGE of the
  * spider rather than its centre.
@@ -411,6 +411,6 @@
 #define SAVE_MAGIC             0x53504944u   /* "SPID" */
 /* v3 uses two former padding bytes for opt-in automation. v2 progress is
  * retained, with both flags cleared; unsupported v1 layouts remain rejected. */
-#define SAVE_VERSION           3
+#define SAVE_VERSION           4
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

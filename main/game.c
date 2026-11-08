@@ -146,6 +146,7 @@ static void state_defaults(void)
     g.muted   = 0;
     g.silk = 20;
     g.brightness = 50;
+    g.volume = AUDIO_VOLUME;
 
     /* Sentinel: rolled in game_init() AFTER srand(). Rolling here would give
      * every fresh boot the same temperament, because this runs before the RNG
@@ -172,6 +173,7 @@ static void state_finish_load(void)
     /* Guard against a corrupt-but-valid-header blob. */
     if (g.level == 0) g.level = 1;
     if (g.brightness < 10 || g.brightness > 100) g.brightness = 50;
+    if (g.volume > 100) g.volume = AUDIO_VOLUME;
     if (g.gift.used && g.gift.kind < GIFT_KINDS)
         g.gifts_owned |= 1u << g.gift.kind;
     if (g.stage > STAGE_ADULT) g.stage = STAGE_SPIDERLING;
@@ -343,6 +345,7 @@ enum {
     MENU_SPECIES,
     MENU_ABOUT,
     MENU_POWER,
+    MENU_DISPLAY,
 };
 
 static void menu_open(int which);
@@ -424,9 +427,26 @@ static void on_theme_pick(uint8_t id)
 
 static void on_sound_pick(uint8_t id)
 {
-    audio_set_muted(id == 1);
+    if (id == 1 || id == 2) audio_set_muted(id == 2);
     game_save_now();
     menu_open(MENU_SOUND);
+}
+
+/* Slider rows report live while the menu stays open, so the value is applied
+ * and persisted without rebuilding the panel under the player's finger. */
+static void on_volume_slider(uint8_t id, uint8_t value)
+{
+    (void)id;
+    audio_set_volume(value);
+    game_save_now();
+}
+
+static void on_brightness_slider(uint8_t id, uint8_t value)
+{
+    (void)id;
+    if (value < 10) value = 10;
+    g.brightness = value;
+    game_save_now();
 }
 
 static void on_main_pick(uint8_t id)
@@ -447,7 +467,7 @@ static void on_main_pick(uint8_t id)
  * than cluttering the main list. */
 static void on_settings_pick(uint8_t id)
 {
-    if (id == 8) {
+    if (id == 7) {
         int page = ui_menu_page();
         s_screenshot_failed = !game_save_screenshot();
         if (s_screenshot_failed) ESP_LOGW(TAG, "playfield screenshot not queued");
@@ -464,26 +484,23 @@ static void on_settings_pick(uint8_t id)
         menu_open(MENU_SD);
         break;
     case 2: menu_open(MENU_ABOUT); break;
-    case 3: menu_open(MENU_RESET); break;
-    case 4: menu_open(MENU_POWER); break;
+    case 3: menu_open(MENU_POWER); break;
+    case 4: menu_open(MENU_DISPLAY); break;
     case 5: menu_open(MENU_SOUND); break;
     case 6: {
+        /* One switch drives both halves of unattended play: wild prey keeps
+         * arriving and the spider hunts it without the player aiming. */
         int page = ui_menu_page();
-        g.auto_feed = !g.auto_feed;
+        bool on = !g.auto_feed;
+        g.auto_feed = on;
+        g.auto_hunt = on;
+        if (!on) behaviour_aim_cancel();
         game_save_now();
         menu_open(MENU_SETTINGS);
         ui_menu_set_page(page);
         break;
     }
-    case 7: {
-        int page = ui_menu_page();
-        g.auto_hunt = !g.auto_hunt;
-        behaviour_aim_cancel();
-        game_save_now();
-        menu_open(MENU_SETTINGS);
-        ui_menu_set_page(page);
-        break;
-    }
+    case 8: menu_open(MENU_RESET); break;
     default: break;
     }
 }
@@ -538,9 +555,14 @@ static void on_reset_pick(uint8_t id)
 
 static void on_power_pick(uint8_t id)
 {
-    g.brightness = id;
-    game_save_now();
+    (void)id;
     menu_open(MENU_POWER);
+}
+
+static void on_display_pick(uint8_t id)
+{
+    if (id == 1) power_rotation_cycle();
+    menu_open(MENU_DISPLAY);
 }
 /* BACK from a submenu returns to the main menu; BACK from the main menu just
  * closes (ui_menu_set_back is not set there, so the menu closes itself). */
@@ -572,30 +594,40 @@ static void menu_open(int which)
         items[0] = (ui_menu_item_t){ "WiFi", NULL, true, false, true, 0 };
         items[1] = (ui_menu_item_t){ "SD Card", NULL, true, false, true, 1 };
         items[2] = (ui_menu_item_t){ "About", NULL, true, false, true, 2 };
-        items[3] = (ui_menu_item_t){ "New Tank", NULL, true, false, true, 3 };
-        items[4] = (ui_menu_item_t){ "Battery and Display", NULL, true, false, true, 4 };
+        items[3] = (ui_menu_item_t){ "Battery", NULL, true, false, true, 3 };
+        items[4] = (ui_menu_item_t){ "Display", NULL, true, false, true, 4 };
         items[5] = (ui_menu_item_t){ "Sound", NULL, true, false, true, 5 };
-        items[6] = (ui_menu_item_t){ "Auto Feed", NULL, true, g.auto_feed, false, 6 };
-        items[7] = (ui_menu_item_t){ "Auto Hunt", NULL, true, g.auto_hunt, false, 7 };
-        items[8] = (ui_menu_item_t){ "Save Screenshot", net_busy() ? "Wait for WiFi" : sd_busy() ? "Saving..." :
+        items[6] = (ui_menu_item_t){ "Auto Feed", "Wild Prey and Unattended Hunting",
+                                     true, g.auto_feed, false, 6 };
+        items[7] = (ui_menu_item_t){ "Save Screenshot", net_busy() ? "Wait for WiFi" : sd_busy() ? "Saving..." :
             s_screenshot_failed ? "Capture Failed; See Serial Log" : sd_status_text(),
-            !sd_busy() && !net_busy(), false, false, 8 };
+            !sd_busy() && !net_busy(), false, false, 7 };
+        items[8] = (ui_menu_item_t){ "Wipe Spider", "Erases This Spider", true, false, true, 8 };
         ui_menu_open("Settings", items, 9, on_settings_pick);
         ui_menu_set_item_checkbox(6);
-        ui_menu_set_item_checkbox(7);
-        ui_menu_set_destructive(3);
+        ui_menu_set_destructive(8);
         ui_menu_set_back(back_to_main);
         break;
     }
     case MENU_POWER: {
-        static char status[80];
+        static char status[80], runtime[48];
         power_status(status, sizeof status);
+        power_runtime_text(runtime, sizeof runtime);
         items[0] = (ui_menu_item_t){ "Battery", status, false, false, false, 0 };
-        items[1] = (ui_menu_item_t){ "Dim / 25%", NULL, true, g.brightness == 25, false, 25 };
-        items[2] = (ui_menu_item_t){ "Balanced / 50%", NULL, true, g.brightness == 50, false, 50 };
-        items[3] = (ui_menu_item_t){ "Bright / 75%", NULL, true, g.brightness == 75, false, 75 };
-        items[4] = (ui_menu_item_t){ "Automatic Power Saving", "Dim After 1 Minute; Screen Off After 5", false, false, false, 0 };
-        ui_menu_open("Battery and Display", items, 5, on_power_pick);
+        items[1] = (ui_menu_item_t){ "Runtime", runtime, false, false, false, 0 };
+        items[2] = (ui_menu_item_t){ "Automatic Power Saving", "Dim After 1 Minute; Screen Off After 5", false, false, false, 0 };
+        ui_menu_open("Battery", items, 3, on_power_pick);
+        ui_menu_set_back(back_to_settings);
+        break;
+    }
+    case MENU_DISPLAY: {
+        static char brightness_detail[24];
+        snprintf(brightness_detail, sizeof brightness_detail, "%u%%", (unsigned)g.brightness);
+        items[0] = (ui_menu_item_t){ "Brightness", brightness_detail, true, false, false, 0 };
+        items[1] = (ui_menu_item_t){ "Screen Rotation", power_rotation_name(power_rotation()),
+                                     true, false, true, 1 };
+        ui_menu_open("Display", items, 2, on_display_pick);
+        ui_menu_set_item_slider(0, g.brightness, on_brightness_slider);
         ui_menu_set_back(back_to_settings);
         break;
     }
@@ -702,9 +734,13 @@ static void menu_open(int which)
     }
 
     case MENU_SOUND: {
-        items[0] = (ui_menu_item_t){ "Sound On",  NULL, true, !audio_muted(), false, 0 };
-        items[1] = (ui_menu_item_t){ "Sound Off", NULL, true,  audio_muted(), false, 1 };
-        ui_menu_open("Sound", items, 2, on_sound_pick);
+        static char volume_detail[24];
+        snprintf(volume_detail, sizeof volume_detail, "%u%%", (unsigned)audio_volume());
+        items[0] = (ui_menu_item_t){ "Volume", volume_detail, true, false, false, 0 };
+        items[1] = (ui_menu_item_t){ "Sound On",  NULL, true, !audio_muted(), false, 1 };
+        items[2] = (ui_menu_item_t){ "Sound Off", NULL, true,  audio_muted(), false, 2 };
+        ui_menu_open("Sound", items, 3, on_sound_pick);
+        ui_menu_set_item_slider(0, audio_volume(), on_volume_slider);
         ui_menu_set_back(back_to_settings);
         break;
     }
@@ -832,6 +868,7 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "reset"))    menu_open(MENU_RESET);
     else if (!strcmp(name, "close"))    { ui_menu_close(); ui_hud_gift_menu_hide(); }
     else if (!strcmp(name, "power")) menu_open(MENU_POWER);
+    else if (!strcmp(name, "display")) menu_open(MENU_DISPLAY);
     else return false;
     return true;
 }
@@ -968,6 +1005,7 @@ bool game_ui_call_value(game_ui_action_t action, int value)
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
         ((action == GAME_UI_SET_AUTO_FEED || action == GAME_UI_SET_AUTO_HUNT) && (value < 0 || value > 1)) ||
+        (action == GAME_UI_SET_VOLUME && (value < 0 || value > 100)) ||
         (action == GAME_UI_BACKGROUND && (value < 0 || value >= THEME_COUNT)) ||
         (action == GAME_UI_STATE && (value < 0 || value > SPIDER_SICK)) ||
         (action == GAME_UI_SPAWN && (value < -1 || value >= PREY_SPECIES_COUNT))) {
@@ -1158,7 +1196,11 @@ static void ui_service_request(void)
         if (g.auto_feed != s_ui_value) on_settings_pick(6);
         break;
     case GAME_UI_SET_AUTO_HUNT:
-        if (g.auto_hunt != s_ui_value) on_settings_pick(7);
+        if (g.auto_hunt != s_ui_value) on_settings_pick(6);
+        break;
+    case GAME_UI_SET_VOLUME:
+        g.volume = (uint8_t)s_ui_value;
+        audio_set_volume(g.volume);
         break;
     case GAME_UI_BACKGROUND:
         atomic_store(&s_ui_ok, theme_set(s_ui_value));
@@ -1620,9 +1662,12 @@ void game_init(void)
     lv_obj_set_style_border_width(scr, 0, 0);
     lv_obj_set_scrollable(scr, false);
     ui.screen = scr;
+    /* Every UI layer hangs off the rotation wrapper so a quarter turn moves
+     * the whole interface, not just the background. */
+    lv_obj_t *root = power_rotation_layer(scr);
 
     /* Tap layer sits above the background but below the spider. */
-    ui.tap_layer = lv_obj_create(scr);
+    ui.tap_layer = lv_obj_create(root);
     lv_obj_remove_style_all(ui.tap_layer);
     lv_obj_set_size(ui.tap_layer, ui.W, ui.H);
     lv_obj_set_pos(ui.tap_layer, 0, 0);
@@ -1639,8 +1684,8 @@ void game_init(void)
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_release,
                         LV_EVENT_RELEASED, NULL);
 
-    terrarium_init(scr);
-    ui.creature_layer = lv_obj_create(scr);
+    terrarium_init(root);
+    ui.creature_layer = lv_obj_create(root);
     lv_obj_remove_style_all(ui.creature_layer);
     lv_obj_set_size(ui.creature_layer, ui.W, ui.H);
     lv_obj_set_clickable(ui.creature_layer, false);
@@ -1652,7 +1697,7 @@ void game_init(void)
     cspider_init(ui.creature_layer);
     spider_init(ui.creature_layer);
 
-    ui_hud_init(scr);
+    ui_hud_init(root);
 
     /* The tap layer must sit BELOW the HUD, or it swallows every button press
      * and the buttons appear dead -- pressing FEED just ran the terrarium tap

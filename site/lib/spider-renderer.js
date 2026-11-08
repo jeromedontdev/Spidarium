@@ -6,8 +6,10 @@ const trunc = Math.trunc;
 export function legPose(k, side, phase = 0, walking = false, emote = 'none', now = 0) {
   const base = side * (PI * .5 + (k - 1.5) * .42);
   const gait = phase + k * (PI * .5) + (side < 0 ? 0 : PI);
-  let swing = walking ? .42 * Math.sin(gait) : 0;
-  let bend = .55 + (walking ? .30 * Math.sin(gait + PI * .5) : 0);
+  // The front pair leads the walk, matching main/cspider.c leg_pose().
+  const lead = k === 0 ? 1.55 : k === 1 ? 1.15 : 1;
+  let swing = walking ? .42 * lead * Math.sin(gait) : 0;
+  let bend = .55 + (walking ? .30 * lead * Math.sin(gait + PI * .5) : 0);
   const wave = Math.sin((now % 1200) * (2 * PI / 1200));
   if (emote === 'happy' && k === 0) { swing += 1.10 * wave; bend -= .55 + .35 * wave; }
   else if (emote === 'sad') { bend += .60; swing *= .35; }

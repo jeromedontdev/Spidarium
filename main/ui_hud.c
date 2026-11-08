@@ -239,8 +239,10 @@ void ui_hud_init(lv_obj_t *parent)
     s_battery = lv_button_create(parent);
     lv_obj_remove_style_all(s_battery);
     lv_obj_set_size(s_battery, 52, 44);
-    lv_obj_set_pos(s_battery, ui.W - UI_CORNER - 40, 132);
+    lv_obj_set_pos(s_battery, ui.W - UI_CORNER - 28, 8);
     lv_obj_set_style_bg_opa(s_battery, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_battery, 0, 0);
+    lv_obj_set_style_pad_all(s_battery, 0, 0);
     lv_obj_set_scrollable(s_battery, false);
     lv_obj_add_event_cb(s_battery, on_battery, LV_EVENT_CLICKED, NULL);
     s_battery_fill = lv_bar_create(s_battery);
@@ -368,17 +370,17 @@ bool ui_hud_test(void)
         lv_obj_is_hidden(s_care_label) && lv_obj_is_hidden(s_battery) &&
         lv_obj_get_style_bg_opa(s_care_button, 0) == LV_OPA_TRANSP &&
         lv_obj_get_child_count(s_care_button) == 1 &&
-        lv_obj_get_x(s_care_button) == -1 && lv_obj_get_y(s_care_button) == -1;
+        lv_obj_get_x(s_care_button) <= 0 && lv_obj_get_y(s_care_button) <= 0;
     lv_obj_send_event(s_care_button, LV_EVENT_CLICKED, NULL);
     ok = ok && ui_hud_chrome_visible();
-    ok = ok && ui.creature_layer && lv_obj_get_parent(ui.creature_layer) == ui.screen &&
-        lv_obj_get_child(ui.screen, -1) == s_layer;
+    ok = ok && ui.creature_layer && lv_obj_get_parent(ui.creature_layer) == lv_obj_get_parent(ui.tap_layer) &&
+        lv_obj_get_child(lv_obj_get_parent(ui.tap_layer), -1) == s_layer;
+    lv_obj_update_layout(ui.screen);
     for (int i = 0; i < 6; i++)
         ok = ok && buttons[i] && !lv_obj_is_hidden(buttons[i]) &&
              lv_obj_get_height(buttons[i]) >= 64;
     ok = ok && lv_obj_get_width(s_care_button) == 44 &&
         !strcmp(lv_label_get_text(s_care_label), LV_SYMBOL_CLOSE);
-    lv_obj_update_layout(ui.screen);
     int row_left = lv_obj_get_x(s_stats[0]);
     int row_right = lv_obj_get_x(s_stats[NUM_STATS - 1]) +
         lv_obj_get_width(s_stats[NUM_STATS - 1]);
@@ -387,8 +389,8 @@ bool ui_hud_test(void)
         lv_obj_get_style_bg_opa(s_care_button, 0) == LV_OPA_TRANSP &&
         lv_obj_is_hidden(s_care_label);
     ok = ok && lv_obj_get_x(s_battery) >= 0 &&
-        lv_obj_get_x(s_battery) + lv_obj_get_width(s_battery) <= ui.W - 20 &&
-        lv_obj_get_y(s_battery) == 132 && !lv_obj_is_hidden(s_battery) &&
+        lv_obj_get_x(s_battery) + lv_obj_get_width(s_battery) <= ui.W - 12 &&
+        lv_obj_get_y(s_battery) == 8 && !lv_obj_is_hidden(s_battery) &&
         lv_obj_get_style_bg_opa(s_battery, 0) == LV_OPA_TRANSP &&
         lv_obj_get_style_border_width(s_battery, 0) == 0 &&
         lv_obj_get_style_bg_opa(s_identity, 0) == LV_OPA_70;

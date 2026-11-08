@@ -62,8 +62,8 @@ touch targets and eight increasingly difficult rounds, with no immediate repeat.
 Bug targets shift, colors test memory and Quick Tap has false cues.
 Completion pays score-based XP and Silk; Back cancels without care rewards. Care shows XP and the next
 unlock, hunting pays more XP, and existing level/save progress is preserved.
-Care buttons and menu cards are taller; New Tank is red and lives in Settings,
-behind its confirmation screen.
+Care buttons and menu cards are taller; Wipe Spider is red and is always the last
+Settings row, behind its confirmation screen.
 
 **Gifts are earned habitat furniture.** Buy with Silk from games/hunts, then
 reposition owned items for free. Larger 64px shelters/perches/toys have explicit
@@ -72,8 +72,10 @@ gifts and pet progress survive the save migration.
 See [the gift shop](docs/GIFTS_CATALOG.md).
 
 **Battery-aware display.** Real AXP2101 battery/USB/charging telemetry,
-saved brightness presets, idle dimming, screen-off/touch wake and low-battery
+a 10..100% brightness slider, a heuristic runtime estimate, screen rotation,
+idle dimming, screen-off/touch wake and low-battery
 save/dimming are implemented without changing the charger configuration.
+Battery and Display are separate Settings menus.
 See [battery management](docs/BATTERY_MANAGEMENT.md).
 The unboxed upper-right gauge appears only with the care HUD, below the identity
 panel inside the display's safe area. It shows level/charging and opens voltage details on tap.
@@ -86,8 +88,9 @@ verified BMP to SD without menus or HUD. The browser downloads a playfield PNG.
 Serial captures can include menus or isolate the playfield for agent diagnostics;
 see [screenshot commands](docs/serial_console.md#screen-capture).
 
-**Manual care by default.** Settings has independent Auto Feed and Auto Hunt
-checkboxes, both off for new and migrated saves. Without them, Feed adds prey
+**Manual care by default.** Settings has one Auto Feed switch, off for new and
+migrated saves, that drives both wild prey and unattended hunting. Without it,
+Feed adds prey
 and dragging/releasing the spider aims and pounces; autonomous wandering and
 gift visits continue. These options are persisted in pet backups.
 

@@ -122,7 +122,7 @@ test('geometry uses landed bug, body edge and species perfect radius, not first 
   const a=bug(s,{x:100}),b=bug(s,{id:3,x:360});s.x=316;
   s._engine.aim_power=1;s._engine.aim_ideal=0;
   assert.equal(resolvePounce(s,true),true);assert.equal(a.dead,false);assert.equal(b.dead,true);
-  assert.equal(s.lastEvent.quality,'perfect'); // 44 centre -22 body =22 beetle perfect.
+  assert.equal(s.lastEvent.quality,'good'); // 44 centre -22 body =22, outside the beetle's 15px perfect radius.
   const t=state({random:()=>.999});t.level=6;bug(t,{id:3,x:360});t.x=315;
   t._engine.aim_power=1;t._engine.aim_ideal=0;
   assert.equal(resolvePounce(t,true),false);assert.equal(t.xp,1);assert.equal(t.silk,20);
@@ -133,10 +133,10 @@ test('reach gate forbids remotely disappearing bugs and resets streak',()=>{
   assert.equal(s.xp,1);assert.equal(s.lastEvent.reason,'out of reach');
 });
 test('good catches use exact probability multipliers and only perfect advances streak',()=>{
-  const s=state({random:()=>0});bug(s,{x:340});s.x=260;s.energy=50;s.stage=1;s.sick=1;s.streak=2;
+  const s=state({random:()=>0});bug(s,{x:320});s.x=260;s.energy=50;s.stage=1;s.sick=1;s.streak=2;
   s._engine.aim_power=1;s._engine.aim_ideal=0;
   assert.equal(resolvePounce(s,false),true);
-  near(s.lastEvent.probability,clampProbability((.55-58*.004+.5*.2+.5*.1)*.7*.55*1.1));
+  near(s.lastEvent.probability,clampProbability((.55-38*.004+.5*.2+.5*.1)*.7*.55*1.1));
   assert.equal(s.lastEvent.quality,'good');assert.equal(s.streak,2);
   assert.equal(s.lastEvent.xp,11);assert.equal(s.lastEvent.silk,3);assert.equal(s.bond,2);
 });
@@ -300,9 +300,9 @@ test('restore migrates old progress/ownership and resets runtime, no offline dec
   assert.equal(BACKGROUNDS.length,8);
 });
 test('null restore creates fresh state but corrupt saves throw descriptive errors',()=>{
-  assert.equal(restoreSim(null,{random:()=>.5}).version,3);
+  assert.equal(restoreSim(null,{random:()=>.5}).version,4);
   const good=()=>JSON.parse(JSON.stringify(state()));
-  for(const value of [[],new Date(),42,'{}',{}, {version:99}, {version:3}]){
+  for(const value of [[],new Date(),42,'{}',{}, {version:99}, {version:4}]){
     assert.throws(()=>restoreSim(value),/Invalid browser progress:/);
   }
   for(const [key,value] of [
@@ -326,7 +326,7 @@ test('both valid legacy versions retain earned progress and clamp legacy need ra
     const raw={version,hunger:-5,mood:102,energy:999,hygiene:70.5,xp:80,silk:24,
       name:'Legacy spider',owned:[0,1],gift:1,background:'fern',autoFeed:true,autoHunt:true};
     const s=restoreSim(raw,{random:()=>.5});
-    assert.equal(s.version,3);assert.equal(s.level,3);assert.equal(s.xp,100);
+    assert.equal(s.version,4);assert.equal(s.level,3);assert.equal(s.xp,100);
     assert.deepEqual([s.hunger,s.mood,s.energy,s.hygiene],[0,100,100,70]);
     assert.equal(s.silk,24);assert.equal(s.gifts_owned,3);assert.equal(s.gift.kind,1);
     assert.equal(s.name,'Legacy spider');assert.equal(s.auto_feed,0);assert.equal(s.auto_hunt,0);

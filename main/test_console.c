@@ -125,7 +125,7 @@ static void cmd_help(void)
     printf("  open NAME            open a menu (main gift chrome nochrome)\n");
     printf("  spawn [SPECIES]      spawn unlocked bug (0..7, or random)\n");
     printf("  state N              force spider state\n");
-    printf("  set FIELD VALUE      needs; auto_feed/auto_hunt accept 0 or 1\n");
+    printf("  set FIELD VALUE      needs; auto_feed/auto_hunt accept 0 or 1, volume 0..100\n");
     printf("  refresh              rebuild the visual layers\n");
     printf("  save                 save now\n");
     printf("  save export|schema  browser backup and field layout\n");
@@ -440,9 +440,10 @@ static void cmd_save_schema(void)
         SAVE_FIELD(gifts_owned, "u32"), SAVE_FIELD(brightness, "u8"),
         {"auto_feed", "u8", offsetof(game_state_t, auto_feed), 0, 3},
         {"auto_hunt", "u8", offsetof(game_state_t, auto_hunt), 0, 3},
+        {"volume", "u8", offsetof(game_state_t, volume), 0, 4},
 #undef SAVE_FIELD
     };
-    enum { SCHEMA_CAP = 3072 };
+    enum { SCHEMA_CAP = 3328 };
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
     int pos = snprintf(json, SCHEMA_CAP,
@@ -657,8 +658,9 @@ static void cmd_set(const char *field, int value)
     else if (!strcmp(field, "sick"))    action = GAME_UI_SET_SICK;
     else if (!strcmp(field, "auto_feed")) action = GAME_UI_SET_AUTO_FEED;
     else if (!strcmp(field, "auto_hunt")) action = GAME_UI_SET_AUTO_HUNT;
+    else if (!strcmp(field, "volume"))  action = GAME_UI_SET_VOLUME;
     else {
-        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt)\n",
+        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt volume)\n",
                field);
         return;
     }

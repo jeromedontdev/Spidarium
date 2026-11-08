@@ -82,7 +82,8 @@ test('native automation has padding-stable ABI, v2 migration, and gated entries'
   assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 132/);
   assert.match(header,/offsetof\(game_state_t, auto_feed\) == 129/);
   assert.match(header,/offsetof\(game_state_t, auto_hunt\) == 130/);
-  assert.match(config,/#define SAVE_VERSION\s+3/);
+  assert.match(header,/offsetof\(game_state_t, volume\) == 131/);
+  assert.match(config,/#define SAVE_VERSION\s+4/);
   assert.match(save,/version == 2\)[\s\S]*?state->auto_feed = 0;[\s\S]*?state->auto_hunt = 0;/);
   assert.match(save,/migrate_automation\(state, hdr\.version\)/);
   assert.match(save,/state\.auto_feed = 0xA5;[\s\S]*?state\.auto_hunt = 0x5A;[\s\S]*?migrate_automation\(&state, header\.version\)/);
@@ -100,6 +101,7 @@ test('serial schema producer emits both automation offsets and minVersion3',asyn
   const console=await native('test_console.c');
   assert.match(console,/\{"auto_feed", "u8", offsetof\(game_state_t, auto_feed\), 0, 3\}/);
   assert.match(console,/\{"auto_hunt", "u8", offsetof\(game_state_t, auto_hunt\), 0, 3\}/);
+  assert.match(console,/\{"volume", "u8", offsetof\(game_state_t, volume\), 0, 4\}/);
   assert.match(console,/minVersion\\":%u/);
-  assert.match(console,/SCHEMA_CAP = 3072/);
+  assert.match(console,/SCHEMA_CAP = 3328/);
 });

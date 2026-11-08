@@ -30,7 +30,7 @@ export const CONFIG = Object.freeze({
   AIM_RANGE_PX:110, AIM_WINDOW_MS:2600, AIM_WINDOW_MIN_MS:1600, AIM_WINDOW_PER_LEVEL:20,
   POUNCE_MAX_PX:160, PLAYER_POUNCE_BONUS:1.15, AUTO_POUNCE_PENALTY:.55,
   AIM_MIN_PULL_PX:18, AIM_POWER_PERFECT:.1, AIM_POWER_GOOD:.22,
-  CATCH_PERFECT_PX:44, CATCH_GOOD_PX:78, SPIDER_BODY_R_PX:22, TAP_ASSIST_PX:64,
+  CATCH_PERFECT_PX:30, CATCH_GOOD_PX:54, SPIDER_BODY_R_PX:22, TAP_ASSIST_PX:64,
   XP_PERFECT:18, XP_GOOD:10, XP_MISS:1, PERFECT_HUNGER_BONUS:5, PERFECT_MOOD_BONUS:4,
   STREAK_BONUS_PER:.05, STREAK_MAX:10, POUNCE_ENERGY_COST:3, EAT_ENERGY_GAIN:6,
   STAGE_JUVENILE_DAYS:2, STAGE_ADULT_DAYS:5, MOLT_DAYS:2, XP_PER_LEVEL:50,
@@ -152,12 +152,12 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:3,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:4,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
     temperament:0,bond:0,name:'',colour:0,pupil_colour:0,leg_colour:2,fang_colour:1,
-    silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,background:'moss',
+    silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,background:'moss',
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
   services.set(s,options);
@@ -198,7 +198,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -226,6 +226,7 @@ export function validateProgress(raw) {
   for(const key of ['background','theme'])
     if(Object.hasOwn(raw,key)&&!BACKGROUNDS.includes(raw[key]))fail(`${key} is unknown`);
   number('brightness',legacy?0:10,100,!legacy);number('battery',0,100,false);
+  number('volume',0,100);
   for(const key of ['spider_x','spider_y'])number(key,34,446);
   for(const key of ['x','y'])number(key,legacy?-Number.MAX_SAFE_INTEGER:34,legacy?Number.MAX_SAFE_INTEGER:446,false);
   for(const key of ['spider_heading','heading','gait_phase','now_ms'])
@@ -290,6 +291,7 @@ export function restoreSim(raw,options={}) {
   if(BACKGROUNDS.includes(raw.background??raw.theme))s.background=raw.background??raw.theme;
   if(typeof raw.sound==='boolean')s.muted=raw.sound?0:1;
   if(Number.isFinite(raw.brightness))s.brightness=clamp(Math.trunc(raw.brightness),10,100);
+  if(Number.isFinite(raw.volume))s.volume=clamp(Math.trunc(raw.volume),0,100);
   s.auto_feed=raw.version>=3&&(raw.auto_feed===1||raw.autoFeed===true)?1:0;
   s.auto_hunt=raw.version>=3&&(raw.auto_hunt===1||raw.autoHunt===true)?1:0;
   if(Array.isArray(raw.owned))for(const id of raw.owned)if(Number.isInteger(id)&&GIFTS[id])s.gifts_owned|=1<<id;
@@ -442,10 +444,10 @@ export function noteTap(s,x,y){if(x!==s.spider_x||y!==s.spider_y)runtime(s).tap_
 export function resolvePounce(s,player=runtime(s).pounce?.player??true) {
   const near=nearest(s);if(!near)return event(s,'miss',{reason:'no prey'});
   const {prey:p,d}=near,edge=Math.max(0,d-22),b=giftBonus(s),r=runtime(s);
-  if(edge>78){s.streak=0;addXP(s,1);return event(s,'miss',{reason:'out of reach',distance:d});}
+  if(edge>CONFIG.CATCH_GOOD_PX){s.streak=0;addXP(s,1);return event(s,'miss',{reason:'out of reach',distance:d});}
   let probability=(.55-edge*.004+s.energy/100*.2+s.stage/2*.1)*(s.sick?.7:1)*(player?1.15:.55)*temperament(s).catch_mult*b.catch_success_mult*b.pounce_success_mult;
   probability=clamp(probability,.2,.95);
-  let perfect=edge<=44*SPECIES[p.species].perfect_mult;
+  let perfect=edge<=CONFIG.CATCH_PERFECT_PX*SPECIES[p.species].perfect_mult;
   if(!perfect&&player&&Math.abs(r.aim_power-r.aim_ideal)<=.1)perfect=true;
   const caught=perfect||random(s)<=probability;
   if(!caught){p.fleeing=true;p.retarget_at=0;s.streak=0;addXP(s,1);return event(s,'miss',{distance:d,probability});}

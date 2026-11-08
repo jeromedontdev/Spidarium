@@ -26,9 +26,18 @@ physical access and a suitable battery; do not claim those from USB testing.
 
 ## User behavior
 
-Settings -> Battery and Display shows battery/USB/charging status and offers
-25%, 50% or 75% brightness. The preference is saved with the pet; new and
-migrated saves default to 50%. A persistent top-right battery gauge shows charge fill/percentage and a
+Settings -> Battery shows battery/USB/charging status, a runtime estimate and the
+automatic power-saving policy. Settings -> Display holds a 10..100% brightness
+slider and the Screen Rotation control. The
+brightness preference is saved with the pet; new and migrated saves default to
+50%. The runtime estimate is a stated heuristic (nominal 300 minutes at 50%
+brightness, scaled by the brightness factor), not a coulomb count, and it reads
+"Charging", "On USB Power" or "Battery Status Unavailable" rather than inventing
+a number. Rotation is an LVGL transform on a full-size wrapper holding the whole
+UI, because the adapter never re-reads MADCTL after init; every layer, including
+the menu panel and the sleep overlay, must be parented to
+`power_rotation_layer()` or it stays upright while the rest turns. The panel is
+square, so taps still map to the same coordinates. A persistent top-right battery gauge shows charge fill/percentage and a
 charging bolt; USB/unknown readings remain explicit. Tapping opens voltage,
 power source and brightness details. Care shows only Silk as wallet text.
 

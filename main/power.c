@@ -135,7 +135,7 @@ void power_wake(void)
 void power_tick(void)
 {
     if (!s_sleep_screen) {
-        s_sleep_screen = lv_obj_create(ui.screen);
+        s_sleep_screen = lv_obj_create(power_rotation_layer(ui.screen));
         lv_obj_remove_style_all(s_sleep_screen);
         lv_obj_set_size(s_sleep_screen, ui.W, ui.H);
         lv_obj_set_style_bg_color(s_sleep_screen, lv_color_black(), 0);
@@ -202,6 +202,119 @@ bool power_test(void)
         desired_brightness(0, 300000, 50) == 0 &&
         desired_brightness(battery, 300000, 50) == 0 &&
         desired_brightness(0, 0, 50) == 50;
+}
+
+/* ------------------------------------------------------------------ */
+/* Runtime estimate                                                    */
+/* ------------------------------------------------------------------ */
+/* The board has no coulomb counter, so this is a stated heuristic: the PMIC
+ * percentage is scaled by a nominal full-charge runtime, and the display is
+ * the dominant load, so brightness scales it. It is deliberately coarse and
+ * labelled as an estimate in the UI. */
+#define BATTERY_FULL_MINUTES 300u   /* ~5 h at 50% brightness */
+
+void power_runtime_text(char *text, unsigned size)
+{
+    power_reading_t reading = power_reading();
+    if (!reading.valid) { snprintf(text, size, "Battery Status Unavailable"); return; }
+    if (!reading.present) {
+        snprintf(text, size, "%s", reading.usb ? "On USB Power" : "External Power");
+        return;
+    }
+    if (reading.charging) { snprintf(text, size, "Charging"); return; }
+    if (reading.usb) { snprintf(text, size, "On USB Power"); return; }
+    if (reading.percent > 100) { snprintf(text, size, "Gauge Unknown"); return; }
+
+    /* Brightness 50% is the reference; 10%..100% maps to 1.6x..0.6x. */
+    unsigned brightness = g.brightness < 10 ? 10 : g.brightness > 100 ? 100 : g.brightness;
+    unsigned minutes = (unsigned)reading.percent * BATTERY_FULL_MINUTES / 100u;
+    minutes = minutes * 100u / (60u + brightness * 8u / 10u);
+    if (minutes < 1) { snprintf(text, size, "About 1 m Left"); return; }
+    if (minutes >= 60)
+        snprintf(text, size, "About %u h %u m Left", minutes / 60u, minutes % 60u);
+    else
+        snprintf(text, size, "About %u m Left", minutes);
+}
+
+/* ------------------------------------------------------------------ */
+/* Screen rotation                                                     */
+/* ------------------------------------------------------------------ */
+/* The adapter does not rotate a PANEL_IF_OTHER panel, and the BSP's
+ * bsp_display_rotation_set() only writes a MADCTL register that the adapter
+ * never re-reads, so it has no visible effect. Rotation is therefore applied
+ * as an LVGL transform on the active screen: the whole UI turns inside the
+ * square panel. The panel is square, so no resolution change is needed and
+ * taps still map to the same coordinates. */
+static uint8_t s_rotation;
+
+static const char *const k_rotation_names[] = {
+    "Upright", "Sideways Left", "Upside Down", "Sideways Right",
+};
+
+uint8_t power_rotation(void) { return s_rotation; }
+
+const char *power_rotation_name(uint8_t rotation)
+{
+    return k_rotation_names[rotation & 3];
+}
+
+/* Rotate the active screen about its centre. Called on the LVGL task.
+ *
+ * A screen object does not honour transform styles, so rotation is applied to
+ * a full-size wrapper that holds every UI layer. The wrapper is created once
+ * and reused; rotating it turns the whole UI inside the square panel. */
+static lv_obj_t *s_rotor;
+
+static void apply_rotation(lv_obj_t *screen, uint8_t rotation)
+{
+    if (!screen) return;
+    if (!s_rotor || lv_obj_get_parent(s_rotor) != screen) {
+        s_rotor = lv_obj_create(screen);
+        lv_obj_remove_style_all(s_rotor);
+        lv_obj_set_size(s_rotor, lv_pct(100), lv_pct(100));
+        lv_obj_set_pos(s_rotor, 0, 0);
+        lv_obj_set_style_bg_opa(s_rotor, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(s_rotor, 0, 0);
+        lv_obj_set_style_pad_all(s_rotor, 0, 0);
+        lv_obj_set_scrollable(s_rotor, false);
+        lv_obj_clear_flag(s_rotor, LV_OBJ_FLAG_SCROLLABLE);
+    }
+    lv_obj_set_style_transform_pivot_x(s_rotor, lv_pct(50), 0);
+    lv_obj_set_style_transform_pivot_y(s_rotor, lv_pct(50), 0);
+    lv_obj_set_style_transform_rotation(s_rotor, (int32_t)rotation * 900, 0);
+    lv_obj_invalidate(s_rotor);
+}
+
+bool power_rotation_set(uint8_t rotation)
+{
+    rotation &= 3;
+    lv_obj_t *screen = lv_screen_active();
+    if (!screen) {
+        ESP_LOGW("spidarium.power", "rotation %u: no active screen", rotation);
+        return false;
+    }
+    apply_rotation(screen, rotation);
+    s_rotation = rotation;
+    ESP_LOGI("spidarium.power", "rotation=%u (%s)", rotation, k_rotation_names[rotation]);
+    return true;
+}
+
+void power_rotation_cycle(void)
+{
+    power_rotation_set((uint8_t)((s_rotation + 1) & 3));
+}
+
+/* Re-apply the stored rotation to a freshly created screen. */
+void power_rotation_apply(lv_obj_t *screen)
+{
+    apply_rotation(screen, s_rotation);
+}
+
+/* The object every UI layer should be parented to. */
+lv_obj_t *power_rotation_layer(lv_obj_t *screen)
+{
+    apply_rotation(screen, s_rotation);
+    return s_rotor ? s_rotor : screen;
 }
 
 bool power_ui_test(void)
