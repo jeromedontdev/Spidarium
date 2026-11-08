@@ -5495,3 +5495,14 @@ heuristic, not a measurement.
 
 The menu rotation fix was verified by code path and by the browser equivalent,
 not by photographing the physical panel at each angle.
+
+### Round 48 follow-up - ear nudge and publication
+
+The page ear moved from `left/top: 0` to `-6px` so it tucks into the squircle
+corner rather than sitting just inside it; the glyph moved to `16px` to stay
+centred in the visible flap. Commit `d07ce16` is pushed to `main` and
+[Pages run 42490205372](https://github.com/jeromedontdev/Spidarium/actions/runs/42490205372)
+deployed successfully. Live `site/device.css` serves `border-radius:44px` on
+`.game-viewport`/`.game-screen` and `left:-6px; top:-6px` on `.d-ear`; live
+`site/lib/device-ui.js` serves the separate `Battery` and `Display` rows and
+submenus.
