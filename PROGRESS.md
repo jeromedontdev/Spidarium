@@ -5526,3 +5526,52 @@ with the squircle corner, at roughly three quarters the size. Glyph at
 `(40,40)`. Commit `b4478f2` is pushed and
 [Pages run 42491434056](https://github.com/jeromedontdev/Spidarium/actions/runs/42491434056)
 deployed successfully; live `site/device.css` serves the new rule.
+
+---
+
+## Round 49 - Minigame rebalance
+
+**Status:** COMPLETE - build, flash, device suite, soak and allocation gates pass.
+
+### Decisions made
+
+- **Bug Hunt shuffles far less often.** The target moved every `700 - round*40`
+  ms, so by the late rounds it relocated before it could be read. It now starts
+  at 1500 ms and eases to 1020 ms (`1500 - round*60`). The decoy species are
+  also shuffled, so the answer is no longer always the only unique bug on
+  screen - previously `bugs[i] = (bug + i + 1) % 8` made the correct tile
+  trivially identifiable.
+- **Quick Tap is a reaction test again.** The window was `850 - round*55` ms with
+  a 1100-3500 ms wait, which was too slow to feel like a reflex game. It is now
+  `620 - round*45` ms with a 900-2500 ms wait, and the feint delays shortened
+  from 500-1600 ms to 400-1100 ms.
+- **Color Match keeps its 2000 ms window** but the shared non-reaction duration
+  ramp was retuned from `2600 - round*160` to `2000 - round*110` so the last
+  round is not a 1.5 s scramble.
+- **Rewards scale with score.** The old `4 + score*3` XP and `2 + score*2` Silk
+  paid a flat 2 Silk even for a blank run, so a bad game and a good one looked
+  similar. Now `2 + score*4` XP and `score*3` Silk: a clean sweep is worth
+  roughly four times a zero score. The result screen and the browser
+  `minigameReward()` were updated to match.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings.
+- `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **passed=47 failed=0**; `minigame test kind=0/1/2
+  score=7 rewards=1 ok=1` for all three games.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`, internal `largest 63488`.
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Browser suite: **73/73 pass**.
+- Commit `9c8569b` pushed;
+  [Pages run 42498312003](https://github.com/jeromedontdev/Spidarium/actions/runs/42498312003)
+  deployed successfully. Live `site/lib/minigames.js` serves the new durations,
+  shuffle interval and reaction window.
+
+### Honest boundaries
+
+Difficulty was tuned from the stated complaints and the code's own timing
+constants, not from playtest measurements. The reward curve is a design choice,
+not a balance study.
