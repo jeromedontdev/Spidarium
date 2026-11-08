@@ -4,6 +4,9 @@
 
 Read the [operating manual](../.github/copilot-instructions.md), then
 [whole-game PSRAM/threading policy](PSRAM_THREADING_ARCHITECTURE.md).
+For task-shaped recipes — changing a menu, adding a save field, adding a UI
+layer, tuning constants, capturing screenshots, verifying and publishing — see
+the [agent playbook](AGENT_PLAYBOOK.md).
 Historical claims that WiFi cannot work on this board are superseded: real
 hardware scans now succeed. Final acceptance evidence belongs in the latest
 [progress round](../PROGRESS.md), not older round summaries.
@@ -72,8 +75,7 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   ordinary large VFS printf writes or a second UART driver.
 
 - [Menus](MENU_ARCHITECTURE.md): three taller cards per page, larger navigation,
-  red Wipe Spider (last row) under Settings, top-left page ear/aligned status bars and unobstructed drag hunting,
-  QWERTY keyboard with Show/Hide WiFi password,
+  red Wipe Spider (last row) under Settings, top-left page ear/aligned status bars and unobstructed drag hunting,  QWERTY keyboard with Show/Hide WiFi password,
   shared first-run name editor, manual SSID, saved networks, OTA URL,
   About, battery controls and prey selection. No flash writes or SD mounting in menu callbacks.
 - Play chooses Bug Hunt, Color Match or Quick Tap without immediate repeats.

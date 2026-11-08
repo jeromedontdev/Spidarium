@@ -75,6 +75,8 @@ page boundaries.
 ## Maintain and verify
 
 - [Build/handoff](AGENT_HANDOFF.md)
+- [Agent playbook](AGENT_PLAYBOOK.md) — recipes for menus, save fields, UI
+  layers, tuning, screenshots, verification and publishing
 - [Serial console and browser protocol](serial_console.md)
 - [Menu/HUD design](MENU_ARCHITECTURE.md)
 - [Gifts](GIFTS_CATALOG.md), [battery](BATTERY_MANAGEMENT.md), [network](WIFI_ARCHITECTURE.md)

@@ -5575,3 +5575,57 @@ deployed successfully; live `site/device.css` serves the new rule.
 Difficulty was tuned from the stated complaints and the code's own timing
 constants, not from playtest measurements. The reward curve is a design choice,
 not a balance study.
+
+---
+
+## Round 50 - v1.1.2 release, refreshed screenshots, agent playbook
+
+**Status:** COMPLETE - built, flashed, tagged, released and published.
+
+### Decisions made
+
+- **Version bumped to 1.1.2** in `CMakeLists.txt` so the packaged images carry
+  the right application descriptor. `tools/package_release.py` refuses to
+  package when the built version does not match the requested one.
+- **Screenshots recaptured from the board**, not reused: care HUD, main menu,
+  Settings, playfield, Battery, Display, Sound and the menu-card page. The stale
+  `device-achievements.png` was replaced by `device-main-menu.png` because
+  `game_open_menu()` has no `achievements` name - the old file could not be
+  reproduced.
+- **Save schema recaptured** from the running firmware rather than hand-edited,
+  so `site/save-schema.json` is byte-identical to what the device emits
+  (`version 4`, `payloadSizes [120,132]`, 25 fields, `volume` at 131).
+- **New [agent playbook](AGENT_PLAYBOOK.md)** covering the ground rules that
+  bite, recipes for menus / save fields / UI layers / tuning / screenshots /
+  verification / publishing, the tests that encode the ABI, and the traps found
+  the hard way (layout-before-geometry, the brightness range check, the
+  no-op `bsp_display_rotation_set()`, the static BSP touch handle, the
+  `dist/site` EBUSY lock).
+- **Pages environment policy.** The `github-pages` environment uses a custom
+  branch policy listing each allowed tag, so the release-triggered deploy failed
+  with "Tag v1.1.2 is not allowed to deploy". Added `v1.1.2` as an allowed tag
+  and reran; the playbook now documents this step.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `project_version` reads `1.1.2`.
+- `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **passed=47 failed=0**.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `scanloop 5` and `render 500`: both `largest_drift=0`.
+- Browser suite: **73/73 pass**.
+- `tools/package_release.py --version 1.1.2`:
+  `PACKAGED spidarium-v1.1.2.zip: 5 verified images; NVS excluded`.
+- Tag `v1.1.2` pushed; [release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.2)
+  published with the verified ZIP.
+- [Pages run 42501200353](https://github.com/jeromedontdev/Spidarium/actions/runs/42501200353)
+  `conclusion: success` after the tag was allowed.
+- Live `site/lib/minigames.js` serves `620 - round*45` and
+  `1500 - round*60`; live `site/device.css` serves the `-30px` ear.
+
+### Honest boundaries
+
+The screenshots are real captures but the pet values in them reflect whatever
+the board was doing at capture time. Rotated-panel appearance, real unplugged
+runtime and authorized WiFi/OTA still need their own evidence.
