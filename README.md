@@ -20,9 +20,7 @@ give it gifts. It remembers all of it across reboots.
 
 **The spider is one canvas, not a scene graph.** It is drawn from scratch into a
 single 96×96 RGB565A8 buffer every frame — legs, body, fuzz, eyes, fangs, gait,
-squash/stretch. This replaced ~46 LVGL widgets and is the architecture
-[Pocket Tank](https://github.com/mediacutlet/pocket-tank) uses: the creature is a
-picture, not a widget tree.
+squash/stretch.
 
 **Pixels are written directly.** `cspider.c` does not call `lv_draw_rect()` or
 `lv_draw_line()`. Going through LVGL's draw layer made the software renderer
