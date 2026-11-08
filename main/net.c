@@ -42,7 +42,7 @@ typedef struct {
     uint32_t count;
     credential_t networks[NET_SAVED_MAX];
 } credentials_t;
-typedef enum { JOB_SCAN, JOB_JOIN, JOB_SYNC, JOB_FORGET, JOB_OTA } job_kind_t;
+typedef enum { JOB_SCAN, JOB_JOIN, JOB_SYNC, JOB_FORGET, JOB_OTA, JOB_PRIME } job_kind_t;
 typedef struct {
     job_kind_t kind;
     int index;
@@ -362,7 +362,9 @@ static void worker(void *arg)
             vTaskDelay(pdMS_TO_TICKS(10));
         }
         if (proceed) {
-            if (job.kind == JOB_SCAN) scan();
+            if (job.kind == JOB_PRIME) {
+                if (radio_up()) snprintf(s_status, sizeof s_status, "ready; radio off");
+            } else if (job.kind == JOB_SCAN) scan();
             else if (job.kind == JOB_FORGET) {
                 credentials_t updated = s_credentials;
                 for (unsigned i = job.index; i + 1 < updated.count; i++)
@@ -446,11 +448,12 @@ void net_boot_init(void)
         return;
     }
     ESP_LOGI(TAG, "network worker stack internal for NVS and OTA flash writes");
-    if (s_credentials.count) {
-        net_sync_saved(0);
-        /* Before the display exists, app_main can wait for this bounded job. */
+    /* Establish persistent netif/event allocations before LCD DMA allocations,
+     * but never join a saved network without a player request. */
+    job_t prime = {.kind = JOB_PRIME};
+    if (queue(&prime)) {
         while (net_busy()) vTaskDelay(pdMS_TO_TICKS(100));
-    } else ESP_LOGI(TAG, "no saved credentials; boot radio remains off");
+    }
 }
 
 void net_display_ready(void) { atomic_store(&s_display_ready, true); }

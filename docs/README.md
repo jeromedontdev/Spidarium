@@ -1,7 +1,7 @@
 # Spidarium feature guide
 
 [Website, browser tools and simulator](https://jeromedontdev.github.io/Spidarium/)
-| [Official release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.0.0)
+| [Official release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.0)
 | [Complete documentation index](INDEX.md)
 
 ## Device screenshots
@@ -27,6 +27,20 @@ Captured pet values can differ because the existing pet continues normal play.
 - Buy one of eighteen habitat gifts after meeting its level and Silk price;
   owned placement is free. The spider visits equipped furniture.
 - Unlock eight prey species, track ten achievements and keep the pet healthy.
+- Auto Feed and Auto Hunt are independent, default-off Settings checkboxes;
+  manual Feed and aim/release remain necessary unless explicitly enabled.
+
+## Larger browser world
+
+![Native-coordinate browser HUD, scaled up](../site/screenshots/simulator.png)
+
+The browser uses the same logical 480x480 scene, HUD, menus and game rules,
+with fullscreen and locally persisted progress. It is a JavaScript port, not
+an ESP32/LVGL emulator. WiFi/RTC/OTA, SD hardware and battery telemetry are
+explicit hardware-only boundaries. See [parity and verification](BROWSER_PARITY.md).
+Promotional art uses purple fangs; actual captures retain the player's colors.
+
+Free for personal, non-commercial use: [published license](../LICENSE).
 
 ## Controls and settings
 

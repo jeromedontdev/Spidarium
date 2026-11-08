@@ -40,6 +40,31 @@ def main():
         original = export(connection)
         if len(original) != 144:
             raise RuntimeError("Incorrect current raw save size")
+        flags = [field for field in schema["fields"]
+                 if field["name"] in {"auto_feed", "auto_hunt"}]
+        if schema["version"] != 3 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
+            raise RuntimeError("Automation fields missing from compiled version 3 schema")
+        for field in flags:
+            command(connection, f"set {field['name']} 1")
+        command(connection, "reboot")
+        time.sleep(2)
+        if not wait_ready(connection):
+            raise RuntimeError("Automation settings did not reboot")
+        command(connection, "open main")
+        enabled = export(connection)
+        if any(enabled[12 + field["offset"]] != 1 for field in flags):
+            raise RuntimeError("Checked automation settings did not persist across reboot")
+        for field in flags:
+            invalid = bytearray(enabled)
+            invalid[12 + field["offset"]] = 2
+            command(connection, "save restore " + invalid.hex(), "ERR")
+        command(connection, "save restore " + original.hex())
+        command(connection, "reboot")
+        time.sleep(2)
+        if not wait_ready(connection):
+            raise RuntimeError("Original automation settings did not reboot")
+        command(connection, "open main")
+        original = export(connection)
         bad = bytearray(original)
         bad[0] ^= 0xFF
         command(connection, "save restore " + bad.hex(), "ERR")
@@ -74,7 +99,7 @@ def main():
             if original[offset:offset + length] != restored[offset:offset + length]:
                 raise RuntimeError("Reboot changed restored field: " + field["name"])
         command(connection, "open close")
-    print("WEB DEVICE: PASS - schema, 144-byte export, four invalid restores, exact restore, overwrite guard, reboot")
+    print("WEB DEVICE: PASS - v3 schema, checkbox persistence, invalid flags, 144-byte export, invalid restores, exact restore, overwrite guard, reboot")
 
 
 if __name__ == "__main__":

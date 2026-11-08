@@ -456,6 +456,23 @@ static void on_settings_pick(uint8_t id)
     case 3: menu_open(MENU_RESET); break;
     case 4: menu_open(MENU_POWER); break;
     case 5: menu_open(MENU_SOUND); break;
+    case 6: {
+        int page = ui_menu_page();
+        g.auto_feed = !g.auto_feed;
+        game_save_now();
+        menu_open(MENU_SETTINGS);
+        ui_menu_set_page(page);
+        break;
+    }
+    case 7: {
+        int page = ui_menu_page();
+        g.auto_hunt = !g.auto_hunt;
+        behaviour_aim_cancel();
+        game_save_now();
+        menu_open(MENU_SETTINGS);
+        ui_menu_set_page(page);
+        break;
+    }
     default: break;
     }
 }
@@ -547,7 +564,11 @@ static void menu_open(int which)
         items[3] = (ui_menu_item_t){ "New Tank", NULL, true, false, true, 3 };
         items[4] = (ui_menu_item_t){ "Battery and Display", NULL, true, false, true, 4 };
         items[5] = (ui_menu_item_t){ "Sound", NULL, true, false, true, 5 };
-        ui_menu_open("Settings", items, 6, on_settings_pick);
+        items[6] = (ui_menu_item_t){ "Auto Feed", NULL, true, g.auto_feed, false, 6 };
+        items[7] = (ui_menu_item_t){ "Auto Hunt", NULL, true, g.auto_hunt, false, 7 };
+        ui_menu_open("Settings", items, 8, on_settings_pick);
+        ui_menu_set_item_checkbox(6);
+        ui_menu_set_item_checkbox(7);
         ui_menu_set_destructive(3);
         ui_menu_set_back(back_to_main);
         break;
@@ -864,6 +885,7 @@ bool game_ui_call_value(game_ui_action_t action, int value)
     if (action <= GAME_UI_NONE || action > GAME_UI_SCREEN_RELEASE ||
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 1)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
+        ((action == GAME_UI_SET_AUTO_FEED || action == GAME_UI_SET_AUTO_HUNT) && (value < 0 || value > 1)) ||
         (action == GAME_UI_BACKGROUND && (value < 0 || value >= THEME_COUNT)) ||
         (action == GAME_UI_STATE && (value < 0 || value > SPIDER_SICK)) ||
         (action == GAME_UI_SPAWN && (value < -1 || value >= PREY_SPECIES_COUNT))) {
@@ -1045,6 +1067,12 @@ static void ui_service_request(void)
     case GAME_UI_SET_HYGIENE: g.hygiene = (uint8_t)s_ui_value; break;
     case GAME_UI_SET_BOND:    g.bond = (uint8_t)s_ui_value; break;
     case GAME_UI_SET_SICK:    g.sick = s_ui_value != 0; break;
+    case GAME_UI_SET_AUTO_FEED:
+        if (g.auto_feed != s_ui_value) on_settings_pick(6);
+        break;
+    case GAME_UI_SET_AUTO_HUNT:
+        if (g.auto_hunt != s_ui_value) on_settings_pick(7);
+        break;
     case GAME_UI_BACKGROUND:
         atomic_store(&s_ui_ok, theme_set(s_ui_value));
         if (atomic_load(&s_ui_ok)) terrarium_rebuild();
@@ -1339,44 +1367,6 @@ void game_tick_logic(lv_timer_t *timer)
         }
     } else if (g.bond < BOND_GIFT) {
         next_gift = 0;
-    }
-
-    /* Wild prey drifts in occasionally. This keeps the tank alive without
-     * feeding the spider for free: wild bugs are leaner than the ones the
-     * player introduces, so the player is still necessary. */
-    static uint32_t last_wild;
-    static bool     wild_seeded;
-
-    /* Seed one bug on the first tick. Without this the tank is empty for the
-     * first WILD_SPAWN_MS (20 min) after boot, so a fresh session opens with
-     * nothing to hunt. */
-    if (!wild_seeded) {
-        wild_seeded = true;
-        last_wild = now;
-        if (prey_count() == 0) prey_spawn_wild();
-    } else if (prey_count() == 0) {
-        /* A flower gift shortens the wait for wild prey. */
-        uint32_t wait = WILD_SPAWN_MS /
-                        (uint32_t)(1 + gift_bonus()->wild_spawn_bonus);
-        if ((now - last_wild) >= wait) {
-            last_wild = now;
-            prey_spawn_wild();
-        }
-    }
-
-    /* One rare visitor per in-game day: the reason to come back tomorrow. */
-    static uint32_t last_visitor_day = 0xFFFFFFFFu;
-    if (g.days_lived != last_visitor_day) {
-        last_visitor_day = g.days_lived;
-        if (g.days_lived > 0) {
-            prey_species_t rare = PREY_FLY;
-            for (int i = 0; i < PREY_SPECIES_COUNT; i++)
-                if (species_unlocked(i)) rare = (prey_species_t)i;
-            prey_spawn_species_ex(rare, true);
-
-            audio_play(SFX_ALERT);
-            ESP_LOGI(TAG, "daily visitor: species %d", (int)rare);
-        }
     }
 
     if (now - s_last_save >= SAVE_PERIOD_MS) {

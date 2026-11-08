@@ -11,6 +11,7 @@
 #include "lvgl.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define MAX_PREY   3
 #define MAX_POOP   8
@@ -173,7 +174,14 @@ typedef struct {
     uint32_t silk;
     uint32_t gifts_owned;
     uint8_t brightness;
+    uint8_t auto_feed;       /* timed wild prey / daily visitors; opt-in */
+    uint8_t auto_hunt;       /* unattended stalk / crouch / pounce; opt-in */
 } game_state_t;
+
+_Static_assert(sizeof(game_state_t) == 132, "save payload ABI changed");
+_Static_assert(offsetof(game_state_t, brightness) == 128, "brightness ABI changed");
+_Static_assert(offsetof(game_state_t, auto_feed) == 129, "auto_feed ABI changed");
+_Static_assert(offsetof(game_state_t, auto_hunt) == 130, "auto_hunt ABI changed");
 
 /* Live LVGL object handles. */
 typedef struct {
@@ -265,6 +273,8 @@ typedef enum {
     GAME_UI_SET_HYGIENE,
     GAME_UI_SET_BOND,
     GAME_UI_SET_SICK,
+    GAME_UI_SET_AUTO_FEED,
+    GAME_UI_SET_AUTO_HUNT,
     GAME_UI_TEST_UI,
     GAME_UI_BACKGROUND,
     GAME_UI_TEST_HUNT,

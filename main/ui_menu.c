@@ -28,6 +28,8 @@ static lv_obj_t *s_menu, *s_backdrop, *s_page_label, *s_prev, *s_next;
 static lv_obj_t *s_row[PAGE_ROWS], *s_label[PAGE_ROWS], *s_detail[PAGE_ROWS];
 static lv_obj_t *s_marker[PAGE_ROWS];
 static lv_obj_t *s_icons[PAGE_ROWS];
+static lv_obj_t *s_checks[PAGE_ROWS];
+static bool s_check_items[20];
 static int s_icon_indices[20];
 static ui_menu_pick_cb s_cb;
 static ui_menu_back_cb s_back;
@@ -208,7 +210,12 @@ static void refresh_page(void)
         lv_obj_set_style_bg_color(s_row[i],
             lv_color_hex(it->selected ? 0x214b48 : COL_CARD), 0);
         lv_obj_set_clickable(s_row[i], it->enabled);
-        lv_label_set_text(s_marker[i], it->selected ? LV_SYMBOL_OK :
+        lv_obj_set_hidden(s_checks[i], !s_check_items[index]);
+        if (s_check_items[index]) {
+            if (it->selected) lv_obj_add_state(s_checks[i], LV_STATE_CHECKED);
+            else lv_obj_remove_state(s_checks[i], LV_STATE_CHECKED);
+        }
+        lv_label_set_text(s_marker[i], s_check_items[index] ? "" : it->selected ? LV_SYMBOL_OK :
             it->enabled && it->is_submenu ? LV_SYMBOL_RIGHT : "");
         lv_obj_set_hidden(s_detail[i], !it->detail || !it->detail[0]);
         lv_obj_set_pos(s_label[i], text_x, it->detail && it->detail[0] ? multiline ? 2 : 16 : 30);
@@ -234,7 +241,30 @@ void ui_menu_set_item_icon(uint8_t item, int asset_index)
         ESP_LOGE("spidarium.menu", "item icon rejected: invalid row %u", item);
         return;
     }
+
     s_icon_indices[item] = asset_index;
+    refresh_page();
+}
+
+void ui_menu_set_item_checkbox(uint8_t item)
+{
+    if (!s_items || item >= s_count || item >= 20) {
+        ESP_LOGE("spidarium.menu", "checkbox rejected: invalid row %u", item);
+        return;
+    }
+    s_check_items[item] = true;
+    refresh_page();
+}
+
+int ui_menu_page(void) { return s_page; }
+
+void ui_menu_set_page(int page)
+{
+    if (!s_items || page < 0 || page >= (s_count + PAGE_ROWS - 1) / PAGE_ROWS) {
+        ESP_LOGE("spidarium.menu", "page rejected: %d", page);
+        return;
+    }
+    s_page = page;
     refresh_page();
 }
 
@@ -505,7 +535,10 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
     open_panel(title);
     s_items = items;
     s_count = count;
-    for (int i = 0; i < 20; i++) s_icon_indices[i] = -1;
+    for (int i = 0; i < 20; i++) {
+        s_icon_indices[i] = -1;
+        s_check_items[i] = false;
+    }
     s_cb = cb;
     for (int i = 0; i < count; i++)
         if (items[i].selected) { s_page = i / PAGE_ROWS; break; }
@@ -527,6 +560,11 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
         lv_obj_set_style_text_color(s_detail[i], lv_color_hex(COL_DIM), 0);
         s_marker[i] = label(s_row[i], "", &lv_font_montserrat_14);
         lv_obj_align(s_marker[i], LV_ALIGN_RIGHT_MID, -14, 0);
+        s_checks[i] = lv_checkbox_create(s_row[i]);
+        lv_checkbox_set_text(s_checks[i], "");
+        lv_obj_align(s_checks[i], LV_ALIGN_RIGHT_MID, -14, 0);
+        lv_obj_set_clickable(s_checks[i], false);
+        lv_obj_set_hidden(s_checks[i], true);
     }
     s_prev = button(s_menu, 12, MENU_HEIGHT - 68, 120, 56, LV_SYMBOL_LEFT " Prev",
                     on_page, (void *)(intptr_t)-1);
@@ -777,6 +815,9 @@ bool ui_menu_test(void)
     ok = ok && !ui_menu_visible();
     static const ui_menu_item_t disabled[] = {{"Read Only", NULL, false, false, false, 0}};
     ui_menu_open("Test Disabled", disabled, 1, NULL);
+    ui_menu_set_item_checkbox(0);
+    ok = ok && !lv_obj_is_hidden(s_checks[0]) &&
+         !lv_obj_has_state(s_checks[0], LV_STATE_CHECKED);
     ui_menu_set_destructive(0);
     ok = ok && lv_color_eq(lv_obj_get_style_text_color(s_label[0], 0), lv_color_hex(0xff7777));
     ok = ok && !lv_label_get_text(s_marker[0])[0] && lv_obj_is_hidden(s_detail[0]);

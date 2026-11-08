@@ -40,8 +40,8 @@ Set-Location site
 ```
 
 The portable files are only a local convenience; CI uses ordinary Node/npm.
-`native-spider.png` is optional and not a build prerequisite: hero and game
-render the native spider directly through `lib/spider-renderer.js`.
+`native-spider.png` is the published promotional preview with purple fangs.
+Hero and gameplay render the native spider directly through `lib/spider-renderer.js`.
 The source simulator works without an npm install; device flashing requires
 the production bundle. `node serve.mjs` alone serves the source.
 
@@ -68,36 +68,40 @@ No dependency downloads occur in the browser.
 
 ## Browser habitat
 
-This is an **approximate JavaScript game**, not a native C/LVGL emulator.
-The spider uses a faithful direct pixel port of `main/cspider.c`, with its original
-96×96 angular fan legs, RGB565 colours, body circles, fuzz, eyes and fangs.
-It does **not** use the obsolete spider PNG animation sheets. Prey, gifts and
-The anatomy renderer is faithful; the complete simulation, movement, games,
-progression and need timing remain browser approximations, not exact emulation
-of the native firmware. Prey, gifts and
-backgrounds are the actual unchanged asset PNGs. The default is unnamed
-“Spider”; the actual device name appears in its compiled save viewer. Feed one of eight prey species
-(maximum three bugs), then drag the spider toward a bug and release to pounce.
-Caught prey briefly display their actual species-specific `prey_*_dead_0.png`
-splatter for two seconds; Clean clears these remains immediately. Journal
-achievements use the corresponding actual `achievement_*.png` badges, not
-generic repeated symbols. Only achievements earned by this browser model are
-shown; it does not invent native-only achievements.
-Keyboard: arrows aim, Space jumps, Enter plays. Feed, clean, sleep/wake, and Play
-launching a random minigame match the current firmware care controls. Play
-three distinct eight-round games. Games, hunts and care earn XP and Silk;
-levels unlock 18 gifts. Purchased gifts stay owned and can be placed again
-without paying. Click a placed gift, or its Visit button, to recover a need.
-Journal, name, eight habitats, mute, brightness and simulated battery/charging
-controls work without hardware. Battery is explicitly a visual preview.
-The initial preview identity was removed in model version 2; existing preview
-progress is retained but the legacy default name is cleared. User-chosen names
-in version 2 stay in this browser only.
+The browser ports the device's 480×480 coordinate system, native pixel spider,
+background/prey/gift art, care HUD, three-row menus, first-run color picker and
+eight-round Bug Hunt, Color Match and Quick Tap games. The square world scales
+to a larger responsive screen without shrinking the logical touch targets.
+Fullscreen preserves its aspect ratio and has an explicit exit button.
+It is a JavaScript port, **not an ESP32 instruction-set or LVGL emulator**.
 
-Browser progress uses only `spidarium.browser-habitat.v1` in localStorage.
-It is separate from device saves. Resetting it never touches hardware.
-No offline-time decay is applied. Sound starts muted and only runs after a
-user gesture. Artwork must be deployed beside the website.
+Tap the top-left page ear to open care. Only Back navigates menus; empty areas
+do not dismiss them. HUD/menu opening pauses the tank, as on the device.
+Keyboard: M toggles care, arrows aim, Space releases a pounce. Auto Feed and
+Auto Hunt are separate Settings checkboxes, off by default. Manual feeding and
+aim/release are otherwise required. Gifts cost Silk and unlock by level.
+Achievement rows use the unique native icons; unavailable pages are disabled.
+Promotional spiders have purple fangs; each player's chosen colors are preserved.
+The locally bundled Montserrat font retains its OFL notice.
+
+WiFi/RTC/OTA, SD-card access and battery/charging telemetry require actual
+hardware. The corresponding browser menus say so: WiFi opens real USB tools,
+SD Card offers browser JSON backup/restore, and Battery and Display does not
+invent voltage or charge readings. Device binary saves remain separate.
+
+Progress uses `spidarium.browser-habitat.v1` in localStorage, including names,
+colors, progression and automation preferences. Existing browser saves migrate
+instead of being reset. Saves occur after actions, every five seconds and on
+page hide. Corrupt/unreadable saves are not silently overwritten; read/write
+and quota errors are visible. SD Card → Back Up Save downloads a JSON backup.
+Browser storage can be cleared or evicted and private browsing is temporary.
+No offline-time decay is applied. Resetting the browser never touches hardware.
+
+## License
+
+Free for personal, non-commercial use under the repository's [LICENSE](../LICENSE).
+The deployed site includes a copy at `./LICENSE`. Commercial use needs separate
+written permission; third-party libraries/fonts retain their own licenses.
 
 ## Real device tools and safety
 

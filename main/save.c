@@ -49,6 +49,17 @@ static atomic_bool s_last_ok = true;
 static atomic_bool s_restore_pending;
 static bool background_write(uint8_t id);
 
+static void migrate_automation(game_state_t *state, uint16_t version)
+{
+    if (version == 2) {
+        state->auto_feed = 0;
+        state->auto_hunt = 0;
+    } else {
+        if (state->auto_feed > 1) state->auto_feed = 0;
+        if (state->auto_hunt > 1) state->auto_hunt = 0;
+    }
+}
+
 static void save_worker(void *arg)
 {
     (void)arg;
@@ -236,7 +247,7 @@ bool save_load(void *dst, size_t size)
                  (unsigned)hdr.magic, (unsigned)SAVE_MAGIC);
         return false;
     }
-    if (hdr.version != SAVE_VERSION) {
+    if (hdr.version != SAVE_VERSION && hdr.version != 2) {
         ESP_LOGW(TAG, "save version %u != %u; rejecting",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
@@ -256,6 +267,13 @@ bool save_load(void *dst, size_t size)
 
     memset(dst, 0, size);
     memcpy(dst, buf + sizeof(save_header_t), hdr.size);
+    if (size == sizeof(game_state_t)) {
+        game_state_t *state = dst;
+        migrate_automation(state, hdr.version);
+        if (hdr.version == 2) {
+            ESP_LOGI(TAG, "migrated v2 automation: feed=0 hunt=0");
+        }
+    }
     if (legacy) {
         game_state_t *state = dst;
         state->silk = 20;
@@ -320,8 +338,8 @@ bool save_erase(void)
 /* These expose the on-flash blob verbatim, header included, so a backup is a
  * byte-for-byte copy rather than a re-serialisation. That matters: the header
  * carries the magic and version, and save_write_raw() re-validates them, so a
- * backup from a different firmware version is rejected instead of being loaded
- * as garbage. */
+ * unsupported layouts are rejected. The explicitly compatible v2 payload
+ * migrates on load with automation disabled. */
 
 size_t save_read_raw(void *dst, size_t cap)
 {
@@ -354,7 +372,7 @@ bool save_raw_valid(const void *src, size_t len)
         ESP_LOGW(TAG, "raw write: bad magic 0x%08x", (unsigned)hdr.magic);
         return false;
     }
-    if (hdr.version != SAVE_VERSION) {
+    if (hdr.version != SAVE_VERSION && hdr.version != 2) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
@@ -377,6 +395,7 @@ bool save_raw_valid(const void *src, size_t len)
         (state.gift.used && state.gift.kind >= GIFT_KINDS) ||
         state.bond > 100 || !memchr(state.name, 0, sizeof state.name) ||
         !isfinite(state.spider_heading) || state.state > SPIDER_SICK ||
+        (hdr.version == SAVE_VERSION && (state.auto_feed > 1 || state.auto_hunt > 1)) ||
         (hdr.size == sizeof state && state.brightness != 25 &&
          state.brightness != 50 && state.brightness != 75)) {
         ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
@@ -412,6 +431,26 @@ bool save_format_test(void)
     memcpy(blob, &header, sizeof header);
     memcpy(blob + sizeof header, &g, sizeof g);
     bool ok = save_raw_valid(blob, sizeof blob);
+    game_state_t state = g;
+    state.auto_feed = 2;
+    memcpy(blob + sizeof header, &state, sizeof state);
+    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    header.version = 2;
+    memcpy(blob, &header, sizeof header);
+    ok = save_raw_valid(blob, sizeof blob) && ok;
+    state.auto_feed = 0xA5;
+    state.auto_hunt = 0x5A;
+    memcpy(blob + sizeof header, &state, sizeof state);
+    ok = save_raw_valid(blob, sizeof blob) && ok;
+    migrate_automation(&state, header.version);
+    ok = state.auto_feed == 0 && state.auto_hunt == 0 && ok;
+    header.version = SAVE_VERSION;
+    state = g;
+    state.auto_hunt = 2;
+    memcpy(blob, &header, sizeof header);
+    memcpy(blob + sizeof header, &state, sizeof state);
+    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    memcpy(blob + sizeof header, &g, sizeof g);
     header.size = offsetof(game_state_t, silk);
     memcpy(blob, &header, sizeof header);
     ok = save_raw_valid(blob, sizeof header + header.size) && ok;

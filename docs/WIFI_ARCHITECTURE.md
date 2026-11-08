@@ -19,8 +19,14 @@ stop/deinit, the display resumes and shows the result or error. Failed
 association does not save credentials. A successful association saves them
 even if NTP later fails, allowing retries without retyping.
 
-The first saved network is used for boot sync and OTA. Forgetting it promotes
-the next saved network. Additional networks are available for manual sync.
+The first saved network is used for requested OTA. Forgetting it promotes the
+next saved network. All saved networks are available for manual sync. There is
+no boot association or automatic SNTP: RTC supplies time until a sync is requested.
+
+Boot performs only a short init/stop/deinit job before the LCD exists. This
+establishes persistent netif/event allocations before internal DMA RAM fragments,
+without connecting to an AP. It preserves the proven memory-priming layout while
+avoiding unreachable saved networks causing boot errors or join delays.
 
 ## Radio lifecycle
 

@@ -660,9 +660,16 @@ void behaviour_sync_position(void)
 /* ------------------------------------------------------------------ */
 void behaviour_tick(uint32_t now_ms, float dt_s)
 {
+    static int reported_auto_hunt = -1;
+    if (reported_auto_hunt != g.auto_hunt) {
+        reported_auto_hunt = g.auto_hunt;
+        ESP_LOGI("spidarium.behaviour", "auto hunt=%u (manual aim unchanged)", g.auto_hunt);
+    }
     /* Player aiming owns the creature; AI cannot wander/crouch or auto-fire
      * midway through a held drag. Prey uses the same signal to hold position. */
     if (s_dragging && behaviour_aim_active()) return;
+    if (!g.auto_hunt && (g.state == SPIDER_STALK || g.state == SPIDER_AIM))
+        behaviour_set_state(SPIDER_IDLE);
     /* Sick spiders move at a fraction of normal speed. */
     float speed_scale = g.sick ? 0.45f : 1.0f;
 
@@ -895,7 +902,7 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
             behaviour_set_state(SPIDER_SLEEP);
             break;
         }
-        if (prey_count() > 0) {
+        if (g.auto_hunt && prey_count() > 0) {
             behaviour_set_state(SPIDER_STALK);
             break;
         }
@@ -912,7 +919,7 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
          * wandered forever and never hunted, because only IDLE looked for
          * prey and WANDER had no exit when it had no target (observed: 3 min
          * in WANDER with prey=1 and hunger falling). */
-        if (prey_count() > 0 && g.hunger < 95 && !g.sick) {
+        if (g.auto_hunt && prey_count() > 0 && g.hunger < HUNGER_FULL && !g.sick) {
             behaviour_set_state(SPIDER_STALK);
             break;
         }
@@ -1003,7 +1010,7 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
              *    same low average, and it starves itself into SICK before the
              *    gate ever lifts. Hunger is the stronger drive. */
             if (idle_done) behaviour_set_state(SPIDER_WANDER);
-        } else if (prey_count() > 0 && g.hunger < 95) {
+        } else if (g.auto_hunt && prey_count() > 0 && g.hunger < HUNGER_FULL) {
             /* Hunt whenever prey is present and the spider is not stuffed.
              * The old <70 gate meant a fed spider ignored prey the player had
              * just spawned with FEED, which read as a broken button. */

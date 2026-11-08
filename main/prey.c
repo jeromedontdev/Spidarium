@@ -532,6 +532,40 @@ void prey_resolve_pounce(void)
 void prey_tick(uint32_t now_ms, float dt_s)
 {
     const gift_bonus_t *gift = gift_bonus();
+    static uint32_t last_wild;
+    static bool wild_seeded;
+    static uint32_t last_visitor_day = UINT32_MAX;
+    static int reported_auto_feed = -1;
+    if (reported_auto_feed != g.auto_feed) {
+        reported_auto_feed = g.auto_feed;
+        ESP_LOGI(TAG, "auto feed=%u (manual feed unchanged)", g.auto_feed);
+    }
+    if (!g.auto_feed) {
+        wild_seeded = false;
+        last_wild = now_ms;
+        last_visitor_day = g.days_lived;
+    } else {
+        if (!wild_seeded) {
+            wild_seeded = true;
+            last_wild = now_ms;
+            if (prey_count() == 0) prey_spawn_wild();
+        } else if (prey_count() == 0 &&
+                   now_ms - last_wild >= WILD_SPAWN_MS / (1u + gift->wild_spawn_bonus)) {
+            last_wild = now_ms;
+            prey_spawn_wild();
+        }
+        if (g.days_lived != last_visitor_day) {
+            last_visitor_day = g.days_lived;
+            if (g.days_lived > 0) {
+                prey_species_t rare = PREY_FLY;
+                for (int i = 0; i < PREY_SPECIES_COUNT; i++)
+                    if (species_unlocked(i)) rare = (prey_species_t)i;
+                prey_spawn_species_ex(rare, true);
+                audio_play(SFX_ALERT);
+                ESP_LOGI(TAG, "daily visitor: species %d", (int)rare);
+            }
+        }
+    }
 
     for (int i = 0; i < MAX_PREY; i++) {
         prey_t *p = &s_prey[i];

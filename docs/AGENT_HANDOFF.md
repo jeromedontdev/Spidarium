@@ -10,6 +10,17 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.0: [browser parity and measured evidence](BROWSER_PARITY.md).
+  Native-coordinate browser HUD/setup/menus/minigames, fullscreen, local
+  progress migration with explicit errors, and separate default-off Auto Feed/
+  Auto Hunt checkboxes on both platforms. The native numeric FSM maps through
+  `STATE_NAMES` for rendering. Never introduce fake PMIC/WiFi/SD responses.
+  Save schema v3 retains the 132-byte payload, appending checkboxes in old
+  padding at 129/130; v2 padding must migrate OFF. The actual compiled schema
+  contains 24 fields and `minVersion:3` for both flags. Future browser/schema
+  changes require real capture and exact restore tests, not guessed offsets.
+  Root LICENSE permits personal, non-commercial use; retain all third-party
+  notices and do not describe it as OSI open source.
 - First release: [v1.0.0 notes](RELEASE_v1.0.0.md),
   [measured verification](RELEASE_VERIFICATION.md) and [actual screenshots](README.md).
   Website source lives in `site/`; Pages consumes the official, hash-verified
@@ -47,7 +58,9 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 - [Networking](WIFI_ARCHITECTURE.md): three saved networks; one copied job at
   a time; bounded scan/join/SNTP/HTTPS OTA; stop and deinit on every exit.
 - RTC: PCF85063A on BSP I2C, UTC restoration at boot and verified calendar
-  writes after fresh SNTP. Boot does not start WiFi without saved credentials.
+  writes after player-requested SNTP. Boot primes network allocations with
+  init/stop/deinit before LCD creation, but never associates with a saved
+  network or runs SNTP automatically.
 - [Gifts](GIFTS_CATALOG.md): eighteen larger habitat items, earned Silk wallet,
   one-time purchase/owned placement, unlocks through level 40 and spider visits.
   `gifttest` checks bonuses, economy and visit rewards without persisting tests.

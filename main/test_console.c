@@ -125,7 +125,7 @@ static void cmd_help(void)
     printf("  open NAME            open a menu (main gift chrome nochrome)\n");
     printf("  spawn [SPECIES]      spawn unlocked bug (0..7, or random)\n");
     printf("  state N              force spider state\n");
-    printf("  set FIELD VALUE      set a need (hunger mood energy hygiene bond sick)\n");
+    printf("  set FIELD VALUE      needs; auto_feed/auto_hunt accept 0 or 1\n");
     printf("  refresh              rebuild the visual layers\n");
     printf("  save                 save now\n");
     printf("  save export|schema  browser backup and field layout\n");
@@ -425,8 +425,8 @@ static bool console_data(const char *text)
 
 static void cmd_save_schema(void)
 {
-    static const struct { const char *name, *type; size_t offset, length; } fields[] = {
-#define SAVE_FIELD(name, type) {#name, type, offsetof(game_state_t, name), 0}
+    static const struct { const char *name, *type; size_t offset, length; unsigned min_version; } fields[] = {
+#define SAVE_FIELD(name, type) {#name, type, offsetof(game_state_t, name), 0, 2}
         SAVE_FIELD(hunger, "u8"), SAVE_FIELD(mood, "u8"), SAVE_FIELD(energy, "u8"),
         SAVE_FIELD(hygiene, "u8"), SAVE_FIELD(age_ticks, "u32"), SAVE_FIELD(meals, "u32"),
         SAVE_FIELD(cleans, "u32"), SAVE_FIELD(plays, "u32"), SAVE_FIELD(xp, "u32"),
@@ -434,28 +434,31 @@ static void cmd_save_schema(void)
         SAVE_FIELD(level, "u32"), SAVE_FIELD(achievements, "u32"),
         SAVE_FIELD(days_lived, "u32"), SAVE_FIELD(best_streak, "u16"),
         SAVE_FIELD(bond, "u16"),
-        {"name", "string", offsetof(game_state_t, name), sizeof g.name},
+        {"name", "string", offsetof(game_state_t, name), sizeof g.name, 2},
         SAVE_FIELD(colour, "u8"), SAVE_FIELD(silk, "u32"),
         SAVE_FIELD(gifts_owned, "u32"), SAVE_FIELD(brightness, "u8"),
+        {"auto_feed", "u8", offsetof(game_state_t, auto_feed), 0, 3},
+        {"auto_hunt", "u8", offsetof(game_state_t, auto_hunt), 0, 3},
 #undef SAVE_FIELD
     };
-    char *json = heap_caps_malloc(2048, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    enum { SCHEMA_CAP = 3072 };
+    char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
-    int pos = snprintf(json, 2048,
+    int pos = snprintf(json, SCHEMA_CAP,
         "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"fields\":[",
         (unsigned)SAVE_MAGIC, SAVE_VERSION, (unsigned)offsetof(game_state_t, silk),
         (unsigned)sizeof(game_state_t));
-    bool ok = pos > 0 && pos < 2048;
+    bool ok = pos > 0 && pos < SCHEMA_CAP;
     for (size_t i = 0; ok && i < sizeof fields / sizeof fields[0]; i++) {
-        int written = snprintf(json + pos, 2048 - pos,
-            "%s{\"name\":\"%s\",\"offset\":%u,\"type\":\"%s\",\"length\":%u}",
+        int written = snprintf(json + pos, SCHEMA_CAP - pos,
+            "%s{\"name\":\"%s\",\"offset\":%u,\"type\":\"%s\",\"length\":%u,\"minVersion\":%u}",
             i ? "," : "", fields[i].name, (unsigned)fields[i].offset,
-            fields[i].type, (unsigned)fields[i].length);
-        ok = written > 0 && written < 2048 - pos;
+            fields[i].type, (unsigned)fields[i].length, fields[i].min_version);
+        ok = written > 0 && written < SCHEMA_CAP - pos;
         if (ok) pos += written;
     }
-    if (ok && pos + 3 < 2048) {
-        snprintf(json + pos, 2048 - pos, "]}");
+    if (ok && pos + 3 < SCHEMA_CAP) {
+        snprintf(json + pos, SCHEMA_CAP - pos, "]}");
         esp_log_level_t level = esp_log_level_get("*");
         esp_log_level_set("*", level > ESP_LOG_WARN ? ESP_LOG_WARN : level);
         bool sent = console_data("SAVE SCHEMA ") && console_data(json) &&
@@ -627,6 +630,11 @@ static void cmd_state(int state)
 /* Set a need directly, so a UI state can be reached without waiting. */
 static void cmd_set(const char *field, int value)
 {
+    if ((!strcmp(field, "auto_feed") || !strcmp(field, "auto_hunt")) &&
+        (value < 0 || value > 1)) {
+        printf("ERR automation checkboxes require 0 or 1\n");
+        return;
+    }
     if (value < 0) value = 0;
     if (value > 100) value = 100;
 
@@ -637,8 +645,10 @@ static void cmd_set(const char *field, int value)
     else if (!strcmp(field, "hygiene")) action = GAME_UI_SET_HYGIENE;
     else if (!strcmp(field, "bond"))    action = GAME_UI_SET_BOND;
     else if (!strcmp(field, "sick"))    action = GAME_UI_SET_SICK;
+    else if (!strcmp(field, "auto_feed")) action = GAME_UI_SET_AUTO_FEED;
+    else if (!strcmp(field, "auto_hunt")) action = GAME_UI_SET_AUTO_HUNT;
     else {
-        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick)\n",
+        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt)\n",
                field);
         return;
     }

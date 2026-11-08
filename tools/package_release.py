@@ -83,8 +83,10 @@ def package(root: Path, version: str) -> Path:
     contents = json.dumps(manifest, indent=2) + "\n"
     (output / "manifest.json").write_text(contents, encoding="utf-8")
     (web / "manifest.json").write_text(contents, encoding="utf-8")
-    notes = root / "docs" / "RELEASE_v1.0.0.md"
+    notes = root / "docs" / f"RELEASE_v{version}.md"
     shutil.copyfile(notes, output / "README.md")
+    shutil.copyfile(root / "LICENSE", output / "LICENSE")
+    shutil.copyfile(root / "docs" / "BROWSER_PARITY.md", output / "BROWSER_PARITY.md")
     schema = root / "site" / "save-schema.json"
     if not schema.is_file():
         raise ValueError("Capture the compiled save schema before packaging")
@@ -114,7 +116,7 @@ def package(root: Path, version: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", default="1.0.0")
+    parser.add_argument("--version", default="1.1.0")
     args = parser.parse_args()
     package(Path(__file__).resolve().parents[1], args.version)
 

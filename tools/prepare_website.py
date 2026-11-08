@@ -12,9 +12,12 @@ from package_release import REGIONS
 def install_firmware(root: Path, archive: Path) -> None:
     destination = root / "site" / "firmware"
     with zipfile.ZipFile(archive) as release:
-        prefix = "spidarium-v1.0.0/"
+        manifests = [name for name in release.namelist() if name.endswith("/manifest.json")]
+        if len(manifests) != 1:
+            raise ValueError("Release must contain exactly one manifest")
+        prefix = manifests[0].removesuffix("manifest.json")
         manifest = json.loads(release.read(prefix + "manifest.json"))
-        if manifest["version"] != "1.0.0" or manifest["chip"] != "ESP32-S3":
+        if prefix != f"spidarium-v{manifest['version']}/" or manifest["chip"] != "ESP32-S3":
             raise ValueError("Wrong release version/chip")
         images = {}
         for item in manifest["files"]:
@@ -36,6 +39,8 @@ def install_firmware(root: Path, archive: Path) -> None:
         for name, data in images.items():
             (destination / name).write_bytes(data)
         (destination / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        schema = json.loads(release.read(prefix + "save-schema.json"))
+        (root / "site" / "save-schema.json").write_text(json.dumps(schema, indent=2) + "\n")
     print("WEBSITE firmware: five verified images, NVS excluded")
 
 

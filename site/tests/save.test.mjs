@@ -51,10 +51,10 @@ test('WiFi validation enforces byte lengths, open networks and protocol injectio
 });
 test('bundled hardware-compiled schema decodes both actual ABI payload sizes', async () => {
   const actual = validateSchema(JSON.parse(await readFile(new URL('../save-schema.json', import.meta.url), 'utf8')));
-  assert.equal(actual.fields.length, 22);
+  assert.equal(actual.fields.length, 24);
   for (const size of actual.payloadSizes) {
     const bytes = new Uint8Array(12 + size), view = new DataView(bytes.buffer);
-    view.setUint32(0, actual.magic, true); view.setUint16(4, actual.version, true); view.setUint32(8, size, true);
+    view.setUint32(0, actual.magic, true); view.setUint16(4, size === 120 ? 2 : actual.version, true); view.setUint32(8, size, true);
     bytes[12] = 83;
     const name = actual.fields.find(field => field.name === 'name');
     bytes.set(new TextEncoder().encode('Schema Test'), 12 + name.offset);
@@ -65,4 +65,19 @@ test('bundled hardware-compiled schema decodes both actual ABI payload sizes', a
     if (size === 132) assert.equal(parsed.fields.silk, 12345);
     else assert.match(parsed.fields.silk, /older save/);
   }
+});
+test('v3 checkbox bytes validate while v2 padding always means off', () => {
+  const actual = { ...schema, version: 3, fields: [
+    { name: 'auto_feed', offset: 129, type: 'u8', minVersion: 3 },
+    { name: 'auto_hunt', offset: 130, type: 'u8', minVersion: 3 },
+  ] };
+  const bytes = blob(); bytes[141] = bytes[142] = 255;
+  assert.deepEqual(decodeSave(bytes, actual).fields, { auto_feed: 0, auto_hunt: 0 });
+  new DataView(bytes.buffer).setUint16(4, 3, true);
+  assert.throws(() => decodeSave(bytes, actual), /checkbox/);
+  bytes[141] = 1; bytes[142] = 0;
+  assert.deepEqual(decodeSave(bytes, actual).fields, { auto_feed: 1, auto_hunt: 0 });
+  assert.throws(() => decodeSave(bytes, schema), /version/);
+  const truncated = blob(120); new DataView(truncated.buffer).setUint16(4, 3, true);
+  assert.throws(() => decodeSave(truncated, actual), /full save payload/);
 });

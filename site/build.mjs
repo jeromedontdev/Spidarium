@@ -4,13 +4,15 @@ import { fileURLToPath } from 'node:url';
 
 await rm(new URL('./dist/', import.meta.url), { recursive: true, force: true });
 await mkdir(new URL('./dist/site/vendor/', import.meta.url), { recursive: true });
-for (const path of ['index.html', 'style.css', 'app.js', 'lib', 'firmware', 'save-schema.json', 'README.md']) {
+for (const path of ['index.html', 'style.css', 'device.css', 'fonts', 'native-spider.png', 'app.js', 'lib', 'firmware', 'save-schema.json', 'README.md']) {
   try {
     await cp(new URL(path, import.meta.url), new URL(`dist/site/${path}`, import.meta.url), { recursive: true });
   } catch (error) {
     if (error.code !== 'ENOENT' || !['save-schema.json', 'firmware'].includes(path)) throw error;
     console.warn(`${path} is not yet supplied by release tooling; device operations will reject missing resources.`);
   }
+  await cp(new URL('../LICENSE', import.meta.url), new URL('dist/site/LICENSE', import.meta.url));
+  await cp(new URL('../LICENSE', import.meta.url), new URL('dist/LICENSE', import.meta.url));
 }
 await build({
   entryPoints: [fileURLToPath(new URL('./lib/esptool-entry.js', import.meta.url))],

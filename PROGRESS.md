@@ -5153,3 +5153,62 @@ results are recorded separately rather than claiming a local preview is public.
 - Publication verification is retained in the handoff and release verification
   guide in a documentation-only follow-up commit; the immutable release code
   tag is not moved. Local build logs remain unstaged.
+
+## Round 44 - Device-coordinate browser, manual automation and license
+
+### Reported
+
+The browser should match the device on a larger fullscreen-capable screen and
+retain local progress. Promotional fangs should be purple; publish a free
+personal-use/non-commercial license. Auto Feed and Auto Hunt must be independent
+Settings checkboxes, otherwise feeding and pouncing are manual.
+
+### Root cause and fix
+
+Replaced the approximate side-panel browser game with native-coordinate
+setup/HUD/menus and a native rules/FSM port. Added native-timed eight-round
+minigames, fullscreen and validated/migrating local saves with explicit errors.
+Auto Feed/Hunt default OFF and are persisted in v3's old padding bytes; v2
+padding never enables automation. Removed the duplicate ungated wild/visitor
+spawning block. Added genuine Settings checkboxes and page retention.
+
+The first soak found unreachable saved-network boot association and teardown
+errors. Boot now only primes network allocations before the LCD and tears the
+radio down; player-requested scan/sync/OTA and credentials remain intact.
+Published-license source/package/site wiring and purple promotional canvases/
+preview PNG were added. Actual pet colors, names and device captures are preserved.
+
+### Verification
+
+- Wrapper build/flash exits0; zero game-code warnings.
+- Final pet-preserving hardware suite39/39; stability40 seconds PASS, zero faults.
+- Largest DMA/internal block63,488 >=51,200 baseline. Render500 drift0;
+  scanloop5 passed with largest69,632 before/after and drift0.
+- Real v3 schema24 fields; checkboxes enabled through the actual Settings
+  callback, persisted across reboot and original pet/options restored exactly.
+  Invalid flags/raw saves reject; overwrite guard/reboot/readback PASS.
+  Console restore headroom3,932 bytes.
+- Browser71/71 tests; host19/19 tests. Actual browser blank-tap navigation,
+  checkbox reload/page retention, minigame completion, square fullscreen entry/
+  exit and responsive800px desktop world verified. Screenshots refreshed.
+- v1.1.0 package contains five verified images, compiled schema, project LICENSE
+  and unchanged third-party notices; NVS excluded.
+
+### Decisions made
+
+- Use one native-coordinate browser UI and native game data/rules, not a larger
+  but still approximate parallel design. It remains a JavaScript port rather
+  than claiming machine-code/LVGL emulation.
+- Hardware-only menus disclose their boundary and use real USB/local backup
+  operations; no fake battery, radio or SD success.
+- Retain the old localStorage key and validate the producer before migration.
+  Corrupt saves cannot be silently reset/overwritten; browser eviction/private
+  browsing limits require downloadable backups.
+- Version the save header while retaining payload size: old padding is not a
+  trustworthy boolean. Explicitly test compiled fields and migration.
+- Prime WiFi allocations without joining an AP: preserve the proven DMA layout
+  and make boot independent of an unavailable stored network.
+- Purple fangs are promotional only; never rewrite actual player customization
+  or recolor real device screenshots.
+- Ship a new v1.1.0 release with the personal-use license, preserving the
+  immutable v1.0.0 tag/archive. Keep third-party licensing separate.

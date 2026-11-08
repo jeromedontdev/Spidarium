@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.0.0](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.0.0)**
+| **[Download v1.1.0](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.0)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -80,11 +80,26 @@ Name and next unlock share a translucent reading panel. Feed disables at three
 live bugs; achievement badges are distinct and every species has splatter art.
 Sound controls live under Settings.
 
+**Manual care by default.** Settings has independent Auto Feed and Auto Hunt
+checkboxes, both off for new and migrated saves. Without them, Feed adds prey
+and dragging/releasing the spider aims and pounces; autonomous wandering and
+gift visits continue. These options are persisted in pet backups.
+
 **Browser tools, without an account.** Install the official firmware over Web
 Serial, download/view/restore a pet backup, or send WiFi settings directly to
 your device. No passwords are stored by the website. Try the playable browser
 simulator separately; it is a model of the game, not native firmware emulation.
-See [website development](site/README.md) and [release notes](docs/RELEASE_v1.0.0.md).
+See [website development](site/README.md) and [release notes](docs/RELEASE_v1.1.0.md).
+
+The browser uses the device-coordinate UI at a larger responsive size, with
+fullscreen and local progress/backup. Its hardware menus clearly redirect to
+real USB tools rather than pretending to have a WiFi radio, SD card or PMIC.
+
+## License
+
+Free for personal, non-commercial use under the [published license](LICENSE).
+Commercial use needs separate written permission. This is source-available,
+not OSI open source. Third-party components retain their own licenses.
 
 **PSRAM and task ownership apply throughout the game.** CPU-only buffers, TLS,
 audio/console and main LVGL stacks use PSRAM. Network/persistence stacks remain

@@ -81,6 +81,8 @@ Web Serial requires a supported browser; no physical-device access is available
 to a remote browser test. Automated browser tests use an explicit mock transport,
 while firmware/backend commands and normal flashing are tested on COM7.
 
-Third-party firmware license texts are included in the ZIP. The repository
-does not currently specify a separate project-wide source license; publication
-alone does not grant additional redistribution rights.
+Third-party firmware license texts are included in the original ZIP. A
+project-wide [Personal, Non-Commercial License](../LICENSE) was subsequently
+published for Spidarium's original code, documentation and artwork. Commercial
+use requires separate written permission. Third-party licenses remain unchanged;
+the original v1.0.0 release archive and tag have not been rewritten.

@@ -624,7 +624,7 @@ using Web Serial. Browser credentials go only to the selected USB device.
 
 The schema is generated from compiled `offsetof(game_state_t, ...)` values,
 not guessed browser offsets. It includes the header magic/version, 12-byte
-header size, accepted 120/132-byte payload sizes and 22 named fields with
+header size, accepted 120/132-byte payload sizes and 24 named fields with
 little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
@@ -684,3 +684,14 @@ Feed now returns ERR when three live bugs are already present. The button is
 gray/disabled, and both the callback and needs helper guard full-tank calls.
 `preytest` checks repeated rejection without increasing taps, and re-enablement
 when a bug is no longer alive. Existing prey and pet state are restored by tests.
+
+## Automation checkboxes and save v3
+
+Version 3 keeps the same 132-byte payload/144-byte backup. `auto_feed` and
+`auto_hunt` are `u8` checkboxes at payload offsets 129/130, both `minVersion:3`.
+Version 2 padding always migrates to OFF, even if its padding is nonzero.
+Version 3 rejects checkbox bytes other than 0/1.
+
+`set auto_feed 0|1` and `set auto_hunt 0|1` use the same LVGL-task Settings
+callback as the checkboxes, including persistence. These commands can open
+Settings; use `open close` to resume the tank. Invalid checkbox values reject.

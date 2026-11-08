@@ -409,9 +409,8 @@
 /* Save format                                                         */
 /* ------------------------------------------------------------------ */
 #define SAVE_MAGIC             0x53504944u   /* "SPID" */
-/* v2 adds temperament and bond. Saves are disposable: the header check in
- * save.c rejects a v1 blob outright and the game starts from state_defaults().
- * No migration shim -- deliberately. */
-#define SAVE_VERSION           2
+/* v3 uses two former padding bytes for opt-in automation. v2 progress is
+ * retained, with both flags cleared; unsupported v1 layouts remain rejected. */
+#define SAVE_VERSION           3
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

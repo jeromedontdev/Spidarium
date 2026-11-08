@@ -61,5 +61,8 @@ bool ui_menu_test(void);
 void ui_menu_format_name(char *dst, size_t size, const char *name);
 void ui_menu_set_destructive(uint8_t id);
 void ui_menu_set_item_icon(uint8_t item, int asset_index);
+void ui_menu_set_item_checkbox(uint8_t item);
+int ui_menu_page(void);
+void ui_menu_set_page(int page);
 typedef uint32_t (*ui_minigame_reward_cb)(uint8_t score);
 void ui_menu_open_minigame(ui_minigame_reward_cb reward);
