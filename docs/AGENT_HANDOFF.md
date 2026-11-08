@@ -16,6 +16,10 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   five-image ZIP rather than local firmware or saves. Native browser anatomy
   follows `cspider.c`; generic Spider is not a replacement name for the user's pet.
   Browser simulation is approximate, not an ESP32 emulator.
+  Release code is `0f16802`; live publication evidence is in the verification
+  guide. The `github-pages` environment permits `main` and the explicitly
+  approved `v1.0.0` tag. Approve the next official tag without removing existing
+  protections, and update version-specific package/website validation together.
 - Round 43 adds three-prey Feed guards, shared silk-bordered cards, readable
   translucent identity panel, corner battery gauge/details, Sound in Settings,
   gray/inert pagination and distinct achievement assets. There are 134 PNGs,

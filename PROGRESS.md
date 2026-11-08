@@ -5129,3 +5129,27 @@ pet reset, SD format or private backup/log publication is required.
 
 Commit/release/Pages publication follows these local gates; live publication
 results are recorded separately rather than claiming a local preview is public.
+
+### Publication results
+
+- Committed/pushed the requested implementation as `0f16802`, with the required
+  Copilot coauthor trailer; published annotated `v1.0.0` and the first official
+  [release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.0.0).
+  No history rewrite, force push or user-data erase.
+- ZIP, application-only OTA image, manifest and checksum file are public.
+  Actual unauthenticated ZIP download matches
+  `ea8d5aa183f3e42c6515ff9cf41a1497f290bb066a5de33a17a0d2023880688d`.
+  The ZIP includes SDK/component, FatFs, Montserrat and Font Awesome notices.
+- Existing Pages protection allowed only `main`. Added only the approved
+  `v1.0.0` tag, preserving existing controls rather than disabling protection.
+  Release-triggered [run 42435991497](https://github.com/jeromedontdev/Spidarium/actions/runs/42435991497)
+  completed successfully.
+- [Public HTTPS website](https://jeromedontdev.github.io/Spidarium/) is live:
+  root redirect, compiled schema, five exact firmware images and all 134 exact
+  authored PNGs verified against local release/source hashes.
+  Browser confirms active canvas, generic Spider, no Pip, no obsolete live
+  spider PNGs and no broken images. The shared preview now points to this
+  public site; the temporary local server is no longer needed.
+- Publication verification is retained in the handoff and release verification
+  guide in a documentation-only follow-up commit; the immutable release code
+  tag is not moved. Local build logs remain unstaged.

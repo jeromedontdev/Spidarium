@@ -60,6 +60,19 @@ v1.0.0 ZIP before deployment. Publication success is verified separately
 against the live release and HTTPS website; a local preview is not evidence
 of a successful deployment.
 
+### Published result
+
+- [Official v1.0.0](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.0.0):
+  published, not draft/prerelease, targeting code commit `0f16802`.
+- [Pages deployment](https://github.com/jeromedontdev/Spidarium/actions/runs/42435991497):
+  success; [live website](https://jeromedontdev.github.io/Spidarium/) verified.
+- Unauthenticated ZIP download matches SHA-256
+  `ea8d5aa183f3e42c6515ff9cf41a1497f290bb066a5de33a17a0d2023880688d`.
+  Standalone application, manifest and checksum file are also published.
+- Live HTTPS checks match all five firmware images, all 134 PNGs and the
+  compiled schema byte/data-for-data. Browser has no obsolete live spider
+  PNGs, no Pip text and no broken images; the native-style canvas is active.
+
 ## Boundaries
 
 Physical Web Serial flashing through a browser was **not** exercised: remote
