@@ -536,7 +536,10 @@ function advance(s,speed,dt){
   s.spider_x=round(r.px);s.spider_y=round(r.py);
 }
 function inward(s) {
-  const tx=240+(roll(s,2001)/1000-1)*103,ty=240+(roll(s,2001)/1000-1)*103;
+  // Whole playfield, not the middle half: aiming at the middle made every
+  // wander leg converge on the centre. 0.40 of the half-extent reaches most of
+  // the tank while staying off the wall.
+  const tx=240+(roll(s,2001)/1000-1)*165,ty=240+(roll(s,2001)/1000-1)*165;
   return Math.atan2(ty-s.spider_y,tx-s.spider_x);
 }
 function canVisit(s){return s.gift.used&&!s.sick&&s.energy>=20&&s.hunger>=60&&[0,1].includes(s.state);}
@@ -602,7 +605,7 @@ function behaviourTick(s,dt){
       }else {if(now>=r.retarget_at){r.retarget_at=now+2000;r.wander_dir=inward(s);}steer(s,r.wander_dir,dt,true);}
       advance(s,55*scale,dt);
       if(Math.abs(r.px-r.stuck_x)<1.5&&Math.abs(r.py-r.stuck_y)<1.5){
-        if(now-r.stuck_at>1500){r.wander_dir=Math.atan2(240-r.py,240-r.px);r.target=null;r.stuck_at=now;r.stuck_x=r.px;r.stuck_y=r.py;}
+        if(now-r.stuck_at>1500){r.wander_dir=inward(s);r.target=null;r.stuck_at=now;r.stuck_x=r.px;r.stuck_y=r.py;}
       }else {r.stuck_at=now;r.stuck_x=r.px;r.stuck_y=r.py;}
       break;
     default:{

@@ -21,9 +21,9 @@
 
 static const char *TAG = "spidarium.buttons";
 
-#define BTN_LOCK_GPIO   GPIO_NUM_0    /* top middle */
-#define BTN_DOWN_GPIO   GPIO_NUM_18   /* left       */
-#define BTN_UP_GPIO     GPIO_NUM_17   /* right      */
+#define BTN_LEFT_GPIO   GPIO_NUM_18   /* volume down */
+#define BTN_MID_GPIO    GPIO_NUM_0    /* lock / unlock */
+#define BTN_RIGHT_GPIO  GPIO_NUM_17   /* volume up   */
 
 /* Debounce: a level must be stable for this long before it counts. */
 #define BTN_DEBOUNCE_MS 30u
@@ -41,9 +41,9 @@ typedef struct {
 } button_t;
 
 static button_t s_buttons[] = {
-    { .pin = BTN_LOCK_GPIO },
-    { .pin = BTN_DOWN_GPIO },
-    { .pin = BTN_UP_GPIO },
+    { .pin = BTN_MID_GPIO },
+    { .pin = BTN_LEFT_GPIO },
+    { .pin = BTN_RIGHT_GPIO },
 };
 #define BTN_COUNT (sizeof s_buttons / sizeof s_buttons[0])
 
@@ -58,8 +58,8 @@ static bool read_pressed(gpio_num_t pin)
 bool buttons_init(void)
 {
     gpio_config_t cfg = {
-        .pin_bit_mask = (1ULL << BTN_LOCK_GPIO) | (1ULL << BTN_DOWN_GPIO) |
-                        (1ULL << BTN_UP_GPIO),
+        .pin_bit_mask = (1ULL << BTN_MID_GPIO) | (1ULL << BTN_LEFT_GPIO) |
+                        (1ULL << BTN_RIGHT_GPIO),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -77,8 +77,8 @@ bool buttons_init(void)
         s_buttons[i].next_repeat = 0;
     }
     s_ready = true;
-    ESP_LOGI(TAG, "buttons ready: lock=%d down=%d up=%d",
-             (int)BTN_LOCK_GPIO, (int)BTN_DOWN_GPIO, (int)BTN_UP_GPIO);
+    ESP_LOGI(TAG, "buttons ready: mid=%d left=%d right=%d",
+             (int)BTN_MID_GPIO, (int)BTN_LEFT_GPIO, (int)BTN_RIGHT_GPIO);
     return true;
 }
 
@@ -125,6 +125,7 @@ void buttons_tick(uint32_t now_ms)
             continue;
         }
 
+        ESP_LOGI(TAG, "button %u (gpio %d) pressed", i, (int)b->pin);
         switch (i) {
         case 0: buttons_set_locked(!buttons_locked()); break;
         case 1: volume_step(-BTN_VOLUME_STEP); b->next_repeat = now_ms + BTN_REPEAT_MS; break;

@@ -5,6 +5,8 @@ import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
 import { DeviceAudio } from './device-audio.js';
 
 const asset = name => new URL(`../../assets/${name}.png`, import.meta.url).href;
+// Splat colours per prey species, matching the native dead-sprite tints.
+const SPLAT_COLOURS = ['#8a6a3a', '#4f6b2f', '#8a7a5a', '#3f3a2a', '#5a3a2a', '#a08a5a', '#6a5a3a', '#8a5a4a'];
 const title = name => name.split(/[ _]+/).map(word => word[0].toUpperCase() + word.slice(1)).join(' ');
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 function element(tag, className, text) {
@@ -431,7 +433,10 @@ export class DeviceGame {
       ctx.fillStyle = '#4a3520';
     }
     renderSpider(this.spiderPixels.data, this.spiderOptions()); this.spiderCtx.putImageData(this.spiderPixels, 0, 0);
-    ctx.drawImage(this.spiderCanvas, s.spider_x - 48, s.spider_y - 48);
+    // Life-stage size: a spiderling reads as small, an adult as full size.
+    const stageScale = s.stage === 0 ? .75 : s.stage === 1 ? .875 : 1;
+    const half = 48 * stageScale;
+    ctx.drawImage(this.spiderCanvas, s.spider_x - half, s.spider_y - half, half * 2, half * 2);
     if (s.state === E.STATES.AIM) {
       ctx.strokeStyle = '#f5c86b'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath();
       ctx.moveTo(s.spider_x, s.spider_y); ctx.lineTo(s.aim_x, s.aim_y); ctx.stroke(); ctx.setLineDash([]);
@@ -442,6 +447,25 @@ export class DeviceGame {
       const species = E.SPECIES[prey.species], frame = prey.frame ?? Math.floor(performance.now() / 200) % 2;
       const image = this.image(`prey_${species.key}_${prey.alive ? (prey.fleeing ? 'flee_' : 'walk_') + frame : 'dead_0'}`);
       if (image.complete && image.naturalWidth) ctx.drawImage(image, prey.x - 12, prey.y - 12, 24, 24);
+      // Splat: a short burst of the species colour where the bug was caught.
+      if (prey.dead && prey.dead_at) {
+        const age = 2200 - Math.max(0, prey.dead_at - performance.now());
+        if (age >= 0 && age < 700) {
+          const t = age / 700, radius = 4 + t * 14, alpha = 1 - t;
+          ctx.save();
+          ctx.globalAlpha = alpha * .85;
+          ctx.fillStyle = SPLAT_COLOURS[prey.species] || '#7a2f2f';
+          for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2 + t * 1.2;
+            const d = radius * (.55 + .45 * ((i * 37) % 11) / 11);
+            ctx.beginPath();
+            ctx.ellipse(prey.x + Math.cos(a) * d, prey.y + Math.sin(a) * d,
+                        2.6 * (1 - t) + .8, 2.2 * (1 - t) + .6, a, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+      }
     }
   }
   frame(now) {

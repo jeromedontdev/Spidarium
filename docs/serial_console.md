@@ -76,8 +76,8 @@ and reads it with `usb_serial_jtag_read_bytes()`.
 
 ### Why not `fgets()` on stdin?
 
-`fgets()` is the standard ESP-IDF console path and it is what Pocket Tank uses,
-but it does **not** work on this board: the console VFS does not route stdin to
+`fgets()` is the standard ESP-IDF console path, but it does **not** work on this
+board: the console VFS does not route stdin to
 the USB-JTAG transport, so the task blocks forever while the device runs
 normally. `getchar()` is worse — it returns EOF immediately when nothing is
 pending, so the task spins.
@@ -566,7 +566,7 @@ Commands exceeding 383 bytes are rejected, never executed as truncated input.
 
 ## Architecture note: the radio and the display
 
-The rule this device follows, taken from Pocket Tank:
+The rule this device follows:
 
 > **The radio is only on during a check, and the tank is not being drawn while
 > it is.**

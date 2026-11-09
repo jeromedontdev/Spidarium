@@ -349,7 +349,8 @@ See **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** for the complete overha
 
 ## Credit
 
-The architecture follows [Pocket Tank](https://github.com/mediacutlet/pocket-tank)
-by mediacutlet: a direct RGB565 software renderer, the radio only during a check,
-and a strict separation between the reflex layer and the decision layer. Several
-of the hard-won lessons in `PROGRESS.md` are that project's lessons, relearned.
+Inspired by [Pocket Tank](https://github.com/mediacutlet/pocket-tank) by
+mediacutlet — a virtual pet on a small round display. Spidarium is an
+independent implementation: a different creature, a different renderer, a
+different save format and a different UI. Several of the hard-won lessons in
+`PROGRESS.md` were relearned the slow way rather than copied.

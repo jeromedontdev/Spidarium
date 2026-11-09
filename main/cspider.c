@@ -496,6 +496,19 @@ bool cspider_hit(int32_t x, int32_t y)
 /* ------------------------------------------------------------------ */
 /* Render                                                              */
 /* ------------------------------------------------------------------ */
+/* Life-stage size, in 1/256 units for LVGL's transform scale. A spiderling is
+ * visibly smaller than an adult, so the molt reads as growth rather than a
+ * label change. */
+static int32_t stage_scale_256(void)
+{
+    switch (g.stage) {
+    case STAGE_SPIDERLING: return 192;  /* 75%  */
+    case STAGE_JUVENILE:   return 224;  /* 87.5% */
+    case STAGE_ADULT:      return 256;  /* 100% */
+    default:               return 256;
+    }
+}
+
 void cspider_render(uint32_t now_ms)
 {
     if (!s_canvas) return;
@@ -673,8 +686,15 @@ void cspider_render(uint32_t now_ms)
     lv_obj_invalidate(s_canvas);
 
     /* --- position ---------------------------------------------------
-     * Centre the canvas on the spider. */
+     * Centre the canvas on the spider, then scale it by life stage so a
+     * spiderling reads as small and an adult as full size. The canvas is a
+     * fixed 96x96 buffer; scaling the widget keeps the pixel art crisp and
+     * costs nothing per frame. */
     lv_obj_set_pos(s_canvas, g.spider_x - CANVAS_C, g.spider_y - CANVAS_C);
+    lv_obj_set_style_transform_pivot_x(s_canvas, CANVAS_C, 0);
+    lv_obj_set_style_transform_pivot_y(s_canvas, CANVAS_C, 0);
+    lv_obj_set_style_transform_scale_x(s_canvas, stage_scale_256(), 0);
+    lv_obj_set_style_transform_scale_y(s_canvas, stage_scale_256(), 0);
 
     /* Sick spiders are visibly dulled. */
     lv_obj_set_style_opa(s_canvas, g.sick ? LV_OPA_60 : LV_OPA_COVER, 0);

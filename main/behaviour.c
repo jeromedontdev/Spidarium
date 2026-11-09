@@ -120,15 +120,20 @@ static void steer_avoiding(float want, float dt_s)
  *
  * A uniform random angle can point straight at a wall, and the wall avoidance
  * then has to fight it every frame. Biasing the direction toward the interior
- * means the spider mostly walks across the tank rather than into its edges. */
+ * means the spider mostly walks across the tank rather than into its edges.
+ *
+ * The target is drawn from the whole playfield, not the middle half. Aiming at
+ * the middle half made every wander leg point at the centre, so the spider
+ * orbited and settled there instead of exploring. A small inset keeps the
+ * target off the very edge, where wall avoidance would immediately fight it. */
 static float wander_dir_inward(void)
 {
     float cx = (float)(g_play.left + g_play.right) * 0.5f;
     float cy = (float)(g_play.top + g_play.bottom) * 0.5f;
 
-    /* Aim at a random point in the middle half of the tank. */
-    float hw = (float)(g_play.right - g_play.left) * 0.25f;
-    float hh = (float)(g_play.bottom - g_play.top) * 0.25f;
+    /* 80% of the half-extent: reaches most of the tank, stays off the wall. */
+    float hw = (float)(g_play.right - g_play.left) * 0.40f;
+    float hh = (float)(g_play.bottom - g_play.top) * 0.40f;
     float tx = cx + ((float)(rand() % 2001) / 1000.0f - 1.0f) * hw;
     float ty = cy + ((float)(rand() % 2001) / 1000.0f - 1.0f) * hh;
 
@@ -946,12 +951,12 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
 
         /* Stuck detector. Sliding along a wall is stable, but a spider pressed
          * into a corner can still sit there while its heading points outward.
-         * If it has not actually moved for a while, aim it at the middle of the
-         * tank. This is the safety net for "the spider gets stuck in place". */
+         * If it has not actually moved for a while, pick a fresh random target
+         * rather than aiming at the centre - aiming at the centre made every
+         * recovery leg converge on the middle of the tank. */
         if (fabsf(s_px - s_stuck_x) < 1.5f && fabsf(s_py - s_stuck_y) < 1.5f) {
             if (now_ms - s_stuck_at > 1500u) {
-                s_wander_dir = atan2f((float)((g_play.top + g_play.bottom) / 2) - s_py,
-                                      (float)((g_play.left + g_play.right) / 2) - s_px);
+                s_wander_dir = wander_dir_inward();
                 s_has_target = false;
                 s_stuck_at = now_ms;
                 s_stuck_x = s_px;

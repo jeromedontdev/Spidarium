@@ -575,7 +575,15 @@ static void on_slider(lv_event_t *e)
     if (index >= s_count || !s_slider_cb[index]) return;
     ui_menu_slider_cb cb = s_slider_cb[index];
     uint8_t id = s_items[index].id;
-    cb(id, (uint8_t)lv_slider_get_value(s_sliders[row]));
+    uint8_t value = (uint8_t)lv_slider_get_value(s_sliders[row]);
+    cb(id, value);
+    /* The detail label is the percentage readout. Without this it kept the
+     * value the menu was opened with until the row was rebuilt. */
+    if (s_detail[row] && s_items[index].detail && s_items[index].detail[0]) {
+        char text[24];
+        snprintf(text, sizeof text, "%u%%", (unsigned)value);
+        lv_label_set_text(s_detail[row], text);
+    }
 }
 
 void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
