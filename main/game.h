@@ -177,13 +177,15 @@ typedef struct {
     uint8_t auto_feed;       /* timed wild prey / daily visitors; opt-in */
     uint8_t auto_hunt;       /* unattended stalk / crouch / pounce; opt-in */
     uint8_t volume;          /* speaker volume 0..100 */
+    uint32_t last_seen;      /* UTC epoch of the last tick; 0 = never */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 132, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 136, "save payload ABI changed");
 _Static_assert(offsetof(game_state_t, brightness) == 128, "brightness ABI changed");
 _Static_assert(offsetof(game_state_t, auto_feed) == 129, "auto_feed ABI changed");
 _Static_assert(offsetof(game_state_t, auto_hunt) == 130, "auto_hunt ABI changed");
 _Static_assert(offsetof(game_state_t, volume) == 131, "volume ABI changed");
+_Static_assert(offsetof(game_state_t, last_seen) == 132, "last_seen ABI changed");
 
 /* Live LVGL object handles. */
 typedef struct {

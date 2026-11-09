@@ -411,6 +411,6 @@
 #define SAVE_MAGIC             0x53504944u   /* "SPID" */
 /* v3 uses two former padding bytes for opt-in automation. v2 progress is
  * retained, with both flags cleared; unsupported v1 layouts remain rejected. */
-#define SAVE_VERSION           4
+#define SAVE_VERSION           5
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

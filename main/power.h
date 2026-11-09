@@ -8,6 +8,8 @@
 bool power_init(void);
 void power_tick(void);
 bool power_sleeping(void);
+/* Force the display into the sleep overlay (screen lock). */
+void power_sleep(void);
 bool power_writing(void);
 typedef struct {
     bool valid, present, usb, charging;

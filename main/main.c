@@ -28,6 +28,7 @@
 #include "save.h"
 #include "theme.h"
 #include "power.h"
+#include "buttons.h"
 
 static const char *TAG = "spidarium";
 
@@ -61,4 +62,5 @@ void app_main(void)
     ESP_LOGI(TAG, "Spidarium booting");
     game_init();
     if (!power_init()) ESP_LOGW(TAG, "battery monitoring unavailable");
+    if (!buttons_init()) ESP_LOGW(TAG, "physical buttons unavailable");
 }

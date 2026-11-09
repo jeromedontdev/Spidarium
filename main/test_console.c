@@ -35,6 +35,7 @@
 
 #include "cspider.h"
 #include "behaviour.h"
+#include "buttons.h"
 #include "game.h"
 #include "game_config.h"
 #include "meminfo.h"
@@ -107,6 +108,7 @@ static void cmd_help(void)
     printf("  wifi forget N        forget saved network N\n");
     printf("  wifi ota HTTPS_URL   manual firmware update\n");
     printf("  rtc                  read hardware RTC and system clock\n");
+    printf("  buttons [lock|unlock|toggle]  report or drive the side buttons\n");
     printf("  rtcset EPOCH          set RTC to UTC epoch (manual recovery)\n");
     printf("  gifttest             verify 18 effective bonuses and removal\n");
     printf("  uitest               test paging, keyboard, password, HUD, backgrounds\n");
@@ -203,6 +205,16 @@ static void cmd_wifi(char *arg)
     if (net_busy()) printf("ERR wifi timeout\n");
     else if (net_scan_error()[0]) printf("ERR wifi %s\n", net_scan_error());
     else printf("OK wifi %s\n", net_status_text());
+}
+
+/* Report the physical buttons and let a script drive them without pressing. */
+static void cmd_buttons(const char *arg)
+{
+    if (arg && !strcmp(arg, "lock")) { buttons_set_locked(true); }
+    else if (arg && !strcmp(arg, "unlock")) { buttons_set_locked(false); }
+    else if (arg && !strcmp(arg, "toggle")) { buttons_set_locked(!buttons_locked()); }
+    printf("BUTTONS locked=%d volume=%u\n", buttons_locked(), (unsigned)audio_volume());
+    printf("OK buttons\n");
 }
 
 static void cmd_rtc(void)
@@ -441,6 +453,7 @@ static void cmd_save_schema(void)
         {"auto_feed", "u8", offsetof(game_state_t, auto_feed), 0, 3},
         {"auto_hunt", "u8", offsetof(game_state_t, auto_hunt), 0, 3},
         {"volume", "u8", offsetof(game_state_t, volume), 0, 4},
+        {"last_seen", "u32", offsetof(game_state_t, last_seen), 0, 5},
 #undef SAVE_FIELD
     };
     enum { SCHEMA_CAP = 3328 };
@@ -745,6 +758,7 @@ static void run_line(char *line)
     else if (!strcmp(line, "radio"))    cmd_radio();
     else if (!strcmp(line, "wifi"))     cmd_wifi(arg);
     else if (!strcmp(line, "rtc"))      cmd_rtc();
+    else if (!strcmp(line, "buttons"))  cmd_buttons(arg);
     else if (!strcmp(line, "battery")) {
         char status[80];
         power_status(status, sizeof status);

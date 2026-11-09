@@ -132,6 +132,18 @@ void power_wake(void)
     else lv_display_trigger_activity(NULL);
 }
 
+/* Lock the screen from code (the top button). The overlay is created lazily by
+ * power_tick(), so this only records the request and shows it if it exists. */
+void power_sleep(void)
+{
+    s_sleeping = true;
+    if (s_sleep_screen) {
+        lv_obj_set_hidden(s_sleep_screen, false);
+        lv_obj_move_foreground(s_sleep_screen);
+    }
+    atomic_store(&s_requested, 0);
+}
+
 void power_tick(void)
 {
     if (!s_sleep_screen) {
@@ -277,7 +289,6 @@ static void apply_rotation(lv_obj_t *screen, uint8_t rotation)
         lv_obj_set_style_border_width(s_rotor, 0, 0);
         lv_obj_set_style_pad_all(s_rotor, 0, 0);
         lv_obj_set_scrollable(s_rotor, false);
-        lv_obj_clear_flag(s_rotor, LV_OBJ_FLAG_SCROLLABLE);
     }
     lv_obj_set_style_transform_pivot_x(s_rotor, lv_pct(50), 0);
     lv_obj_set_style_transform_pivot_y(s_rotor, lv_pct(50), 0);

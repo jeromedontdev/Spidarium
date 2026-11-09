@@ -9,7 +9,7 @@ export const toHex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, 
 
 export function validateSchema(schema) {
   if (!schema || !Number.isInteger(schema.magic) || schema.magic < 0 || schema.magic > 0xffffffff ||
-      ![2, 3, 4].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
+      ![0, 1, 2, 3, 4, 5].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
       !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 136) ||
       !Array.isArray(schema.fields)) throw new Error('Unsupported save schema');
   const names = new Set();
@@ -26,7 +26,7 @@ export function validateSchema(schema) {
 
 export function decodeSave(bytes, schema) {
   validateSchema(schema);
-  if (!(bytes instanceof Uint8Array) || bytes.length < 12 || bytes.length > 148) throw new Error('Save must be a raw 12-byte header and 120/136-byte payload');
+  if (!(bytes instanceof Uint8Array) || bytes.length < 12 || bytes.length > 152) throw new Error('Save must be a raw 12-byte header and 120/136-byte payload');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const header = { magic: view.getUint32(0, true), version: view.getUint16(4, true), reserved: view.getUint16(6, true), size: view.getUint32(8, true) };
   if (header.magic !== schema.magic) throw new Error('Save magic does not match Spidarium');
@@ -41,6 +41,7 @@ export function decodeSave(bytes, schema) {
       fields[field.name] = 0; continue;
     }
     if (field.name === 'volume' && header.version < 4) { fields.volume = 70; continue; }
+    if (field.name === 'last_seen' && header.version < 5) { fields.last_seen = 0; continue; }
     if (field.offset + width > header.size) { fields[field.name] = '(not present in older save)'; continue; }
     fields[field.name] = field.type === 'string'
       ? new TextDecoder().decode(bytes.subarray(offset, offset + width)).split('\0')[0]

@@ -199,6 +199,63 @@ void needs_update_stage(void)
 /* ------------------------------------------------------------------ */
 /* Tick                                                                */
 /* ------------------------------------------------------------------ */
+/* Offline catch-up                                                    */
+/* ------------------------------------------------------------------ */
+/* The device is not always running: the player switches it off, the screen
+ * sleeps, or the battery dies. Without this the pet came back exactly as it
+ * was left, which made hunger and hygiene meaningless over a real day.
+ *
+ * The RTC is the clock of record. At boot the saved `last_seen` epoch is
+ * compared with the RTC and the difference is applied as decay. The span is
+ * clamped so a long absence is a setback, not a wipe: the spider never dies,
+ * and coming back to four zeroed stats is indistinguishable from a reset. */
+#define OFFLINE_MAX_SECONDS (12u * 3600u)
+
+void needs_apply_offline(uint32_t seconds)
+{
+    if (seconds == 0) return;
+    if (seconds > OFFLINE_MAX_SECONDS) seconds = OFFLINE_MAX_SECONDS;
+
+    float minutes = (float)seconds / 60.0f;
+
+    /* Hunger and hygiene always decay. Energy recovers, because an absent
+     * spider is a resting spider - that is the one stat absence should help. */
+    hunger_decay(minutes);
+
+    s_hygiene_acc += HYGIENE_PER_MIN * minutes
+                   * gift_bonus()->hygiene_decay_mult
+                   * gift_bonus()->all_stats_decay_mult;
+    if (s_hygiene_acc >= 1.0f) {
+        int whole = (int)s_hygiene_acc;
+        s_hygiene_acc -= (float)whole;
+        g.hygiene = clamp100((int)g.hygiene - whole);
+    }
+
+    s_energy_acc -= ENERGY_REGEN_ASLEEP_PER_MIN * minutes
+                  * gift_bonus()->energy_regen_mult;
+    if (s_energy_acc <= -1.0f) {
+        int whole = (int)(-s_energy_acc);
+        s_energy_acc += (float)whole;
+        g.energy = clamp100((int)g.energy + whole);
+    }
+
+    /* Age advances with real time too, so a spider left alone still grows. */
+    uint32_t ticks = (uint32_t)((uint64_t)seconds * 1000u / AGE_TICK_MS);
+    if (ticks) {
+        g.age_ticks += ticks;
+        uint32_t days = needs_days_lived();
+        if (days != g.days_lived) {
+            g.days_lived = days;
+            needs_update_stage();
+        }
+    }
+
+    needs_recompute_mood();
+    ESP_LOGI(TAG, "offline %us: hunger=%u hygiene=%u energy=%u mood=%u",
+             (unsigned)seconds, g.hunger, g.hygiene, g.energy, g.mood);
+}
+
+/* ------------------------------------------------------------------ */
 void needs_tick(uint32_t now_ms, float dt_s)
 {
     (void)dt_s;

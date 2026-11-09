@@ -8,6 +8,7 @@ idf_component_register(
          "spider.c"
          "cspider.c"
          "behaviour.c"
+         "buttons.c"
          "prey.c"
          "needs.c"
          "gift.c"

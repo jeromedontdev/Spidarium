@@ -62,6 +62,9 @@ static void migrate_automation(game_state_t *state, uint16_t version)
     /* Volume arrived in v4. Older blobs leave the byte zeroed, which would be
      * silent, so fall back to the compiled default. */
     if (version < 4 || state->volume > 100) state->volume = AUDIO_VOLUME;
+    /* last_seen arrived in v5. A zeroed value means "never seen", which the
+     * offline catch-up treats as no elapsed time rather than a 1970 epoch. */
+    if (version < 5) state->last_seen = 0;
 }
 
 static void save_worker(void *arg)
@@ -134,6 +137,12 @@ bool save_request(const void *src, size_t size)
 {
     if (!src || !size || size > SAVE_MAX_PAYLOAD) {
         ESP_LOGE(TAG, "save request rejected: invalid payload");
+        return false;
+    }
+    /* A pending raw restore owns the blob until the reboot. Queueing the live
+     * state over it would silently discard the restore. */
+    if (atomic_load(&s_restore_pending)) {
+        ESP_LOGW(TAG, "save request skipped: raw restore pending reboot");
         return false;
     }
     save_job_t job = { .size = size };
@@ -300,6 +309,12 @@ bool save_load(void *dst, size_t size)
 bool save_save(const void *src, size_t size)
 {
     if (!src || size == 0 || size > SAVE_MAX_PAYLOAD) return false;
+    /* A pending raw restore owns the blob until the reboot. Writing the live
+     * state over it would silently discard the restore. */
+    if (atomic_load(&s_restore_pending)) {
+        ESP_LOGW(TAG, "save skipped: raw restore pending reboot");
+        return false;
+    }
     if (!ensure_nvs()) return false;
 
     uint8_t buf[sizeof(save_header_t) + SAVE_MAX_PAYLOAD];

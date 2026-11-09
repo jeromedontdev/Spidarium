@@ -13,6 +13,11 @@
 /* Advance needs one logic tick. */
 void needs_tick(uint32_t now_ms, float dt_s);
 
+/* Apply decay for a span of real time that passed while the device was off or
+ * asleep. `seconds` is clamped internally so a long absence cannot zero every
+ * stat at once. Called once at boot from the RTC delta. */
+void needs_apply_offline(uint32_t seconds);
+
 /* Care actions. Each applies its effect and awards XP. */
 void needs_feed(void);
 void needs_clean(void);

@@ -11,6 +11,7 @@
 #include "assets.h"
 #include "audio.h"
 #include "behaviour.h"
+#include "buttons.h"
 #include "cspider.h"
 #include "game_config.h"
 #include "gift.h"
@@ -21,6 +22,7 @@
 #include "needs.h"
 #include "net.h"
 #include "prey.h"
+#include "rtc.h"
 #include "save.h"
 #include "species.h"
 #include "sd.h"
@@ -188,6 +190,17 @@ static void state_load(void)
     state_defaults();
     if (!save_load(&g, sizeof g)) ESP_LOGI(TAG, "starting from defaults");
     state_finish_load();
+
+    /* Catch up on the time the device was off. The RTC is the clock of record;
+     * without it there is no trustworthy elapsed time, so nothing is applied
+     * rather than inventing a delta from a 1970 epoch. */
+    time_t now = 0;
+    if (pet_rtc_read(&now) == ESP_OK && now > 0) {
+        if (g.last_seen > 0 && (uint32_t)now > g.last_seen) {
+            needs_apply_offline((uint32_t)now - g.last_seen);
+        }
+        g.last_seen = (uint32_t)now;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1442,11 +1455,19 @@ void game_on_terrarium_tap(lv_event_t *e)
 void game_tick_logic(lv_timer_t *timer)
 {
     (void)timer;
-    if (s_paused || save_restore_pending() || power_sleeping() || net_busy() || ui_menu_visible() || ui_hud_chrome_visible() ||
-        lv_screen_active() != ui.screen) {
+    /* Only a genuine pause stops the clock. Menus, the care HUD, a locked
+     * screen and the first-run setup screen used to return here, which froze
+     * hunger and hygiene whenever the player left the device on a menu, with
+     * the screen off, or before naming the spider. Needs must keep advancing;
+     * only the parts that need a visible, interactive tank are skipped below. */
+    if (s_paused || save_restore_pending() || net_busy()) {
         s_last_logic = lv_tick_get();
         return;
     }
+
+    bool screen_off = power_sleeping() || buttons_locked();
+    bool tank_hidden = screen_off || ui_menu_visible() || ui_hud_chrome_visible() ||
+                       lv_screen_active() != ui.screen;
 
     uint32_t now = lv_tick_get();
     float dt = (float)(now - s_last_logic) / 1000.0f;
@@ -1478,11 +1499,23 @@ void game_tick_logic(lv_timer_t *timer)
     /* The mind decides what the spider WANTS; behaviour decides what it can
      * actually do. Keeping them separate means the intent layer can never
      * break the safety guarantees in the FSM. */
-    mind_tick(now);
+    if (!tank_hidden) mind_tick(now);
+
+    /* Stamp the wall clock so a power-off or a dead battery is measurable at
+     * the next boot. Cheap: one RTC read per minute, not per tick. */
+    static uint32_t next_stamp;
+    if ((int32_t)(now - next_stamp) >= 0) {
+        next_stamp = now + 60000u;
+        time_t utc = 0;
+        if (pet_rtc_read(&utc) == ESP_OK && utc > 0) g.last_seen = (uint32_t)utc;
+    }
 
     needs_tick(now, dt);
-    behaviour_tick(now, dt);
-    prey_tick(now, dt);
+    buttons_tick(now);
+    if (!tank_hidden) {
+        behaviour_tick(now, dt);
+        prey_tick(now, dt);
+    }
 
     /* A bonded spider contributes Silk, not free items that bypass the shop. */
     static uint32_t next_gift;
@@ -1491,7 +1524,6 @@ void game_tick_logic(lv_timer_t *timer)
             next_gift = now + 120000u + (uint32_t)(rand() % 120000);
         } else if (now >= next_gift) {
             next_gift = now + 120000u + (uint32_t)(rand() % 120000);
-
             game_add_silk(2);
             audio_play(SFX_TAP);
             ESP_LOGI(TAG, "bond reward: +2 Silk");
