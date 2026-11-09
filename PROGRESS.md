@@ -5852,3 +5852,49 @@ physically pressing each button. If one still misbehaves, the
 The lock and the slider refresh were verified through the console command and
 the state readout, not by pressing the physical buttons. The `button N (gpio X)
 down` log line identifies which pin fires if a button still misbehaves.
+
+---
+
+## Round 55 - Reliable screen lock, slider follows the buttons
+
+**Status:** COMPLETE - built, flashed, released as v1.1.7 and published.
+
+### Decisions made
+
+- **`power_sleep()` was fighting `power_tick()`.** It set `s_sleeping = true`
+  itself, so the next tick compared the computed state against `s_sleeping`,
+  found them equal, and skipped the branch that shows the overlay. The screen
+  therefore often did not sleep. `power_sleep()` now only sets the sticky
+  `s_locked` flag; `power_tick()` owns `s_sleeping` and the overlay.
+- **The long-press threshold was too long.** At 1200 ms an ordinary deliberate
+  press was silently treated as a hold and produced no action, which read as
+  "unreliable". It is now 700 ms, still long enough that a real hold on BOOT or
+  PWR reaches the hardware role.
+- **`ui_menu_refresh()` had lost its body.** The function was declared, exported
+  and called from `volume_step()`, but the `refresh_page()` call had been lost
+  during an earlier line-index edit, so the volume buttons changed the audio
+  level without moving the slider. Restored.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **passed=47 failed=0**.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Browser suite: **73/73 pass**.
+- Lock verified on hardware in one session: `locked=0` -> `buttons lock` ->
+  `locked=1`, still `locked=1` after 3 s, then `locked=0` after `buttons unlock`.
+- `tools/package_release.py --version 1.1.7`:
+  `PACKAGED spidarium-v1.1.7.zip: 5 verified images; NVS excluded`.
+- Tag `v1.1.7` pushed, [release published](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.7),
+  [Pages run 42548283388](https://github.com/jeromedontdev/Spidarium/actions/runs/42548283388)
+  `conclusion: success`.
+
+### Honest boundaries
+
+Verified through the console command and the state readout, not by pressing the
+physical buttons. The `button N (gpio X) down` / `short press (Nms)` log lines
+identify which pin fired and how long it was held, which is the fastest way to
+diagnose a remaining mis-map or a press that is still being read as a hold.
