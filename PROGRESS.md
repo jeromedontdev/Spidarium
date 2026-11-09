@@ -5758,3 +5758,53 @@ Button *feel* (debounce, repeat rate) and the physical pin-to-action mapping
 were verified through the console command and the GPIO log, not by pressing the
 buttons. If a button still does the wrong thing, the `button N (gpio X) pressed`
 log line identifies which pin fired.
+
+---
+
+## Round 53 - Correct physical button pin map
+
+**Status:** COMPLETE - built, flashed, released as v1.1.5 and published.
+
+### Decisions made
+
+- **The pin map was wrong twice.** v1.1.3 and v1.1.4 guessed. The vendor
+  documents them as left GPIO0 (BOOT), middle GPIO16 (PWR), right GPIO18 (user,
+  pulled up to VCC3V3 via R18 10K, shorted to GND when pressed). `buttons.c` now
+  uses exactly that, with the pins named for their physical position.
+- **Long presses are ignored on purpose.** A press held past `BTN_LONG_MS`
+  (1.2 s) produces no app action, so holding BOOT still enters the ROM
+  downloader and holding PWR still cuts power. The pins are only ever
+  configured as inputs; nothing drives them low. This is the "short presses
+  only" requirement.
+- **Each pin is configured individually.** GPIO16 is not a normal GPIO on every
+  ESP32-S3 revision (it is the PSRAM/SPIHD pin on octal-PSRAM parts), so a
+  failed `gpio_config()` logs and disables that one button instead of aborting
+  the whole module.
+- **Every press is logged** as `button N (gpio X) down`, then either
+  `short press (Nms)` or `long press: hardware role`. A mis-map is now visible
+  in the serial log instead of silent.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `flash.ps1 COM7` exit 0.
+- Hardware log: `buttons ready: left=0 mid=16 right=18`, and
+  `button 1 (gpio 16) long press: hardware role` at boot - GPIO16 is held by the
+  power circuit, and the long-press path correctly declines to act on it.
+- `run_tests.py COM7`: **passed=47 failed=0**.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Console round-trip in one session: `BUTTONS locked=0 volume=10` ->
+  `set volume 40` -> `volume=40` -> `buttons lock` -> `locked=1`.
+- `tools/package_release.py --version 1.1.5`:
+  `PACKAGED spidarium-v1.1.5.zip: 5 verified images; NVS excluded`.
+- Tag `v1.1.5` pushed, [release published](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.5),
+  [Pages run 42545180100](https://github.com/jeromedontdev/Spidarium/actions/runs/42545180100)
+  `conclusion: success`.
+
+### Honest boundaries
+
+The mapping is verified from the vendor documentation and the GPIO log, not by
+physically pressing each button. If one still misbehaves, the
+`button N (gpio X) down` line identifies the pin that actually fired.
