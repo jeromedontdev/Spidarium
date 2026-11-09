@@ -68,6 +68,11 @@ void ui_menu_set_item_checkbox(uint8_t item);
  * 0..100 value. The row's own pick callback is not used. */
 typedef void (*ui_menu_slider_cb)(uint8_t id, uint8_t value);
 void ui_menu_set_item_slider(uint8_t item, uint8_t value, ui_menu_slider_cb cb);
+
+/* Rebuild the current page from the item table, so a caller that changed a
+ * value behind the menu's back (the physical volume buttons) can refresh the
+ * slider and its readout without closing and reopening the menu. */
+void ui_menu_refresh(void);
 int ui_menu_page(void);
 void ui_menu_set_page(int page);
 void ui_menu_capture_hide(bool hidden);

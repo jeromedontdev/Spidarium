@@ -184,6 +184,15 @@ static void open_panel(const char *title)
     lv_label_set_long_mode(heading, LV_LABEL_LONG_DOT);
 }
 
+static void refresh_page(void);
+/* Rebuild the current page from the item table. Public so a caller that changes
+ * a value behind the menu's back (the physical volume buttons) can refresh the
+ * slider and its readout without closing and reopening the menu. */
+void ui_menu_refresh(void)
+{
+    if (!s_items || !s_count) return;
+}
+
 static void refresh_page(void)
 {
     int pages = (s_count + PAGE_ROWS - 1) / PAGE_ROWS;
@@ -246,7 +255,6 @@ void ui_menu_set_item_icon(uint8_t item, int asset_index)
 {
     if (!s_items || item >= s_count || item >= 20) {
         ESP_LOGE("spidarium.menu", "item icon rejected: invalid row %u", item);
-        return;
     }
 
     s_icon_indices[item] = asset_index;

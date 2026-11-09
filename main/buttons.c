@@ -28,6 +28,7 @@
 #include "game.h"
 #include "game_config.h"
 #include "power.h"
+#include "ui_menu.h"
 
 #include "driver/gpio.h"
 #include "esp_log.h"
@@ -126,6 +127,9 @@ static void volume_step(int delta)
     if (volume == (int)audio_volume()) return;
     g.volume = (uint8_t)volume;
     audio_set_volume(g.volume);
+    /* If the Sound menu is open, its slider and percentage must follow the
+     * hardware buttons. This runs on the LVGL task, so it is safe. */
+    ui_menu_refresh();
     ESP_LOGI(TAG, "volume=%d", volume);
 }
 

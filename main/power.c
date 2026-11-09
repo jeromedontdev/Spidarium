@@ -21,6 +21,9 @@ static atomic_int s_requested = 50, s_applied = -1;
 static atomic_bool s_writing;
 static lv_obj_t *s_sleep_screen;
 static bool s_sleeping, s_low_saved;
+/* Set by power_sleep() (the middle button), cleared by power_wake(). The idle
+ * timer cannot clear it, so a manual lock survives the next tick. */
+static bool s_locked;
 
 /* Snapshot packs voltage, percentage, presence, USB and charge flags together. */
 static esp_err_t read_reg(uint8_t reg, uint8_t *data, size_t size)
@@ -122,6 +125,7 @@ static void wake(lv_event_t *event)
     (void)event;
     lv_display_trigger_activity(NULL);
     s_sleeping = false;
+    s_locked = false;
     lv_obj_set_hidden(s_sleep_screen, true);
     atomic_store(&s_requested, g.brightness);
 }
@@ -136,6 +140,7 @@ void power_wake(void)
  * power_tick(), so this only records the request and shows it if it exists. */
 void power_sleep(void)
 {
+    s_locked = true;
     s_sleeping = true;
     if (s_sleep_screen) {
         lv_obj_set_hidden(s_sleep_screen, false);
@@ -160,7 +165,9 @@ void power_tick(void)
     uint32_t idle = lv_display_get_inactive_time(NULL);
     int target = desired_brightness(sample, idle, g.brightness);
     atomic_store(&s_requested, target);
-    bool asleep = idle >= 300000 && !net_busy() && lv_screen_active() == ui.screen;
+    /* A manual lock (the middle button) is sticky: the idle timer must not
+     * clear it on the next tick. Only a touch or power_wake() releases it. */
+    bool asleep = s_locked || (idle >= 300000 && !net_busy() && lv_screen_active() == ui.screen);
     if (asleep != s_sleeping) {
         s_sleeping = asleep;
         lv_obj_set_hidden(s_sleep_screen, !asleep);
