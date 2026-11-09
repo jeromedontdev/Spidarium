@@ -44,8 +44,9 @@ static const char *TAG = "spidarium.buttons";
 /* Debounce: a level must be stable for this long before it counts. */
 #define BTN_DEBOUNCE_MS 30u
 /* A press shorter than this is a short press. Anything longer is left to the
- * hardware role and produces no app action. */
-#define BTN_LONG_MS     1200u
+ * hardware role and produces no app action. Kept well under a second so a
+ * normal tap is never mistaken for a hold. */
+#define BTN_LONG_MS     700u
 /* Repeat interval while a volume button is held, after the long-press window. */
 #define BTN_REPEAT_MS   140u
 /* Volume step per press. */

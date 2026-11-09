@@ -191,6 +191,7 @@ static void refresh_page(void);
 void ui_menu_refresh(void)
 {
     if (!s_items || !s_count) return;
+    refresh_page();
 }
 
 static void refresh_page(void)

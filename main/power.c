@@ -141,7 +141,9 @@ void power_wake(void)
 void power_sleep(void)
 {
     s_locked = true;
-    s_sleeping = true;
+    /* Do not set s_sleeping here: power_tick() compares it against the computed
+     * state to decide whether to show the overlay. Setting it early made the
+     * comparison false, so the overlay never appeared. */
     if (s_sleep_screen) {
         lv_obj_set_hidden(s_sleep_screen, false);
         lv_obj_move_foreground(s_sleep_screen);
