@@ -2,12 +2,28 @@
 
 ## Physical buttons
 
-- **Left** steps the volume down, **right** steps it up, both repeating while
-  held. The pin map was wrong in v1.1.3: the left button was wired to the
-  volume-up action and the middle button to nothing useful.
-- **Middle** locks and unlocks the screen.
-- Every press is logged (`button N (gpio X) pressed`) so a mis-mapped pin is
-  visible in the serial log instead of silent.
+The board-edge buttons now work, using the vendor's documented pin map:
+
+| Button | GPIO | Short press | Long press |
+|---|---|---|---|
+| Left | 0 (BOOT) | volume down | ROM downloader (unchanged) |
+| Middle | 16 (PWR) | lock / unlock | power off (unchanged) |
+| Right | 18 (user) | volume up | — |
+
+The BSP declares `BSP_CAPS_BUTTONS 0` and never configures them, so
+`main/buttons.c` owns the GPIO setup. They are polled from the 20 Hz logic tick
+rather than an ISR, because the actions they trigger (the LVGL sleep overlay and
+the codec volume write) must not run in interrupt context.
+
+**Long presses are deliberately ignored.** A press held past 1.2 s produces no
+app action, so holding BOOT still enters the ROM downloader and holding PWR
+still cuts power. The pins are only ever configured as inputs; nothing drives
+them low.
+
+Every press is logged (`button N (gpio X) down`, then `short press (Nms)` or
+`long press: hardware role`), so a mis-mapped pin is visible in the serial log
+instead of silent. A `buttons [lock|unlock|toggle]` console command reports and
+drives the lock state for scripted tests.
 
 ## Slider readouts
 
