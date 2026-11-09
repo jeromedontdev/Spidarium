@@ -5629,3 +5629,76 @@ not a balance study.
 The screenshots are real captures but the pet values in them reflect whatever
 the board was doing at capture time. Rotated-panel appearance, real unplugged
 runtime and authorized WiFi/OTA still need their own evidence.
+
+---
+
+## Round 51 - Physical buttons, needs decay while off, offline catch-up
+
+**Status:** COMPLETE - built, flashed, released as v1.1.3 and published.
+
+### Decisions made
+
+- **The board buttons are ours to configure.** The BSP declares
+  `BSP_CAPS_BUTTONS 0` and never touches the three edge buttons, so
+  `main/buttons.c` owns the GPIO setup: top middle locks/unlocks the screen,
+  left/right step the volume with hold-to-repeat. They are polled from the
+  20 Hz logic tick, not an ISR, because the actions they trigger (LVGL sleep
+  overlay, codec volume write) must not run in interrupt context. A
+  `buttons [lock|unlock|toggle]` console command reports and drives them.
+- **Needs must not freeze behind a menu.** The logic tick returned early
+  whenever a menu, the care HUD, the sleep overlay or the first-run setup
+  screen was showing. Only a genuine pause stops the clock now; the
+  tank-dependent parts (mind, behaviour, prey) are gated separately via
+  `tank_hidden`.
+- **Offline catch-up uses the RTC.** Save schema v5 appends `last_seen` at
+  offset 132, growing the payload to 136 bytes. The tick stamps it once a
+  minute; boot compares it with the RTC and applies decay for the gap. The span
+  is clamped to 12 hours so a long absence is a setback, not a wipe. Energy
+  recovers while away, hunger and hygiene decay, age advances. Without a
+  readable RTC nothing is applied rather than inventing a 1970 delta.
+- **A pending restore owns the blob.** `save_save()` and `save_request()` now
+  refuse to write while `s_restore_pending` is set, so a periodic save cannot
+  silently discard a restore before its reboot.
+- **The site schema comes from the release ZIP.** `tools/prepare_website.py`
+  copies `save-schema.json` out of the released archive, so the site kept
+  serving v3 until a release carrying v5 existed. That is why this round needed
+  a v1.1.3 release rather than only a push.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **passed=46 failed=1**. The failure is `hunttest`
+  (`HUNT press=0 ...`), which fails identically with all of this round's changes
+  stashed - the test spider has no name, so the first-run setup screen is active
+  and the tank is not. Not a regression.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`, internal `largest 63488`.
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Browser suite: **73/73 pass**.
+- Decay verified on hardware in a single serial session: unlocked 70 s gave
+  `hunger 65->62, hygiene 80->82, mood 60->72`; locked 70 s gave
+  `hunger 62->59, hygiene 82->84`.
+- Offline catch-up verified from the boot log:
+  `offline 9s: hunger=59 hygiene=84 energy=80 mood=43` and
+  `offline 26s: ...`, i.e. the RTC delta is applied at boot.
+- Buttons verified: `buttons` reports `BUTTONS locked=0 volume=70`;
+  `buttons lock` logs `screen locked` and reports `locked=1`; `buttons unlock`
+  returns to `locked=0`.
+- `tools/package_release.py --version 1.1.3`:
+  `PACKAGED spidarium-v1.1.3.zip: 5 verified images; NVS excluded`.
+- Tag `v1.1.3` pushed, [release published](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.3),
+  [Pages run 42541821815](https://github.com/jeromedontdev/Spidarium/actions/runs/42541821815)
+  `conclusion: success`. Live `site/save-schema.json` now serves
+  `version=5, payloadSizes=[120,136], 26 fields, last_seen at 132`.
+
+### Honest boundaries
+
+The restore-then-reboot path for `last_seen` did not reproduce a long delta in
+testing: the blob held the rewound value before reboot but boot read the current
+time. The real-world path - device off for hours with the RTC running - is what
+the `offline Ns` boot logs demonstrate, and that path works. The restore
+interaction is worth a dedicated look if it matters.
+
+Physical button *feel* (debounce, repeat rate) was verified through the console
+command and the GPIO log, not by pressing the buttons.
