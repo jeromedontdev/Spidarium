@@ -5702,3 +5702,59 @@ interaction is worth a dedicated look if it matters.
 
 Physical button *feel* (debounce, repeat rate) was verified through the console
 command and the GPIO log, not by pressing the buttons.
+
+---
+
+## Round 52 - Button pin map, slider readouts, wandering, stage size, browser polish
+
+**Status:** COMPLETE - built, flashed, released as v1.1.4 and published.
+
+### Decisions made
+
+- **The button pin map was wrong.** v1.1.3 wired the left button to volume-up
+  and the middle button to nothing useful. The pins are now named for their
+  physical position (`BTN_LEFT_GPIO 18`, `BTN_MID_GPIO 0`, `BTN_RIGHT_GPIO 17`)
+  and every press logs `button N (gpio X) pressed`, so a mis-map shows up in the
+  serial log instead of being silent.
+- **Slider rows update their own readout.** `on_slider()` called the callback
+  but never touched the detail label, so the percentage only changed when the
+  row was rebuilt. It now rewrites the label on every drag event.
+- **Wandering explores the tank.** `wander_dir_inward()` drew its target from
+  the middle half of the playfield, so every leg pointed at the centre and the
+  spider orbited and settled there. It now draws from 80% of the half-extent,
+  and the stuck-recovery path picks a fresh random target instead of aiming at
+  the middle. The browser `inward()` matches.
+- **Life stages change size.** `stage_scale_256()` scales the spider canvas
+  75/87.5/100% for spiderling/juvenile/adult via LVGL transform scale; the
+  browser scales the `drawImage` rect the same way.
+- **Browser splat.** A catch now bursts a short ring of the species colour,
+  fading over 700 ms, using a per-species `SPLAT_COLOURS` table.
+- **"Pocket Tank" is credit only.** Removed from `serial_console.md`; the README
+  credit now says "inspired by" rather than "the architecture follows".
+  `PROGRESS.md` keeps its historical mentions because it is a log.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **passed=47 failed=0**.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Browser suite: **73/73 pass**.
+- Button log on hardware: `buttons ready: mid=0 left=18 right=17`.
+- Volume round-trip in one session: `BUTTONS locked=0 volume=100` ->
+  `set volume 40` -> `BUTTONS locked=0 volume=40`.
+- `tools/package_release.py --version 1.1.4`:
+  `PACKAGED spidarium-v1.1.4.zip: 5 verified images; NVS excluded`.
+- Tag `v1.1.4` pushed, [release published](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.4),
+  [Pages run 42543445378](https://github.com/jeromedontdev/Spidarium/actions/runs/42543445378)
+  `conclusion: success`. Live `site/lib/device-ui.js` serves `SPLAT_COLOURS` and
+  `stageScale`.
+
+### Honest boundaries
+
+Button *feel* (debounce, repeat rate) and the physical pin-to-action mapping
+were verified through the console command and the GPIO log, not by pressing the
+buttons. If a button still does the wrong thing, the `button N (gpio X) pressed`
+log line identifies which pin fired.
