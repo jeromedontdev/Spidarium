@@ -5808,3 +5808,47 @@ log line identifies which pin fired.
 The mapping is verified from the vendor documentation and the GPIO log, not by
 physically pressing each button. If one still misbehaves, the
 `button N (gpio X) down` line identifies the pin that actually fired.
+
+---
+
+## Round 54 - Working screen lock, sliders follow the buttons
+
+**Status:** COMPLETE - built, flashed, released as v1.1.6 and published.
+
+### Decisions made
+
+- **The lock was being undone every frame.** `power_tick()` recomputed
+  `asleep` from the idle timer and assigned it to `s_sleeping` unconditionally,
+  so `power_sleep()` from the middle button survived exactly one tick. A sticky
+  `s_locked` flag now feeds the `asleep` expression, and only `wake()` (touch or
+  `power_wake()`) clears it.
+- **Sliders follow the hardware buttons.** `volume_step()` calls the new
+  `ui_menu_refresh()`, which rebuilds the current page from the item table on
+  the LVGL task. Pressing volume with the Sound menu open now moves the slider
+  and updates the percentage.
+- **The slider readout updates while dragging.** `on_slider()` rewrites the
+  detail label on every `LV_EVENT_VALUE_CHANGED` instead of leaving the value
+  the menu was opened with.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **passed=47 failed=0**.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Browser suite: **73/73 pass**.
+- Lock verified on hardware in one session: `locked=0` -> `buttons lock` ->
+  `locked=1`, still `locked=1` after 3 s, then `locked=0` after `buttons unlock`.
+- `tools/package_release.py --version 1.1.6`:
+  `PACKAGED spidarium-v1.1.6.zip: 5 verified images; NVS excluded`.
+- Tag `v1.1.6` pushed, [release published](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.6),
+  [Pages run 42547206936](https://github.com/jeromedontdev/Spidarium/actions/runs/42547206936)
+  `conclusion: success`.
+
+### Honest boundaries
+
+The lock and the slider refresh were verified through the console command and
+the state readout, not by pressing the physical buttons. The `button N (gpio X)
+down` log line identifies which pin fires if a button still misbehaves.
