@@ -6261,3 +6261,62 @@ correctly versioned; no browser-to-device flash was performed. The release
 archive and `site/dist` are gitignored by design -- they are uploaded to the
 GitHub release, and the Pages workflow rebuilds `dist` from the published
 archive.
+
+## Round 60 - The brand mark is real vector art
+
+**Status:** COMPLETE - built, tested, deployed and verified on the live site.
+
+### Decisions made
+
+- **The mark was a text glyph, not an icon.** The header, footer and marquee
+  used U+2733 EIGHT SPOKED ASTERISK. A text glyph renders as whatever emoji font
+  the platform picks, so it appeared as a coloured emoji on mobile and a thin
+  asterisk on desktop -- never the intended mark. It is now real SVG.
+- **`site/icon.svg` is a self-contained 32x32 spider**: a rounded dark tile, lime
+  legs, abdomen, cephalothorax and two dark eyes. No raster and no external
+  reference, so it scales cleanly and doubles as the favicon.
+- **The header and footer marks are inline SVG using `currentColor`**, so they
+  inherit the existing lime and cost no extra request. The marquee separators are
+  a small SVG diamond rather than the same glyph.
+- **The favicon is the SVG**, with the old PNG kept as an `alternate icon` and an
+  `apple-touch-icon`, because iOS does not accept SVG favicons.
+- **`.brand-mark` is sized by `width`/`height` now, not `font-size`.** Two
+  responsive overrides (footer 28px, mobile 27px) were still setting
+  `font-size`, which does nothing to an SVG; both were converted. This was found
+  by the new test, not by eye.
+- **`build.mjs` copies `icon.svg` into `dist`**, and `serve.mjs` maps `.svg` to
+  `image/svg+xml` so the local dev server does not serve it as
+  `application/octet-stream`.
+- **A website-only change should not need a firmware release.** Dispatching the
+  Pages workflow from a branch resolved `RELEASE_TAG` to the branch name, which
+  is not a release, so the firmware fetch failed. The workflow now falls back to
+  the latest published release when the ref is not itself a release tag.
+
+### Evidence
+
+- Browser suite **78/78** (was 77). The new test asserts no emoji glyph remains,
+  that both brand marks and all three marquee separators are SVG, that every
+  `.brand-mark` rule sizes by `width`/`height` with no `font-size` left, and that
+  the icon is a self-contained SVG with a `viewBox`.
+- **The icon rasterizes to a legible spider** at 128, 48, 32 and 16 px. A
+  128x128 render contained 4405 lime pixels against 10611 dark background
+  pixels, so the spider reads clearly rather than dissolving into the tile.
+- **Local verification**: zero failed requests, favicon served as
+  `image/svg+xml`, mark 32x32 on desktop and 27x27 at a 390px viewport, footer
+  28x28, no emoji anywhere in the document.
+- **Deployed** by dispatching the workflow from `main`; run `42828996655` build
+  and deploy both succeeded, and the log confirms the fallback:
+  `No release named 'main'; using latest published release 'v1.1.8'`.
+- **The live site was verified in a browser** at
+  `https://jeromedontdev.github.io/Spidarium/site/` with zero failed requests:
+  `icon.svg` served as `image/svg+xml`, the mark is an `svg` element at 32x32
+  desktop and 27x27 mobile in `rgb(201, 232, 134)`, three marquee marks, and no
+  emoji in the document. The firmware manifest stayed at `1.1.8`.
+
+### Honest boundaries
+
+The icon was verified by rasterizing it to a canvas and inspecting the pixels,
+and by screenshotting the header at desktop and mobile widths -- not on a
+physical iOS or Android device, where the `apple-touch-icon` path in particular
+is untested. The favicon change is visible only in a browser tab, which the
+screenshots do not capture.
