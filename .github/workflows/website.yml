@@ -30,7 +30,10 @@ jobs:
       - name: Fetch official firmware, never local saves
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || 'v1.1.1' }}
+          # A release event names its own tag. A manual dispatch runs against a
+          # ref, so use that ref's name -- a hardcoded fallback silently shipped
+          # an old firmware manifest whenever the workflow was dispatched.
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "spidarium-$RELEASE_TAG.zip" --dir "$RUNNER_TEMP"
           python tools/prepare_website.py "$RUNNER_TEMP/spidarium-$RELEASE_TAG.zip"
