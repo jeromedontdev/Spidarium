@@ -6320,3 +6320,86 @@ and by screenshotting the header at desktop and mobile widths -- not on a
 physical iOS or Android device, where the `apple-touch-icon` path in particular
 is untested. The favicon change is visible only in a browser tab, which the
 screenshots do not capture.
+## Round 61 - A reason to come back tomorrow
+
+**Status:** COMPLETE - built, flashed, tested on COM7 and in the browser.
+
+### Decisions made
+
+**The daily loop runs on the in-game day counter, not the RTC.** The RTC is
+optional: no backup battery, and no sync without WiFi. A wall-clock daily would
+either never fire or fire on a bogus 1970 epoch. `needs_days_lived()` already
+advances with `AGE_TICK_MS`, and `GAME_TIME_SCALE` compresses that for
+verification builds, so the whole loop is testable in minutes instead of days.
+
+**The task rotates from the day number, not from a stored index.** `day %
+DAILY_TASK_COUNT` is deterministic, so a reload cannot reroll the task into an
+easier one, and no extra save field is needed to remember which task is on offer.
+
+**Progress is measured against a baseline snapshotted on the day rollover.** The
+first attempt took the snapshot lazily on first read, which was wrong: a player
+who cleaned twice and *then* opened the menu had the baseline recorded as 2, so
+progress read 0/2 forever. The snapshot now happens in the rollover branch of
+`needs_tick()`, and a once-per-tick call covers migrated and restored saves that
+have no baseline at all.
+
+**`DAILY_NEVER` is the "never claimed" sentinel.** The first attempt used 0, but
+0 is a real in-game day, so a brand-new pet could never claim its first check-in
+(`daily_day == today` was true from boot). `needs_daily_available()` also treats
+a zero streak as unclaimed, which makes a save whose `daily_day` happens to equal
+today self-healing rather than permanently locked out.
+
+**The save payload grew and the version moved 5 to 6.** `game_state_t` was
+exactly 136 bytes with no padding room, so five new fields took it to 152. A v5
+blob is a valid prefix of the v6 struct, so `save_load()` and `save_raw_valid()`
+accept a 136-byte v5 payload and default the new fields instead of discarding the
+pet. `save_format_test()` now asserts both the accept and the reject case, plus
+that the migration defaults the daily fields rather than inheriting garbage.
+
+**Treats exist because gifts are one-time.** Once all eighteen gifts were owned,
+Silk had nothing left to buy and the currency stopped mattering. Treats cost Silk
+every time, so the sink is recurring.
+
+**The HUD test no longer depends on the ambient Silk balance.** `ui_hud_test()`
+calls `game_gift_chosen(0)`, which the picker refuses when the player cannot
+afford gift 0. Spending Silk in the treats shop made `uitest` fail with `hud=0`.
+The test now tops the balance up to the cost and restores it afterwards.
+
+### Evidence
+
+- Build exit 0, zero `main/` warnings. Flash exit 0.
+- Device suite **47/47** (`SUMMARY passed=47 failed=0`).
+- Soak: `VERDICT: PASS - clean boot window`, `FAULTS/ERRORS: 0`,
+  `largest=65536` (floor 51,200).
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Streak arithmetic on hardware: day 3 -> `xp=6 streak=1`, day 4 -> `xp=8
+  streak=2`, day 5 -> `xp=10 streak=3`, day 6 -> `xp=12 streak=4`; skipping to
+  day 9 -> `xp=6 streak=1`.
+- Double claim refused: `ERR daily already claimed for day 0`.
+- Task flow: `progress=0/2` -> `1/2` -> `2/2 ready=1` -> `daily task` pays
+  `xp=12 silk=8` -> `task_done=1 ready=0`; a second claim is refused.
+- Treats: `treat 0` -> `silk=58 hunger=45`; `treat 1` -> `mood=84`; `treat 2` ->
+  `energy=100`; at `silk=0`, `ERR treat 2 refused: silk=0 cost=10`.
+- v5 migration: crafted a 148-byte v5 blob from a live v6 export, restored it
+  (`OK save restore; reboot required`), rebooted, and confirmed the pet survived
+  intact (level 3, xp 121, all stats) with `daily_day=DAILY_NEVER`.
+- Menus verified by screen capture on hardware: main shows "Daily / Check In
+  Ready" and "Treats / Spend Silk"; Daily shows "Check In / Day 1 / +6 XP +4
+  Silk" and "Clean 2 Times / Done / +12 XP +8 Silk"; Treats shows all three with
+  costs and "Need More" at zero Silk.
+- Browser suite **84/84** (was 78). Six new tests: streak arithmetic and cap,
+  reset-on-skip, deterministic rotation, rollover-not-lazy baseline, treat costs
+  and refusals, v5 restore.
+- Browser UI verified live: Daily claims and disables ("Claimed / Streak 1"),
+  Treats deducts Silk (20 -> 24 after the check-in, 24 -> 18 after a Juicy Fly).
+
+### Honest boundaries
+
+The daily loop was exercised by forcing the in-game day through the serial
+console (`daily day N`), not by waiting real days. The streak arithmetic, the
+cap, the reset-on-skip behaviour and the task rotation are covered by tests, but
+a multi-day real-time soak has not been performed. The `hunttest` failure seen
+mid-session was transient -- it requires a free poop slot -- and passed on the
+final run; it also fails identically on the unmodified baseline when the tank is
+full, so it is not caused by this work.

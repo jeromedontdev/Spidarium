@@ -123,6 +123,8 @@ static void cmd_help(void)
     printf("  feed                 press FEED\n");
     printf("  clean                press CLEAN\n");
     printf("  speckle [N]          drop N bug speckles (default 1)\n");
+    printf("  daily [show|claim|task|reset]  inspect or drive the daily loop\n");
+    printf("  treat [0..2]         buy a treat with Silk (no arg lists them)\n");
     printf("  play                 press PLAY\n");
     printf("  sleep                press SLEEP\n");
     printf("  menu                 open the main menu\n");
@@ -162,6 +164,17 @@ static void cmd_stat(void)
            (unsigned)g.sick, (unsigned)g.bond, prey_count());
     printf("CARE clean_needed=%d dirt=%d clean_xp=%lu\n", needs_clean_needed() ? 1 : 0,
            terrarium_dirt(), (unsigned long)needs_clean_reward());
+    printf("DAILY day=%lu claimed=%d streak=%u task=%u task_done=%d progress=%lu/%lu "
+           "ready=%d silk=%lu base_day=%lu base=%lu counters=%lu/%lu/%lu/%lu\n",
+           (unsigned long)needs_daily_today(), needs_daily_available() ? 0 : 1,
+           (unsigned)g.daily_streak, (unsigned)needs_daily_task(),
+           g.daily_task_done ? 1 : 0,
+           (unsigned long)needs_daily_task_progress(),
+           (unsigned long)needs_daily_task_goal(),
+           needs_daily_task_ready() ? 1 : 0, (unsigned long)g.silk,
+           (unsigned long)g.daily_base_day, (unsigned long)g.daily_task_base,
+           (unsigned long)g.meals, (unsigned long)g.cleans,
+           (unsigned long)g.plays, (unsigned long)g.pets);
     printf("OK stat\n");
 }
 
@@ -459,9 +472,13 @@ static void cmd_save_schema(void)
         {"auto_hunt", "u8", offsetof(game_state_t, auto_hunt), 0, 3},
         {"volume", "u8", offsetof(game_state_t, volume), 0, 4},
         {"last_seen", "u32", offsetof(game_state_t, last_seen), 0, 5},
+        {"daily_day", "u32", offsetof(game_state_t, daily_day), 0, 6},
+        {"daily_base_day", "u32", offsetof(game_state_t, daily_base_day), 0, 6},
+        {"daily_task_base", "u32", offsetof(game_state_t, daily_task_base), 0, 6},
+        {"daily_streak", "u8", offsetof(game_state_t, daily_streak), 0, 6},
+        {"daily_task_done", "u8", offsetof(game_state_t, daily_task_done), 0, 6},
 #undef SAVE_FIELD
-    };
-    enum { SCHEMA_CAP = 3328 };
+    };    enum { SCHEMA_CAP = 3328 };
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
     int pos = snprintf(json, SCHEMA_CAP,
@@ -637,6 +654,96 @@ static void cmd_speckle(const char *arg)
     }
     printf("OK speckle count=%d dirt=%d clean_xp=%lu\n", terrarium_poop_count(),
            terrarium_dirt(), (unsigned long)needs_clean_reward());
+}
+
+static void cmd_daily(const char *arg)
+{
+    if (!arg || !strcmp(arg, "show")) {
+        printf("DAILY day=%lu claimed=%d streak=%u task=%u task_done=%d "
+               "progress=%lu/%lu ready=%d silk=%lu\n",
+               (unsigned long)needs_daily_today(), needs_daily_available() ? 0 : 1,
+               (unsigned)g.daily_streak, (unsigned)needs_daily_task(),
+               g.daily_task_done ? 1 : 0,
+               (unsigned long)needs_daily_task_progress(),
+               (unsigned long)needs_daily_task_goal(),
+               needs_daily_task_ready() ? 1 : 0, (unsigned long)g.silk);
+        printf("OK daily\n");
+        return;
+    }
+    if (!strcmp(arg, "claim")) {
+        uint32_t xp = needs_daily_claim();
+        if (xp == 0) {
+            printf("ERR daily already claimed for day %lu\n",
+                   (unsigned long)needs_daily_today());
+            return;
+        }
+        game_save_now();
+        printf("OK daily claim xp=%lu streak=%u silk=%lu\n", (unsigned long)xp,
+               (unsigned)g.daily_streak, (unsigned long)g.silk);
+        return;
+    }
+    if (!strcmp(arg, "task")) {
+        uint32_t xp = needs_daily_task_claim();
+        if (xp == 0) {
+            printf("ERR daily task not ready (%lu/%lu)\n",
+                   (unsigned long)needs_daily_task_progress(),
+                   (unsigned long)needs_daily_task_goal());
+            return;
+        }
+        game_save_now();
+        printf("OK daily task xp=%lu silk=%lu\n", (unsigned long)xp,
+               (unsigned long)g.silk);
+        return;
+    }
+    /* `daily reset` clears the claim so the next `daily claim` pays again. It
+     * exists so the loop is testable without waiting a whole in-game day. */
+    if (!strcmp(arg, "reset")) {
+        g.daily_day = DAILY_NEVER;
+        g.daily_base_day = DAILY_NEVER;
+        g.daily_task_base = 0;
+        g.daily_streak = 0;
+        g.daily_task_done = 0;
+        game_save_now();
+        printf("OK daily reset\n");
+        return;
+    }
+    /* `daily day N` forces the in-game day, so the streak and the task rotation
+     * can be exercised without waiting AGE_TICK_MS * TICKS_PER_DAY. */
+    if (!strncmp(arg, "day ", 4)) {
+        char *end;
+        unsigned long day = strtoul(arg + 4, &end, 10);
+        if (*end) { printf("ERR usage: daily day N\n"); return; }
+        needs_daily_force_day((uint32_t)day);
+        game_save_now();
+        printf("OK daily day=%lu task=%u\n", (unsigned long)needs_daily_today(),
+               (unsigned)needs_daily_task());
+        return;
+    }
+    printf("ERR usage: daily [show|claim|task|reset|day N]\n");
+}
+
+static void cmd_treat(const char *arg)
+{
+    if (!arg) {
+        for (int i = 0; i < TREAT_COUNT; i++)
+            printf("TREAT %d name=\"%s\" cost=%lu\n", i, treat_name((treat_t)i),
+                   (unsigned long)treat_cost((treat_t)i));
+        printf("OK treat silk=%lu\n", (unsigned long)g.silk);
+        return;
+    }
+    int kind = atoi(arg);
+    if (kind < 0 || kind >= TREAT_COUNT) {
+        printf("ERR usage: treat [0..%d]\n", TREAT_COUNT - 1);
+        return;
+    }
+    if (!treat_buy((treat_t)kind)) {
+        printf("ERR treat %d refused: silk=%lu cost=%lu\n", kind,
+               (unsigned long)g.silk, (unsigned long)treat_cost((treat_t)kind));
+        return;
+    }
+    game_save_now();
+    printf("OK treat %d silk=%lu hunger=%u mood=%u energy=%u\n", kind,
+           (unsigned long)g.silk, g.hunger, g.mood, g.energy);
 }
 
 static void cmd_play(void)
@@ -869,6 +976,8 @@ static void run_line(char *line)
     else if (!strcmp(line, "feed"))     cmd_feed();
     else if (!strcmp(line, "clean"))    cmd_clean();
     else if (!strcmp(line, "speckle"))  cmd_speckle(arg);
+    else if (!strcmp(line, "daily"))    cmd_daily(arg);
+    else if (!strcmp(line, "treat"))    cmd_treat(arg);
     else if (!strcmp(line, "play"))     cmd_play();
     else if (!strcmp(line, "sleep"))    cmd_sleep();
     else if (!strcmp(line, "menu"))     cmd_menu();

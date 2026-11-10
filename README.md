@@ -69,6 +69,17 @@ purposes, unlocks through level 40 and visible spider visits. Existing placed
 gifts and pet progress survive the save migration.
 See [the gift shop](docs/GIFTS_CATALOG.md).
 
+**A daily loop, and treats to spend Silk on.** Each in-game day offers a check-in
+whose reward grows with a consecutive-day streak (6 XP / 4 Silk on day one, up to
+18 XP / 16 Silk at a seven-day cap; missing a day resets it), plus one rotating
+task — catch three prey, clean twice, play three times or pet four times — worth
+a flat 12 XP and 8 Silk. Gifts are one-time purchases, so once all eighteen were
+owned Silk had nothing left to buy; treats are consumables that cost Silk every
+time (Juicy Fly 6, Silk Ribbon 8, Warm Pebble 10) and give a short, visible
+boost. The loop runs on the in-game day counter rather than the RTC, so it works
+on a board with no RTC battery and no WiFi sync.
+See [v1.1.9 release notes](docs/RELEASE_v1.1.9.md).
+
 **Battery-aware display.** Real AXP2101 battery/USB/charging telemetry,
 a 10..100% brightness slider, a heuristic runtime estimate, screen rotation,
 idle dimming, screen-off/touch wake and low-battery

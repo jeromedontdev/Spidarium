@@ -178,14 +178,26 @@ typedef struct {
     uint8_t auto_hunt;       /* unattended stalk / crouch / pounce; opt-in */
     uint8_t volume;          /* speaker volume 0..100 */
     uint32_t last_seen;      /* UTC epoch of the last tick; 0 = never */
+
+    /* --- daily loop (appended; saves are disposable) --- */
+    uint32_t daily_day;       /* in-game day the check-in was last claimed; 0 = never */
+    uint32_t daily_base_day;  /* in-game day the task counter was snapshotted */
+    uint32_t daily_task_base; /* counter value when daily_base_day began */
+    uint8_t  daily_streak;    /* consecutive claimed days, capped at DAILY_STREAK_MAX */
+    uint8_t  daily_task_done; /* 1 once today's task has been paid */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 136, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 152, "save payload ABI changed");
 _Static_assert(offsetof(game_state_t, brightness) == 128, "brightness ABI changed");
 _Static_assert(offsetof(game_state_t, auto_feed) == 129, "auto_feed ABI changed");
 _Static_assert(offsetof(game_state_t, auto_hunt) == 130, "auto_hunt ABI changed");
 _Static_assert(offsetof(game_state_t, volume) == 131, "volume ABI changed");
 _Static_assert(offsetof(game_state_t, last_seen) == 132, "last_seen ABI changed");
+_Static_assert(offsetof(game_state_t, daily_day) == 136, "daily_day ABI changed");
+_Static_assert(offsetof(game_state_t, daily_base_day) == 140, "daily_base_day ABI changed");
+_Static_assert(offsetof(game_state_t, daily_task_base) == 144, "daily_task_base ABI changed");
+_Static_assert(offsetof(game_state_t, daily_streak) == 148, "daily_streak ABI changed");
+_Static_assert(offsetof(game_state_t, daily_task_done) == 149, "daily_task_done ABI changed");
 
 /* Live LVGL object handles. */
 typedef struct {
@@ -325,6 +337,58 @@ uint32_t game_now(void);
 void game_add_xp(uint32_t amount);
 void game_award(uint32_t achievement);
 bool game_save_now(void);
+
+/* ------------------------------------------------------------------ */
+/* Daily loop                                                          */
+/* ------------------------------------------------------------------ */
+/* The daily loop gives the player a reason to open the app tomorrow: a
+ * check-in whose reward grows with a consecutive-day streak, plus one rotating
+ * task per in-game day. Both are driven from needs_tick(), so they advance with
+ * the same compressed clock as aging and decay. */
+
+/* The in-game day the daily loop is currently on. */
+uint32_t needs_daily_today(void);
+
+/* True when today's check-in has not been claimed yet. */
+bool needs_daily_available(void);
+
+/* Claim today's check-in. Returns the XP paid (0 if already claimed). */
+uint32_t needs_daily_claim(void);
+
+/* The rotating task for today: 0..DAILY_TASK_COUNT-1. */
+uint8_t needs_daily_task(void);
+
+/* Human-readable name of a task, for the menu and the console. */
+const char *needs_daily_task_name(uint8_t task);
+
+/* Progress toward today's task, 0..needs_daily_task_goal(). */
+uint32_t needs_daily_task_progress(void);
+uint32_t needs_daily_task_goal(void);
+
+/* True when today's task is complete but unpaid. */
+bool needs_daily_task_ready(void);
+/* Pay today's task if it is complete. Returns the XP paid (0 if not ready). */
+uint32_t needs_daily_task_claim(void);
+
+/* Force the in-game day, for the serial console. Snapshots the task baseline
+ * exactly as a real rollover does. */
+void needs_daily_force_day(uint32_t day);
+
+/* ------------------------------------------------------------------ */
+/* Treats: the recurring Silk sink                                     */
+/* ------------------------------------------------------------------ */
+/* Gifts are permanent and one-time, so once all eighteen are owned Silk has
+ * nothing left to buy. Treats cost Silk every time and give a short boost. */
+typedef enum {
+    TREAT_HUNGER = 0,
+    TREAT_MOOD,
+    TREAT_ENERGY,
+} treat_t;
+
+uint32_t treat_cost(treat_t kind);
+const char *treat_name(treat_t kind);
+/* Buy and apply a treat. Returns false (and logs why) if Silk is short. */
+bool treat_buy(treat_t kind);
 
 /* The physical volume buttons changed the level. If the Sound menu is open,
  * push the new value into its slider and percentage readout. Must be called on

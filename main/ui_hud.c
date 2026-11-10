@@ -416,11 +416,17 @@ bool ui_hud_test(void)
     ok = ok && !lv_obj_is_hidden(ui.btn_decor) && !lv_obj_is_hidden(s_stats[0]);
     lv_obj_send_event(s_care_button, LV_EVENT_CLICKED, NULL);
     ok = ok && !ui_hud_chrome_visible() && !lv_obj_is_hidden(s_care_button);
+    /* The gift picker refuses an unaffordable kind, so this check must not
+     * depend on the ambient Silk balance: a player who spent it all in the
+     * treats shop would otherwise fail the HUD test. */
+    uint32_t silk_before = g.silk;
+    if (g.silk < gift_cost(0)) g.silk = gift_cost(0);
     game_gift_chosen(0);
     ok = ok && g.gift_mode && !ui_hud_chrome_visible() && !lv_obj_is_hidden(s_hint) &&
         !lv_obj_is_hidden(s_care_label);
     lv_obj_send_event(s_care_button, LV_EVENT_CLICKED, NULL);
     ok = ok && !g.gift_mode && lv_obj_is_hidden(s_hint);
+    g.silk = silk_before;
     g.taps = taps;
     g.gift_mode = mode;
     g.gift_selected = selected;

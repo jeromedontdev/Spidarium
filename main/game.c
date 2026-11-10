@@ -161,6 +161,12 @@ static void state_defaults(void)
     g.pupil_colour = 0;   /* black */
     g.fang_colour  = 1;   /* white */
     g.leg_colour   = 2;   /* grey  */
+
+    /* Sentinel: 0 is a real in-game day, so "never claimed" needs a value that
+     * cannot collide with it. Without this a brand-new pet could never claim
+     * its first check-in, because daily_day == 0 == today. */
+    g.daily_day = DAILY_NEVER;
+    g.daily_base_day = DAILY_NEVER;
 }
 
 static void state_finish_load(void)
@@ -374,9 +380,12 @@ enum {
     MENU_ABOUT,
     MENU_POWER,
     MENU_DISPLAY,
+    MENU_DAILY,
+    MENU_SHOP,
 };
 
 static void menu_open(int which);
+static void back_to_main(void);
 
 /* Which menu is currently on screen, or -1 when none is. Tracked here because
  * ui_menu only knows that *a* menu is open, not which one. */
@@ -494,6 +503,8 @@ static void on_brightness_slider(uint8_t id, uint8_t value)
 static void on_main_pick(uint8_t id)
 {
     switch (id) {
+    case MENU_DAILY:        menu_open(MENU_DAILY);        break;
+    case MENU_SHOP:         menu_open(MENU_SHOP);         break;
     case MENU_THEME:        menu_open(MENU_THEME);        break;
     case MENU_SOUND:        menu_open(MENU_SOUND);        break;
     case MENU_ACHIEVEMENTS: menu_open(MENU_ACHIEVEMENTS); break;
@@ -502,6 +513,41 @@ static void on_main_pick(uint8_t id)
     case MENU_SPECIES:      menu_open(MENU_SPECIES);      break;
     default: break;
     }
+}
+
+/* Daily page. Row 0 claims the check-in, row 1 claims the task once it is done.
+ * Both rows stay visible so the player can see what is on offer even after
+ * claiming; the subtitle carries the state. */
+static void on_daily_pick(uint8_t id)
+{
+    if (id == 0) {
+        uint32_t xp = needs_daily_claim();
+        if (xp == 0) ESP_LOGI(TAG, "daily: nothing to claim");
+        game_save_now();
+        menu_open(MENU_DAILY);
+        return;
+    }
+    if (id == 1) {
+        uint32_t xp = needs_daily_task_claim();
+        if (xp == 0) ESP_LOGI(TAG, "daily: task not ready");
+        game_save_now();
+        menu_open(MENU_DAILY);
+        return;
+    }
+    back_to_main();
+}
+
+static void on_shop_pick(uint8_t id)
+{
+    if (id < TREAT_COUNT) {
+        /* A refusal is already logged by treat_buy; the menu re-renders with the
+         * unchanged Silk balance so the player sees it did not happen. */
+        treat_buy((treat_t)id);
+        game_save_now();
+        menu_open(MENU_SHOP);
+        return;
+    }
+    back_to_main();
 }
 
 /* Settings submenu: connectivity and storage. Both are infrastructure for OTA
@@ -624,14 +670,23 @@ static void menu_open(int which)
 
     switch (which) {
     case MENU_MAIN: {
-        items[0] = (ui_menu_item_t){ "Backgrounds", NULL, true, false, true, MENU_THEME };
-        items[1] = (ui_menu_item_t){ "Achievements", NULL, true, false, true, MENU_ACHIEVEMENTS };
-        items[2] = (ui_menu_item_t){ "Settings",     NULL, true, false, true, MENU_SETTINGS };
-        items[3] = (ui_menu_item_t){ "Prey Species", NULL, true, false, true, MENU_SPECIES };
-        ui_menu_open("Spidarium", items, 4, on_main_pick);
+        static char daily_sub[48];
+        if (needs_daily_available()) {
+            snprintf(daily_sub, sizeof daily_sub, "Check In Ready");
+        } else if (needs_daily_task_ready()) {
+            snprintf(daily_sub, sizeof daily_sub, "Task Complete");
+        } else {
+            snprintf(daily_sub, sizeof daily_sub, "Streak %u", (unsigned)g.daily_streak);
+        }
+        items[0] = (ui_menu_item_t){ "Daily", daily_sub, true, false, true, MENU_DAILY };
+        items[1] = (ui_menu_item_t){ "Treats", "Spend Silk", true, false, true, MENU_SHOP };
+        items[2] = (ui_menu_item_t){ "Backgrounds", NULL, true, false, true, MENU_THEME };
+        items[3] = (ui_menu_item_t){ "Achievements", NULL, true, false, true, MENU_ACHIEVEMENTS };
+        items[4] = (ui_menu_item_t){ "Settings",     NULL, true, false, true, MENU_SETTINGS };
+        items[5] = (ui_menu_item_t){ "Prey Species", NULL, true, false, true, MENU_SPECIES };
+        ui_menu_open("Spidarium", items, 6, on_main_pick);
         break;
     }
-
     case MENU_SETTINGS: {
         items[0] = (ui_menu_item_t){ "WiFi", NULL, true, false, true, 0 };
         items[1] = (ui_menu_item_t){ "SD Card", NULL, true, false, true, 1 };
@@ -831,6 +886,68 @@ static void menu_open(int which)
         ui_menu_open(species_title, items, PREY_SPECIES_COUNT, NULL);
         ui_menu_set_back(back_to_main);
         break;
+    case MENU_DAILY: {
+        static char claim_sub[64], task_sub[64], task_name[48];
+        uint32_t today = needs_daily_today();
+        if (needs_daily_available()) {
+            uint32_t next = (g.daily_day != DAILY_NEVER && g.daily_day + 1 == today &&
+                             g.daily_streak > 0)
+                          ? (g.daily_streak < DAILY_STREAK_MAX ? g.daily_streak + 1u : DAILY_STREAK_MAX)
+                          : 1u;
+            uint32_t step = next - 1u;
+            snprintf(claim_sub, sizeof claim_sub, "Day %u / +%lu XP +%lu Silk",
+                     (unsigned)next,
+                     (unsigned long)(DAILY_XP_BASE + step * DAILY_XP_PER_DAY),
+                     (unsigned long)(DAILY_SILK_BASE + step * DAILY_SILK_PER_DAY));
+        } else {
+            snprintf(claim_sub, sizeof claim_sub, "Claimed / Streak %u",
+                     (unsigned)g.daily_streak);
+        }
+        items[0] = (ui_menu_item_t){ "Check In", claim_sub, true, false, true, 0 };
+
+        uint8_t task = needs_daily_task();
+        ui_menu_format_name(task_name, sizeof task_name, needs_daily_task_name(task));
+        if (g.daily_task_done) {
+            snprintf(task_sub, sizeof task_sub, "Done / +%u XP +%u Silk",
+                     DAILY_TASK_XP, DAILY_TASK_SILK);
+        } else if (needs_daily_task_ready()) {
+            snprintf(task_sub, sizeof task_sub, "Complete / Tap to Claim");
+        } else {
+            snprintf(task_sub, sizeof task_sub, "%lu of %lu",
+                     (unsigned long)needs_daily_task_progress(),
+                     (unsigned long)needs_daily_task_goal());
+        }
+        items[1] = (ui_menu_item_t){ task_name, task_sub, true, false, true, 1 };
+        items[2] = (ui_menu_item_t){ "Back", NULL, true, false, true, 2 };
+
+        static char daily_title[48];
+        snprintf(daily_title, sizeof daily_title, "Daily / Day %lu",
+                 (unsigned long)today);
+        ui_menu_open(daily_title, items, 3, on_daily_pick);
+        ui_menu_set_back(back_to_main);
+        break;
+    }
+    case MENU_SHOP: {
+        static char shop_sub[TREAT_COUNT][48];
+        static char shop_name[TREAT_COUNT][32];
+        for (int i = 0; i < TREAT_COUNT; i++) {
+            uint32_t cost = treat_cost((treat_t)i);
+            ui_menu_format_name(shop_name[i], sizeof shop_name[i],
+                                treat_name((treat_t)i));
+            snprintf(shop_sub[i], sizeof shop_sub[i], "%lu Silk%s",
+                     (unsigned long)cost, g.silk < cost ? " / Need More" : "");
+            items[i] = (ui_menu_item_t){ shop_name[i], shop_sub[i],
+                                         true, false, true, (uint8_t)i };
+        }
+        items[TREAT_COUNT] = (ui_menu_item_t){ "Back", NULL, true, false, true,
+                                               TREAT_COUNT };
+        static char shop_title[48];
+        snprintf(shop_title, sizeof shop_title, "Treats / %lu Silk",
+                 (unsigned long)g.silk);
+        ui_menu_open(shop_title, items, TREAT_COUNT + 1, on_shop_pick);
+        ui_menu_set_back(back_to_main);
+        break;
+    }
     case MENU_ABOUT:
         items[0] = (ui_menu_item_t){ "Spidarium", esp_app_get_description()->version,
                                      false, false, false, 0 };
@@ -910,6 +1027,8 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "close"))    { ui_menu_close(); ui_hud_gift_menu_hide(); }
     else if (!strcmp(name, "power")) menu_open(MENU_POWER);
     else if (!strcmp(name, "display")) menu_open(MENU_DISPLAY);
+    else if (!strcmp(name, "daily")) menu_open(MENU_DAILY);
+    else if (!strcmp(name, "shop")) menu_open(MENU_SHOP);
     else return false;
     return true;
 }

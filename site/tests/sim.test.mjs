@@ -8,6 +8,8 @@ import {
   purchaseGift,placeGift,removeGift,visitGift,giftBonus,award,awardAchievement,
   minigameReward,resolvePounce,recomputeMood,seekTo,
   addBugPoop,terrariumDirt,cleanNeeded,cleanReward,
+  dailyToday,dailyTask,dailyTaskName,dailyTaskGoal,dailyTaskProgress,dailyTaskReady,
+  dailyAvailable,dailyClaim,dailyTaskClaim,dailyEnsureBase,TREATS,buyTreat,
 } from '../lib/sim.js';
 const native=path=>readFile(new URL(`../../main/${path}`,import.meta.url),'utf8');
 const state=options=>freshState({random:()=>.5,temperament:0,...options});
@@ -352,7 +354,7 @@ test('restore migrates old progress/ownership and resets runtime, no offline dec
   assert.equal(BACKGROUNDS.length,8);
 });
 test('null restore creates fresh state but corrupt saves throw descriptive errors',()=>{
-  assert.equal(restoreSim(null,{random:()=>.5}).version,5);
+  assert.equal(restoreSim(null,{random:()=>.5}).version,6);
   const good=()=>JSON.parse(JSON.stringify(state()));
   for(const value of [[],new Date(),42,'{}',{}, {version:99}, {version:4}]){
     assert.throws(()=>restoreSim(value),/Invalid browser progress:/);
@@ -378,7 +380,7 @@ test('both valid legacy versions retain earned progress and clamp legacy need ra
     const raw={version,hunger:-5,mood:102,energy:999,hygiene:70.5,xp:80,silk:24,
       name:'Legacy spider',owned:[0,1],gift:1,background:'fern',autoFeed:true,autoHunt:true};
     const s=restoreSim(raw,{random:()=>.5});
-    assert.equal(s.version,5);assert.equal(s.level,3);assert.equal(s.xp,100);
+    assert.equal(s.version,6);assert.equal(s.level,3);assert.equal(s.xp,100);
     assert.deepEqual([s.hunger,s.mood,s.energy,s.hygiene],[0,100,100,70]);
     assert.equal(s.silk,24);assert.equal(s.gifts_owned,3);assert.equal(s.gift.kind,1);
     assert.equal(s.name,'Legacy spider');assert.equal(s.auto_feed,0);assert.equal(s.auto_hunt,0);
@@ -401,4 +403,107 @@ test('native minigame callback includes needs_play +2+score*4XP, +score*3Silk',(
     assert.equal(s.mood,70);assert.equal(s.energy,75);assert.equal(s.plays,1);
     const second=minigameReward(s,score);assert.equal(second.xp,6+score*4);
   }
+});
+test('daily check-in pays a streak-scaled reward once per in-game day',()=>{
+  const s=state();
+  assert.equal(dailyToday(s),0);
+  assert.equal(dailyAvailable(s),true);
+  const xp=dailyClaim(s);
+  assert.equal(xp,CONFIG.DAILY_XP_BASE);
+  assert.equal(s.daily_streak,1);
+  assert.equal(s.silk,20+CONFIG.DAILY_SILK_BASE);
+  // A second claim on the same day pays nothing.
+  assert.equal(dailyAvailable(s),false);
+  assert.equal(dailyClaim(s),0);
+  assert.equal(s.daily_streak,1);
+  // The next day continues the streak and pays more.
+  s.age_ticks=1*CONFIG.TICKS_PER_DAY;s.days_lived=1;
+  assert.equal(dailyAvailable(s),true);
+  assert.equal(dailyClaim(s),CONFIG.DAILY_XP_BASE+CONFIG.DAILY_XP_PER_DAY);
+  assert.equal(s.daily_streak,2);
+  // Skipping a day resets the streak to 1.
+  s.age_ticks=4*CONFIG.TICKS_PER_DAY;s.days_lived=4;
+  assert.equal(dailyClaim(s),CONFIG.DAILY_XP_BASE);
+  assert.equal(s.daily_streak,1);
+});
+test('daily streak is capped so the economy cannot run away',()=>{
+  const s=state();
+  for(let day=0;day<CONFIG.DAILY_STREAK_MAX+5;day++){
+    s.age_ticks=day*CONFIG.TICKS_PER_DAY;s.days_lived=day;
+    dailyClaim(s);
+  }
+  assert.equal(s.daily_streak,CONFIG.DAILY_STREAK_MAX);
+  const step=CONFIG.DAILY_STREAK_MAX-1;
+  assert.equal(CONFIG.DAILY_XP_BASE+step*CONFIG.DAILY_XP_PER_DAY,
+    CONFIG.DAILY_XP_BASE+(CONFIG.DAILY_STREAK_MAX-1)*CONFIG.DAILY_XP_PER_DAY);
+});
+test('daily task rotates deterministically and pays only when complete',()=>{
+  const s=state();
+  // Day 1 offers task 1 (Clean 2 Times).
+  s.age_ticks=1*CONFIG.TICKS_PER_DAY;s.days_lived=1;
+  assert.equal(dailyTask(s),1);
+  assert.equal(dailyTaskName(1),'Clean 2 Times');
+  assert.equal(dailyTaskGoal(s),2);
+  dailyEnsureBase(s);
+  assert.equal(dailyTaskProgress(s),0);
+  assert.equal(dailyTaskReady(s),false);
+  assert.equal(dailyTaskClaim(s),0);
+  // Cleaning twice completes it.
+  addBugPoop(s);care(s,'clean');
+  assert.equal(dailyTaskProgress(s),1);
+  addBugPoop(s);care(s,'clean');
+  assert.equal(dailyTaskProgress(s),2);
+  assert.equal(dailyTaskReady(s),true);
+  const silk=s.silk;
+  assert.equal(dailyTaskClaim(s),CONFIG.DAILY_TASK_XP);
+  assert.equal(s.silk,silk+CONFIG.DAILY_TASK_SILK);
+  // Paying twice is refused.
+  assert.equal(dailyTaskReady(s),false);
+  assert.equal(dailyTaskClaim(s),0);
+});
+test('daily task baseline is snapshotted on rollover, not on first read',()=>{
+  const s=state();
+  // Act before the day turns over: those actions must not count.
+  addBugPoop(s);care(s,'clean');addBugPoop(s);care(s,'clean');
+  assert.equal(s.cleans,2);
+  s.age_ticks=1*CONFIG.TICKS_PER_DAY;s.days_lived=1;
+  dailyEnsureBase(s);
+  assert.equal(s.daily_task_base,2);
+  assert.equal(dailyTaskProgress(s),0);
+  addBugPoop(s);care(s,'clean');
+  assert.equal(dailyTaskProgress(s),1);
+});
+test('treats cost Silk every time and refuse when the balance is short',()=>{
+  const s=state();
+  s.silk=100;s.hunger=20;s.mood=20;s.energy=20;
+  assert.equal(TREATS.length,CONFIG.TREAT_COUNT);
+  assert.equal(buyTreat(s,0),true);
+  assert.equal(s.silk,100-CONFIG.TREAT_HUNGER_COST);
+  assert.equal(s.hunger,20+CONFIG.TREAT_HUNGER_GAIN);
+  assert.equal(buyTreat(s,1),true);
+  assert.equal(s.mood,20+CONFIG.TREAT_MOOD_GAIN);
+  assert.equal(buyTreat(s,2),true);
+  assert.equal(s.energy,20+CONFIG.TREAT_ENERGY_GAIN);
+  // Drain the balance and confirm the refusal leaves state untouched.
+  s.silk=0;
+  const before=[s.hunger,s.mood,s.energy];
+  assert.equal(buyTreat(s,0),false);
+  assert.deepEqual([s.hunger,s.mood,s.energy],before);
+  assert.equal(s.silk,0);
+  assert.equal(buyTreat(s,99),false);
+});
+test('a v5 save restores with fresh daily fields and a baseline on first tick',()=>{
+  const raw=JSON.parse(JSON.stringify(state()));
+  raw.version=5;
+  for(const key of ['daily_day','daily_base_day','daily_task_base','daily_streak','daily_task_done'])
+    delete raw[key];
+  const s=restoreSim(raw,{random:()=>.5});
+  assert.equal(s.version,6);
+  assert.equal(s.daily_day,CONFIG.DAILY_NEVER);
+  assert.equal(s.daily_streak,0);
+  assert.equal(dailyAvailable(s),true);
+  // The first tick snapshots the baseline so progress starts at 0.
+  tick(s);
+  assert.equal(s.daily_base_day,dailyToday(s));
+  assert.equal(dailyTaskProgress(s),0);
 });

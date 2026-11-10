@@ -37,8 +37,12 @@ export const CONFIG = Object.freeze({
   STREAK_BONUS_PER:.05, STREAK_MAX:10, POUNCE_ENERGY_COST:3, EAT_ENERGY_GAIN:6,
   STAGE_JUVENILE_DAYS:2, STAGE_ADULT_DAYS:5, MOLT_DAYS:2, XP_PER_LEVEL:50,
   XP_DAY:10, XP_MOLT:8, PLAY_MARGIN:34, MAX_PREY:3, MAX_POOP:8, STRIDE_PX:24,
-});
-const C = CONFIG, PI = Math.PI, TAU = PI*2, U32 = 0xffffffff;
+  DAILY_STREAK_MAX:7, DAILY_XP_BASE:6, DAILY_XP_PER_DAY:2, DAILY_SILK_BASE:4,
+  DAILY_SILK_PER_DAY:2, DAILY_TASK_XP:12, DAILY_TASK_SILK:8, DAILY_TASK_COUNT:4,
+  DAILY_NEVER:0xFFFFFFFF,
+  TREAT_COUNT:3, TREAT_HUNGER_COST:6, TREAT_MOOD_COST:8, TREAT_ENERGY_COST:10,
+  TREAT_HUNGER_GAIN:25, TREAT_MOOD_GAIN:30, TREAT_ENERGY_GAIN:35,
+});const C = CONFIG, PI = Math.PI, TAU = PI*2, U32 = 0xffffffff;
 export const STATES = Object.freeze({IDLE:0,WANDER:1,STALK:2,AIM:3,POUNCE:4,EAT:5,SLEEP:6,PLAY:7,MOLT:8,SICK:9});
 export const STATE_NAMES = ['idle','wander','stalk','aim','pounce','eat','sleep','play','molt','sick'];
 export const STAGES = ['Spiderling','Juvenile','Adult'];
@@ -154,12 +158,13 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:5,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:6,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
     temperament:0,bond:0,name:'',colour:0,pupil_colour:0,leg_colour:2,fang_colour:1,
     silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,last_seen:0,background:'moss',
+    daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
   services.set(s,options);
@@ -200,7 +205,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -229,6 +234,8 @@ export function validateProgress(raw) {
     if(Object.hasOwn(raw,key)&&!BACKGROUNDS.includes(raw[key]))fail(`${key} is unknown`);
   number('brightness',legacy?0:10,100,!legacy);number('battery',0,100,false);
   number('volume',0,100);
+  number('daily_day',0,U32);number('daily_base_day',0,U32);
+  number('daily_task_base',0,U32);number('daily_streak',0,255);number('daily_task_done',0,1);
   for(const key of ['spider_x','spider_y'])number(key,34,446);
   for(const key of ['x','y'])number(key,legacy?-Number.MAX_SAFE_INTEGER:34,legacy?Number.MAX_SAFE_INTEGER:446,false);
   for(const key of ['spider_heading','heading','gait_phase','now_ms'])
@@ -290,6 +297,13 @@ export function restoreSim(raw,options={}) {
     if(Number.isInteger(raw[old]))s[key]=integer(raw[old],s[key],255);
   s.temperament=integer(raw.temperament,s.temperament,3);s.stage=integer(raw.stage,0,2);
   s.streak=integer(raw.streak,0,65535);s.best_streak=integer(raw.best_streak,0,65535);
+  // The daily loop arrived in v6. A v5 save has no daily fields, so they keep
+  // the fresh-state sentinels and the first tick snapshots a baseline.
+  s.daily_day=integer(raw.daily_day,s.daily_day,U32);
+  s.daily_base_day=integer(raw.daily_base_day,s.daily_base_day,U32);
+  s.daily_task_base=integer(raw.daily_task_base,0,U32);
+  s.daily_streak=integer(raw.daily_streak,0,255);
+  s.daily_task_done=raw.daily_task_done===1?1:0;
   s.sick=raw.sick===1?1:0;s.muted=raw.muted===true||raw.muted===1?1:0;
   if(BACKGROUNDS.includes(raw.background??raw.theme))s.background=raw.background??raw.theme;
   if(typeof raw.sound==='boolean')s.muted=raw.sound?0:1;
@@ -391,6 +405,78 @@ export function cleanReward(s) {
   if(score<=0)return 0;
   const xp=Math.ceil(score*C.CLEAN_XP_MAX/C.CLEAN_SCORE_FULL);
   return Math.min(C.CLEAN_XP_MAX,xp);
+}
+/** The in-game day the daily loop is on. */
+export function dailyToday(s){return Math.floor(s.age_ticks/C.TICKS_PER_DAY);}
+/** The rotating task for a day. Deterministic, so a reload cannot reroll it. */
+export function dailyTaskForDay(day){return day%C.DAILY_TASK_COUNT;}
+export function dailyTask(s){return dailyTaskForDay(dailyToday(s));}
+const DAILY_COUNTERS=['meals','cleans','plays','pets'];
+export function dailyTaskGoal(s){
+  switch(dailyTask(s)){case 0:return 3;case 1:return 2;case 2:return 3;default:return 4;}
+}
+export function dailyTaskName(task){
+  switch(task){case 0:return 'Catch 3 Prey';case 1:return 'Clean 2 Times';
+    case 2:return 'Play 3 Times';default:return 'Pet 4 Times';}
+}
+/** Snapshot the task baseline when the day turns over. Taking it lazily would
+ * capture the baseline AFTER the player acted, so progress would read 0. */
+export function dailyEnsureBase(s){
+  const today=dailyToday(s);
+  if(s.daily_base_day===today)return;
+  s.daily_base_day=today;
+  s.daily_task_base=s[DAILY_COUNTERS[dailyTaskForDay(today)]]??0;
+  s.daily_task_done=0;
+}
+export function dailyTaskProgress(s){
+  const now=s[DAILY_COUNTERS[dailyTask(s)]]??0;
+  const base=s.daily_task_base??0;
+  if(now<base)return 0;
+  return Math.min(now-base,dailyTaskGoal(s));
+}
+export function dailyTaskReady(s){
+  return !s.daily_task_done&&dailyTaskProgress(s)>=dailyTaskGoal(s);
+}
+/** A streak of 0 means "never claimed", which is self-healing: a save whose
+ * daily_day happens to equal today but has no streak is treated as unclaimed. */
+export function dailyAvailable(s){
+  if(!s.daily_streak)return true;
+  return s.daily_day!==dailyToday(s);
+}
+/** Claim today's check-in. Returns the XP paid, or 0 if already claimed. */
+export function dailyClaim(s){
+  const today=dailyToday(s);
+  if(!dailyAvailable(s))return 0;
+  if(s.daily_day!==C.DAILY_NEVER&&s.daily_day+1===today&&s.daily_streak>0){
+    if(s.daily_streak<C.DAILY_STREAK_MAX)s.daily_streak++;
+  }else s.daily_streak=1;
+  const step=s.daily_streak-1;
+  const xp=C.DAILY_XP_BASE+step*C.DAILY_XP_PER_DAY;
+  const silk=C.DAILY_SILK_BASE+step*C.DAILY_SILK_PER_DAY;
+  s.daily_day=today;
+  addXP(s,xp);s.silk+=silk;
+  return xp;
+}
+/** Pay today's task if complete. Returns the XP paid, or 0 if not ready. */
+export function dailyTaskClaim(s){
+  if(!dailyTaskReady(s))return 0;
+  s.daily_task_done=1;
+  addXP(s,C.DAILY_TASK_XP);s.silk+=C.DAILY_TASK_SILK;
+  return C.DAILY_TASK_XP;
+}
+export const TREATS=Object.freeze([
+  {name:'Juicy Fly',cost:C.TREAT_HUNGER_COST,field:'hunger',gain:C.TREAT_HUNGER_GAIN},
+  {name:'Silk Ribbon',cost:C.TREAT_MOOD_COST,field:'mood',gain:C.TREAT_MOOD_GAIN},
+  {name:'Warm Pebble',cost:C.TREAT_ENERGY_COST,field:'energy',gain:C.TREAT_ENERGY_GAIN},
+]);
+/** Buy and apply a treat. Returns false when Silk is short. */
+export function buyTreat(s,kind){
+  const t=TREATS[kind];
+  if(!t)return false;
+  if(s.silk<t.cost)return event(s,'rejected',{reason:'not enough Silk'});
+  s.silk-=t.cost;
+  s[t.field]=clamp(s[t.field]+t.gain);
+  return true;
 }
 export function care(s,action) {
   const r=runtime(s);
@@ -526,12 +612,18 @@ export function recomputeMood(s) {
 }
 function needsTick(s) {
   const r=runtime(s),now=r.now_ms,b=giftBonus(s);
+  // Establish the task baseline for the current day. A no-op once the day
+  // matches, and it covers a migrated or restored save that has no baseline.
+  dailyEnsureBase(s);
   if(now-r.last_age>=30000){
     r.last_age=now;s.age_ticks++;
     const days=Math.floor(s.age_ticks/2880);
     if(days!==s.days_lived){s.days_lived=days;addXP(s,10);
       const stage=days>=5?2:days>=2?1:0;
       if(stage!==s.stage){s.stage=stage;s.last_molt_day=days;setState(s,8);awardAchievement(s,'first_molt');if(stage===2)awardAchievement(s,'adult');}
+      // Snapshot the daily task baseline the moment the day turns over, before
+      // the player can act on it.
+      dailyEnsureBase(s);
     }
     if(days-s.last_molt_day>=2&&s.stage!==2){s.last_molt_day=days;setState(s,8);addXP(s,8);awardAchievement(s,'first_molt');}
   }

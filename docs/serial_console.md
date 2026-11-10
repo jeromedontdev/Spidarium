@@ -161,12 +161,20 @@ drift limit and 51,200-byte largest-block floor are unchanged.
 
 ### `stat`
 
-Prints the game state: position, heading, needs, level, stage, prey count.
+Prints the game state: position, heading, needs, level, stage, prey count, plus
+the Clean predicate and the daily loop.
 
 ```
 STAT state=4 pos=(126,391) heading=1.57 hunger=21 mood=0 energy=9 hygiene=3 level=20 stage=1 sick=1 bond=0 prey=1
+CARE clean_needed=1 dirt=12 clean_xp=2
+DAILY day=1 claimed=0 streak=0 task=1 task_done=0 progress=0/2 ready=0 silk=24
 OK stat
 ```
+
+`CARE` reports whether there is anything to clean, the current mess in dirt
+units, and the XP a clean would pay. `DAILY` reports the in-game day, whether
+today's check-in is claimed, the streak, which rotating task is on offer, its
+progress and whether it is ready to pay.
 
 Useful for confirming the simulation is actually running: if `pos` never changes
 between two calls, the logic timer is not ticking.
@@ -492,6 +500,70 @@ A bug left in the tank leaves a pale speckle near itself every `BUG_POOP_MS`
 Speckles share the dropping slot pool and the 10-minute `POOP_LIFETIME_MS`
 decay.
 
+### `daily [show|claim|task|reset|day N]`
+
+Inspects and drives the daily loop. With no argument it prints the same `DAILY`
+line `stat` does.
+
+```
+>>> daily
+DAILY day=1 claimed=0 streak=0 task=1 task_done=0 progress=0/2 ready=0 silk=24
+OK daily
+```
+
+`claim` pays today's check-in and reports the streak-scaled reward. A second
+claim on the same day is refused rather than silently paying again:
+
+```
+>>> daily claim
+OK daily claim xp=6 streak=1 silk=28
+>>> daily claim
+ERR daily already claimed for day 1
+```
+
+`task` pays today's rotating objective, but only once it is complete:
+
+```
+>>> daily task
+ERR daily task not ready (1/2)
+```
+
+`day N` forces the in-game day, which is how the streak and the task rotation
+are exercised without waiting `AGE_TICK_MS * TICKS_PER_DAY` (24 real hours at
+`GAME_TIME_SCALE` 1). It snapshots the task baseline exactly as a real rollover
+does, so the task starts at 0 rather than inheriting the previous day's
+counters.
+
+```
+>>> daily day 3
+OK daily day=3 task=3
+```
+
+`reset` clears the claim and the streak so the next `claim` pays again.
+
+### `treat [0..2]`
+
+Lists or buys a treat. With no argument it lists all three with their costs and
+the current Silk balance:
+
+```
+>>> treat
+TREAT 0 name="Juicy Fly" cost=6
+TREAT 1 name="Silk Ribbon" cost=8
+TREAT 2 name="Warm Pebble" cost=10
+OK treat silk=64
+```
+
+Buying deducts Silk and applies the boost. A purchase the player cannot afford
+is refused and logged, leaving the balance untouched:
+
+```
+>>> treat 0
+OK treat 0 silk=58 hunger=45 mood=56 energy=80
+>>> treat 2
+ERR treat 2 refused: silk=0 cost=10
+```
+
 ### `menu`
 
 Opens the main menu — the same thing the hamburger button does. Useful for
@@ -509,6 +581,8 @@ Opens a specific UI surface:
 | Name | Opens |
 |---|---|
 | `main` | the main menu |
+| `daily` | the daily check-in and task page |
+| `shop` | the treats shop |
 | `gift` | the gift picker |
 | `chrome` | the HUD buttons and stat rings |
 | `nochrome` | hides the HUD |

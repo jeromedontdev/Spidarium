@@ -27,6 +27,8 @@ static float s_energy_acc;
 static uint32_t s_last_decay;
 static uint32_t s_last_age;
 
+static void daily_ensure_base(void);
+
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -303,6 +305,12 @@ void needs_tick(uint32_t now_ms, float dt_s)
 {
     (void)dt_s;
 
+    /* Establish the task baseline for the current day. This is a no-op once the
+     * day matches, so it costs one comparison per tick, and it covers the two
+     * cases the rollover path cannot: a freshly migrated save (which has no
+     * baseline at all) and a save restored from a backup. */
+    daily_ensure_base();
+
     /* --- aging ------------------------------------------------------- */
     /* GAME_TIME_SCALE compresses the clock for verification builds. Guarded
      * against 0 so a bad edit cannot divide by zero. */
@@ -315,6 +323,13 @@ void needs_tick(uint32_t now_ms, float dt_s)
             g.days_lived = days;
             game_add_xp(XP_DAY);
             needs_update_stage();
+            /* Snapshot the task baseline the moment the day turns over, before
+             * the player can act on it. */
+            daily_ensure_base();
+            if (g.daily_day != days) {
+                ESP_LOGI(TAG, "daily: day %u available (streak %u)",
+                         (unsigned)days, (unsigned)g.daily_streak);
+            }
         }
 
         /* Mid-stage molt: MOLT_DAYS was defined but never referenced, so
@@ -419,4 +434,210 @@ void needs_tick(uint32_t now_ms, float dt_s)
                      g.hunger, g.mood);
         }
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* Daily loop                                                          */
+/* ------------------------------------------------------------------ */
+/* The daily loop is deliberately driven by the in-game day counter rather than
+ * the RTC. The RTC is optional (no battery, no sync without WiFi), so a
+ * wall-clock daily would either never fire or fire on a bogus 1970 epoch. The
+ * in-game day advances with AGE_TICK_MS, which GAME_TIME_SCALE compresses for
+ * verification builds -- so the whole loop is testable in minutes. */
+
+uint32_t needs_daily_today(void)
+{
+    return needs_days_lived();
+}
+
+/* The task rotates deterministically from the day number, so the same day
+ * always offers the same task and a reload cannot reroll it. */
+static uint8_t daily_task_for_day(uint32_t day)
+{
+    return (uint8_t)(day % DAILY_TASK_COUNT);
+}
+
+/* Each task counts a different lifetime counter. The snapshot taken when the
+ * day began is subtracted, so progress is "since this day started" without
+ * needing a separate per-day counter in the save. */
+static uint32_t daily_counter(uint8_t task)
+{
+    switch (task) {
+    case 0: return g.meals;
+    case 1: return g.cleans;
+    case 2: return g.plays;
+    default: return g.pets;
+    }
+}
+
+uint32_t needs_daily_task_goal(void)
+{
+    switch (needs_daily_task()) {
+    case 0: return 3;   /* catch three prey */
+    case 1: return 2;   /* clean twice */
+    case 2: return 3;   /* play three times */
+    default: return 4;  /* pet four times */
+    }
+}
+
+const char *needs_daily_task_name(uint8_t task)
+{
+    switch (task) {
+    case 0: return "Catch 3 Prey";
+    case 1: return "Clean 2 Times";
+    case 2: return "Play 3 Times";
+    default: return "Pet 4 Times";
+    }
+}
+
+uint8_t needs_daily_task(void)
+{
+    return daily_task_for_day(needs_daily_today());
+}
+
+/* The snapshot is taken when the day rolls over, not lazily on first read.
+ * Taking it lazily meant the baseline could be captured AFTER the player had
+ * already done the actions, so progress read 0/3 forever. */
+static void daily_ensure_base(void)
+{
+    uint32_t today = needs_daily_today();
+    if (g.daily_base_day == today) return;
+    g.daily_base_day = today;
+    g.daily_task_base = daily_counter(daily_task_for_day(today));
+    g.daily_task_done = 0;
+}
+
+uint32_t needs_daily_task_progress(void)
+{
+    uint32_t now = daily_counter(needs_daily_task());
+    uint32_t base = g.daily_task_base;
+    if (now < base) return 0;
+    uint32_t done = now - base;
+    uint32_t goal = needs_daily_task_goal();
+    return done > goal ? goal : done;
+}
+
+bool needs_daily_task_ready(void)
+{
+    if (g.daily_task_done) return false;
+    return needs_daily_task_progress() >= needs_daily_task_goal();
+}
+
+bool needs_daily_available(void)
+{
+    /* A streak of 0 means "never claimed", which is self-healing: any save
+     * whose daily_day happens to equal today but that has no streak is treated
+     * as unclaimed rather than permanently locked out. */
+    if (g.daily_streak == 0) return true;
+    return g.daily_day != needs_daily_today();
+}
+
+uint32_t needs_daily_claim(void)
+{
+    uint32_t today = needs_daily_today();
+    if (!needs_daily_available()) {
+        ESP_LOGI(TAG, "daily: already claimed for day %u", (unsigned)today);
+        return 0;
+    }
+
+    /* A streak survives only if the previous claim was the immediately
+     * preceding day. Anything else -- including a first-ever claim -- starts
+     * over at 1. */
+    if (g.daily_day != DAILY_NEVER && g.daily_day + 1 == today && g.daily_streak > 0) {
+        if (g.daily_streak < DAILY_STREAK_MAX) g.daily_streak++;
+    } else {
+        g.daily_streak = 1;
+    }
+
+    uint32_t step = (uint32_t)g.daily_streak - 1u;
+    uint32_t xp = DAILY_XP_BASE + step * DAILY_XP_PER_DAY;
+    uint32_t silk = DAILY_SILK_BASE + step * DAILY_SILK_PER_DAY;
+
+    g.daily_day = today;
+
+    game_add_xp(xp);
+    game_add_silk(silk);
+    audio_play(SFX_PERFECT);
+    ESP_LOGI(TAG, "daily: day %u streak %u -> xp=%lu silk=%lu",
+             (unsigned)today, (unsigned)g.daily_streak,
+             (unsigned long)xp, (unsigned long)silk);
+    return xp;
+}
+
+uint32_t needs_daily_task_claim(void)
+{
+    if (!needs_daily_task_ready()) return 0;
+    g.daily_task_done = 1;
+    game_add_xp(DAILY_TASK_XP);
+    game_add_silk(DAILY_TASK_SILK);
+    audio_play(SFX_PERFECT);
+    ESP_LOGI(TAG, "daily task %u complete -> xp=%u silk=%u",
+             (unsigned)needs_daily_task(), DAILY_TASK_XP, DAILY_TASK_SILK);
+    return DAILY_TASK_XP;
+}
+
+/* Force the in-game day, for the serial console. This exists so the streak and
+ * the task rotation can be exercised without waiting AGE_TICK_MS *
+ * TICKS_PER_DAY. It snapshots the task baseline exactly as a real rollover
+ * does, so the task starts at 0 rather than inheriting the previous day's
+ * counters. */
+void needs_daily_force_day(uint32_t day)
+{
+    g.age_ticks = day * TICKS_PER_DAY;
+    g.days_lived = day;
+    g.daily_base_day = day;
+    g.daily_task_base = daily_counter(daily_task_for_day(day));
+    g.daily_task_done = 0;
+    ESP_LOGI(TAG, "daily: forced to day %u (task %u, base %lu)",
+             (unsigned)day, (unsigned)daily_task_for_day(day),
+             (unsigned long)g.daily_task_base);
+}
+
+/* ------------------------------------------------------------------ */
+/* Treats                                                              */
+/* ------------------------------------------------------------------ */
+uint32_t treat_cost(treat_t kind)
+{
+    switch (kind) {
+    case TREAT_HUNGER: return TREAT_HUNGER_COST;
+    case TREAT_MOOD:   return TREAT_MOOD_COST;
+    default:           return TREAT_ENERGY_COST;
+    }
+}
+
+const char *treat_name(treat_t kind)
+{
+    switch (kind) {
+    case TREAT_HUNGER: return "Juicy Fly";
+    case TREAT_MOOD:   return "Silk Ribbon";
+    default:           return "Warm Pebble";
+    }
+}
+
+bool treat_buy(treat_t kind)
+{
+    uint32_t cost = treat_cost(kind);
+    if (g.silk < cost) {
+        ESP_LOGW(TAG, "treat %u refused: silk=%lu cost=%lu",
+                 (unsigned)kind, (unsigned long)g.silk, (unsigned long)cost);
+        return false;
+    }
+    g.silk -= cost;
+
+    switch (kind) {
+    case TREAT_HUNGER:
+        g.hunger = clamp100((int)g.hunger + TREAT_HUNGER_GAIN);
+        break;
+    case TREAT_MOOD:
+        g.mood = clamp100((int)g.mood + TREAT_MOOD_GAIN);
+        break;
+    default:
+        g.energy = clamp100((int)g.energy + TREAT_ENERGY_GAIN);
+        break;
+    }
+    needs_recompute_mood();
+    audio_play(SFX_EAT);
+    ESP_LOGI(TAG, "treat %u bought: silk=%lu", (unsigned)kind,
+             (unsigned long)g.silk);
+    return true;
 }

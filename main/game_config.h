@@ -95,6 +95,41 @@
 #define PET_XP                 2
 
 /* ------------------------------------------------------------------ */
+/* Daily loop                                                          */
+/* ------------------------------------------------------------------ */
+/* A reason to come back tomorrow. The streak counts consecutive in-game days
+ * with at least one care action, and the reward grows with it so a long streak
+ * is worth protecting. Both are capped so the economy cannot run away. */
+#define DAILY_STREAK_MAX       7
+#define DAILY_XP_BASE          6      /* day 1 */
+#define DAILY_XP_PER_DAY       2      /* +2 per consecutive day */
+#define DAILY_SILK_BASE        4
+#define DAILY_SILK_PER_DAY     2
+
+/* "Never claimed". 0 is a real in-game day, so it cannot double as the
+ * sentinel or a fresh pet could never claim its first check-in. */
+#define DAILY_NEVER            0xFFFFFFFFu
+/* One rotating task per in-game day. Completing it pays a flat bonus, so the
+ * daily loop has a goal rather than only a check-in. */
+#define DAILY_TASK_XP          12
+#define DAILY_TASK_SILK        8
+#define DAILY_TASK_COUNT       4
+
+/* ------------------------------------------------------------------ */
+/* Treats (recurring Silk sink)                                        */
+/* ------------------------------------------------------------------ */
+/* Gifts are permanent and one-time, so once all eighteen are owned Silk has
+ * nothing to buy. Treats are consumables: they cost Silk every time and give a
+ * short, visible boost. */
+#define TREAT_COUNT            3
+#define TREAT_HUNGER_COST      6      /* Silk */
+#define TREAT_MOOD_COST        8
+#define TREAT_ENERGY_COST      10
+#define TREAT_HUNGER_GAIN      25
+#define TREAT_MOOD_GAIN        30
+#define TREAT_ENERGY_GAIN      35
+
+/* ------------------------------------------------------------------ */
 /* Durations (ms)                                                      */
 /* ------------------------------------------------------------------ */
 #define EAT_MS                 800
@@ -428,6 +463,6 @@
 #define SAVE_MAGIC             0x53504944u   /* "SPID" */
 /* v3 uses two former padding bytes for opt-in automation. v2 progress is
  * retained, with both flags cleared; unsupported v1 layouts remain rejected. */
-#define SAVE_VERSION           5
+#define SAVE_VERSION           6
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

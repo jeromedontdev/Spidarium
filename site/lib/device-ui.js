@@ -169,7 +169,47 @@ export class DeviceGame {
     const row = (label, click, detail = '', extra = {}) => ({ label, click, detail, ...extra });
     let rows;
     switch (name) {
-      case 'Menu': rows = ['Backgrounds', 'Achievements', 'Settings', 'Prey Species'].map(label => row(label, () => this.open(label), '', { submenu: true })); break;
+      case 'Menu': rows = [
+        row('Daily', () => this.open('Daily'), this.dailyDetail(), { submenu: true }),
+        row('Treats', () => this.open('Treats'), 'Spend Silk', { submenu: true }),
+        ...['Backgrounds', 'Achievements', 'Settings', 'Prey Species'].map(label =>
+          row(label, () => this.open(label), '', { submenu: true })),
+      ]; break;
+      case 'Daily': {
+        const today = E.dailyToday(this.state);
+        const available = E.dailyAvailable(this.state);
+        const next = available
+          ? (this.state.daily_day !== E.CONFIG.DAILY_NEVER && this.state.daily_day + 1 === today &&
+             this.state.daily_streak > 0
+            ? Math.min(this.state.daily_streak + 1, E.CONFIG.DAILY_STREAK_MAX) : 1)
+          : this.state.daily_streak;
+        const step = Math.max(0, next - 1);
+        const claimDetail = available
+          ? `Day ${next} / +${E.CONFIG.DAILY_XP_BASE + step * E.CONFIG.DAILY_XP_PER_DAY} XP ` +
+            `+${E.CONFIG.DAILY_SILK_BASE + step * E.CONFIG.DAILY_SILK_PER_DAY} Silk`
+          : `Claimed / Streak ${this.state.daily_streak}`;
+        const task = E.dailyTask(this.state);
+        const taskDetail = this.state.daily_task_done
+          ? `Done / +${E.CONFIG.DAILY_TASK_XP} XP +${E.CONFIG.DAILY_TASK_SILK} Silk`
+          : E.dailyTaskReady(this.state) ? 'Complete / Tap to Claim'
+            : `${E.dailyTaskProgress(this.state)} of ${E.dailyTaskGoal(this.state)}`;
+        rows = [
+          row('Check In', () => { E.dailyClaim(this.state); this.persist(); this.open('Daily'); },
+            claimDetail, { enabled: available }),
+          row(E.dailyTaskName(task),
+            () => { E.dailyTaskClaim(this.state); this.persist(); this.open('Daily'); },
+            taskDetail, { enabled: E.dailyTaskReady(this.state) }),
+          row('Back', () => this.open('Menu'), '', { submenu: true }),
+        ];
+        break;
+      }
+      case 'Treats': rows = [
+        ...E.TREATS.map((item, id) => row(item.name,
+          () => { E.buyTreat(this.state, id); this.persist(); this.open('Treats'); },
+          `${item.cost} Silk${this.state.silk < item.cost ? ' / Need More' : ''}`,
+          { enabled: this.state.silk >= item.cost })),
+        row('Back', () => this.open('Menu'), '', { submenu: true }),
+      ]; break;
       case 'Settings': rows = [
         row('WiFi', () => this.open('WiFi'), '', { submenu: true }),
         row('SD Card', () => this.open('SD Card'), '', { submenu: true }),
@@ -218,7 +258,14 @@ export class DeviceGame {
   }
   back(name) {
     if (name === 'Menu' || name === 'Gifts') this.close();
+    else if (name === 'Daily' || name === 'Treats') this.open('Menu');
     else this.open(['Backgrounds', 'Achievements', 'Settings', 'Prey Species'].includes(name) ? 'Menu' : 'Settings');
+  }
+  /** The Daily row's subtitle: what is waiting for the player right now. */
+  dailyDetail() {
+    if (E.dailyAvailable(this.state)) return 'Check In Ready';
+    if (E.dailyTaskReady(this.state)) return 'Task Complete';
+    return `Streak ${this.state.daily_streak}`;
   }
   copy(text, action, label = 'Done') {
     this.modal.panel.append(element('div', 'd-copy', text));

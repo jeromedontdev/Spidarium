@@ -1,5 +1,36 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.9 follow-up
+
+The daily loop and the treats shop exist on both targets with the same numbers.
+A check-in pays `DAILY_XP_BASE + (streak-1) * DAILY_XP_PER_DAY` XP and the same
+shape of Silk, capped at `DAILY_STREAK_MAX` (7); missing a day resets the streak
+to 1. The rotating task is `day % DAILY_TASK_COUNT`, so it is deterministic on
+both targets and a reload cannot reroll it. Completing it pays a flat
+`DAILY_TASK_XP` / `DAILY_TASK_SILK`.
+
+Both targets snapshot the task baseline **on the day rollover**, not lazily on
+first read. The lazy version was a real bug: a player who cleaned twice and then
+opened the menu had the baseline recorded as 2, so progress read 0/2 forever.
+Both also call the snapshot once per tick, which covers a migrated or restored
+save that has no baseline at all.
+
+`DAILY_NEVER` (0xFFFFFFFF) is the "never claimed" sentinel on both targets,
+because 0 is a real in-game day. Both additionally treat a zero streak as
+unclaimed, so a save whose `daily_day` happens to equal today is self-healing
+rather than permanently locked out.
+Treats are consumables on both targets: Juicy Fly 6 Silk / +25 hunger, Silk
+Ribbon 8 / +30 mood, Warm Pebble 10 / +35 energy. A purchase is refused when the
+balance is short, and the refusal leaves state untouched.
+
+The save payload grew from 136 to 152 bytes and `SAVE_VERSION` moved 5 to 6. A v5
+blob is a valid prefix of the v6 struct, so both targets accept it and default the
+new fields rather than discarding the pet. The browser engine accepts v1-v6.
+
+Browser suite 84/84 (was 78). Six new tests cover the streak arithmetic and its
+cap, the reset-on-skip behaviour, the deterministic task rotation, the
+rollover-not-lazy baseline, treat costs and refusals, and a v5 restore.
+
 ## v1.1.8 follow-up
 
 Clean pays for the mess it removes on both targets, using one formula:

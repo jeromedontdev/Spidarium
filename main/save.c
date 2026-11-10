@@ -32,6 +32,11 @@ typedef struct {
 
 #define SAVE_MAX_PAYLOAD 1024
 
+/* Byte count of the v5 game_state_t: everything up to and including last_seen.
+ * v6 appended the daily-loop fields, so a v5 blob is a valid prefix of the
+ * current struct and can be migrated in place instead of discarded. */
+#define SAVE_V5_PAYLOAD 136
+
 static bool s_nvs_ready;
 typedef struct {
     size_t size;
@@ -65,6 +70,17 @@ static void migrate_automation(game_state_t *state, uint16_t version)
     /* last_seen arrived in v5. A zeroed value means "never seen", which the
      * offline catch-up treats as no elapsed time rather than a 1970 epoch. */
     if (version < 5) state->last_seen = 0;
+    /* The daily loop arrived in v6. DAILY_NEVER means "never claimed", so the
+     * first tick of the next day pays out. daily_base_day is also DAILY_NEVER
+     * so the first task snapshot is taken on the first inspection rather than
+     * counting lifetime actions as today's. */
+    if (version < 6) {
+        state->daily_day = DAILY_NEVER;
+        state->daily_base_day = DAILY_NEVER;
+        state->daily_task_base = 0;
+        state->daily_streak = 0;
+        state->daily_task_done = 0;
+    }
 }
 
 static void save_worker(void *arg)
@@ -267,21 +283,25 @@ bool save_load(void *dst, size_t size)
                  (unsigned)hdr.magic, (unsigned)SAVE_MAGIC);
         return false;
     }
-    if (hdr.version != SAVE_VERSION && hdr.version != 2) {
+    if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5) {
         ESP_LOGW(TAG, "save version %u != %u; rejecting",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
     bool legacy = size == sizeof(game_state_t) &&
                   hdr.size == offsetof(game_state_t, silk);
-    if (hdr.size != size && !legacy) {
+    /* v5 payloads are 136 bytes: everything up to and including last_seen.
+     * v6 appended the daily-loop fields, so a v5 blob is a valid prefix and is
+     * accepted rather than thrown away. */
+    bool v5 = size == sizeof(game_state_t) && hdr.size == SAVE_V5_PAYLOAD;
+    if (hdr.size != size && !legacy && !v5) {
         ESP_LOGW(TAG, "save size %u != %u; rejecting",
                  (unsigned)hdr.size, (unsigned)size);
         return false;
     }
     if (len != sizeof(save_header_t) + hdr.size) {
         ESP_LOGW(TAG, "save blob length %u != %u; rejecting",
-                 (unsigned)len, (unsigned)(sizeof(save_header_t) + size));
+                 (unsigned)len, (unsigned)(sizeof(save_header_t) + hdr.size));
         return false;
     }
 
@@ -292,6 +312,9 @@ bool save_load(void *dst, size_t size)
         migrate_automation(state, hdr.version);
         if (hdr.version == 2) {
             ESP_LOGI(TAG, "migrated v2 automation: feed=0 hunt=0");
+        }
+        if (v5) {
+            ESP_LOGI(TAG, "migrated v5 save: daily loop starts fresh");
         }
     }
     if (legacy) {
@@ -398,12 +421,13 @@ bool save_raw_valid(const void *src, size_t len)
         ESP_LOGW(TAG, "raw write: bad magic 0x%08x", (unsigned)hdr.magic);
         return false;
     }
-    if (hdr.version != SAVE_VERSION && hdr.version != 2) {
+    if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
-    if (hdr.size != sizeof(game_state_t) && hdr.size != offsetof(game_state_t, silk)) {
+    if (hdr.size != sizeof(game_state_t) && hdr.size != offsetof(game_state_t, silk) &&
+        hdr.size != SAVE_V5_PAYLOAD) {
         ESP_LOGW(TAG, "raw write: game-state size %u != %u",
                  (unsigned)hdr.size, (unsigned)sizeof(game_state_t));
         return false;
@@ -423,7 +447,8 @@ bool save_raw_valid(const void *src, size_t len)
         !isfinite(state.spider_heading) || state.state > SPIDER_SICK ||
         (hdr.version == SAVE_VERSION && (state.auto_feed > 1 || state.auto_hunt > 1)) ||
         (hdr.version >= 4 && state.volume > 100) ||
-        (hdr.size == sizeof state && (state.brightness < 10 || state.brightness > 100))) {        ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
+        (hdr.size == sizeof state && (state.brightness < 10 || state.brightness > 100))) {
+        ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
         return false;
     }
     return true;
@@ -487,5 +512,24 @@ bool save_format_test(void)
     memcpy(blob, &header, sizeof header);
     ok = save_raw_valid(blob, sizeof header + header.size) && ok;
     ok = !save_raw_valid(blob, sizeof header + header.size - 1) && ok;
+
+    /* A v5 blob is a valid prefix of the v6 struct and must be accepted, or an
+     * upgrade would silently wipe every existing pet. */
+    header.version = 5;
+    header.size = SAVE_V5_PAYLOAD;
+    memcpy(blob, &header, sizeof header);
+    memcpy(blob + sizeof header, &g, SAVE_V5_PAYLOAD);
+    ok = save_raw_valid(blob, sizeof header + SAVE_V5_PAYLOAD) && ok;
+    /* ...but a v5 header with a v6-sized payload is a lie and must be refused. */
+    header.size = sizeof(game_state_t);
+    memcpy(blob, &header, sizeof header);
+    ok = !save_raw_valid(blob, sizeof header + SAVE_V5_PAYLOAD) && ok;
+    /* The migration must default the daily fields rather than inherit garbage. */
+    game_state_t migrated = g;
+    migrated.daily_day = 12345;
+    migrated.daily_streak = 9;
+    migrate_automation(&migrated, 5);
+    ok = migrated.daily_day == DAILY_NEVER && migrated.daily_streak == 0 &&
+         migrated.daily_base_day == DAILY_NEVER && ok;
     return ok;
 }
