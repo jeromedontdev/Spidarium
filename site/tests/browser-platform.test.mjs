@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { LocalProgress, STORAGE_KEY } from '../lib/local-progress.js';
 import { Minigame } from '../lib/minigames.js';
 import { soundSamples } from '../lib/device-audio.js';
+import { readFile } from 'node:fs/promises';
 
 test('native sound durations, deterministic noise and PCM range match', () => {
   for (const [name, duration] of [['eat', 140], ['pounce', 90], ['molt', 260], ['tap', 60], ['rustle', 280], ['chirp', 160], ['drop', 220]]) {
@@ -82,4 +83,31 @@ test('moving hunt target keeps the chosen species and enforces deadline', () => 
   assert.equal(game.bugs[game.answer], game.bug);
   game.answerAt(game.answer, 2600);
   assert.equal(game.score, 0);
+});
+
+test('brand marks and favicon are vector art, not platform emoji glyphs', async () => {
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const css = await readFile(new URL('../style.css', import.meta.url), 'utf8');
+  const icon = await readFile(new URL('../icon.svg', import.meta.url), 'utf8');
+  // A text glyph renders as whatever emoji font the platform picks, which looks
+  // wrong on mobile. Every mark must be real vector art.
+  assert.equal(html.includes('\u2733'), false, 'no emoji glyph in the markup');
+  assert.equal((html.match(/class="brand-mark"/g) ?? []).length, 2, 'header and footer marks');
+  assert.equal((html.match(/class="marquee-mark"/g) ?? []).length, 3, 'marquee separators');
+  assert.match(html, /<link rel="icon" href="\.\/icon\.svg" type="image\/svg\+xml">/);
+  assert.match(html, /<link rel="apple-touch-icon"/);
+  // The marks are sized by CSS now that they are SVG, not by font-size.
+  assert.match(css, /\.brand-mark\{[^}]*width:32px;height:32px/);
+  assert.match(css, /\.marquee-mark\{[^}]*width:9px;height:9px/);
+  // Every .brand-mark rule must size the SVG, not a font glyph. A leftover
+  // font-size override would silently do nothing to an SVG.
+  const markRules = css.match(/\.brand-mark\{[^}]*\}/g) ?? [];
+  assert.ok(markRules.length >= 1, 'brand-mark rules exist');
+  for (const rule of markRules) {
+    assert.match(rule, /width:\d+px;height:\d+px/, `sized by width/height: ${rule}`);
+    assert.equal(/font-size/.test(rule), false, `no font sizing: ${rule}`);
+  }  // The icon is a self-contained SVG with a viewBox so it scales cleanly.
+  assert.match(icon, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 32 32"/);
+  assert.match(icon, /aria-label="Spidarium"/);
+  assert.equal(/<image|href=/.test(icon), false, 'no raster or external reference');
 });

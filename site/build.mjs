@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 await rm(new URL('./dist/', import.meta.url), { recursive: true, force: true });
 await mkdir(new URL('./dist/site/vendor/', import.meta.url), { recursive: true });
-for (const path of ['index.html', 'style.css', 'device.css', 'fonts', 'native-spider.png', 'app.js', 'lib', 'firmware', 'save-schema.json', 'README.md']) {
+for (const path of ['index.html', 'style.css', 'device.css', 'fonts', 'native-spider.png', 'icon.svg', 'app.js', 'lib', 'firmware', 'save-schema.json', 'README.md']) {
   try {
     await cp(new URL(path, import.meta.url), new URL(`dist/site/${path}`, import.meta.url), { recursive: true });
   } catch (error) {
