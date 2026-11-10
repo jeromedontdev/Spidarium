@@ -270,6 +270,7 @@ typedef enum {
     GAME_UI_REFRESH,
     GAME_UI_RENDER,
     GAME_UI_SPAWN,
+    GAME_UI_SPECKLE,
     GAME_UI_STATE,
     GAME_UI_SET_HUNGER,
     GAME_UI_SET_MOOD,
@@ -324,3 +325,8 @@ uint32_t game_now(void);
 void game_add_xp(uint32_t amount);
 void game_award(uint32_t achievement);
 bool game_save_now(void);
+
+/* The physical volume buttons changed the level. If the Sound menu is open,
+ * push the new value into its slider and percentage readout. Must be called on
+ * the LVGL task. */
+void game_volume_changed(void);

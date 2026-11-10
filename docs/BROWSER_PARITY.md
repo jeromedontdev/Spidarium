@@ -1,5 +1,26 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.8 follow-up
+
+Clean pays for the mess it removes on both targets, using one formula:
+`score = dirt + (100 - hygiene)`, `xp = ceil(score * 3 / 24)` capped at 3. A
+spider dropping is 12 dirt and a bug speckle 6, so one speckle pays 1 XP, two
+pay 2, and three or more pay 3. Clean is never disabled on either target; a
+spotless tank simply pays nothing, and repeated taps cannot farm it because the
+mess is gone after the first one. A tank holding only bugs is still cleaned --
+the bugs are shooed out -- for 0 XP.
+
+Bugs left in the tank now foul it on both targets: a pale speckle appears near
+the bug every `BUG_POOP_MS` (2.5 min), worth half a dropping. The browser
+renderer branches on `poop.bug` so a speckle is drawn small and cool
+(`#8d8a7a` / `#b5b2a2` / `#d8d5c6`) while a dropping stays warm brown. Poop
+entries carry optional `dirt` and `bug` fields; a save without them defaults to
+a spider dropping, so older saves keep working.
+
+Browser suite 77/77 (was 73). The shipped bundle was verified in a real browser:
+the scaling table, the anti-bypass case, and the pale palette (0 pixels on a
+clean tank, 24 for three speckles, 0 for a dropping).
+
 ## v1.1.1 follow-up
 
 The current website uses mint promotional fangs (player colors unchanged),

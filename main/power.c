@@ -166,6 +166,11 @@ void power_tick(void)
     unsigned sample = atomic_load(&s_sample);
     uint32_t idle = lv_display_get_inactive_time(NULL);
     int target = desired_brightness(sample, idle, g.brightness);
+    /* A manual lock (the middle button) must blank the panel too. Without this
+     * the overlay was shown but the next tick recomputed the idle-based target
+     * and immediately restored the backlight, so the screen only looked black
+     * in a dark room. */
+    if (s_locked) target = 0;
     atomic_store(&s_requested, target);
     /* A manual lock (the middle button) is sticky: the idle timer must not
      * clear it on the next tick. Only a touch or power_wake() releases it. */
@@ -186,6 +191,10 @@ void power_tick(void)
 }
 
 bool power_sleeping(void) { return s_sleeping; }
+/* True while the screen is locked by the middle button. This is the single
+ * source of truth: a touch on the sleep overlay clears it, so a second copy in
+ * the button module would go stale and leave the tank hidden. */
+bool power_locked(void) { return s_locked; }
 bool power_writing(void) { return atomic_load(&s_writing); }
 power_reading_t power_reading(void)
 {

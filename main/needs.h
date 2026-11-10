@@ -20,9 +20,18 @@ void needs_apply_offline(uint32_t seconds);
 
 /* Care actions. Each applies its effect and awards XP. */
 void needs_feed(void);
-void needs_clean(void);
+/* Clean the tank. Returns the XP actually granted, which is proportional to the
+ * dirt removed: 0 for a spotless tank, up to CLEAN_XP_MAX for a filthy one. */
+uint32_t needs_clean(void);
 void needs_play(void);
 void needs_sleep(void);
+
+/* XP that cleaning would grant right now, without changing anything. */
+uint32_t needs_clean_reward(void);
+
+/* True when Clean would do something: droppings, live prey, or hygiene below
+ * full. Informational only -- the button is never disabled. */
+bool needs_clean_needed(void);
 
 
 /* Recompute mood from the other stats. */

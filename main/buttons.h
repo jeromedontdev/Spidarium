@@ -29,3 +29,7 @@ bool buttons_locked(void);
 
 /* Lock or unlock from code (serial console, tests). */
 void buttons_set_locked(bool locked);
+
+/* Report the raw and debounced level of every button, plus the polarity the
+ * driver assumes. Lets the console prove the GPIO16 wiring without a press. */
+void buttons_report(void);

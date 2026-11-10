@@ -260,8 +260,21 @@ void game_on_feed(lv_event_t *e)
 void game_on_clean(lv_event_t *e)
 {
     (void)e;
+    /* Clean always works. The reward scales with how much the tank improved, so
+     * a spotless tank pays nothing and a filthy one pays the full amount. */
+    int prey_before = prey_count();
+    bool needed = needs_clean_needed();
+    uint32_t xp = needs_clean();
+    if (!needed) {
+        ui_hud_bubble("Already Clean", 0xf5c86b, 1800);
+        return;
+    }
+    /* A tank holding only bugs is cleaned for 0 XP, so say what actually
+     * happened rather than showing a reward that was not paid. */
+    if (xp == 0 && prey_before > 0 && prey_count() < prey_before) {
+        ui_hud_bubble("Bugs Shooed Out", 0xf5c86b, 1800);
+    }
     g.taps++;
-    needs_clean();
     game_save_now();
 }
 
@@ -368,6 +381,10 @@ static void menu_open(int which);
 /* Which menu is currently on screen, or -1 when none is. Tracked here because
  * ui_menu only knows that *a* menu is open, not which one. */
 static int s_open_menu = -1;
+/* The row table handed to ui_menu_open(). File scope so a value changed
+ * outside the menu (the physical volume buttons) can be pushed into the open
+ * panel without rebuilding it. */
+static ui_menu_item_t s_menu_items[20];
 static int s_saved_network;
 static char s_join_ssid[33];
 static char s_wifi_message[80];
@@ -454,6 +471,16 @@ static void on_volume_slider(uint8_t id, uint8_t value)
     (void)id;
     audio_set_volume(value);
     game_save_now();
+}
+
+/* The physical volume buttons changed the level behind the menu's back. Push
+ * the new value into the open Sound panel so its slider and percentage follow
+ * immediately instead of waiting for the player to back out and re-enter.
+ * Runs on the LVGL task (buttons_tick is called from the logic timer). */
+void game_volume_changed(void)
+{
+    if (s_open_menu != MENU_SOUND || !ui_menu_showing(s_menu_items)) return;
+    ui_menu_set_slider_value(0, audio_volume());
 }
 
 static void on_brightness_slider(uint8_t id, uint8_t value)
@@ -588,7 +615,7 @@ static void back_to_main(void)
 
 static void menu_open(int which)
 {
-    static ui_menu_item_t items[20];
+    ui_menu_item_t *items = s_menu_items;
 
     /* Remember which menu is on screen so the render tick can tell whether the
      * WiFi list is still the one being looked at. Without this, a scan that
@@ -636,9 +663,8 @@ static void menu_open(int which)
         break;
     }
     case MENU_DISPLAY: {
-        static char brightness_detail[24];
-        snprintf(brightness_detail, sizeof brightness_detail, "%u%%", (unsigned)g.brightness);
-        items[0] = (ui_menu_item_t){ "Brightness", brightness_detail, true, false, false, 0 };
+        /* The slider row's readout is derived from its value by refresh_page(). */
+        items[0] = (ui_menu_item_t){ "Brightness", NULL, true, false, false, 0 };
         items[1] = (ui_menu_item_t){ "Screen Rotation", power_rotation_name(power_rotation()),
                                      true, false, true, 1 };
         ui_menu_open("Display", items, 2, on_display_pick);
@@ -749,9 +775,9 @@ static void menu_open(int which)
     }
 
     case MENU_SOUND: {
-        static char volume_detail[24];
-        snprintf(volume_detail, sizeof volume_detail, "%u%%", (unsigned)audio_volume());
-        items[0] = (ui_menu_item_t){ "Volume", volume_detail, true, false, false, 0 };
+        /* The slider row's readout is derived from its value by refresh_page(),
+         * so no detail string is needed here. */
+        items[0] = (ui_menu_item_t){ "Volume", NULL, true, false, false, 0 };
         items[1] = (ui_menu_item_t){ "Sound On",  NULL, true, !audio_muted(), false, 1 };
         items[2] = (ui_menu_item_t){ "Sound Off", NULL, true,  audio_muted(), false, 2 };
         ui_menu_open("Sound", items, 3, on_sound_pick);
@@ -1181,7 +1207,15 @@ static void ui_service_request(void)
         atomic_store(&s_ui_ok, prey_count() < MAX_PREY);
         game_on_feed(NULL);
         break;
-    case GAME_UI_CLEAN: game_on_clean(NULL); break;
+    case GAME_UI_CLEAN: {
+        /* Success means the tank actually changed, not that XP was paid: a tank
+         * holding only bugs is cleaned for 0 XP, and reporting that as a
+         * failure would contradict what the player just saw. */
+        bool needed = needs_clean_needed();
+        needs_clean();
+        atomic_store(&s_ui_ok, needed);
+        break;
+    }
     case GAME_UI_PLAY:  game_on_play(NULL);  break;
     case GAME_UI_WAKE: power_wake(); break;
     case GAME_UI_SLEEP: game_on_sleep(NULL); break;
@@ -1200,6 +1234,17 @@ static void ui_service_request(void)
         atomic_store(&s_ui_ok, s_ui_value < 0 ? prey_spawn() :
                      prey_spawn_species((prey_species_t)s_ui_value));
         break;
+    case GAME_UI_SPECKLE:
+        /* Creates LVGL objects, so it must run here on the LVGL task rather
+         * than on the console task. */
+        for (int i = 0; i < s_ui_value; i++) {
+            terrarium_add_bug_poop(g_play.left + rand() % (g_play.right - g_play.left),
+                                   g_play.top + rand() % (g_play.bottom - g_play.top));
+        }
+        ESP_LOGI(TAG, "speckle: added %d, poop=%d dirt=%d", s_ui_value,
+                 terrarium_poop_count(), terrarium_dirt());
+        atomic_store(&s_ui_ok, true);
+        break;
     case GAME_UI_STATE: behaviour_set_state((spider_state_t)s_ui_value); break;
     case GAME_UI_SET_HUNGER:  g.hunger = (uint8_t)s_ui_value; break;
     case GAME_UI_SET_MOOD:    g.mood = (uint8_t)s_ui_value; break;
@@ -1216,6 +1261,7 @@ static void ui_service_request(void)
     case GAME_UI_SET_VOLUME:
         g.volume = (uint8_t)s_ui_value;
         audio_set_volume(g.volume);
+        game_volume_changed();
         break;
     case GAME_UI_BACKGROUND:
         atomic_store(&s_ui_ok, theme_set(s_ui_value));
@@ -1617,6 +1663,11 @@ void game_tick_render(lv_timer_t *timer)
             lv_screen_active() == ui.screen) ui_hud_tick(now);
         return;
     }
+    /* Re-read the clock: ui_service_request() above may have created objects
+     * stamped with a later lv_tick_get(). Passing the older `now` to
+     * terrarium_tick() made now - stamp negative, which wraps to a huge
+     * unsigned value and expires the object on the very tick it was made. */
+    now = lv_tick_get();
     terrarium_tick(now);
     cspider_render(now);
     spider_render(now);   /* aim visuals only */
@@ -1773,8 +1824,4 @@ void game_init(void)
     /* Where the RAM went, once everything is up. This is the baseline the
      * budget in docs/memory_budget.md is written against. */
     mem_report_detail("boot complete");
-
-    /* Serial test console. Started last, so every command has a fully
-     * initialised game to talk to. */
-    test_console_init();
 }

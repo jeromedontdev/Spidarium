@@ -211,9 +211,15 @@ static void refresh_page(void)
         lv_obj_set_width(s_detail[i], MENU_WIDTH - text_x - 68);
         lv_obj_set_x(s_detail[i], text_x);
         lv_label_set_text(s_label[i], it->label ? it->label : "");
+        /* A slider row's readout is its value, not the caller's detail string.
+         * The physical volume buttons change the value without rebuilding the
+         * menu, so the percentage has to come from the same field the slider
+         * position does, or the two disagree. */
+        bool slider = s_slider_cb[index] != NULL;
         char detail[256];
-        snprintf(detail, sizeof detail, "%s", it->detail ? it->detail : "");
-        if (detail[0]) detail[0] = (char)toupper((unsigned char)detail[0]);
+        if (slider) snprintf(detail, sizeof detail, "%u%%", (unsigned)it->id);
+        else snprintf(detail, sizeof detail, "%s", it->detail ? it->detail : "");
+        if (detail[0] && !slider) detail[0] = (char)toupper((unsigned char)detail[0]);
         lv_label_set_text(s_detail[i], detail);
         bool multiline = strchr(detail, '\n') != NULL;
         lv_label_set_long_mode(s_detail[i], multiline ? LV_LABEL_LONG_WRAP : LV_LABEL_LONG_DOT);
@@ -229,13 +235,12 @@ static void refresh_page(void)
             if (it->selected) lv_obj_add_state(s_checks[i], LV_STATE_CHECKED);
             else lv_obj_remove_state(s_checks[i], LV_STATE_CHECKED);
         }
-        bool slider = s_slider_cb[index] != NULL;
         lv_obj_set_hidden(s_sliders[i], !slider);
         if (slider) lv_slider_set_value(s_sliders[i], it->id, LV_ANIM_OFF);
         lv_label_set_text(s_marker[i], s_check_items[index] || slider ? "" : it->selected ? LV_SYMBOL_OK :
             it->enabled && it->is_submenu ? LV_SYMBOL_RIGHT : "");
-        lv_obj_set_hidden(s_detail[i], !it->detail || !it->detail[0]);
-        lv_obj_set_pos(s_label[i], text_x, it->detail && it->detail[0] ? multiline ? 2 : 16 : 30);
+        lv_obj_set_hidden(s_detail[i], !detail[0]);
+        lv_obj_set_pos(s_label[i], text_x, detail[0] ? multiline ? 2 : 16 : 30);
     }
     char text[32];
     snprintf(text, sizeof text, "%d / %d", s_page + 1, pages);
@@ -280,6 +285,13 @@ void ui_menu_set_item_slider(uint8_t item, uint8_t value, ui_menu_slider_cb cb)
     }
     s_slider_cb[item] = cb;
     /* The row's id carries the current value so refresh_page() can show it. */
+    ((ui_menu_item_t *)s_items)[item].id = value > 100 ? 100 : value;
+    refresh_page();
+}
+
+void ui_menu_set_slider_value(uint8_t item, uint8_t value)
+{
+    if (!s_items || item >= s_count || item >= 20 || !s_slider_cb[item]) return;
     ((ui_menu_item_t *)s_items)[item].id = value > 100 ? 100 : value;
     refresh_page();
 }
@@ -586,9 +598,13 @@ static void on_slider(lv_event_t *e)
     uint8_t id = s_items[index].id;
     uint8_t value = (uint8_t)lv_slider_get_value(s_sliders[row]);
     cb(id, value);
+    /* Keep the row's stored value in step with the drag, so a later
+     * refresh_page() (the physical volume buttons) does not snap the slider
+     * back to the value the menu was opened with. */
+    ((ui_menu_item_t *)s_items)[index].id = value;
     /* The detail label is the percentage readout. Without this it kept the
      * value the menu was opened with until the row was rebuilt. */
-    if (s_detail[row] && s_items[index].detail && s_items[index].detail[0]) {
+    if (s_detail[row]) {
         char text[24];
         snprintf(text, sizeof text, "%u%%", (unsigned)value);
         lv_label_set_text(s_detail[row], text);

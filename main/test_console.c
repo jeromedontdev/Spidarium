@@ -39,6 +39,7 @@
 #include "game.h"
 #include "game_config.h"
 #include "meminfo.h"
+#include "needs.h"
 #include "net.h"
 #include "rtc.h"
 #include "prey.h"
@@ -121,6 +122,7 @@ static void cmd_help(void)
     printf("  render N             N render ticks, check memory drift\n");
     printf("  feed                 press FEED\n");
     printf("  clean                press CLEAN\n");
+    printf("  speckle [N]          drop N bug speckles (default 1)\n");
     printf("  play                 press PLAY\n");
     printf("  sleep                press SLEEP\n");
     printf("  menu                 open the main menu\n");
@@ -153,11 +155,13 @@ static void cmd_mem(void)
 static void cmd_stat(void)
 {
     printf("STAT state=%u pos=(%d,%d) heading=%.2f hunger=%u mood=%u energy=%u "
-           "hygiene=%u level=%lu stage=%u sick=%u bond=%u prey=%d\n",
+           "hygiene=%u level=%lu xp=%lu stage=%u sick=%u bond=%u prey=%d\n",
            (unsigned)g.state, g.spider_x, g.spider_y, (double)g.spider_heading,
            g.hunger, g.mood, g.energy, g.hygiene,
-           (unsigned long)g.level, (unsigned)g.stage, (unsigned)g.sick,
-           (unsigned)g.bond, prey_count());
+           (unsigned long)g.level, (unsigned long)g.xp, (unsigned)g.stage,
+           (unsigned)g.sick, (unsigned)g.bond, prey_count());
+    printf("CARE clean_needed=%d dirt=%d clean_xp=%lu\n", needs_clean_needed() ? 1 : 0,
+           terrarium_dirt(), (unsigned long)needs_clean_reward());
     printf("OK stat\n");
 }
 
@@ -213,6 +217,7 @@ static void cmd_buttons(const char *arg)
     if (arg && !strcmp(arg, "lock")) { buttons_set_locked(true); }
     else if (arg && !strcmp(arg, "unlock")) { buttons_set_locked(false); }
     else if (arg && !strcmp(arg, "toggle")) { buttons_set_locked(!buttons_locked()); }
+    buttons_report();
     printf("BUTTONS locked=%d volume=%u\n", buttons_locked(), (unsigned)audio_volume());
     printf("OK buttons\n");
 }
@@ -609,7 +614,29 @@ static void cmd_feed(void)
 
 static void cmd_clean(void)
 {
-    printf("%s clean\n", game_ui_call(GAME_UI_CLEAN) ? "OK" : "ERR");
+    /* Clean always works; the reward scales with how much the tank improved.
+     * Report the XP granted so a script can see the scaling. The verdict is
+     * whether the tank actually changed, so a tank holding only bugs reports
+     * OK with xp=0 rather than looking like a failure. */
+    uint32_t xp = needs_clean_reward();
+    printf("%s clean xp=%lu\n", game_ui_call(GAME_UI_CLEAN) ? "OK" : "ERR",
+           (unsigned long)xp);
+}
+
+/* Drop bug speckles, so the bug-poop path and the Clean scaling can be
+ * exercised without waiting BUG_POOP_MS for a live bug to produce one.
+ * Marshalled to the LVGL task: it creates objects. */
+static void cmd_speckle(const char *arg)
+{
+    int count = arg ? atoi(arg) : 1;
+    if (count < 1) count = 1;
+    if (count > MAX_POOP) count = MAX_POOP;
+    if (!game_ui_call_value(GAME_UI_SPECKLE, count)) {
+        printf("ERR speckle failed\n");
+        return;
+    }
+    printf("OK speckle count=%d dirt=%d clean_xp=%lu\n", terrarium_poop_count(),
+           terrarium_dirt(), (unsigned long)needs_clean_reward());
 }
 
 static void cmd_play(void)
@@ -841,6 +868,7 @@ static void run_line(char *line)
     else if (!strcmp(line, "prey"))     cmd_prey();
     else if (!strcmp(line, "feed"))     cmd_feed();
     else if (!strcmp(line, "clean"))    cmd_clean();
+    else if (!strcmp(line, "speckle"))  cmd_speckle(arg);
     else if (!strcmp(line, "play"))     cmd_play();
     else if (!strcmp(line, "sleep"))    cmd_sleep();
     else if (!strcmp(line, "menu"))     cmd_menu();

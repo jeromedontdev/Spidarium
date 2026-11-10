@@ -138,7 +138,11 @@ export class DeviceGame {
     else if (name === 'Play') this.play();
     else {
       const result = name === 'Feed' ? E.feed(this.state) : E.care(this.state, name.toLowerCase());
-      if (!result) this.report(`${name} is unavailable in the current state.`, true);
+      if (!result) {
+        // Clean is never disabled; it simply has nothing to do on a spotless
+        // tank, so say that rather than calling the button unavailable.
+        this.report(name === 'Clean' ? 'Already Clean' : `${name} is unavailable in the current state.`, true);
+      }
       this.persist(); this.refreshHUD();
     }
   }
@@ -425,12 +429,19 @@ export class DeviceGame {
       const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
       if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
     }
-    ctx.fillStyle = '#4a3520'; for (const poop of s.poop ?? []) {
-      ctx.beginPath(); ctx.ellipse(poop.x, poop.y + 2, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#6b4a2a'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 1, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#7d5a33'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 3, 3, 2.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#8f6a3d'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 4, 1.5, 1.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#4a3520';
+    for (const poop of s.poop ?? []) {
+      if (poop.bug) {
+        // Frass: smaller and cooler than a dropping, matching the device's
+        // 7x4 pale speckle (0x8d8a7a / 0xb5b2a2 / 0xd8d5c6).
+        ctx.fillStyle = '#8d8a7a'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y + 1, 3.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#b5b2a2'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - .5, 2.5, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#d8d5c6'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 1.5, 1.5, 1, 0, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.fillStyle = '#4a3520'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y + 2, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#6b4a2a'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 1, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#7d5a33'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 3, 3, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#8f6a3d'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 4, 1.5, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+      }
     }
     renderSpider(this.spiderPixels.data, this.spiderOptions()); this.spiderCtx.putImageData(this.spiderPixels, 0, 0);
     // Life-stage size: a spiderling reads as small, an adult as full size.

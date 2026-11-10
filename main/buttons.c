@@ -1,12 +1,21 @@
 /*
  * Spidarium — physical side buttons.
  *
- * Waveshare ESP32-S3-Touch-AMOLED-2.16 button map, per the vendor docs:
+ * Waveshare ESP32-S3-Touch-AMOLED-2.16 button map, decoded from the vendor
+ * schematic (KEYS block) rather than from the marketing pin list:
  *
- *   Left    GPIO0   BOOT strap
- *   Middle  GPIO16  PWR
- *   Right   GPIO18  user button, pulled up to VCC3V3 via R18 10K,
- *                   shorted to GND when pressed
+ *   Left    GPIO0   BOOT strap, R9/R10 10K pull-ups, C12/C13 100nF debounce.
+ *                   Shorted to GND when pressed -> active low.
+ *   Middle  GPIO16  NOT a plain button input. GPIO16 is the SYS_OUT net: R8
+ *                   10K pulls it to VCC3V3 and T1 (BSS138) pulls it to GND.
+ *                   T1's gate is driven through R11 1K from the PWRON node,
+ *                   which the middle key shorts to GND. So the key turns T1
+ *                   OFF, SYS_OUT rises to VCC3V3 and GPIO16 reads HIGH while
+ *                   the key is held. It is therefore active HIGH, and it idles
+ *                   LOW — which is why an active-low read saw it as "held"
+ *                   from the first tick and never produced a short press.
+ *   Right   GPIO18  user button, pulled up to VCC3V3 via R18 10K, shorted to
+ *                   GND when pressed -> active low.
  *
  * The BSP declares BSP_CAPS_BUTTONS 0 and never configures them, so this module
  * owns the GPIO setup.
@@ -17,10 +26,8 @@
  *                 cuts power. We never drive these pins as outputs and never
  *                 hold them low.
  *
- * GPIO0 and GPIO16 are read-only inputs here. GPIO16 is not a normal GPIO on
- * every ESP32-S3 board revision (it is the PSRAM/SPIHD pin on octal-PSRAM
- * parts), so each pin is configured defensively: if it cannot be read as an
- * input the module logs it and carries on with the others.
+ * Each pin is configured defensively: if it cannot be read as an input the
+ * module logs it and carries on with the others.
  */
 #include "buttons.h"
 
@@ -34,11 +41,12 @@
 #include "esp_log.h"
 
 #include <stdatomic.h>
+#include <stdio.h>
 
 static const char *TAG = "spidarium.buttons";
 
 #define BTN_LEFT_GPIO   GPIO_NUM_0    /* BOOT  - volume down */
-#define BTN_MID_GPIO    GPIO_NUM_16   /* PWR   - lock/unlock */
+#define BTN_MID_GPIO    GPIO_NUM_16   /* SYS_OUT - lock/unlock, active HIGH */
 #define BTN_RIGHT_GPIO  GPIO_NUM_18   /* user  - volume up   */
 
 /* Debounce: a level must be stable for this long before it counts. */
@@ -46,7 +54,7 @@ static const char *TAG = "spidarium.buttons";
 /* A press shorter than this is a short press. Anything longer is left to the
  * hardware role and produces no app action. Kept well under a second so a
  * normal tap is never mistaken for a hold. */
-#define BTN_LONG_MS     700u
+#define BTN_LONG_MS     1000u
 /* Repeat interval while a volume button is held, after the long-press window. */
 #define BTN_REPEAT_MS   140u
 /* Volume step per press. */
@@ -54,6 +62,7 @@ static const char *TAG = "spidarium.buttons";
 
 typedef struct {
     gpio_num_t pin;
+    bool active_high;   /* true = the pin reads 1 while the key is held */
     bool usable;        /* pin configured and readable */
     bool stable;        /* debounced level, true = pressed */
     bool raw;           /* last raw sample */
@@ -65,17 +74,18 @@ typedef struct {
 
 static button_t s_buttons[] = {
     { .pin = BTN_LEFT_GPIO },
-    { .pin = BTN_MID_GPIO },
+    /* GPIO16 is the SYS_OUT node, not a switch to GND: see the header. */
+    { .pin = BTN_MID_GPIO, .active_high = true },
     { .pin = BTN_RIGHT_GPIO },
 };
 #define BTN_COUNT (sizeof s_buttons / sizeof s_buttons[0])
 
-static atomic_bool s_locked;
 static bool s_ready;
 
-static bool read_pressed(gpio_num_t pin)
+static bool read_pressed(const button_t *b)
 {
-    return gpio_get_level(pin) == 0;
+    bool level = gpio_get_level(b->pin) != 0;
+    return b->active_high ? level : !level;
 }
 
 bool buttons_init(void)
@@ -96,7 +106,7 @@ bool buttons_init(void)
             continue;
         }
         s_buttons[i].usable = true;
-        s_buttons[i].raw = read_pressed(s_buttons[i].pin);
+        s_buttons[i].raw = read_pressed(&s_buttons[i]);
         s_buttons[i].stable = s_buttons[i].raw;
         s_buttons[i].long_fired = false;
         s_buttons[i].changed_at = 0;
@@ -109,12 +119,25 @@ bool buttons_init(void)
     return true;
 }
 
-bool buttons_locked(void) { return atomic_load(&s_locked); }
+bool buttons_locked(void) { return power_locked(); }
+
+void buttons_report(void)
+{
+    for (unsigned i = 0; i < BTN_COUNT; i++) {
+        const button_t *b = &s_buttons[i];
+        if (!b->usable) {
+            printf("BUTTON %u gpio=%d unusable\n", i, (int)b->pin);
+            continue;
+        }
+        printf("BUTTON %u gpio=%d level=%d active_high=%d pressed=%d stable=%d\n",
+               i, (int)b->pin, gpio_get_level(b->pin), (int)b->active_high,
+               (int)read_pressed(b), (int)b->stable);
+    }
+}
 
 void buttons_set_locked(bool locked)
 {
-    if (atomic_load(&s_locked) == locked) return;
-    atomic_store(&s_locked, locked);
+    if (power_locked() == locked) return;
     if (locked) power_sleep();
     else power_wake();
     ESP_LOGI(TAG, "screen %s", locked ? "locked" : "unlocked");
@@ -130,7 +153,7 @@ static void volume_step(int delta)
     audio_set_volume(g.volume);
     /* If the Sound menu is open, its slider and percentage must follow the
      * hardware buttons. This runs on the LVGL task, so it is safe. */
-    ui_menu_refresh();
+    game_volume_changed();
     ESP_LOGI(TAG, "volume=%d", volume);
 }
 
@@ -153,7 +176,7 @@ void buttons_tick(uint32_t now_ms)
         button_t *b = &s_buttons[i];
         if (!b->usable) continue;
 
-        bool pressed = read_pressed(b->pin);
+        bool pressed = read_pressed(b);
         if (pressed != b->raw) {
             b->raw = pressed;
             b->changed_at = now_ms;

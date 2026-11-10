@@ -7,6 +7,7 @@ import {
   aimAvailable,aimWindow,preyCount,spawnPrey,speciesUnlocked,nextSpecies,preySprite,
   purchaseGift,placeGift,removeGift,visitGift,giftBonus,award,awardAchievement,
   minigameReward,resolvePounce,recomputeMood,seekTo,
+  addBugPoop,terrariumDirt,cleanNeeded,cleanReward,
 } from '../lib/sim.js';
 const native=path=>readFile(new URL(`../../main/${path}`,import.meta.url),'utf8');
 const state=options=>freshState({random:()=>.5,temperament:0,...options});
@@ -152,13 +153,64 @@ test('dead PNGs remain visible 2200ms, then free native prey slots',async()=>{
     assert.equal(feed(s,sp.id),true);assert.equal(s.prey.length,1);
   }
 });
+// Hygiene counts toward the clean score, so isolate the dirt term by starting
+// from a full tank -- exactly what the device's formula does. The first_clean
+// achievement pays a one-time 15 XP, so pre-award it to measure the reward alone.
+const spotless=()=>{const s=state();s.hygiene=100;awardAchievement(s,'first_clean');return s;};
+test('clean pays in proportion to the mess removed, not for the tap',()=>{
+  const s=spotless();
+  // A spotless tank has nothing to do: no XP, no clean counted.
+  assert.equal(cleanNeeded(s),false);assert.equal(cleanReward(s),0);
+  const base=s.xp;
+  assert.equal(care(s,'clean'),false);assert.equal(s.cleans,0);assert.equal(s.xp,base);
+  // One bug speckle is 6 dirt -> 1 XP.
+  addBugPoop(s,240,240);
+  assert.equal(terrariumDirt(s),6);assert.equal(cleanReward(s),1);
+  assert.equal(care(s,'clean'),true);assert.equal(s.cleans,1);assert.equal(s.xp,base+1);
+  assert.equal(s.poop.length,0);assert.equal(s.hygiene,100);
+  // The mess is gone, so a repeat tap pays nothing.
+  assert.equal(care(s,'clean'),false);assert.equal(s.xp,base+1);assert.equal(s.cleans,1);
+});
+test('clean reward scales with dirt and caps at CLEAN_XP_MAX',()=>{
+  const s=spotless();
+  for(const [count,xp] of [[1,1],[2,2],[3,3],[4,3],[8,3]]){
+    s.poop=[];for(let i=0;i<count;i++)addBugPoop(s,100+i*10,240);
+    assert.equal(terrariumDirt(s),count*CONFIG.POOP_DIRT_BUG,`dirt for ${count}`);
+    assert.equal(cleanReward(s),xp,`xp for ${count} speckles`);
+  }
+  // A spider dropping is worth twice a speckle.
+  s.poop=[];s.poop.push({x:240,y:240,expires:1e9,dirt:CONFIG.POOP_DIRT_SPIDER,bug:false});
+  assert.equal(terrariumDirt(s),12);assert.equal(cleanReward(s),2);
+  // Hygiene deficit is part of the same score: 50 hygiene alone is 50/24 -> cap.
+  s.poop=[];s.hygiene=50;
+  assert.equal(cleanReward(s),CONFIG.CLEAN_XP_MAX);
+  s.hygiene=90;assert.equal(cleanReward(s),2); // 10/24 -> ceil 1.25 -> 2
+});
+test('a tank holding only bugs is cleaned for 0 XP but is still cleaned',()=>{
+  const s=spotless();bug(s);
+  assert.equal(cleanNeeded(s),true);assert.equal(terrariumDirt(s),0);assert.equal(cleanReward(s),0);
+  const base=s.xp;
+  assert.equal(care(s,'clean'),true);
+  assert.equal(preyCount(s),0);assert.equal(s.cleans,1);assert.equal(s.xp,base);
+});
+test('a bug left in the tank leaves a speckle every BUG_POOP_MS',()=>{
+  const s=spotless();const p=bug(s);
+  assert.equal(p.poop_at,CONFIG.BUG_POOP_MS);
+  tick(s,CONFIG.BUG_POOP_MS/1000-1);
+  assert.equal(s.poop.length,0);
+  tick(s,2);
+  assert.equal(s.poop.length,1);
+  assert.equal(s.poop[0].bug,true);
+  assert.equal(s.poop[0].dirt,CONFIG.POOP_DIRT_BUG);
+  assert.equal(cleanReward(s),1);
+});
 test('clean/play care rewards are exact native XP and do not pay invented Silk',()=>{
-  const s=state();bug(s);s.poop.push({expires:10000});care(s,'clean');
+  const s=state();bug(s);s.poop.push({expires:10000,dirt:CONFIG.POOP_DIRT_SPIDER});
+  care(s,'clean');
   assert.equal(s.hygiene,100);assert.equal(s.cleans,1);assert.equal(s.xp,18);
   assert.equal(preyCount(s),0);assert.equal(s.poop.length,0);assert.equal(s.silk,20);
-  care(s,'clean');assert.equal(s.xp,21);assert.equal(s.cleans,2);
   care(s,'play');assert.equal(s.mood,70);assert.equal(s.energy,75);assert.equal(s.plays,1);
-  assert.equal(s.xp,40);assert.equal(s.silk,20);assert.equal(s.state,7);
+  assert.equal(s.xp,37);assert.equal(s.silk,20);assert.equal(s.state,7);
   assert.throws(()=>care(s,'pet')); // Defined on device, but not currently wired.
 });
 test('native integer decay runs every 3s, empty tank regenerates hygiene',()=>{

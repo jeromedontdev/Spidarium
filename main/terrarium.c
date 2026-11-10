@@ -14,6 +14,9 @@ static lv_obj_t *s_background, *s_gift_layer, *s_poop_layer, *s_preview_ring;
 static uint16_t *s_pixels;
 static uint8_t *s_gift_pixels;
 static uint32_t s_poop_at[MAX_POOP];
+/* Dirt points each dropping is worth, so Clean can pay for the mess it actually
+ * removed instead of for the tap. */
+static uint8_t s_poop_dirt[MAX_POOP];
 
 static const lv_image_dsc_t *background_asset(int scene)
 {
@@ -172,6 +175,7 @@ void terrarium_add_poop(int32_t x, int32_t y)
         for (int i = 1; i < MAX_POOP; i++) {
             ui.poop[i - 1] = ui.poop[i];
             s_poop_at[i - 1] = s_poop_at[i];
+            s_poop_dirt[i - 1] = s_poop_dirt[i];
         }
         slot = MAX_POOP - 1;
     }
@@ -183,6 +187,31 @@ void terrarium_add_poop(int32_t x, int32_t y)
     poop_blob(base, 6, 0, 3, 3, 2, 0x8f6a3d);
     ui.poop[slot] = base;
     s_poop_at[slot] = lv_tick_get();
+    s_poop_dirt[slot] = POOP_DIRT_SPIDER;
+}
+
+/* A bug left in the tank leaves a small pale speckle rather than a dropping:
+ * it is frass, not a meal's worth of waste, so it is smaller, cooler in tone
+ * and worth less dirt. Same slot pool and lifetime as a dropping. */
+void terrarium_add_bug_poop(int32_t x, int32_t y)
+{
+    int slot = -1;
+    for (int i = 0; i < MAX_POOP; i++) if (!ui.poop[i]) { slot = i; break; }
+    if (slot < 0) {
+        lv_obj_delete(ui.poop[0]);
+        for (int i = 1; i < MAX_POOP; i++) {
+            ui.poop[i - 1] = ui.poop[i];
+            s_poop_at[i - 1] = s_poop_at[i];
+            s_poop_dirt[i - 1] = s_poop_dirt[i];
+        }
+        slot = MAX_POOP - 1;
+    }
+    lv_obj_t *base = poop_blob(s_poop_layer, x, y + 1, 7, 4, 2, 0x8d8a7a);
+    poop_blob(base, 3, 1, 5, 3, 2, 0xb5b2a2);
+    poop_blob(base, 3, 0, 3, 2, 1, 0xd8d5c6);
+    ui.poop[slot] = base;
+    s_poop_at[slot] = lv_tick_get();
+    s_poop_dirt[slot] = POOP_DIRT_BUG;
 }
 
 void terrarium_clear_poop(void)
@@ -191,6 +220,7 @@ void terrarium_clear_poop(void)
         if (ui.poop[i]) lv_obj_delete(ui.poop[i]);
         ui.poop[i] = NULL;
         s_poop_at[i] = 0;
+        s_poop_dirt[i] = 0;
     }
 }
 
@@ -201,13 +231,23 @@ int terrarium_poop_count(void)
     return n;
 }
 
+int terrarium_dirt(void)
+{
+    int dirt = 0;
+    for (int i = 0; i < MAX_POOP; i++) if (ui.poop[i]) dirt += s_poop_dirt[i];
+    return dirt;
+}
+
 void terrarium_tick(uint32_t now_ms)
 {
     for (int i = 0; i < MAX_POOP; i++) {
-        if (ui.poop[i] && now_ms - s_poop_at[i] >= POOP_LIFETIME_MS) {
+        /* Signed difference: a dropping stamped later than now_ms (created
+         * earlier in this same tick) must not read as long expired. */
+        if (ui.poop[i] && (int32_t)(now_ms - s_poop_at[i]) >= (int32_t)POOP_LIFETIME_MS) {
             lv_obj_delete(ui.poop[i]);
             ui.poop[i] = NULL;
             s_poop_at[i] = 0;
+            s_poop_dirt[i] = 0;
         }
     }
 }

@@ -476,6 +476,9 @@ void ui_hud_tick(uint32_t now_ms)
             lv_obj_set_style_text_color(lv_obj_get_child(ui.btn_feed, -1),
                 lv_color_hex(full ? 0x64717b : COL_TEXT), 0);
         }
+        /* Clean is never disabled: it always works, and pays in proportion to
+         * the mess it removed. Gating the button looked broken and could be
+         * bypassed by dropping a bug in and tapping repeatedly. */
         if (strcmp(lv_label_get_text(s_resources), text)) lv_label_set_text(s_resources, text);
     }
     cspider_emote_t emote = CSP_EMOTE_NONE;

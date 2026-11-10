@@ -29,6 +29,7 @@
 #include "theme.h"
 #include "power.h"
 #include "buttons.h"
+#include "test_console.h"
 
 static const char *TAG = "spidarium";
 
@@ -63,4 +64,10 @@ void app_main(void)
     game_init();
     if (!power_init()) ESP_LOGW(TAG, "battery monitoring unavailable");
     if (!buttons_init()) ESP_LOGW(TAG, "physical buttons unavailable");
+
+    /* Serial test console. Started last, so every command has a fully
+     * initialised game, power monitor and button driver to talk to. It used to
+     * start inside game_init(), which meant "buttons" ran before the GPIOs were
+     * configured and reported every pin as unusable. */
+    test_console_init();
 }

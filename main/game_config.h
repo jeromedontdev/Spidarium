@@ -51,6 +51,16 @@
  * meal, so hygiene can never recover and CLEAN becomes mandatory busywork. */
 #define POOP_LIFETIME_MS        600000u  /* 10 min */
 
+/* A bug left in the tank fouls it. Slower than the spider's own droppings so a
+ * short visit is not punished, but a bug parked for a long time leaves a
+ * visible mess -- that is the consequence of not catching it. */
+#define BUG_POOP_MS             150000u  /* 2.5 min per live bug */
+
+/* Dirt points per dropping, used to scale the Clean reward. A spider dropping
+ * is a full meal's worth of waste; a bug speckle is smaller. */
+#define POOP_DIRT_SPIDER        12
+#define POOP_DIRT_BUG           6
+
 #define MOOD_PENALTY_LOW       1      /* per low stat, per decay tick */
 #define MOOD_LOW_THRESHOLD     25
 
@@ -68,7 +78,14 @@
 #define FEED_XP                5
 
 #define CLEAN_HYGIENE_SET      100
-#define CLEAN_XP               3
+/* Clean pays for how much the tank actually improved, not for the tap. The
+ * score is the hygiene restored plus the dirt swept up, out of CLEAN_SCORE_FULL.
+ * This replaces gating the button: a gate looked broken and could be bypassed
+ * by dropping a bug in and tapping Clean repeatedly. */
+#define CLEAN_XP_MAX           3
+/* Score that earns the full CLEAN_XP_MAX. Two spider droppings (2 x 12), or
+ * four bug speckles (4 x 6), or a mix, or a badly neglected tank's hygiene. */
+#define CLEAN_SCORE_FULL       24
 
 #define PLAY_MOOD_GAIN         10
 #define PLAY_ENERGY_COST       5
@@ -364,7 +381,7 @@
 #define XP_MEAL                5
 #define XP_PET                 2
 #define XP_PLAY                4
-#define XP_CLEAN               3
+/* Clean's reward is scaled by the dirt removed; see CLEAN_XP_MAX. */
 #define XP_DAY                 10
 #define XP_MOLT                8
 

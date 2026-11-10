@@ -126,17 +126,60 @@ void needs_feed(void)
     ESP_LOGI(TAG, "feed: prey spawned");
 }
 
-void needs_clean(void)
+/* True when there is actually something for Clean to do: droppings to sweep,
+ * live prey to shoo out, or hygiene below full. */
+bool needs_clean_needed(void)
 {
+    return terrarium_poop_count() > 0 || prey_count() > 0 ||
+           g.hygiene < CLEAN_HYGIENE_SET;
+}
+
+/* XP for cleaning, proportional to how much the tank actually improved. The
+ * "clean score" is hygiene, and dirt is measured in the same units: a spider
+ * dropping costs FEED_HYGIENE_COST hygiene when it is made, and POOP_DIRT_SPIDER
+ * matches it. So the score is simply the hygiene that cleaning restores plus the
+ * dirt it sweeps up, out of CLEAN_SCORE_FULL.
+ *
+ * Scaling rather than gating means the button always works, and repeatedly
+ * tapping Clean cannot farm XP: the mess is gone after the first tap, so every
+ * later tap scores 0. */
+uint32_t needs_clean_reward(void)
+{
+    int score = terrarium_dirt();
+    if (g.hygiene < CLEAN_HYGIENE_SET) score += CLEAN_HYGIENE_SET - g.hygiene;
+    if (score <= 0) return 0;
+    /* Round up, so any real mess pays at least 1 XP and a full tank pays the
+     * maximum. Truncation would pay 0 for a single dropping. */
+    uint32_t xp = ((uint32_t)score * CLEAN_XP_MAX + CLEAN_SCORE_FULL - 1) / CLEAN_SCORE_FULL;
+    if (xp > CLEAN_XP_MAX) xp = CLEAN_XP_MAX;
+    return xp;
+}
+
+uint32_t needs_clean(void)
+{
+    /* The guard is "is there anything to do", NOT "is there XP to pay". A tank
+     * holding only bugs has no dirt and full hygiene, so it scores 0 XP, but
+     * Clean still shooed the bugs out -- returning early on xp == 0 would leave
+     * the bugs in the tank while reporting success. */
+    if (!needs_clean_needed()) {
+        ESP_LOGI(TAG, "clean: tank already clean, no reward (hygiene=%u poop=%d prey=%d)",
+                 g.hygiene, terrarium_poop_count(), prey_count());
+        return 0;
+    }
+
+    uint32_t xp = needs_clean_reward();
+    int dirt = terrarium_dirt();
     g.hygiene = CLEAN_HYGIENE_SET;
     g.cleans++;
 
     terrarium_clear_poop();
     prey_clear();
 
-    game_add_xp(XP_CLEAN);
+    game_add_xp(xp);
     game_award(ACH_FIRST_CLEAN);
     audio_play(SFX_TAP);
+    ESP_LOGI(TAG, "clean: dirt=%d xp=%lu", dirt, (unsigned long)xp);
+    return xp;
 }
 
 void needs_play(void)

@@ -12,7 +12,9 @@ export const CONFIG = Object.freeze({
   HUNGER_PER_MIN:3, HYGIENE_PER_MIN:.7, ENERGY_PER_MIN:.5,
   ENERGY_REGEN_ASLEEP_PER_MIN:6, HYGIENE_REGEN_PER_MIN:2, POOP_LIFETIME_MS:600000,
   MOOD_LOW_THRESHOLD:25, FEED_HUNGER_GAIN:15, HUNGER_FULL:95, FEED_MOOD_GAIN:8,
-  FEED_HYGIENE_COST:12, CLEAN_XP:3, PLAY_MOOD_GAIN:10, PLAY_ENERGY_COST:5,
+  FEED_HYGIENE_COST:12, CLEAN_XP_MAX:3, CLEAN_SCORE_FULL:24, CLEAN_HYGIENE_SET:100,
+  BUG_POOP_MS:150000, POOP_DIRT_SPIDER:12, POOP_DIRT_BUG:6,
+  PLAY_MOOD_GAIN:10, PLAY_ENERGY_COST:5,
   PLAY_XP:4, PET_MOOD_GAIN:6, PET_XP:2, EAT_MS:800, SLEEP_MIN_MS:6000,
   MOVE_SPEED:55, TURN_RATE_DEG:540, WANDER_RETARGET_MS:2000, ARRIVE_RADIUS:12,
   PREY_SPEED:30, PREY_FLEE_SPEED:70, PREY_AGGRO_RADIUS:70, PREY_AGGRO_HYSTERESIS:1.25,
@@ -263,7 +265,8 @@ export function validateProgress(raw) {
         typeof p.alive!=='boolean'||typeof p.dead!=='boolean'||!Number.isFinite(p.x)||!Number.isFinite(p.y))
         fail('prey metadata is invalid');
     for(const p of raw.poop??[])
-      if(!plain(p)||!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.expires))
+      if(!plain(p)||!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.expires)||
+        (p.dirt!==undefined&&!Number.isFinite(p.dirt)))
         fail('poop metadata is invalid');
   }
   return raw;
@@ -301,6 +304,11 @@ export function restoreSim(raw,options={}) {
       x:clamp(raw.gift.x??315,34,446),y:clamp(raw.gift.y??330,34,446)};
   else if(Number.isInteger(raw.gift)&&GIFTS[raw.gift])s.gift={kind:raw.gift,used:1,variant:0,x:315,y:330};
   if(s.gift.used)s.gifts_owned|=1<<s.gift.kind;
+  // Restore the tank's mess. Older saves carry no dirt/bug tags, so a dropping
+  // defaults to a spider dropping's worth.
+  if(!(raw.version<3)&&Array.isArray(raw.poop))
+    s.poop=raw.poop.slice(0,C.MAX_POOP).map(p=>({x:round(clamp(p.x,34,446)),y:round(clamp(p.y,34,446)),
+      expires:p.expires,dirt:Number.isFinite(p.dirt)?p.dirt:C.POOP_DIRT_SPIDER,bug:p.bug===true}));
   s.gifts_owned&=(1<<18)-1;s.achievements&=(1<<11)-1;
   s.level=Math.floor(s.xp/50)+1;
   s.days_lived=Math.floor(s.age_ticks/2880);
@@ -337,11 +345,23 @@ export function spawnPrey(s,id=chooseSpecies(s),wild=false) {
   if(slot<0){if(s.prey.length>=3)return event(s,'rejected',{reason:'maximum 3 prey'});slot=s.prey.length;}
   const direction=random(s)*TAU-PI;
   const p={alive:true,dead:false,fleeing:false,wild,species:id,key:PREY[id],frame:0,
-    frame_at:runtime(s).now_ms,retarget_at:0,dead_at:0,wander_dir:direction,heading:direction,x:0,y:0};
+    frame_at:runtime(s).now_ms,retarget_at:0,dead_at:0,poop_at:runtime(s).now_ms+C.BUG_POOP_MS,
+    wander_dir:direction,heading:direction,x:0,y:0};
   for(let n=0;n<12;n++){p.x=34+roll(s,412);p.y=34+roll(s,412);if(Math.hypot(p.x-s.spider_x,p.y-s.spider_y)>90)break;}
   s.prey[slot]=p;return true;
 }
 export function feed(s,id){return spawnPrey(s,id??chooseSpecies(s),false);}
+/** A bug left in the tank leaves a small pale speckle rather than a dropping:
+ * frass, not a meal's worth of waste, so it is worth less dirt. Same slot pool
+ * and lifetime as a dropping. */
+export function addBugPoop(s,x,y) {
+  const r=runtime(s);
+  const poop={x:round(clamp(x,34,446)),y:round(clamp(y,34,446)),
+    expires:r.now_ms+C.POOP_LIFETIME_MS,dirt:C.POOP_DIRT_BUG,bug:true};
+  if(s.poop.length>=C.MAX_POOP)s.poop.shift();
+  s.poop.push(poop);
+  return poop;
+}
 function setState(s,state) {
   if(s.state===state)return;
   s.state=state;
@@ -349,12 +369,39 @@ function setState(s,state) {
   if(state===0)r.idle_until=r.now_ms+1200+roll(s,1800);
   if(state===8)r.oneshot_until=r.now_ms+800;
 }
+/** Total dirt points in the tank. Clean pays in proportion to this, so the
+ * reward tracks the mess actually removed rather than the tap. */
+export function terrariumDirt(s) {
+  let dirt=0;
+  for(const p of s.poop??[])dirt+=p.dirt??C.POOP_DIRT_SPIDER;
+  return dirt;
+}
+/** True when Clean would do something: droppings, live prey, or hygiene below
+ * full. Informational only -- the button is never disabled. */
+export function cleanNeeded(s) {
+  return (s.poop?.length??0)>0||preyCount(s)>0||s.hygiene<C.CLEAN_HYGIENE_SET;
+}
+/** XP that cleaning would grant right now, without changing anything. The score
+ * is the dirt swept up plus the hygiene restored, out of CLEAN_SCORE_FULL,
+ * rounded up and capped at CLEAN_XP_MAX. Rounding up means any real mess pays at
+ * least 1 XP; truncation would pay 0 for a single dropping. */
+export function cleanReward(s) {
+  let score=terrariumDirt(s);
+  if(s.hygiene<C.CLEAN_HYGIENE_SET)score+=C.CLEAN_HYGIENE_SET-s.hygiene;
+  if(score<=0)return 0;
+  const xp=Math.ceil(score*C.CLEAN_XP_MAX/C.CLEAN_SCORE_FULL);
+  return Math.min(C.CLEAN_XP_MAX,xp);
+}
 export function care(s,action) {
   const r=runtime(s);
   if(action==='feed')return feed(s);
   if(action==='clean'){
-    s.hygiene=100;s.cleans++;s.poop=[];s.prey=[];
-    addXP(s,3);awardAchievement(s,'first_clean');
+    // The guard is "is there anything to do", not "is there XP to pay": a tank
+    // holding only bugs scores 0 XP but Clean still shoos them out.
+    if(!cleanNeeded(s))return false;
+    const xp=cleanReward(s);
+    s.hygiene=C.CLEAN_HYGIENE_SET;s.cleans++;s.poop=[];s.prey=[];
+    addXP(s,xp);awardAchievement(s,'first_clean');
   }else if(action==='play'){
     s.mood=clamp(s.mood+10);s.energy=clamp(s.energy-5);s.plays++;
     setState(s,7);r.oneshot_until=r.now_ms+180;
@@ -465,7 +512,8 @@ export function resolvePounce(s,player=runtime(s).pounce?.player??true) {
   awardAchievement(s,'first_meal');awardAchievement(s,'first_hunt');
   if(s.meals>=10)awardAchievement(s,'ten_meals');
   s.bond=clamp(s.bond+(perfect?4:2));s.hygiene=clamp(s.hygiene-12);
-  const poop={x:s.spider_x+roll(s,17)-8,y:s.spider_y+roll(s,17)-8,expires:r.now_ms+600000};
+  const poop={x:s.spider_x+roll(s,17)-8,y:s.spider_y+roll(s,17)-8,expires:r.now_ms+600000,
+    dirt:C.POOP_DIRT_SPIDER,bug:false};
   if(s.poop.length>=8)s.poop.shift();s.poop.push(poop);
   s.lastEvent={type:'catch',at:r.now_ms,quality:perfect?'perfect':'good',probability,distance:d,xp,silk:perfect?5:3,species:p.key};
   return true;
@@ -640,6 +688,12 @@ function preyTick(s,dt){
   for(const p of s.prey){
     if(!p.alive)continue;
     if(p.dead){if(p.dead_at&&now>=p.dead_at){p.alive=false;p.dead=false;p.dead_at=0;}continue;}
+    // A bug left in the tank fouls it: a pale speckle appears near the bug every
+    // BUG_POOP_MS, which dirties the tank until Clean is used.
+    if(p.poop_at&&now>=p.poop_at){
+      p.poop_at=now+C.BUG_POOP_MS;
+      addBugPoop(s,p.x+roll(s,13)-6,p.y+roll(s,13)-6);
+    }
     if(runtime(s).drag&&aimAvailable(s))continue;
     const sp=SPECIES[p.species],dx=p.x-s.spider_x,dy=p.y-s.spider_y,d=Math.hypot(dx,dy);
     const fleeR=Math.min(102,70*alert*sp.flee_radius_mult*(p.wild?1.25:1)*b.fear_mult);

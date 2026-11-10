@@ -8,6 +8,10 @@
 bool power_init(void);
 void power_tick(void);
 bool power_sleeping(void);
+/* True while the screen is locked by the middle button. Cleared by a touch on
+ * the sleep overlay as well as by power_wake(), so this is the only copy of the
+ * lock state that cannot go stale. */
+bool power_locked(void);
 /* Force the display into the sleep overlay (screen lock). */
 void power_sleep(void);
 bool power_writing(void);

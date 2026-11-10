@@ -41,6 +41,7 @@ typedef struct {
     uint32_t       frame_at;
     int            frame;
     uint32_t       dead_at;
+    uint32_t       poop_at;     /* next time this bug leaves a speckle */
     lv_obj_t      *root;        /* container, positioned at the bug centre */
     lv_obj_t      *sprite;
     int            sprite_index;
@@ -177,6 +178,7 @@ bool prey_spawn_species_ex(prey_species_t species, bool wild)
     p->frame_at    = lv_tick_get();
     p->retarget_at = 0;
     p->dead_at     = 0;
+    p->poop_at     = lv_tick_get() + BUG_POOP_MS;
     p->wander_dir  = randf() * 2.0f * PI_F - PI_F;
     p->heading     = p->wander_dir;
 
@@ -587,6 +589,16 @@ void prey_tick(uint32_t now_ms, float dt_s)
                 p->dead_at = 0;
             }
             continue;
+        }
+
+        /* A bug left in the tank fouls it. This is the consequence of not
+         * catching it: a pale speckle appears near the bug every BUG_POOP_MS,
+         * which dirties the tank and lowers hygiene until Clean is used. */
+        if (p->poop_at && (int32_t)(now_ms - p->poop_at) >= 0) {
+            p->poop_at = now_ms + BUG_POOP_MS;
+            terrarium_add_bug_poop((int32_t)p->x + (rand() % 13) - 6,
+                                   (int32_t)p->y + (rand() % 13) - 6);
+            ESP_LOGI(TAG, "bug %d left a speckle; tank dirt=%d", i, terrarium_dirt());
         }
 
         float dx = p->x - (float)g.spider_x;

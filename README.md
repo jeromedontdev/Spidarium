@@ -78,7 +78,10 @@ See [battery management](docs/BATTERY_MANAGEMENT.md).
 The unboxed upper-right gauge appears only with the care HUD, below the identity
 panel inside the display's safe area. It shows level/charging and opens voltage details on tap.
 Name and next unlock share a translucent reading panel. Feed disables at three
-live bugs; achievement badges are distinct and every species has splatter art.
+live bugs, so it cannot be tapped for free XP. Clean is never disabled: it pays
+XP in proportion to how much the tank actually improved, so a spotless tank pays
+nothing and repeated taps cannot farm it. Achievement badges are distinct and
+every species has splatter art.
 Sound controls live under Settings.
 
 **Playfield screenshots.** Settings > Save Screenshot writes a numbered,

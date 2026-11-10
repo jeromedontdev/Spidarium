@@ -117,6 +117,8 @@ lines use a short uppercase tag so they are greppable:
 | `RENDER` | render-loop summary |
 | `SPIDER` | spider position and state |
 | `PREY` | prey count and nearest position |
+| `BUTTON` | one physical button's raw level and polarity |
+| `BUTTONS` | lock state and volume |
 
 ---
 
@@ -370,6 +372,30 @@ and restart the idle clock. Expect brightness 15 after 60 seconds and
 brightness 0 / `screen_sleep=1` after 300 seconds, then `wake` restores the
 selected brightness. See [battery policy](BATTERY_MANAGEMENT.md).
 
+### `buttons`
+
+Reports every physical button, then the lock state and volume:
+
+```
+BUTTON 0 gpio=0 level=1 active_high=0 pressed=0 stable=0
+BUTTON 1 gpio=16 level=0 active_high=1 pressed=0 stable=0
+BUTTON 2 gpio=18 level=1 active_high=0 pressed=0 stable=0
+BUTTONS locked=0 volume=70
+OK buttons
+```
+
+`level` is the raw GPIO read, `active_high` is the polarity the driver assumes
+for that pin, and `pressed`/`stable` are the debounced results. GPIO16 is the
+`SYS_OUT` net on this board, not a switch to GND: it idles LOW and reads HIGH
+while the middle key is held, so it is the only `active_high=1` row. A pin that
+could not be configured prints `unusable` instead.
+
+`buttons lock`, `buttons unlock` and `buttons toggle` drive the same path the
+middle key does, so the sleep overlay and the backlight can be exercised without
+pressing anything. Locking logs `screen locked`, reports `screen_sleep=1` from
+`battery`, and drives the backlight to 0; unlocking restores the selected
+brightness. A touch on the overlay or `wake` also clears the lock.
+
 ### `hunttest`, `gaittest`, `preytest`
 
 `hunttest` creates a temporary event-driven LVGL pointer, so actual hit testing
@@ -433,10 +459,38 @@ Press the corresponding HUD button.
 eight ramped-difficulty rounds to receive 8-32 base XP, 2-18 Silk and the existing care reward; Back cancels
 without those rewards. Starting a game alone does not save or grant XP.
 
+`clean` always works and pays XP in proportion to how much the tank actually
+improved, so a spotless tank pays nothing and repeated taps cannot farm it.
+The reward score is the dirt swept up plus the hygiene restored, out of
+`CLEAN_SCORE_FULL` (24), rounded up and capped at `CLEAN_XP_MAX` (3). A spider
+dropping is worth 12 dirt and a bug speckle 6, so one speckle pays 1 XP, two pay
+2, three or more pay 3. The HUD never dims or disables Clean; only Feed is
+disabled, when the tank already holds three live bugs. `stat` reports the
+predicate as `CARE clean_needed=0|1`, the current mess as `dirt=`, and the XP a
+clean would pay as `clean_xp=`.
+
 ```
 >>> feed
 OK feed
 ```
+
+### `speckle [N]`
+
+Drops `N` bug speckles (default 1, capped at `MAX_POOP` = 8) into the tank,
+exercising the bug-poop path and the Clean reward scaling without waiting
+`BUG_POOP_MS` for a live bug to produce one. Marshalled onto the LVGL task,
+because it creates objects. Reports the resulting mess and the XP a clean would
+pay.
+
+```
+>>> speckle 3
+OK speckle count=3 dirt=18 clean_xp=3
+```
+
+A bug left in the tank leaves a pale speckle near itself every `BUG_POOP_MS`
+(2.5 min), so parking a bug is a real consequence rather than a free meal.
+Speckles share the dropping slot pool and the 10-minute `POOP_LIFETIME_MS`
+decay.
 
 ### `menu`
 

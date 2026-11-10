@@ -5898,3 +5898,337 @@ Verified through the console command and the state readout, not by pressing the
 physical buttons. The `button N (gpio X) down` / `short press (Nms)` log lines
 identify which pin fired and how long it was held, which is the fastest way to
 diagnose a remaining mis-map or a press that is still being read as a hold.
+
+---
+
+## Round 56 - GPIO16 is active HIGH, and the slider follows the buttons
+
+**Status:** COMPLETE - built, flashed, verified on hardware.
+
+### Decisions made
+
+- **GPIO16 is not a switch to GND.** The vendor schematic's KEYS block was
+  decoded at 9x-40x zoom instead of trusting the marketing pin list. Key1 (the
+  middle button) shorts the PWRON node to GND; that node drives the gate of T1
+  (BSS138) through R11 1K. T1's source is GND and its drain is the `SYS_OUT`
+  net, which R8 10K pulls to VCC3V3. **GPIO16 is the `SYS_OUT` net itself** -
+  the ESP32 pin table row `GPIO16` carries `SYS_OUT` in its SYS column. So the
+  key turns T1 *off*, `SYS_OUT` rises, and GPIO16 reads **HIGH while held**.
+  It idles LOW. The old `read_pressed()` returned `gpio_get_level(pin) == 0`
+  for every pin, so GPIO16's idle LOW was read as permanently held: the driver
+  fired a long press on the first tick and never produced a short press. That
+  is exactly the `button 1 (gpio 16) long press: hardware role` line Round 53
+  recorded at boot. `button_t` now carries `active_high`, set only for GPIO16.
+- **The slider row's value lived in the wrong place.** `refresh_page()` re-applied
+  `it->id`, but `it->id` was only written by `ui_menu_set_item_slider()` (once,
+  when the menu opened) and by `on_slider()` (only on a drag). The physical
+  buttons changed `g.volume` and never touched `it->id`, so the refresh snapped
+  the slider back to the value the menu was opened with. The percentage had the
+  same defect: it was rebuilt from `it->detail`, a static buffer in `game.c`
+  that was also stale. Round 55 restored `ui_menu_refresh()`'s body, which was
+  necessary but not sufficient - the body re-read stale data.
+- **A slider row's readout is now derived from its value.** `refresh_page()`
+  synthesizes `"%u%%"` from `it->id` for any row with a registered slider
+  callback, so the slider position and the percentage can never disagree. The
+  `MENU_SOUND` and `MENU_DISPLAY` cases no longer build a detail string at all.
+- **New `ui_menu_set_slider_value()`** writes `it->id` and refreshes, and
+  `on_slider()` now writes the dragged value back into `it->id` so a later
+  refresh cannot undo the drag. `game_volume_changed()` is the entry point the
+  button driver calls; it is a no-op unless the Sound menu is the one on screen
+  (`s_open_menu == MENU_SOUND && ui_menu_showing(s_menu_items)`). It does not
+  save: NVS writes from the button path are forbidden, and the 5 s autosave
+  covers it.
+- **The lock state had two copies.** `buttons.c` kept its own `s_locked` while
+  `power.c` kept another. A touch on the sleep overlay cleared power's copy but
+  not the button module's, so the tank stayed hidden and the next press was
+  swallowed. `buttons_locked()` now returns `power_locked()`, and power is the
+  single source of truth.
+- **A manual lock did not blank the backlight.** `power_sleep()` set
+  `s_requested = 0`, but the next `power_tick()` recomputed the idle-based
+  target and immediately restored the brightness, so the overlay was drawn over
+  a lit panel. `power_tick()` now forces `target = 0` while `s_locked`. The
+  check is at the call site, not inside `desired_brightness()`, so
+  `power_test()`'s pure-function assertions still hold.
+- **The console started before the button driver.** `test_console_init()` ran
+  inside `game_init()`, so `buttons` executed before `buttons_init()` and
+  reported every pin `unusable`. Moved to the end of `app_main()`, after
+  `power_init()` and `buttons_init()`.
+- **`buttons_report()`** was added so the pin polarity can be proven from the
+  console instead of assumed. `buttons` now prints each pin's raw level, the
+  polarity the driver assumes, and the debounced state.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **passed=47 failed=0**.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `mem`: `MEM cmd internal=156527 largest=69632 dma=148739 psram=2833748` -
+  `largest` is 69632, above the 51200 floor.
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- **Polarity proven on hardware**, not inferred:
+  `BUTTON 0 gpio=0 level=1 active_high=0 pressed=0 stable=0`,
+  `BUTTON 1 gpio=16 level=0 active_high=1 pressed=0 stable=0`,
+  `BUTTON 2 gpio=18 level=1 active_high=0 pressed=0 stable=0`.
+  GPIO16 idles LOW and is read as not-pressed, which is the fix.
+- **Lock proven on hardware**: `buttons lock` -> `screen locked`,
+  `screen_sleep=1`, and the power worker logged `brightness=0`. `buttons unlock`
+  -> `screen_sleep=0` and `brightness=52`. `buttons toggle` round-trips both
+  ways. `wake` also clears it, and `buttons` then reports `locked=0`.
+- **Slider proven by pixel diff**, not by reading the code back. Two
+  `screenshot menu` captures of the open Sound menu, at volume 20 and 90, differ
+  in 61 of 4800 parts across rows 146-179 - the slider row. Row 160 colour runs:
+  at 20 the indicator is `x 299-314` (13 px) with the knob at `x 299-314`; at 90
+  the indicator is `x 285-389` (105 px) with the knob at `x 391-406`. The
+  percentage text changed from `20%` to `90%` in the same capture.
+- `set volume 40` then `buttons` reports `volume=40`; `set volume 85` then
+  `buttons` reports `volume=85`, so the console path and the button path agree.
+
+### Honest boundaries
+
+The middle button's electrical role was established from the schematic and from
+the console's raw level readout, not by a human pressing it. The `button N (gpio
+X) down` / `short press (Nms)` log lines remain the fastest way to confirm a
+physical press. The slider was verified by pixel-diffing captures taken through
+the console's `set volume` path, which drives the same `game_volume_changed()`
+the buttons call; a physical volume press was not performed. The user's
+uncommitted `BTN_LONG_MS` 700 -> 1000 edit was preserved.
+
+---
+
+## Round 57 - Clean pays for the mess it removes, not for the tap
+
+**Status:** COMPLETE - built, flashed, verified on hardware.
+
+### Decisions made
+
+- **`needs_clean()` paid XP unconditionally.** It set hygiene to 100, cleared
+  droppings and prey, then called `game_add_xp(XP_CLEAN)` and awarded
+  `ACH_FIRST_CLEAN` with no check that anything had been cleaned. Tapping Clean
+  on a spotless tank was therefore an unlimited XP faucet: 3 XP per tap, with no
+  cost and no cooldown.
+- **Gating the button was tried first and rejected by the user.** The first fix
+  made `needs_clean()` return `bool`, refused when the tank was clean, and dimmed
+  and disabled the Clean button in the HUD. The user rejected it on two grounds:
+  a grayed button is visually displeasing, and the gate is bypassable anyway --
+  drop a bug in, tap Clean repeatedly, and each tap still pays. The gate was
+  removed and replaced with proportional reward.
+- **Clean now pays for how much the tank actually improved.** `needs_clean_reward()`
+  computes `score = terrarium_dirt() + (CLEAN_HYGIENE_SET - g.hygiene)`, rounds
+  up, and caps at `CLEAN_XP_MAX`. Dirt and hygiene are in the same units because
+  a spider dropping costs `FEED_HYGIENE_COST` (12) hygiene when it is made and
+  `POOP_DIRT_SPIDER` is also 12. `CLEAN_SCORE_FULL` (24) is the score that earns
+  the full 3 XP: two spider droppings, four bug speckles, or a badly neglected
+  tank's hygiene deficit.
+- **Rounding up, not truncating.** Truncation would pay 0 XP for a single
+  dropping, which reads as the button being broken. Any real mess pays at least
+  1 XP.
+- **The anti-bypass property is structural, not a gate.** Bugs alone are not
+  dirt, so parking a bug pays nothing; and after one clean the dirt is gone, so
+  every later tap scores 0. The button is always enabled and always works, which
+  is what the user asked for, and it still cannot be farmed.
+- **The HUD no longer touches Clean at all.** The disable/dim block was deleted
+  from `ui_hud.c`. Feed's existing disable at `MAX_PREY` is untouched -- that one
+  is a genuine "cannot act" state, not a reward gate.
+- **`needs_clean()` returns the XP granted** (`uint32_t`, 0 when nothing was
+  done) so the console can report the actual payout rather than a boolean.
+- **The guard is "is there anything to do", not "is there XP to pay".** The
+  first version returned early when `xp == 0`, which was wrong for a tank
+  holding only bugs: no dirt and full hygiene score 0 XP, but Clean still shooed
+  the bugs out. Returning early left the bugs in the tank while reporting
+  success. The guard is now `needs_clean_needed()`, and the XP is computed
+  separately. Caught by re-reading the diff, not by a test.
+- **Success and reward are separate signals.** `GAME_UI_CLEAN` reports whether
+  the tank actually changed, so a bugs-only clean returns `OK clean xp=0`
+  instead of looking like a failure. The bubble distinguishes the two cases:
+  "Already Clean" when nothing was needed, "Bugs Shooed Out" when bugs were
+  removed for no reward.
+- **`stat` gained `xp=`, `CARE clean_needed=`, `dirt=` and `clean_xp=`.** Without
+  an XP readout the scaling could only be argued from the code; with it the
+  reward is measurable per tap.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `flash.ps1 COM7` exit 0.
+- **The faucet is closed, measured in XP**: `clean` on a spotless tank returned
+  `ERR clean xp=0` and `xp` stayed at **497 -> 497, delta 0**. Three consecutive
+  repeats after a real clean also returned `ERR clean xp=0` and left `xp` at
+  **500 -> 500, delta 0**.
+- **The reward scales with the mess**, measured as the XP delta across a clean:
+  `speckle 1` -> `OK clean xp=1`, delta **1**; `speckle 2` -> `xp=2`, delta
+  **2**; `speckle 3` -> `xp=3`, delta **3**; `speckle 4` -> `xp=3`, delta **3**
+  (capped); `speckle 8` (dirt 48) -> `xp=3`, delta **3** (capped).
+- **A tank holding only bugs is cleaned for 0 XP but is still cleaned**:
+  `spawn 0` gave `prey=1 xp=513`; `clean` returned `OK clean xp=0` and left
+  `prey=0 xp=513`. This is the case the first guard got wrong.
+- **A spotless tank refuses**: `clean` returned `ERR clean xp=0` with `xp`
+  unchanged.
+- `run_tests.py COM7`: **passed=47 failed=0**.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `mem`: `largest=69632`, above the 51200 floor. `scanloop 5`:
+  `LOOP ok=5 failed=0 largest_drift=0`. `render 500`:
+  `RENDER ticks=500 largest_drift=0`.
+- **The HUD no longer dims Clean**, measured from screen captures of the open
+  chrome. Peak luminance of the first action row labels (y 304-368) on a spotless
+  tank: **Feed 104, Clean 104, Play 104** -- all equal, so Clean is not dimmed.
+- **Feed's disable still works**, same measurement with three live bugs:
+  **Feed 51, Clean 104, Play 104**. The change is specific to Clean and did not
+  disturb the established Feed behaviour.
+
+### Honest boundaries
+
+Verified through the console and through screen captures, not by tapping the
+physical panel. An earlier attempt to measure the dimming sampled the wrong row
+band (y 395-440, which is the second action row) and wrongly suggested the
+dimming did not work; the corrected band (y 304-368) is the one used above. An
+intermediate `stat` diagnostic that read `lv_obj_has_state()` from the console
+task was removed: reading LVGL state off the LVGL task is exactly the kind of
+cross-thread access the threading policy forbids, and it produced a misleading
+reading. HUD state is verified from pixels only.
+
+## Round 58 - Bugs foul the tank, and a lifetime bug in the poop timer
+
+**Status:** COMPLETE - built, flashed, verified on hardware.
+
+### Decisions made
+
+- **A bug left in the tank now has a consequence.** `prey_t` gained `poop_at`,
+  stamped to `lv_tick_get() + BUG_POOP_MS` at spawn. When it expires,
+  `prey_tick()` drops a speckle near the bug and re-arms. `BUG_POOP_MS` is
+  150000 (2.5 min), deliberately slower than the spider's own droppings so a
+  short visit is not punished but a parked bug visibly fouls the tank.
+- **A speckle is frass, not a meal's worth of waste.** `terrarium_add_bug_poop()`
+  draws a smaller, cooler three-lobe mound (7x4, colours `0x8d8a7a` / `0xb5b2a2`
+  / `0xd8d5c6`) rather than the warm brown dropping, and is worth
+  `POOP_DIRT_BUG` (6) against `POOP_DIRT_SPIDER` (12). It shares the dropping
+  slot pool and the 10-minute `POOP_LIFETIME_MS` decay, so it needs no separate
+  lifetime bookkeeping.
+- **Dirt is tracked per slot, not derived from the object.** `s_poop_dirt[]`
+  parallels `ui.poop[]` and is shifted on eviction and cleared on expiry, so
+  `terrarium_dirt()` is a sum rather than a guess. Without it the Clean reward
+  could not distinguish a speckle from a dropping.
+- **`speckle [N]` was added to the console**, marshalled through a new
+  `GAME_UI_SPECKLE` action. It creates LVGL objects, so it must run on the LVGL
+  task; calling `terrarium_add_bug_poop()` directly from the console task would
+  be the same cross-thread violation that crashed the menu path.
+- **The speckle lifetime bug was a stale clock, not a missing object.** The
+  first `speckle` runs reported `count=0 dirt=0` even though the log showed the
+  objects being created. `game_tick_render()` captured `now = lv_tick_get()` at
+  the top, then called `ui_service_request()` -- which stamps the new object with
+  a *later* `lv_tick_get()` -- and then passed the older `now` to
+  `terrarium_tick()`. `now - s_poop_at` was therefore negative, wrapped to about
+  4.29 billion as an unsigned value, and the object was deleted on the very tick
+  it was created. Fixed twice over: `game_tick_render()` re-reads the clock after
+  servicing requests, and `terrarium_tick()` now compares with a signed
+  difference, matching `prey_tick()`. The signed comparison is the real fix; the
+  re-read keeps the rest of the tick consistent.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `flash.ps1 COM7` exit 0.
+- **Speckles persist and scale**: `speckle 1` -> `count=1 dirt=6 clean_xp=1`;
+  again -> `count=2 dirt=12 clean_xp=2`; again -> `count=3 dirt=18 clean_xp=3`;
+  again -> `count=4 dirt=24 clean_xp=3`. `stat` agreed after each step.
+- **The speckle renders, verified from pixels.** With `BUG_POOP_MS` temporarily
+  lowered to 8000 for the test, `speckle 4` reported positions
+  `(343,121) (332,176) (382,175) (71,132)`. A 480x480 screen capture contained
+  **exactly 48 pixels** in the three intended colours, forming **exactly 4
+  clusters of 12 pixels each**, at x 72-76 / 333-337 / 344-348 / 383-387 and
+  y 132-135 / 176-179 / 121-124 / 175-178 -- one cluster per reported position.
+  Colour counts: `0xb594` (32), `0x8c4f` (12), `0xdeb8` (4), which are the
+  RGB565 encodings of `0xb5b2a2`, `0x8d8a7a` and `0xd8d5c6`. The same capture
+  before the speckles contained **0** such pixels.
+- **A live bug produces one naturally.** With `BUG_POOP_MS` at 8000, `spawn 0`
+  then polling `stat` showed `dirt=0` for 8.0 s and `dirt=6 clean_xp=1` at
+  8.2 s. `BUG_POOP_MS` was restored to 150000 afterwards and rebuilt.
+- **The capture format is `rgb565le`**, so the two bytes of each pixel are
+  swapped relative to the value LVGL holds. Reading the hex directly gives
+  `0x4f8c` for `0x8d8a7a`; the byte swap is required. The x coordinate is
+  `offset / 2 + i / 4` for the i-th 4-hex-digit group in a `SCREEN PART` line --
+  using the character index instead of the byte index shifts every sample by 2
+  pixels and made the first three verification attempts read the wrong column.
+
+### Honest boundaries
+
+The natural-speckle test used a shortened `BUG_POOP_MS`; the shipped value of
+150000 was restored and rebuilt but not observed end to end, because that would
+need a bug parked for 2.5 minutes. The speckle was verified from a screen
+capture, not by eye on the physical panel. `MAX_POOP` is 8, so a tank with eight
+droppings evicts the oldest rather than growing without bound.
+
+## Round 59 - Browser parity, and the v1.1.8 release
+
+**Status:** COMPLETE - built, flashed, tested on hardware, packaged and
+published.
+
+### Decisions made
+
+- **The website had the same XP faucet.** `care(s,'clean')` in
+  `site/lib/device-engine.js` set hygiene to 100, cleared poop and prey, and
+  called `addXP(s,3)` unconditionally -- the identical bug the device had. It now
+  uses the same formula, the same dirt values and the same cap, so the two
+  targets cannot drift apart on this rule.
+- **The web engine gained the same three helpers as the device**:
+  `terrariumDirt()`, `cleanNeeded()` and `cleanReward()`. Naming them after the
+  native functions keeps the port auditable side by side.
+- **The guard is "is there anything to do", not "is there XP to pay"** -- the
+  same correction the device needed. A bugs-only tank returns `true` from
+  `care(s,'clean')` and pays 0 XP.
+- **Bug speckles are ported too**, including the 2.5-minute `BUG_POOP_MS` timer
+  on each prey (`poop_at`), the 6-dirt value, and the pale palette. The renderer
+  branches on `poop.bug` so a speckle is drawn small and cool while a dropping
+  stays warm brown.
+- **Poop now carries its dirt value in the save.** `dirt` and `bug` are optional
+  fields; `validateProgress` accepts them and `restoreSim` defaults a missing
+  `dirt` to `POOP_DIRT_SPIDER`, so older saves keep working.
+- **The Clean button stays enabled in the browser.** It already only disabled
+  Feed, so no change was needed there; the message on a no-op clean now reads
+  "Already Clean" instead of "Clean is unavailable in the current state".
+- **Version bumped to 1.1.8** in `CMakeLists.txt`, `site/package.json` and
+  `site/package-lock.json`, with `docs/RELEASE_v1.1.8.md` as the release notes.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings; `build/project_description.json`
+  reports `version: 1.1.8 name: spidarium target: esp32s3`.
+- `flash.ps1 COM7` exit 0. `run_tests.py COM7`: **passed=47 failed=0**.
+- `stability_check.py COM7 40`: `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `mem`: `largest=69632` (above the 51200 floor). `scanloop 5`:
+  `LOOP ok=5 failed=0 largest_drift=0`. `render 500`:
+  `RENDER ticks=500 largest_drift=0`.
+- **Browser suite 77/77** (was 73). Four new tests cover the proportional
+  reward, the scaling table with its cap, the bugs-only clean, and the natural
+  speckle timer.
+- **The shipped bundle was verified in a real browser**, not just in Node. From
+  `site/dist/site/lib/sim.js` the constants read `CLEAN_XP_MAX=3`,
+  `CLEAN_SCORE_FULL=24`, `CLEAN_HYGIENE_SET=100`, `BUG_POOP_MS=150000`,
+  `POOP_DIRT_SPIDER=12`, `POOP_DIRT_BUG=6`. The scaling table read
+  `1 -> dirt 6, xp 1`; `2 -> 12, 2`; `3 -> 18, 3`; `4 -> 24, 3`; `8 -> 48, 3`.
+  The anti-bypass case read `needed=true reward=0 did=true preyAfter=0
+  xpDelta=0`.
+- **The browser renderer paints the speckle palette**: 0 pale pixels on a clean
+  tank, **24** after three speckles, and **0** for a spider dropping -- so the
+  two mess types are visually distinct, matching the device.
+- **The Clean button is enabled in the live page** (`cleanDisabled: false`).
+- `tools/package_release.py --version 1.1.8`:
+  `PACKAGED spidarium-v1.1.8.zip: 5 verified images; NVS excluded`.
+  `site/firmware/manifest.json` reports `version 1.1.8` with 5 files.
+- The packaged site was served and loaded with **zero 404s** after
+  `prepare_website.py --assets-only` copied 134 PNGs, matching the CI step order
+  (build, then assets).
+- `site/save-schema.json` was re-captured from the device and compared
+  semantically with the committed copy: **identical**, 26 fields, version 5. The
+  file was restored rather than reformatted, so the release does not churn it.
+
+### Honest boundaries
+
+The browser was verified by driving the engine and the renderer directly from
+the page, not by tapping through a full play session. The flasher path was
+verified only as far as the manifest and the five images being present and
+correctly versioned; no browser-to-device flash was performed. The release
+archive and `site/dist` are gitignored by design -- they are uploaded to the
+GitHub release, and the Pages workflow rebuilds `dist` from the published
+archive.

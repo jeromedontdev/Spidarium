@@ -69,6 +69,11 @@ void ui_menu_set_item_checkbox(uint8_t item);
 typedef void (*ui_menu_slider_cb)(uint8_t id, uint8_t value);
 void ui_menu_set_item_slider(uint8_t item, uint8_t value, ui_menu_slider_cb cb);
 
+/* Move an already-registered slider row to a new value and redraw it. Used when
+ * something outside the menu changes the value (the physical volume buttons).
+ * Does nothing if the row is not a slider. */
+void ui_menu_set_slider_value(uint8_t item, uint8_t value);
+
 /* Rebuild the current page from the item table, so a caller that changed a
  * value behind the menu's back (the physical volume buttons) can refresh the
  * slider and its readout without closing and reopening the menu. */

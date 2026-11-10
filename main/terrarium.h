@@ -23,11 +23,19 @@ bool terrarium_test(void);
 /* Draw a poop blob at playfield coords. */
 void terrarium_add_poop(int32_t x, int32_t y);
 
+/* Draw a small pale speckle left by a bug that has been in the tank too long.
+ * Worth less dirt than a spider dropping. */
+void terrarium_add_bug_poop(int32_t x, int32_t y);
+
 /* Remove all poop blobs. */
 void terrarium_clear_poop(void);
 
 /* Number of poop blobs currently in the tank. */
 int terrarium_poop_count(void);
+
+/* Total dirt points in the tank. Clean pays in proportion to this, so the
+ * reward tracks the mess actually removed rather than the tap. */
+int terrarium_dirt(void);
 
 /* Placement preview: a faint ring at the tap point showing where the gift will
  * go before it is committed. The ring object is created once and only
