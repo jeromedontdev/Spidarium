@@ -6223,6 +6223,35 @@ published.
   semantically with the committed copy: **identical**, 26 fields, version 5. The
   file was restored rather than reformatted, so the release does not churn it.
 
+### Publication
+
+- Tag `v1.1.8` pushed and the
+  [release published](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.8)
+  with `spidarium-v1.1.8.zip`.
+- **The Pages deploy was blocked at first**: the `github-pages` environment has
+  a custom branch policy listing each release tag explicitly, and `v1.1.8` was
+  not in it. Added with
+  `gh api -X POST .../environments/github-pages/deployment-branch-policies`.
+- **The workflow shipped a stale firmware manifest.** Its manual-dispatch path
+  fell back to a hardcoded `RELEASE_TAG` of `v1.1.1`, so dispatching published
+  the v1.1.1 manifest beside the current website: the live site read
+  `version: 1.1.1` while the engine already had the new code. A release event
+  names its own tag; a dispatch runs against a ref, so the fallback is now
+  `github.ref_name`. Committed separately as `10b452e`.
+- Deleting and recreating the tag to pick up that fix reverted the release to
+  Draft; `gh release edit v1.1.8 --draft=false --latest` republished it, which
+  re-triggered the workflow.
+- Final run `42747142620`: **build and deploy both succeeded**. The live site
+  now serves `firmware/manifest.json` with `version: 1.1.8`, 5 files,
+  `chip: ESP32-S3`.
+- **The published site was verified in a browser** at
+  `https://jeromedontdev.github.io/Spidarium/site/` with **zero failed
+  requests**. It reported the same six constants, the same scaling table
+  (`1 -> dirt 6, xp 1`; `2 -> 12, 2`; `3 -> 18, 3`; `4 -> 24, 3`; `8 -> 48, 3`),
+  the same anti-bypass result (`needed=true reward=0 did=true preyAfter=0
+  xpDelta=0`), and the same renderer counts (0 pale pixels on a clean tank, 24
+  for three speckles, 0 for a dropping).
+
 ### Honest boundaries
 
 The browser was verified by driving the engine and the renderer directly from
