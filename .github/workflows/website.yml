@@ -31,12 +31,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           # A release event names its own tag. A manual dispatch runs against a
-          # ref, so use that ref's name -- a hardcoded fallback silently shipped
-          # an old firmware manifest whenever the workflow was dispatched.
+          # ref, so use that ref's name when it is a release tag; a dispatch from
+          # a branch (a website-only change) falls back to the latest published
+          # release, so the site never ships a stale or missing firmware bundle.
           RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "spidarium-$RELEASE_TAG.zip" --dir "$RUNNER_TEMP"
-          python tools/prepare_website.py "$RUNNER_TEMP/spidarium-$RELEASE_TAG.zip"
+          tag="$RELEASE_TAG"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            tag="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+            echo "No release named '$RELEASE_TAG'; using latest published release '$tag'."
+          fi
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "spidarium-$tag.zip" --dir "$RUNNER_TEMP"
+          python tools/prepare_website.py "$RUNNER_TEMP/spidarium-$tag.zip"
       - name: Build website and bundled flasher
         working-directory: site
         run: npm run build
