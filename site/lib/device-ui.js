@@ -172,10 +172,11 @@ export class DeviceGame {
       case 'Menu': rows = [
         row('Daily', () => this.open('Daily'), this.dailyDetail(), { submenu: true }),
         row('Treats', () => this.open('Treats'), 'Spend Silk', { submenu: true }),
-        ...['Backgrounds', 'Achievements', 'Prey Species'].map(label =>
-          row(label, () => this.open(label), '', { submenu: true })),
+        row('Backgrounds', () => this.open('Backgrounds'), 'Enclosure Themes', { submenu: true }),
+        row('Achievements', () => this.open('Achievements'), this.achievementDetail(), { submenu: true }),
+        row('Prey Species', () => this.open('Prey Species'), this.speciesDetail(), { submenu: true }),
         /* Settings is always the last row: it is the least-used entry. */
-        row('Settings', () => this.open('Settings'), '', { submenu: true }),
+        row('Settings', () => this.open('Settings'), 'Sound, Display, WiFi', { submenu: true }),
       ]; break;
       case 'Daily': {
         const today = E.dailyToday(this.state);
@@ -211,27 +212,29 @@ export class DeviceGame {
           { enabled: this.state.silk >= item.cost })),
       ]; break;
       case 'Settings': rows = [
-        row('WiFi', () => this.open('WiFi'), '', { submenu: true }),
-        row('SD Card', () => this.open('SD Card'), '', { submenu: true }),
-        row('About', () => this.open('About'), '', { submenu: true }),
-        row('Battery', () => this.open('Battery'), '', { submenu: true }),
-        row('Display', () => this.open('Display'), '', { submenu: true }),
-        row('Sound', () => this.open('Sound'), '', { submenu: true }),
+        row('WiFi', () => this.open('WiFi'), 'Networks and Time Sync', { submenu: true }),
+        row('SD Card', () => this.open('SD Card'), 'Back Up and Restore', { submenu: true }),
+        row('About', () => this.open('About'), 'Version and Hardware', { submenu: true }),
+        row('Battery', () => this.open('Battery'), 'Charge and Runtime', { submenu: true }),
+        row('Display', () => this.open('Display'), 'Brightness and Rotation', { submenu: true }),
+        row('Sound', () => this.open('Sound'), 'Volume and Mute', { submenu: true }),
         row('Auto Feed', () => toggle('autoFeed'), 'Wild Prey and Unattended Hunting', { checkbox: true, selected: this.state.autoFeed }),
         row('Save Screenshot', () => this.screenshot(), 'Download Playfield PNG'),
         row('Wipe Spider', () => this.newTank(), 'Erases This Spider', { destructive: true }),
       ]; break;
       case 'Sound': rows = [
         row('Volume', null, `${this.state.volume}%`, { slider: { value: this.state.volume, min: 0, max: 100, step: 5, change: value => { this.state.volume = value; this.persist(); } } }),
-        row('Sound On', () => { this.state.sound = true; void this.audio.unlock(true); this.persist(); this.open(name); }, '', { selected: this.state.sound }),
-        row('Sound Off', () => { this.state.sound = false; void this.audio.unlock(false); this.persist(); this.open(name); }, '', { selected: !this.state.sound }),
+        row('Sound On', () => { this.state.sound = true; void this.audio.unlock(true); this.persist(); this.open(name); }, 'Play Effects', { selected: this.state.sound }),
+        row('Sound Off', () => { this.state.sound = false; void this.audio.unlock(false); this.persist(); this.open(name); }, 'Silence Effects', { selected: !this.state.sound }),
       ]; break;
       case 'Backgrounds': rows = E.BACKGROUNDS.map(key => row(title(key), () => {
         this.state.theme = key; this.persist(); this.open(name, page);
-      }, '', { selected: this.state.theme === key })); break;
+      }, this.state.theme === key ? 'In Use' : 'Tap to Apply', { selected: this.state.theme === key })); break;
       case 'Achievements': rows = E.ACHIEVEMENTS.filter(item => item.id !== 'first_pet').map(item => row(item.name, null,
-        this.state.achievements & item.bit ? 'Earned' : 'Not Yet Earned', { selected: Boolean(this.state.achievements & item.bit), icon: item.asset })); break;
-      case 'Prey Species': rows = E.SPECIES.map(item => row(title(item.name), null, `${this.state.level >= item.unlock_level ? 'Available' : 'Locked'} / Level ${item.unlock_level}`, { icon: `prey_${item.key}_walk_0` })); break;
+        this.state.achievements & item.bit ? 'Earned' : 'Not Yet', { selected: Boolean(this.state.achievements & item.bit), icon: item.asset })); break;
+      case 'Prey Species': rows = E.SPECIES.map(item => row(title(item.name), null,
+        `${this.state.level >= item.unlock_level ? 'Available' : 'Locked'} / Level ${item.unlock_level} / Food x${item.hunger_mult.toFixed(1)}`,
+        { icon: `prey_${item.key}_walk_0` })); break;
       case 'Gifts': rows = E.GIFTS.map(item => {
         const owned = Boolean(this.state.gifts_owned & (1 << item.id));
         const current = this.state.gift.used && this.state.gift.kind === item.id;
@@ -266,6 +269,15 @@ export class DeviceGame {
     if (E.dailyAvailable(this.state)) return 'Check In Ready';
     if (E.dailyTaskReady(this.state)) return 'Task Complete';
     return `Streak ${this.state.daily_streak}`;
+  }
+  achievementDetail() {
+    const earned = E.ACHIEVEMENTS.filter(item => item.id !== 'first_pet' &&
+      (this.state.achievements & item.bit)).length;
+    return `${earned} of ${E.ACHIEVEMENTS.filter(item => item.id !== 'first_pet').length} Earned`;
+  }
+  speciesDetail() {
+    const unlocked = E.SPECIES.filter(item => this.state.level >= item.unlock_level).length;
+    return `${unlocked} of ${E.SPECIES.length} Unlocked`;
   }
   copy(text, action, label = 'Done') {
     this.modal.panel.append(element('div', 'd-copy', text));

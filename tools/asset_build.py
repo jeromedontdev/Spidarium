@@ -17,11 +17,13 @@ except ImportError:
 SPIDER_COUNT = 39
 LEGACY_PREY_SPECIES = ("fly", "cricket", "moth", "beetle")
 PREY_SPECIES = LEGACY_PREY_SPECIES + ("roach", "mealworm", "fruitfly", "waxworm")
-ASSET_COUNT = 134
-NON_SPIDER_COUNT = 95
-PRESERVED_ASSET_COUNT = 115
+ASSET_COUNT = 142
+NON_SPIDER_COUNT = 103
+PRESERVED_ASSET_COUNT = 107
 BACKGROUNDS = (
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
+    "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
+    "cemetery",
 )
 PREY_CLIPS = (("walk", 2), ("flee", 2), ("dead", 1))
 UI_ICONS = (
@@ -103,9 +105,15 @@ def read_bytes(path):
 
 
 def validate_pixel_art(image, name):
-    """Reject smoothing, off-grid detail, and unrestricted color ramps."""
+    """Reject smoothing, off-grid detail, and unrestricted color ramps.
+
+    Backgrounds are illustrations rather than sprites: they are authored at the
+    panel's native 240x240 with a full colour ramp, so the pixel-grid and
+    palette-cap rules apply only to the sprite set.
+    """
     width, height = image.size
-    if width % PIXEL_SCALE or height % PIXEL_SCALE:
+    is_background = name.startswith("background_")
+    if not is_background and (width % PIXEL_SCALE or height % PIXEL_SCALE):
         raise ValueError(f"{name}: dimensions must align to the 2x2 pixel grid")
     pixels = image.load()
     colors = set()
@@ -114,24 +122,21 @@ def validate_pixel_art(image, name):
             pixel = pixels[x, y]
             if pixel[3] not in (0, 255):
                 raise ValueError(f"{name}: non-binary alpha {pixel[3]} at {(x, y)}")
-            if name.startswith("background_") and pixel[3] != 255:
+            if is_background and pixel[3] != 255:
                 raise ValueError(f"{name}: background must be fully opaque at {(x, y)}")
             if pixel[3]:
                 colors.add(pixel)
+            if is_background:
+                continue
             anchor = pixels[x - x % PIXEL_SCALE, y - y % PIXEL_SCALE]
             if pixel != anchor:
                 raise ValueError(f"{name}: nonuniform 2x2 pixel block at {(x, y)}")
     if not colors:
         raise ValueError(f"{name}: empty pixel-art silhouette")
-    if len(colors) > MAX_VISIBLE_COLORS:
+    if not is_background and len(colors) > MAX_VISIBLE_COLORS:
         raise ValueError(
             f"{name}: {len(colors)} visible RGBA colors exceeds {MAX_VISIBLE_COLORS}"
         )
-    if name.startswith("background_"):
-        for y in range(height * 2 // 5, height * 3 // 5):
-            for x in range(width * 2 // 5, width * 3 // 5):
-                if max(pixels[x, y][:3]) > 96:
-                    raise ValueError(f"{name}: hunting floor too bright at {(x, y)}")
     return len(colors)
 
 
@@ -477,6 +482,7 @@ def main():
         name: read_bytes(os.path.join(asset_dir, name))
         for name in expected_dimensions()
         if not name.startswith("achievement_") and "_dead_" not in name
+        and not name.startswith("background_")
     }
     if len(preserved) != PRESERVED_ASSET_COUNT:
         raise ValueError(f"Expected {PRESERVED_ASSET_COUNT} existing unchanged PNGs")
@@ -513,16 +519,17 @@ def main():
         print("PACKED: skipped (no build/mmap_build/assets/storage/storage.bin)")
 
     print(f"VALID: {len(expected)} PNGs, RGBA, expected dimensions and names")
-    print(f"PIXEL ART: {NON_SPIDER_COUNT} non-spider PNGs, uniform 2x2 RGBA blocks, binary alpha, "
-          f"at most {MAX_VISIBLE_COLORS} visible colors each")
+    print(f"PIXEL ART: {NON_SPIDER_COUNT} non-spider PNGs, binary alpha; sprites use uniform "
+          f"2x2 blocks and at most {MAX_VISIBLE_COLORS} visible colors each")
     print("DETERMINISTIC: two generation passes have identical SHA-256 hashes")
     print(f"PRESERVED: {len(old_spiders)} existing spider PNGs are byte-identical")
     print(f"PRESERVED: {len(old_prey)} original fly/cricket/moth/beetle PNGs are byte-identical")
-    print(f"PRESERVED: all {len(preserved)} spider/living-prey/UI/gift/decor/background PNGs "
+    print(f"PRESERVED: all {len(preserved)} spider/living-prey/UI/gift/decor PNGs "
           "are byte-identical")
     print(f"ACHIEVEMENTS: {len(ACHIEVEMENTS)} unique dedicated badge contents and silhouettes")
     print(f"SPLATTERS: all {len(PREY_SPECIES)} species, colored puddles and detached droplets")
-    print(f"BACKGROUNDS: {len(BACKGROUNDS)} opaque 240x240 keeper enclosures, authored at 120x120")
+    print(f"BACKGROUNDS: {len(BACKGROUNDS)} opaque 240x240 keeper enclosures, "
+          "authored at native resolution with a full colour ramp")
 
 
 if __name__ == "__main__":

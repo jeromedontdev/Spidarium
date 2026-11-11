@@ -670,7 +670,10 @@ static void menu_open(int which)
 
     switch (which) {
     case MENU_MAIN: {
-        static char daily_sub[48];
+        /* Every row carries a subtext. A list where some rows have a second
+         * line and others do not reads as unfinished, and it also makes the
+         * rows different heights, so the eye cannot scan the column. */
+        static char daily_sub[48], ach_sub[32], species_sub[32];
         if (needs_daily_available()) {
             snprintf(daily_sub, sizeof daily_sub, "Check In Ready");
         } else if (needs_daily_task_ready()) {
@@ -678,25 +681,36 @@ static void menu_open(int which)
         } else {
             snprintf(daily_sub, sizeof daily_sub, "Streak %u", (unsigned)g.daily_streak);
         }
+        int earned = 0;
+        for (int i = 0; i < 10; i++) {
+            if (g.achievements & (1u << i)) earned++;
+        }
+        snprintf(ach_sub, sizeof ach_sub, "%d of 10 Earned", earned);
+        int unlocked = 0;
+        for (int i = 0; i < PREY_SPECIES_COUNT; i++) {
+            if (species_unlocked((prey_species_t)i)) unlocked++;
+        }
+        snprintf(species_sub, sizeof species_sub, "%d of %d Unlocked",
+                 unlocked, PREY_SPECIES_COUNT);
         items[0] = (ui_menu_item_t){ "Daily", daily_sub, true, false, true, MENU_DAILY };
         items[1] = (ui_menu_item_t){ "Treats", "Spend Silk", true, false, true, MENU_SHOP };
-        items[2] = (ui_menu_item_t){ "Backgrounds", NULL, true, false, true, MENU_THEME };
-        items[3] = (ui_menu_item_t){ "Achievements", NULL, true, false, true, MENU_ACHIEVEMENTS };
-        items[4] = (ui_menu_item_t){ "Prey Species", NULL, true, false, true, MENU_SPECIES };
+        items[2] = (ui_menu_item_t){ "Backgrounds", "Enclosure Themes", true, false, true, MENU_THEME };
+        items[3] = (ui_menu_item_t){ "Achievements", ach_sub, true, false, true, MENU_ACHIEVEMENTS };
+        items[4] = (ui_menu_item_t){ "Prey Species", species_sub, true, false, true, MENU_SPECIES };
         /* Settings is always the last row: it is the least-used entry and the
          * one the player reaches for least often, so it belongs at the bottom
          * of the list rather than in the middle. */
-        items[5] = (ui_menu_item_t){ "Settings",     NULL, true, false, true, MENU_SETTINGS };
+        items[5] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
         ui_menu_open("Spidarium", items, 6, on_main_pick);
         break;
     }
     case MENU_SETTINGS: {
-        items[0] = (ui_menu_item_t){ "WiFi", NULL, true, false, true, 0 };
-        items[1] = (ui_menu_item_t){ "SD Card", NULL, true, false, true, 1 };
-        items[2] = (ui_menu_item_t){ "About", NULL, true, false, true, 2 };
-        items[3] = (ui_menu_item_t){ "Battery", NULL, true, false, true, 3 };
-        items[4] = (ui_menu_item_t){ "Display", NULL, true, false, true, 4 };
-        items[5] = (ui_menu_item_t){ "Sound", NULL, true, false, true, 5 };
+        items[0] = (ui_menu_item_t){ "WiFi", "Networks and Time Sync", true, false, true, 0 };
+        items[1] = (ui_menu_item_t){ "SD Card", "Back Up and Restore", true, false, true, 1 };
+        items[2] = (ui_menu_item_t){ "About", "Version and Hardware", true, false, true, 2 };
+        items[3] = (ui_menu_item_t){ "Battery", "Charge and Runtime", true, false, true, 3 };
+        items[4] = (ui_menu_item_t){ "Display", "Brightness and Rotation", true, false, true, 4 };
+        items[5] = (ui_menu_item_t){ "Sound", "Volume and Mute", true, false, true, 5 };
         items[6] = (ui_menu_item_t){ "Auto Feed", "Wild Prey and Unattended Hunting",
                                      true, g.auto_feed, false, 6 };
         items[7] = (ui_menu_item_t){ "Save Screenshot", net_busy() ? "Wait for WiFi" : sd_busy() ? "Saving..." :
@@ -734,7 +748,7 @@ static void menu_open(int which)
     case MENU_WIFI: {
         int n = 0;
         if (net_busy()) {
-            items[n++] = (ui_menu_item_t){ "Working; Please Wait", NULL,
+            items[n++] = (ui_menu_item_t){ "Working; Please Wait", "Radio Is Busy",
                                            false, false, false, 0 };
             ui_menu_open("WiFi", items, n, on_wifi_pick);
             ui_menu_set_back(back_to_settings);
@@ -742,13 +756,13 @@ static void menu_open(int which)
         }
         items[n++] = (ui_menu_item_t){ "Network Status", s_wifi_message[0] ? s_wifi_message : net_status_text(),
                                        false, false, false, 0 };
-        items[n++] = (ui_menu_item_t){ "Scan Networks", NULL,
+        items[n++] = (ui_menu_item_t){ "Scan Networks", "Find Nearby Networks",
                                        true, false, false, 0 };
-        items[n++] = (ui_menu_item_t){ "Add Network", NULL,
+        items[n++] = (ui_menu_item_t){ "Add Network", "Enter Name and Password",
                                        true, false, true, 1 };
-        items[n++] = (ui_menu_item_t){ "Saved Networks", NULL,
+        items[n++] = (ui_menu_item_t){ "Saved Networks", "Join or Forget",
                                        true, false, true, 2 };
-        items[n++] = (ui_menu_item_t){ "Firmware Update", net_has_credentials() ? NULL : "Save a Network First",
+        items[n++] = (ui_menu_item_t){ "Firmware Update", net_has_credentials() ? "Download Over HTTPS" : "Save a Network First",
                                        net_has_credentials(), false, true, 3 };
         static char details[12][32];
         int found = net_scan_count();
@@ -773,17 +787,17 @@ static void menu_open(int which)
     case MENU_WIFI_SAVED: {
         int count = net_saved_count();
         for (int i = 0; i < count; i++)
-            items[i] = (ui_menu_item_t){ net_saved_ssid(i), NULL,
+            items[i] = (ui_menu_item_t){ net_saved_ssid(i), "Tap to Manage",
                                          true, false, true, i };
-        if (!count) items[0] = (ui_menu_item_t){ "No Saved Networks", NULL,
+        if (!count) items[0] = (ui_menu_item_t){ "No Saved Networks", "Add One First",
                                                  false, false, false, 0 };
         ui_menu_open("Saved Networks", items, count ? count : 1, on_saved_network);
         ui_menu_set_back(back_to_wifi);
         break;
     }
     case MENU_WIFI_NETWORK:
-        items[0] = (ui_menu_item_t){ "Sync RTC Now", NULL, true, false, false, 0 };
-        items[1] = (ui_menu_item_t){ "Forget Network", NULL, true, false, false, 1 };
+        items[0] = (ui_menu_item_t){ "Sync RTC Now", "Set Clock From Network", true, false, false, 0 };
+        items[1] = (ui_menu_item_t){ "Forget Network", "Remove Saved Credentials", true, false, false, 1 };
         ui_menu_open(net_saved_ssid(s_saved_network), items, 2, on_network_action);
         ui_menu_set_back(back_to_wifi);
         break;
@@ -797,10 +811,10 @@ static void menu_open(int which)
          * driver and logged a burst of sdmmc errors on units with no card. */
         bool have = sd_present();
         items[0] = (ui_menu_item_t){ "Back Up Save",
-                                     sd_status_text(),
+                                     have ? "Write to Card" : sd_status_text(),
                                      have, false, false, 0 };
         items[1] = (ui_menu_item_t){ "Restore Save",
-                                     sd_backup_exists() ? NULL : "No Backup",
+                                     !have ? sd_status_text() : sd_backup_exists() ? "Read From Card" : "No Backup",
                                      have && sd_backup_exists(), false, false, 1 };
         ui_menu_open("SD Card", items, 2, on_sd_pick);
         ui_menu_set_back(back_to_settings);
@@ -817,11 +831,21 @@ static void menu_open(int which)
 
     case MENU_THEME: {
         static char names[THEME_COUNT][32];
+        static char theme_sub[THEME_COUNT][32];
         for (int i = 0; i < THEME_COUNT; i++) {
             const theme_def_t *t = theme_get((uint8_t)i);
             ui_menu_format_name(names[i], sizeof names[i], t->name);
+            /* Every row carries a subtext, so the list scans as one column. */
+            if (!theme_unlocked((uint8_t)i)) {
+                snprintf(theme_sub[i], sizeof theme_sub[i], "Level %lu",
+                         (unsigned long)t->unlock_level);
+            } else if (theme_current() == t) {
+                snprintf(theme_sub[i], sizeof theme_sub[i], "In Use");
+            } else {
+                snprintf(theme_sub[i], sizeof theme_sub[i], "Tap to Apply");
+            }
             items[i].label     = names[i];
-            items[i].detail    = theme_unlocked((uint8_t)i) ? NULL : "Locked";
+            items[i].detail    = theme_sub[i];
             items[i].enabled   = theme_unlocked((uint8_t)i);
             items[i].selected  = (theme_current() == t);
             items[i].is_submenu = false;
@@ -836,8 +860,8 @@ static void menu_open(int which)
         /* The slider row's readout is derived from its value by refresh_page(),
          * so no detail string is needed here. */
         items[0] = (ui_menu_item_t){ "Volume", NULL, true, false, false, 0 };
-        items[1] = (ui_menu_item_t){ "Sound On",  NULL, true, !audio_muted(), false, 1 };
-        items[2] = (ui_menu_item_t){ "Sound Off", NULL, true,  audio_muted(), false, 2 };
+        items[1] = (ui_menu_item_t){ "Sound On",  "Play Effects", true, !audio_muted(), false, 1 };
+        items[2] = (ui_menu_item_t){ "Sound Off", "Silence Effects", true,  audio_muted(), false, 2 };
         ui_menu_open("Sound", items, 3, on_sound_pick);
         ui_menu_set_item_slider(0, audio_volume(), on_volume_slider);
         ui_menu_set_back(back_to_settings);
@@ -861,7 +885,8 @@ static void menu_open(int which)
         for (int i = 0; i < 10; i++) {
             bool got = (g.achievements & bits[i]) != 0;
             items[i].label     = names[i];
-            items[i].detail    = got ? "Earned" : NULL;
+            /* Every row carries a subtext, so the list scans as one column. */
+            items[i].detail    = got ? "Earned" : "Not Yet";
             items[i].enabled   = false;   /* read-only */
             items[i].selected  = got;
             items[i].is_submenu = false;
@@ -877,9 +902,13 @@ static void menu_open(int which)
         static char species_names[PREY_SPECIES_COUNT][32];
         for (int i = 0; i < PREY_SPECIES_COUNT; i++) {
             const species_def_t *species = species_get((prey_species_t)i);
-            snprintf(species_detail[i], sizeof species_detail[i], "%s / level %lu",
+            /* The nutrition is shown as a plain multiplier so the player can
+             * see why a waxworm is worth waiting for. */
+            snprintf(species_detail[i], sizeof species_detail[i],
+                "%s / level %lu / food x%.1f",
                 species_unlocked(i) ? "Available" : "Locked",
-                (unsigned long)species->unlock_level);
+                (unsigned long)species->unlock_level,
+                (double)species->hunger_mult);
             ui_menu_format_name(species_names[i], sizeof species_names[i], species->name);
             items[i] = (ui_menu_item_t){ species_names[i],
                 species_detail[i], false, species_unlocked(i), false, i };
@@ -953,7 +982,9 @@ static void menu_open(int which)
                                      false, false, false, 0 };
         items[1] = (ui_menu_item_t){ "ESP32-S3 / 480x480 AMOLED", "8 MB PSRAM / 16 MB Flash",
                                      false, false, false, 0 };
-        ui_menu_open("About", items, 2, NULL);
+        items[2] = (ui_menu_item_t){ "Personal, Non-Commercial", "See LICENSE",
+                                     false, false, false, 0 };
+        ui_menu_open("About", items, 3, NULL);
         ui_menu_set_back(back_to_settings);
         break;
 

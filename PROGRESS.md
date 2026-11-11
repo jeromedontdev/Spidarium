@@ -6546,3 +6546,66 @@ The petting bounce was verified by reading the render path and by the browser
 overlay test, not by watching the panel. The menu changes were verified by screen
 capture, not by touching the panel. The per-day budget reset was verified by
 moving `daily_override`, not by waiting for a real midnight.
+## Round 64 - Enclosures that look like enclosures
+
+The sixteen keeper backgrounds were rebuilt from scratch after the previous
+attempt was rejected as "all the same" and "so muted". The user supplied a
+reference image of the look they wanted: bright, saturated, top-down terrarium
+scenes with scattered rocks, leaves, flowers and shells, and no dark central
+trough.
+
+### Decisions made
+
+- **The palette cap was the root cause, not the palettes.** `asset_build.py`
+  rejected any image with more than twelve visible colours. That is a ZX
+  Spectrum palette, and it is why every enclosure read as 8-bit. The rule still
+  applies to the sprite set, where it is the point; backgrounds are now exempt.
+- **Authoring at 120x120 and doubling was the second cause.** Every authored
+  pixel became a 4x4 block on the 480x480 panel. Backgrounds are now composed at
+  the full 240x240 and enlarged 2x, which is the same upscale the panel already
+  performed, with four times the detail budget.
+- **The dark hunting floor had to go.** The validator required
+  `max(rgb) <= 96` across the central two-fifths of every background. That rule
+  is what painted the dark oval in the middle of every enclosure, and it is
+  incompatible with the reference, which has bright floors and props in the
+  centre. The spider is a direct-pixel canvas with its own outline and the prey
+  are high-contrast, so they read against a mid-tone floor without a painted
+  shadow behind them.
+- **Palettes are generated from HLS specs, not hand-picked.** Hand-picked greens
+  kept collapsing into the substrate. Every theme now follows the reference's
+  material logic -- earth or stone floor, green foliage, neutral grey stone,
+  pale flowers -- and the foliage is guaranteed a lightness step above the
+  ground. Themes differ in the hue of the floor and in which props they scatter.
+- **Tones are interpolated, not snapped.** A ramp of twenty entries sampled by
+  index gives twenty flat bands. `_pick()` now blends between entries and
+  `_tone()` computes continuously from the HLS spec, so shading is smooth.
+- **A worn trail is what stops a floor reading as wallpaper.** The earth-toned
+  themes have a meandering dirt path blended into the surrounding ground over
+  its last few pixels, with props crowding its edges.
+- **`PIXEL_GRID` in `terrarium.c` had to change from 4 to 2.** It asserted the
+  canvas was a 4x4 upscale of the source, which was true at 120x120. `uitest`
+  caught this immediately as `backgrounds=0`.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings.
+- `asset_build.py`: 142 MMAP entries, QOI dimensions/opcodes/pixels verified;
+  142 PNGs valid; deterministic across two passes; all 107
+  spider/living-prey/UI/gift/decor PNGs byte-identical; 16 opaque 240x240
+  enclosures.
+- `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **47 passed, 0 failed**.
+- `stability_check.py COM7 40`: `VERDICT: PASS`, 0 faults.
+- `scanloop 5`: `largest_drift=0`. `render 500`: `largest_drift=0`.
+- Internal DMA largest 65,536 bytes, above the 51,200 floor.
+- All 16 enclosures captured from the panel via `screenshot` and inspected.
+- Browser suite: **93 passed, 0 failed**.
+- `storage.bin` grew 158,792 -> 883,864 bytes; the storage partition is 6 MB.
+
+### Honest boundaries
+
+The enclosures were verified by decoding `screenshot` output from the panel, not
+by looking at the physical screen. Colour fidelity through the RGB565 capture is
+approximate. The reference image is a smooth-shaded render at 768x768; these are
+240x240 procedural illustrations, so they match its composition and material
+logic rather than its pixel-level detail.

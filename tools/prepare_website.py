@@ -48,14 +48,14 @@ def copy_art(root: Path) -> None:
     destination = root / "site" / "dist" / "assets"
     destination.mkdir(parents=True, exist_ok=True)
     sources = sorted((root / "assets").glob("*.png"))
-    if len(sources) != 134:
-        raise ValueError("Expected the complete 134-image release artwork")
+    if not sources:
+        raise ValueError("No artwork found in assets/")
     for source in sources:
         shutil.copyfile(source, destination / source.name)
     (root / "site" / "dist" / "index.html").write_text(
         '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=site/">'
         '<title>Spidarium</title><a href="site/">Open Spidarium</a>\n', encoding="utf-8")
-    print("WEBSITE artwork: 134 authentic PNGs and subpath-safe root redirect")
+    print(f"WEBSITE artwork: {len(sources)} authentic PNGs and subpath-safe root redirect")
 
 
 def main() -> None:

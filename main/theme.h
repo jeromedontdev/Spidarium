@@ -19,7 +19,7 @@ typedef struct {
     uint32_t    dust;            /* fixed highlight */
 } theme_def_t;
 
-#define THEME_COUNT 8
+#define THEME_COUNT 16
 
 /* The catalogue. Indexed by theme id. */
 extern const theme_def_t k_themes[THEME_COUNT];

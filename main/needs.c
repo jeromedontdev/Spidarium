@@ -50,6 +50,7 @@ static uint8_t clamp100(int v)
 static void hunger_decay(float minutes)
 {
     s_hunger_acc += HUNGER_PER_MIN * minutes
+                   * needs_age_scale()
                    * game_temperament()->hunger_decay_mult
                    * gift_bonus()->all_stats_decay_mult;
     if (s_hunger_acc >= 1.0f) {
@@ -59,12 +60,21 @@ static void hunger_decay(float minutes)
     }
 }
 
+/* How much faster an older spider burns through its needs. Stage is the
+ * player-visible measure of age, so it is the input rather than raw days: a
+ * spider that has not molted should not feel like an adult. */
+float needs_age_scale(void)
+{
+    float scale = 1.0f + NEEDS_AGE_SCALE_PER_STAGE * (float)g.stage;
+    return scale > NEEDS_AGE_SCALE_MAX ? NEEDS_AGE_SCALE_MAX : scale;
+}
+
 bool needs_hunger_test(void)
 {
     uint8_t hunger = g.hunger;
     double accumulator = s_hunger_acc;
     float rate = HUNGER_PER_MIN * game_temperament()->hunger_decay_mult *
-        gift_bonus()->all_stats_decay_mult;
+        gift_bonus()->all_stats_decay_mult * needs_age_scale();
     g.hunger = 100;
     s_hunger_acc = 0;
     for (int i = 0; i < 40; i++) hunger_decay(0.05f);
@@ -428,6 +438,7 @@ void needs_tick(uint32_t now_ms, float dt_s)
     } else {
         /* A leaf gift slows the tank getting dirty. */
         s_hygiene_acc += HYGIENE_PER_MIN * minutes
+                       * needs_age_scale()
                        * gift_bonus()->hygiene_decay_mult
                        * gift_bonus()->all_stats_decay_mult;
     }
@@ -438,6 +449,7 @@ void needs_tick(uint32_t now_ms, float dt_s)
                       * gift_bonus()->energy_regen_mult;
     } else {
         s_energy_acc += ENERGY_PER_MIN * minutes
+                      * needs_age_scale()
                       * gift_bonus()->all_stats_decay_mult
                       / gift_bonus()->movement_efficiency_mult;
     }

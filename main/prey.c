@@ -456,8 +456,15 @@ void prey_resolve_pounce(void)
         g.state        = SPIDER_EAT;
         g.eat_until_ms = (int32_t)(lv_tick_get() + EAT_MS);
 
-        int hunger_gain = pr->wild ? WILD_HUNGER_GAIN : FEED_HUNGER_GAIN;
-        int mood_gain   = pr->wild ? WILD_MOOD_GAIN   : FEED_MOOD_GAIN;
+        /* Nutrition scales with the species. A waxworm is a meal and a fruit
+         * fly is a snack, so the unlock ladder pays in food as well as in
+         * variety. Rounded rather than truncated so a 0.7x snack still feeds. */
+        const species_def_t *def = species_get((prey_species_t)pr->species);
+        int hunger_gain = (int)((float)(pr->wild ? WILD_HUNGER_GAIN : FEED_HUNGER_GAIN)
+                                * def->hunger_mult + 0.5f);
+        int mood_gain   = (int)((float)(pr->wild ? WILD_MOOD_GAIN : FEED_MOOD_GAIN)
+                                * def->mood_mult + 0.5f);
+        int energy_gain = (int)((float)EAT_ENERGY_GAIN * def->energy_mult + 0.5f);
         uint32_t base_xp = XP_GOOD;
 
         if (q == CATCH_PERFECT) {
@@ -479,7 +486,7 @@ void prey_resolve_pounce(void)
 
         /* Skilled play is roughly energy-neutral: the pounce cost is paid
          * back by the meal. */
-        int e = (int)g.energy + EAT_ENERGY_GAIN;
+        int e = (int)g.energy + energy_gain;
         if (e > 100) e = 100;
         g.energy = (uint8_t)e;
 

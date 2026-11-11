@@ -46,10 +46,11 @@ Drag toward a bug to jump; AI and prey hold still during the gesture.
 Rounded silk-bordered cards use visibly disabled Prev/Next paging rather than
 slow scrolling. Only Back navigates back; blank taps are ignored. The QWERTY
 keyboard includes WiFi Show/Hide
-password. Eight authored retro pixel-art backgrounds depict enclosure substrate,
-acrylic vents, edge plants/climbing twigs and upper-wall silk sleeping sacs, rather
-than procedural floor patterns or landscape horizons.
-Floors are darkened for creature contrast; bent legs have visible knee joints.
+password. Sixteen authored top-down enclosure scenes depict a keeper's substrate:
+an earth or stone floor with a worn trail, scattered rocks, foliage clusters and
+small flowers. They are composed at the panel's native 240x240 with a full colour
+ramp rather than quantised to a retro palette.
+Bent legs have visible knee joints.
 The selected enclosure survives reboot. Eight prey species unlock at levels
 1/2/4/6/10/13/16/20; existing pet progress is preserved. Distance-driven,
 alternating leg motion keeps front joints forward regardless of render cadence.
@@ -79,7 +80,7 @@ time (Juicy Fly 6, Silk Ribbon 8, Warm Pebble 10) and give a short, visible
 boost. The day prefers the RTC, so the check-in resets at midnight; when the RTC
 is not valid it falls back to the in-game day counter, so the loop still works on
 a board with no RTC battery and no WiFi sync.
-See [v1.1.11 release notes](docs/RELEASE_v1.1.11.md).
+See [v1.1.12 release notes](docs/RELEASE_v1.1.12.md).
 
 **Petting is back.** A tap that lands on the spider raises mood and bond, plays a
 short bounce with a happy leg wave, and pays XP — but only for the first 10 XP of

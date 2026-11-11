@@ -52,6 +52,14 @@ typedef struct {
     bool         has_wings;
     bool         has_hind_legs;
     bool         has_seam;        /* beetle wing-case seam */
+
+    /* Nutrition. A waxworm is a meal; a fruit fly is a snack. Without this a
+     * level-20 spider got exactly as much from the easiest bug in the game as
+     * from the hardest, so the unlock ladder paid nothing but variety. These
+     * multiply the base gains, so the constants stay the tuning surface. */
+    float        hunger_mult;
+    float        mood_mult;
+    float        energy_mult;
 } species_def_t;
 
 /* The catalogue. Indexed by prey_species_t. */

@@ -40,6 +40,18 @@
 #define HYGIENE_PER_MIN         0.7f   /* ~143 min */
 #define ENERGY_PER_MIN          0.5f   /* ~200 min awake */
 #define ENERGY_REGEN_ASLEEP_PER_MIN 6.0f
+
+/* Needs grow with the spider. A spiderling is a small animal with a small
+ * appetite; an adult is a bigger one that burns through food faster. The
+ * multiplier is applied to every decay rate, so the shape of the curves is
+ * unchanged and only the pace scales.
+ *
+ * It is deliberately gentle and capped: the point is that an adult feels
+ * hungrier than a baby, not that a long-lived pet becomes a chore. The player
+ * is never told a number -- the HUD shows the same four bars, and the spider
+ * simply needs feeding a little sooner. */
+#define NEEDS_AGE_SCALE_PER_STAGE  0.18f  /* +18% per stage above spiderling */
+#define NEEDS_AGE_SCALE_MAX        1.45f  /* hard ceiling, ~2.5 stages of growth */
 /* Only applies when the tank has no poop, and it REPLACES decay rather than
  * fighting it. The spec's 0.25 was a net loss against 0.7 decay, so an
  * unattended spider still ended up dirty -- the exact dead end this was meant

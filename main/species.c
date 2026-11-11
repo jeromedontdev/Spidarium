@@ -10,28 +10,43 @@
 /* ------------------------------------------------------------------ */
 /* Bugs                                                                */
 /* ------------------------------------------------------------------ */
-/* Order MUST match prey_species_t in game.h. */
+/* Order MUST match prey_species_t in game.h.
+ *
+ * Nutrition scales with the unlock ladder: a fruit fly is a snack, a waxworm is
+ * a meal. The multipliers are applied to FEED_HUNGER_GAIN / FEED_MOOD_GAIN /
+ * EAT_ENERGY_GAIN, so the base constants remain the single tuning surface.
+ * Energy is the flattest of the three because a meal's job is to pay back the
+ * pounce, and a bug that left the spider hungrier than before would be a trap
+ * rather than a reward. */
 const species_def_t k_species[PREY_SPECIES_COUNT] = {
-    /* name       lvl  move          spd   flee  rad   perf  body      dark      wing      br  hr  wings legs  seam */
+    /* name       lvl  move          spd   flee  rad   perf  body      dark      wing      br  hr  wings legs  seam  hun  mood en */
     { "fly",       1, MOVE_ERRATIC, 1.00f, 1.00f, 1.00f, 1.00f,
-      0x6b5a48, 0x3f352a, 0x8a8478, 5, 3, true,  false, false },
+      0x6b5a48, 0x3f352a, 0x8a8478, 5, 3, true,  false, false,
+      1.00f, 1.00f, 1.00f },
 
     { "cricket",   2, MOVE_HOP,     1.00f, 1.00f, 1.00f, 1.00f,
-      0x6b5a48, 0x3f352a, 0x8a8478, 5, 3, false, true,  false },
+      0x6b5a48, 0x3f352a, 0x8a8478, 5, 3, false, true,  false,
+      1.20f, 1.15f, 1.10f },
 
     { "moth",      4, MOVE_FLUTTER, 1.00f, 1.00f, 1.00f, 1.00f,
-      0x6b5a48, 0x3f352a, 0x8a8478, 4, 3, true,  false, false },
+      0x6b5a48, 0x3f352a, 0x8a8478, 4, 3, true,  false, false,
+      1.10f, 1.30f, 1.00f },
 
     { "beetle",    6, MOVE_SLOW,    0.55f, 1.00f, 1.00f, 0.50f,
-      0x2b2620, 0x3f352a, 0x3a332b, 7, 3, false, false, true },
+      0x2b2620, 0x3f352a, 0x3a332b, 7, 3, false, false, true,
+      1.60f, 1.10f, 1.30f },
     { "roach",    10, MOVE_WANDER, 0.75f, 1.25f, 0.85f, 0.85f,
-      0x936044, 0x493329, 0xb58158, 7, 3, false, true, true },
+      0x936044, 0x493329, 0xb58158, 7, 3, false, true, true,
+      1.50f, 1.00f, 1.20f },
     { "mealworm", 13, MOVE_SLOW,   0.30f, 0.40f, 0.65f, 1.10f,
-      0xc7a267, 0x745138, 0xe5c38e, 6, 2, false, false, false },
+      0xc7a267, 0x745138, 0xe5c38e, 6, 2, false, false, false,
+      1.90f, 1.20f, 1.40f },
     { "fruit fly",16, MOVE_ERRATIC,1.25f, 1.20f, 1.10f, 0.85f,
-      0xb68c58, 0x58362f, 0xc5d4c6, 3, 2, true, false, false },
+      0xb68c58, 0x58362f, 0xc5d4c6, 3, 2, true, false, false,
+      0.70f, 1.40f, 0.80f },
     { "waxworm",  20, MOVE_SLOW,   0.20f, 0.30f, 0.55f, 1.20f,
-      0xdfd5ac, 0x8a6f4e, 0xf1e7c7, 7, 2, false, false, false },
+      0xdfd5ac, 0x8a6f4e, 0xf1e7c7, 7, 2, false, false, false,
+      2.40f, 1.50f, 1.60f },
 };
 
 const species_def_t *species_get(prey_species_t species)

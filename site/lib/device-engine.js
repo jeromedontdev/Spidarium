@@ -10,6 +10,7 @@ export const CONFIG = Object.freeze({
   LOGIC_HZ:20, RENDER_HZ:30, GAME_TIME_SCALE:1, LOGIC_PERIOD_MS:50,
   TICKS_PER_DAY:2880, AGE_TICK_MS:30000, DECAY_PERIOD_MS:3000, SAVE_PERIOD_MS:5000,
   HUNGER_PER_MIN:3, HYGIENE_PER_MIN:.7, ENERGY_PER_MIN:.5,
+  NEEDS_AGE_SCALE_PER_STAGE:.18, NEEDS_AGE_SCALE_MAX:1.45,
   ENERGY_REGEN_ASLEEP_PER_MIN:6, HYGIENE_REGEN_PER_MIN:2, POOP_LIFETIME_MS:600000,
   MOOD_LOW_THRESHOLD:25, FEED_HUNGER_GAIN:15, HUNGER_FULL:95, FEED_MOOD_GAIN:8,
   FEED_HYGIENE_COST:12, CLEAN_XP_MAX:3, CLEAN_SCORE_FULL:24, CLEAN_HYGIENE_SET:100,
@@ -54,19 +55,25 @@ export const TEMPERAMENTS = [
   {name:'lazy',aim_window_mult:1.15,catch_mult:.9,speed_mult:.8,hunger_decay_mult:.85,sleep_threshold:30},
 ];
 export const SPECIES = [
-  ['fly',1,'erratic',1,1,1,1],['cricket',2,'hop',1,1,1,1],
-  ['moth',4,'flutter',1,1,1,1],['beetle',6,'slow',.55,1,1,.5],
-  ['roach',10,'wander',.75,1.25,.85,.85],['mealworm',13,'slow',.3,.4,.65,1.1],
-  ['fruitfly',16,'erratic',1.25,1.2,1.1,.85],['waxworm',20,'slow',.2,.3,.55,1.2],
-].map(([name,unlock_level,move,speed_mult,flee_speed_mult,flee_radius_mult,perfect_mult],id)=>
-  Object.freeze({id,key:name,name:name==='fruitfly'?'fruit fly':name,unlock_level,level:unlock_level,move,speed_mult,flee_speed_mult,flee_radius_mult,perfect_mult}));
+  ['fly',1,'erratic',1,1,1,1,1,1,1],['cricket',2,'hop',1,1,1,1,1.2,1.15,1.1],
+  ['moth',4,'flutter',1,1,1,1,1.1,1.3,1],
+  ['beetle',6,'slow',.55,1,1,.5,1.6,1.1,1.3],
+  ['roach',10,'wander',.75,1.25,.85,.85,1.5,1,1.2],
+  ['mealworm',13,'slow',.3,.4,.65,1.1,1.9,1.2,1.4],
+  ['fruitfly',16,'erratic',1.25,1.2,1.1,.85,.7,1.4,.8],
+  ['waxworm',20,'slow',.2,.3,.55,1.2,2.4,1.5,1.6],
+].map(([name,unlock_level,move,speed_mult,flee_speed_mult,flee_radius_mult,perfect_mult,
+        hunger_mult,mood_mult,energy_mult],id)=>
+  Object.freeze({id,key:name,name:name==='fruitfly'?'fruit fly':name,unlock_level,level:unlock_level,move,
+    speed_mult,flee_speed_mult,flee_radius_mult,perfect_mult,hunger_mult,mood_mult,energy_mult}));
 export const PREY = SPECIES.map(s=>s.key);
 export function preySprite(species,dead=false,frame=0) {
   const id = speciesId(species);
   if (id<0) throw new Error('Unknown prey');
   return `prey_${PREY[id]}_${dead?'dead_0':`walk_${frame%2}`}`;
 }
-export const BACKGROUNDS = ['moss','fern','cork','leaf_litter','orchid','sand','woodland','minimal'];
+export const BACKGROUNDS = ['cork','moss','leaf_litter','sand','fern','orchid','woodland','minimal',
+  'mushroom','gothic','seashell','succulent','willow','desert','crystal','cemetery'];
 const bonusKeys = ['energy_regen_mult','hygiene_decay_mult','pounce_range_mult','aim_window_mult','wild_spawn_bonus',
   'pounce_success_mult','movement_efficiency_mult','mood_mult','fear_mult','prey_flee_penalty',
   'catch_success_mult','prey_detection_range_mult','all_stats_decay_mult','bonus_synergy_mult'];
@@ -134,6 +141,10 @@ const field = {left:34,right:446,top:34,bottom:446};
 function random(s){return clamp((services.get(s)?.random??Math.random)(),0,1-Number.EPSILON);}
 function roll(s,n){return Math.floor(random(s)*0x80000000)%n;}
 function temperament(s){return TEMPERAMENTS[s.temperament]??TEMPERAMENTS[0];}
+/** Needs decay faster as the spider grows. Capped so an old spider stays playable. */
+export function needsAgeScale(s){
+  return Math.min(1+(s.stage??0)*C.NEEDS_AGE_SCALE_PER_STAGE,C.NEEDS_AGE_SCALE_MAX);
+}
 function speciesId(v){return Number.isInteger(v)&&SPECIES[v]?v:PREY.indexOf(v==='fruit fly'?'fruitfly':v);}
 function runtime(s){return s._engine;}
 export function giftBonus(s) {
@@ -637,9 +648,11 @@ export function resolvePounce(s,player=runtime(s).pounce?.player??true) {
   if(perfect)random(s);
   p.dead=true;p.fleeing=false;p.frame=0;p.dead_at=r.now_ms+2200;
   s.state=5;s.eat_until_ms=r.now_ms+800;
-  s.hunger=clamp(s.hunger+(p.wild?8:15)+(perfect?5:0));
-  s.mood=clamp(s.mood+(p.wild?4:8)+(perfect?4:0));
-  s.energy=clamp(s.energy+6);
+  // Species nutrition scales the meal: a waxworm is worth far more than a fly.
+  const sp=SPECIES[p.species];
+  s.hunger=clamp(s.hunger+Math.round((p.wild?8:15)*sp.hunger_mult)+(perfect?5:0));
+  s.mood=clamp(s.mood+Math.round((p.wild?4:8)*sp.mood_mult)+(perfect?4:0));
+  s.energy=clamp(s.energy+Math.round(6*sp.energy_mult));
   if(perfect){s.streak=(s.streak+1)&65535;s.best_streak=Math.max(s.best_streak,s.streak);awardAchievement(s,'first_perfect');}
   const xp=Math.trunc((perfect?18:10)*(1+Math.min(10,s.streak)*.05));
   addXP(s,xp);addSilk(s,perfect?5:3);s.meals++;
@@ -676,11 +689,14 @@ function needsTick(s) {
     if(days-s.last_molt_day>=2&&s.stage!==2){s.last_molt_day=days;setState(s,8);addXP(s,8);awardAchievement(s,'first_molt');}
   }
   if(now-r.last_decay<3000)return;r.last_decay=now;
-  r.hunger_acc+=multiply(3,.05,temperament(s).hunger_decay_mult,b.all_stats_decay_mult);
+  // Needs decay faster as the spider ages. The scale is deliberately not shown
+  // in the UI: the player feels a growing spider, not a spreadsheet.
+  const ageScale=needsAgeScale(s);
+  r.hunger_acc+=multiply(3,.05,temperament(s).hunger_decay_mult,b.all_stats_decay_mult,ageScale);
   if(r.hunger_acc>=1){const n=Math.trunc(r.hunger_acc);r.hunger_acc-=n;s.hunger=clamp(s.hunger-n);}
   if(s.sick)s.bond=clamp(s.bond-1);
-  r.hygiene_acc=f32(r.hygiene_acc+(s.poop.length?multiply(.7,.05,b.hygiene_decay_mult,b.all_stats_decay_mult):-multiply(2,.05)));
-  r.energy_acc=f32(r.energy_acc+(s.state===6?-multiply(6,.05,b.energy_regen_mult):f32(multiply(.5,.05,b.all_stats_decay_mult)/f32(b.movement_efficiency_mult))));
+  r.hygiene_acc=f32(r.hygiene_acc+(s.poop.length?multiply(.7,.05,b.hygiene_decay_mult,b.all_stats_decay_mult,ageScale):-multiply(2,.05)));
+  r.energy_acc=f32(r.energy_acc+(s.state===6?-multiply(6,.05,b.energy_regen_mult):f32(multiply(.5,.05,b.all_stats_decay_mult,ageScale)/f32(b.movement_efficiency_mult))));
   for(const key of ['hygiene','energy'])if(Math.abs(r[`${key}_acc`])>=1){
     const n=Math.trunc(r[`${key}_acc`]);r[`${key}_acc`]=f32(r[`${key}_acc`]-n);s[key]=clamp(s[key]-n);
   }

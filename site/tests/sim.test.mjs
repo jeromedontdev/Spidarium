@@ -10,6 +10,7 @@ import {
   addBugPoop,terrariumDirt,cleanNeeded,cleanReward,
   dailyToday,dailyTask,dailyTaskName,dailyTaskGoal,dailyTaskProgress,dailyTaskReady,
   dailyAvailable,dailyClaim,dailyTaskClaim,dailyEnsureBase,TREATS,buyTreat,pet,
+  needsAgeScale,
 } from '../lib/sim.js';
 const native=path=>readFile(new URL(`../../main/${path}`,import.meta.url),'utf8');
 const state=options=>freshState({random:()=>.5,temperament:0,...options});
@@ -45,18 +46,52 @@ test('native defaults and flat rendering/control aliases',()=>{
 });
 test('8 species values and eligibility match native catalogue',async()=>{
   const source=await native('species.c');
-  const rows=[...source.matchAll(/\{\s*"([^"]+)",\s*(\d+),\s*MOVE_(\w+),\s*([\d.]+)f,\s*([\d.]+)f,\s*([\d.]+)f,\s*([\d.]+)f/g)];
+  const rows=[...source.matchAll(/\{\s*"([^"]+)",\s*(\d+),\s*MOVE_(\w+),\s*([\d.]+)f,\s*([\d.]+)f,\s*([\d.]+)f,\s*([\d.]+)f,\s*[\s\S]*?([\d.]+)f,\s*([\d.]+)f,\s*([\d.]+)f\s*\}/g)];
   assert.equal(rows.length,8);
   rows.forEach((m,i)=>{
     const sp=SPECIES[i];
     assert.equal(sp.name,m[1]);assert.equal(sp.unlock_level,+m[2]);assert.equal(sp.move,m[3].toLowerCase());
     ['speed_mult','flee_speed_mult','flee_radius_mult','perfect_mult'].forEach((key,n)=>assert.equal(sp[key],+m[n+4]));
+    ['hunger_mult','mood_mult','energy_mult'].forEach((key,n)=>assert.equal(sp[key],+m[n+8]));
   });
   const s=state();
   assert.equal(nextSpecies(s).key,'cricket');
   assert.equal(feed(s,'beetle'),false);assert.equal(preyCount(s),0);
   for(const sp of SPECIES){s.level=sp.unlock_level-1;assert.equal(speciesUnlocked(s,sp.id),false);s.level++;assert.equal(speciesUnlocked(s,sp.key),true);}
   s.level=20;assert.equal(nextSpecies(s),null);
+});
+test('prey species nutrition scales the meal and stays monotonic by unlock level',async()=>{
+  const source=await native('species.c');
+  assert.match(source,/1\.00f, 1\.00f, 1\.00f \}/);
+  assert.match(source,/2\.40f, 1\.50f, 1\.60f \}/);
+  const gains=SPECIES.map(sp=>sp.hunger_mult);
+  assert.equal(gains[0],1);
+  assert.ok(Math.max(...gains)>2,`expected a high-value prey, got ${Math.max(...gains)}`);
+  assert.ok(Math.min(...gains)<1,`expected a cheap prey, got ${Math.min(...gains)}`);
+  for(const sp of SPECIES){
+    assert.ok(sp.hunger_mult>0&&sp.mood_mult>0&&sp.energy_mult>0,`${sp.key} multipliers must be positive`);
+  }
+  const s=state();s.level=20;
+  assert.equal(feed(s,'waxworm'),true);
+  const prey=s.prey[0];
+  assert.equal(PREY[prey.species],'waxworm');
+  assert.equal(SPECIES[prey.species].hunger_mult,2.4);
+});
+test('needs decay scales with age stage and is capped',async()=>{
+  const source=await native('needs.c');
+  assert.match(source,/NEEDS_AGE_SCALE_PER_STAGE/);
+  assert.match(source,/NEEDS_AGE_SCALE_MAX/);
+  assert.equal(CONFIG.NEEDS_AGE_SCALE_PER_STAGE,0.18);
+  assert.equal(CONFIG.NEEDS_AGE_SCALE_MAX,1.45);
+  assert.equal(needsAgeScale({stage:0}),1);
+  near(needsAgeScale({stage:1}),1.18);
+  near(needsAgeScale({stage:2}),1.36);
+  near(needsAgeScale({stage:3}),1.45);
+  near(needsAgeScale({stage:9}),1.45);
+  const young=state();young.stage=0;young.hunger=100;
+  const old=state();old.stage=3;old.hunger=100;
+  tick(young,60);tick(old,60);
+  assert.ok(old.hunger<young.hunger,`aged spider should get hungrier: ${old.hunger} vs ${young.hunger}`);
 });
 test('manual feed only spawns live prey, works asleep, and caps physical slots at 3',()=>{
   const s=state();care(s,'sleep');
@@ -129,6 +164,21 @@ test('geometry uses landed bug, body edge and species perfect radius, not first 
   const t=state({random:()=>.999});t.level=6;bug(t,{id:3,x:360});t.x=315;
   t._engine.aim_power=1;t._engine.aim_ideal=0;
   assert.equal(resolvePounce(t,true),false);assert.equal(t.xp,1);assert.equal(t.silk,20);
+});
+test('species nutrition changes the actual meal, not just the catalogue',()=>{
+  const meal=id=>{
+    const s=state({random:()=>0});s.level=20;s.hunger=40;s.mood=40;s.energy=40;
+    bug(s,{id,x:320});s.x=260;
+    s._engine.aim_power=1;s._engine.aim_ideal=0;
+    assert.equal(resolvePounce(s,true),true);
+    return {hunger:s.hunger,mood:s.mood,energy:s.energy};
+  };
+  const fly=meal(0),waxworm=meal(7);
+  assert.ok(waxworm.hunger>fly.hunger,`waxworm ${waxworm.hunger} should beat fly ${fly.hunger}`);
+  assert.ok(waxworm.mood>fly.mood,`waxworm ${waxworm.mood} should beat fly ${fly.mood}`);
+  assert.ok(waxworm.energy>fly.energy,`waxworm ${waxworm.energy} should beat fly ${fly.energy}`);
+  // 15 * 2.4 = 36 vs 15 * 1.0 = 15, plus the perfect bonus on both.
+  assert.equal(waxworm.hunger-fly.hunger,21);
 });
 test('reach gate forbids remotely disappearing bugs and resets streak',()=>{
   const s=state();const p=bug(s,{x:400});s.x=200;s.streak=6;
@@ -351,7 +401,7 @@ test('restore migrates old progress/ownership and resets runtime, no offline dec
   const before=s.hunger;tick(s,2.95);assert.equal(s.hunger,before);assert.equal(s.age_ticks,0);
   const restored=restoreSim(JSON.parse(JSON.stringify({...state(),auto_feed:1,auto_hunt:1})),{random:()=>.5});
   assert.equal(restored.autoFeed,true);assert.equal(restored.autoHunt,true);
-  assert.equal(BACKGROUNDS.length,8);
+  assert.equal(BACKGROUNDS.length,16);
 });
 test('null restore creates fresh state but corrupt saves throw descriptive errors',()=>{
   assert.equal(restoreSim(null,{random:()=>.5}).version,7);

@@ -8,7 +8,9 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
-#define PIXEL_GRID 4
+/* Backgrounds are authored at the panel's native 240x240 and enlarged 2x into
+ * the 480x480 canvas, so each source pixel covers a 2x2 block. */
+#define PIXEL_GRID 2
 
 static lv_obj_t *s_background, *s_gift_layer, *s_poop_layer, *s_preview_ring;
 static uint16_t *s_pixels;

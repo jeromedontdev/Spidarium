@@ -51,4 +51,12 @@ const char *needs_stage_name(void);
 
 /* Days lived, derived from age_ticks. */
 uint32_t needs_days_lived(void);
+
+/* How much faster an older spider burns through its needs. 1.0 for a
+ * spiderling, rising with each life stage up to NEEDS_AGE_SCALE_MAX. Applied
+ * to every decay rate, so the curves keep their shape and only the pace
+ * changes. The player is never shown a number: the HUD bars are the same, the
+ * spider simply needs feeding a little sooner. */
+float needs_age_scale(void);
+
 bool needs_hunger_test(void);
