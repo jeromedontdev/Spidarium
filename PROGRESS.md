@@ -7749,3 +7749,24 @@ evidence proves delivery and continuity, not that the player likes the sound.
   ownership restored, radio active0/busy0. render500 and scanloop5 drift0;
   internal/DMA largest63,488. Forty-second soak PASS, zero faults/errors.
   This installation used USB, not OTA, and does not close the hosted-OTA gap.
+
+### Publication and final state
+
+- Source9488f42 published as v1.1.25, including ZIP/raw application/OTA descriptor.
+  ZIP SHA256:
+  fc6e49b1c9e7c4ec6da1c2662901eb34d78815939ed0f49d0c228670518e0078.
+  Independently downloaded public files match the ZIP exactly. Pages43116334334
+  succeeds with the new standalone-asset validation.
+- Production1.1.25 manifest matches in full; all five image sizes/SHA256 hashes,
+  seven changed web files, full save schema and all337 PNG bytes match local
+  release output. Normal production browser interactions confirm four main
+  tiles, six achievements, one native spider canvas plus one small beetle,
+  default Update mode, consent gate and verified1.1.25 image list.
+- On the final USB-installed1.1.25 hardware, an actual `wifi ota latest` fetch
+  resolves published1.1.25 and reports already up to date. Stored pet bytes are
+  identical, radio active0/busy0, internal/DMA largest63,488. This proves latest
+  discovery and no-write handling, NOT application download/new-slot boot.
+- Successful hosted OTA remains blocked by reproducible application-transfer
+  stalls on the current hardware connection. All concrete implementation,
+  documentation, ordinary USB verification and publication work is complete;
+  no further speculative tuning or longer unbounded transfer is claimed.
