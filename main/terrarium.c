@@ -1,6 +1,7 @@
 #include "terrarium.h"
 
 #include "assets.h"
+#include "decor.h"
 #include "game_config.h"
 #include "species.h"
 #include "sprites.h"
@@ -12,9 +13,14 @@
  * the 480x480 canvas, so each source pixel covers a 2x2 block. */
 #define PIXEL_GRID 2
 
-static lv_obj_t *s_background, *s_gift_layer, *s_poop_layer, *s_preview_ring;
+static lv_obj_t *s_background, *s_decor_layer, *s_gift_layer, *s_poop_layer,
+                *s_preview_ring;
 static uint16_t *s_pixels;
 static uint8_t *s_gift_pixels;
+/* One image object per decor slot, created once at init and only re-sourced,
+ * moved or hidden afterwards. Creating canvases per placement would allocate
+ * on the LVGL task, which the project forbids. */
+static lv_obj_t *s_decor_obj[DECOR_SLOTS];
 static uint32_t s_poop_at[MAX_POOP];
 /* Dirt points each dropping is worth, so Clean can pay for the mess it actually
  * removed instead of for the tap. */
@@ -83,6 +89,31 @@ bool terrarium_test(void)
                 }
         }
     }
+    /* Every placed item must have a visible image object at its position, and
+     * every empty slot must be hidden. lv_obj_get_x() reads the cached coords,
+     * which are only refreshed by a layout pass, so force one first. */
+    lv_obj_update_layout(s_decor_layer);
+    for (int i = 0; i < DECOR_SLOTS; i++) {
+        const decor_item_t *item = decor_at(i);
+        lv_obj_t *obj = s_decor_obj[i];
+        if (!obj) { ok = false; continue; }
+        if (!item) {
+            ok = ok && lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        const decor_def_t *def = decor_def(item->kind);
+        bool visible = def && !lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        bool placed = lv_obj_get_x(obj) == item->x - 32 &&
+                      lv_obj_get_y(obj) == item->y - 32;
+        bool sourced = lv_image_get_src(obj) ==
+                       assets_image(sprite_decor_item_index(item->kind));
+        if (!visible || !placed || !sourced)
+            ESP_LOGW("spidarium.tank",
+                     "decor slot %d kind=%u visible=%d placed=%d(%d,%d vs %d,%d) sourced=%d",
+                     i, item->kind, visible, placed, (int)lv_obj_get_x(obj),
+                     (int)lv_obj_get_y(obj), item->x - 32, item->y - 32, sourced);
+        ok = ok && visible && placed && sourced;
+    }
     return ok;
 }
 
@@ -138,6 +169,38 @@ void terrarium_refresh_gift(void)
     lv_obj_set_pos(obj, g.gift.x - 32, g.gift.y - 32);
     lv_obj_set_clickable(obj, false);
     lv_obj_set_scrollable(obj, false);
+}
+
+void terrarium_refresh_decor(void)
+{
+    if (!s_decor_layer) return;
+    for (int i = 0; i < DECOR_SLOTS; i++) {
+        const decor_item_t *item = decor_at(i);
+        lv_obj_t *obj = s_decor_obj[i];
+        if (!obj) continue;
+        if (!item) {
+            lv_obj_set_hidden(obj, true);
+            continue;
+        }
+        int index = sprite_decor_item_index(item->kind);
+        const lv_image_dsc_t *image = index >= 0 ? assets_image(index) : NULL;
+        if (!image) {
+            ESP_LOGW("spidarium.tank", "decor %u image unavailable", item->kind);
+            lv_obj_set_hidden(obj, true);
+            continue;
+        }
+        const decor_def_t *def = decor_def(item->kind);
+        /* The source is 64x64 and LVGL's 1:1 scale is 256, so radius*16 draws
+         * a footprint-sized prop: a 9 px pebble cluster lands at 36 px, a 22 px
+         * log at 88 px. Scaling keeps the centre, so the position is the
+         * unscaled top-left. */
+        int32_t scale = def ? (int32_t)def->radius * 16 : 256;
+        if (scale < 64) scale = 64;
+        lv_image_set_src(obj, image);
+        lv_image_set_scale(obj, scale);
+        lv_obj_set_pos(obj, item->x - 32, item->y - 32);
+        lv_obj_set_hidden(obj, false);
+    }
 }
 
 void terrarium_preview_show(int32_t x, int32_t y, int32_t radius)
@@ -265,6 +328,15 @@ void terrarium_init(lv_obj_t *parent)
     lv_obj_set_scrollable(s_background, false);
     ui.bg_canvas = s_background;
     terrarium_rebuild();
+    /* Decor is part of the floor, so its layer is created before the gift and
+     * the droppings and therefore draws beneath them. */
+    s_decor_layer = layer(parent);
+    for (int i = 0; i < DECOR_SLOTS; i++) {
+        s_decor_obj[i] = lv_image_create(s_decor_layer);
+        lv_obj_set_clickable(s_decor_obj[i], false);
+        lv_obj_set_scrollable(s_decor_obj[i], false);
+        lv_obj_set_hidden(s_decor_obj[i], true);
+    }
     s_gift_layer = layer(parent);
     s_gift_pixels = heap_caps_malloc(64 * 64 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     ESP_ERROR_CHECK(s_gift_pixels ? ESP_OK : ESP_ERR_NO_MEM);
@@ -273,5 +345,6 @@ void terrarium_init(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_preview_ring, 2, 0);
     lv_obj_set_style_border_color(s_preview_ring, lv_color_hex(0xf5c86b), 0);
     lv_obj_set_hidden(s_preview_ring, true);
+    terrarium_refresh_decor();
     terrarium_refresh_gift();
 }

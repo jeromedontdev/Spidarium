@@ -49,6 +49,7 @@ static void on_care(lv_event_t *e)
 {
     (void)e;
     if (g.gift_mode) { game_on_gift(NULL); return; }
+    if (g_decor_mode) { game_cancel_decor_placement(); return; }
     behaviour_aim_cancel();
     ui_hud_set_chrome(!ui_hud_chrome_visible());
 }
@@ -319,6 +320,13 @@ void ui_hud_bubble(const char *text, uint32_t color, uint32_t ms)
 
 void ui_hud_set_gift_mode(bool on)
 {
+    lv_obj_set_hidden(s_hint, !on);
+    lv_obj_set_hidden(s_care_label, !on);
+}
+
+void ui_hud_set_place_mode(bool on, const char *hint)
+{
+    if (on && hint) lv_label_set_text(s_hint, hint);
     lv_obj_set_hidden(s_hint, !on);
     lv_obj_set_hidden(s_care_label, !on);
 }

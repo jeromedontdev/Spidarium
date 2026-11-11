@@ -124,6 +124,26 @@ static const icon_entry_t k_decor[] = {
     { "wood_log", MMAP_STORAGE_DECOR_WOOD_LOG_QOI },
 };
 
+/* Placeable decor, in decor_kind_t order. */
+static const icon_entry_t k_decor_items[] = {
+    { "rock_small",   MMAP_STORAGE_DECORITEM_ROCK_SMALL_QOI   },
+    { "rock_large",   MMAP_STORAGE_DECORITEM_ROCK_LARGE_QOI   },
+    { "pebbles",      MMAP_STORAGE_DECORITEM_PEBBLES_QOI      },
+    { "log",          MMAP_STORAGE_DECORITEM_LOG_QOI          },
+    { "bark",         MMAP_STORAGE_DECORITEM_BARK_QOI         },
+    { "fern",         MMAP_STORAGE_DECORITEM_FERN_QOI         },
+    { "moss_clump",   MMAP_STORAGE_DECORITEM_MOSS_CLUMP_QOI   },
+    { "succulent",    MMAP_STORAGE_DECORITEM_SUCCULENT_QOI    },
+    { "flower_white", MMAP_STORAGE_DECORITEM_FLOWER_WHITE_QOI },
+    { "flower_pink",  MMAP_STORAGE_DECORITEM_FLOWER_PINK_QOI  },
+    { "mushroom",     MMAP_STORAGE_DECORITEM_MUSHROOM_QOI     },
+    { "shell",        MMAP_STORAGE_DECORITEM_SHELL_QOI        },
+    { "crystal",      MMAP_STORAGE_DECORITEM_CRYSTAL_QOI      },
+    { "leaf_pile",    MMAP_STORAGE_DECORITEM_LEAF_PILE_QOI    },
+    { "twig",         MMAP_STORAGE_DECORITEM_TWIG_QOI         },
+    { "bone",         MMAP_STORAGE_DECORITEM_BONE_QOI         },
+};
+
 static const icon_entry_t k_icons[] = {
     { "feed",    MMAP_STORAGE_UI_FEED_QOI    },
     { "clean",   MMAP_STORAGE_UI_CLEAN_QOI   },
@@ -263,4 +283,10 @@ int sprite_decor_index(const char *name)
         if (strcmp(k_decor[i].name, name) == 0) return k_decor[i].index;
     }
     return -1;
+}
+
+int sprite_decor_item_index(uint8_t kind)
+{
+    return kind < sizeof k_decor_items / sizeof k_decor_items[0]
+               ? k_decor_items[kind].index : -1;
 }

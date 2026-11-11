@@ -170,7 +170,7 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:7,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:8,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
@@ -178,6 +178,7 @@ export function freshState(options={}) {
     silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,last_seen:0,background:'moss',
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
     daily_override:0xFFFFFFFF,pet_xp_day:0xFFFFFFFF,pet_xp_today:0,
+    decor_owned:0,decor:Array.from({length:DECOR_SLOTS},()=>({kind:DECOR_EMPTY,blocking:0,x:0,y:0})),
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
   services.set(s,options);
@@ -218,7 +219,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -250,6 +251,17 @@ export function validateProgress(raw) {
   number('daily_day',0,U32);number('daily_base_day',0,U32);
   number('daily_task_base',0,U32);number('daily_streak',0,255);number('daily_task_done',0,1);
   number('pet_xp_day',0,U32);number('pet_xp_today',0,255);
+  number('decor_owned',0,(1<<DECOR_KINDS.length)-1);
+  if(Object.hasOwn(raw,'decor')){
+    if(!Array.isArray(raw.decor)||raw.decor.length!==DECOR_SLOTS)fail('decor must be an array of slots');
+    for(const item of raw.decor){
+      if(!item||typeof item!=='object')fail('decor slot is invalid');
+      if(!Number.isSafeInteger(item.kind)||(item.kind!==DECOR_EMPTY&&(item.kind<0||item.kind>=DECOR_KINDS.length)))
+        fail('decor kind is outside its valid range');
+      if(![0,1].includes(item.blocking))fail('decor blocking must be 0 or 1');
+      if(!Number.isSafeInteger(item.x)||!Number.isSafeInteger(item.y))fail('decor position is invalid');
+    }
+  }
   for(const key of ['spider_x','spider_y'])number(key,34,446);
   for(const key of ['x','y'])number(key,legacy?-Number.MAX_SAFE_INTEGER:34,legacy?Number.MAX_SAFE_INTEGER:446,false);
   for(const key of ['spider_heading','heading','gait_phase','now_ms'])
@@ -322,6 +334,18 @@ export function restoreSim(raw,options={}) {
   // fresh-state sentinel and the first pet of the day opens it.
   s.pet_xp_day=integer(raw.pet_xp_day,s.pet_xp_day,U32);
   s.pet_xp_today=integer(raw.pet_xp_today,0,255);
+  // Placeable decor arrived in v8. An older save has no slots, so they keep the
+  // fresh-state sentinels rather than inheriting whatever the blob contains --
+  // kind 0 is a real item, so a zeroed slot would place twelve small rocks.
+  s.decor_owned=integer(raw.decor_owned,0,(1<<DECOR_KINDS.length)-1);
+  if(raw.version>=8&&Array.isArray(raw.decor))
+    s.decor=Array.from({length:DECOR_SLOTS},(_,i)=>{
+      const item=raw.decor[i];
+      if(!item||!Number.isInteger(item.kind)||item.kind===DECOR_EMPTY||!DECOR_KINDS[item.kind])
+        return {kind:DECOR_EMPTY,blocking:0,x:0,y:0};
+      return {kind:item.kind,blocking:item.blocking===1?1:0,
+        x:round(clamp(item.x,34,446)),y:round(clamp(item.y,34,446))};
+    });
   s.sick=raw.sick===1?1:0;s.muted=raw.muted===true||raw.muted===1?1:0;
   if(BACKGROUNDS.includes(raw.background??raw.theme))s.background=raw.background??raw.theme;
   if(typeof raw.sound==='boolean')s.muted=raw.sound?0:1;
@@ -505,6 +529,109 @@ export function buyTreat(s,kind){
   s.silk-=t.cost;
   s[t.field]=clamp(s[t.field]+t.gain);
   return true;
+}
+/** Placeable decor. Backgrounds are ground texture only; everything that sits
+ * on the floor is bought with Silk and placed by the player. `blocking` means
+ * the spider steers around it, otherwise it walks straight over.
+ * Order must match decor_kind_t in main/decor.h. */
+export const DECOR_KINDS=Object.freeze([
+  {key:'rock_small',name:'Small Rock',cost:18,level:1,radius:9,blocking:0},
+  {key:'rock_large',name:'Large Rock',cost:34,level:2,radius:16,blocking:1},
+  {key:'pebbles',name:'Pebbles',cost:14,level:1,radius:8,blocking:0},
+  {key:'log',name:'Log',cost:46,level:4,radius:22,blocking:1},
+  {key:'bark',name:'Bark Slab',cost:22,level:3,radius:14,blocking:0},
+  {key:'fern',name:'Fern',cost:38,level:5,radius:15,blocking:0},
+  {key:'moss_clump',name:'Moss Clump',cost:20,level:2,radius:11,blocking:0},
+  {key:'succulent',name:'Succulent',cost:52,level:7,radius:14,blocking:1},
+  {key:'flower_white',name:'White Flower',cost:26,level:3,radius:8,blocking:0},
+  {key:'flower_pink',name:'Pink Flower',cost:30,level:6,radius:8,blocking:0},
+  {key:'mushroom',name:'Mushroom',cost:28,level:4,radius:10,blocking:0},
+  {key:'shell',name:'Shell',cost:24,level:5,radius:9,blocking:0},
+  {key:'crystal',name:'Crystal',cost:68,level:9,radius:12,blocking:1},
+  {key:'leaf_pile',name:'Leaf Pile',cost:16,level:1,radius:13,blocking:0},
+  {key:'twig',name:'Twig',cost:12,level:1,radius:12,blocking:0},
+  {key:'bone',name:'Bone',cost:58,level:8,radius:13,blocking:1},
+]);
+export const DECOR_SLOTS=12;
+export const DECOR_EMPTY=0xFF;
+export function decorSprite(kind){
+  const d=DECOR_KINDS[kind];
+  return d?`decoritem_${d.key}`:null;
+}
+export function decorUnlocked(s,kind){
+  const d=DECOR_KINDS[kind];
+  return !!d&&s.level>=d.level;
+}
+export function decorOwned(s,kind){
+  return kind>=0&&kind<DECOR_KINDS.length&&(s.decor_owned&(1<<kind))!==0;
+}
+/** Buy one decor kind. Returns false and records a rejection when refused. */
+export function buyDecor(s,kind){
+  const d=DECOR_KINDS[kind];
+  if(!d)return event(s,'rejected',{reason:'unknown decor'});
+  if(!decorUnlocked(s,kind))return event(s,'rejected',{reason:'decor locked'});
+  if(s.silk<d.cost)return event(s,'rejected',{reason:'not enough Silk'});
+  s.silk-=d.cost;
+  s.decor_owned|=1<<kind;
+  return true;
+}
+export function decorPlacedCount(s){
+  return s.decor.filter(d=>d.kind!==DECOR_EMPTY).length;
+}
+/** Place an owned kind. Returns the slot index, or -1 when refused. */
+export function placeDecor(s,kind,x,y){
+  const d=DECOR_KINDS[kind];
+  if(!d)return -1;
+  if(!decorOwned(s,kind))return -1;
+  const slot=s.decor.findIndex(item=>item.kind===DECOR_EMPTY);
+  if(slot<0)return -1;
+  const r=d.radius;
+  s.decor[slot]={kind,blocking:d.blocking,
+    x:round(clamp(x,34+r,446-r)),y:round(clamp(y,34+r,446-r))};
+  return slot;
+}
+export function removeDecor(s,slot){
+  if(slot<0||slot>=DECOR_SLOTS||s.decor[slot].kind===DECOR_EMPTY)return false;
+  s.decor[slot]={kind:DECOR_EMPTY,blocking:0,x:0,y:0};
+  return true;
+}
+export function toggleDecorBlocking(s,slot){
+  if(slot<0||slot>=DECOR_SLOTS||s.decor[slot].kind===DECOR_EMPTY)return false;
+  s.decor[slot].blocking=s.decor[slot].blocking?0:1;
+  return true;
+}
+/** The placed item whose footprint contains a point, or -1. */
+export function decorHitTest(s,x,y){
+  for(let i=DECOR_SLOTS-1;i>=0;i--){
+    const item=s.decor[i];
+    if(item.kind===DECOR_EMPTY)continue;
+    const d=DECOR_KINDS[item.kind];
+    if(!d)continue;
+    const dx=x-item.x,dy=y-item.y;
+    if(dx*dx+dy*dy<=d.radius*d.radius)return i;
+  }
+  return -1;
+}
+/** True when a point is inside a blocking item's footprint. */
+export function decorBlocksPoint(s,x,y){
+  for(const item of s.decor){
+    if(item.kind===DECOR_EMPTY||!item.blocking)continue;
+    const d=DECOR_KINDS[item.kind];
+    if(!d)continue;
+    const dx=x-item.x,dy=y-item.y;
+    if(dx*dx+dy*dy<=d.radius*d.radius)return true;
+  }
+  return false;
+}
+/** Nearest blocking item within range, for steering. Null when clear. */
+export function decorNearestBlocking(s,x,y,maxDistance){
+  let best=maxDistance*maxDistance,found=null;
+  for(const item of s.decor){
+    if(item.kind===DECOR_EMPTY||!item.blocking)continue;
+    const dx=item.x-x,dy=item.y-y,d2=dx*dx+dy*dy;
+    if(d2<best){best=d2;found=item;}
+  }
+  return found?{x:found.x,y:found.y,distance:Math.sqrt(best)}:null;
 }
 /** Petting: a tap that lands on the spider's body. Returns true when the tap was
  * consumed as a pet. The cooldown exists because a tap is a cheap gesture:
@@ -723,6 +850,22 @@ function steer(s,want,dt,avoid=false){
       if(d>.1&&d<=40&&(dx*Math.cos(want)+dy*Math.sin(want))/d>=.15)
         a=(wrap(Math.atan2(dy,dx)-want)>=0?-1:1)*(1-d/40)*PI*.5;
     }
+    // Blocking decor: same steering principle, measured from the footprint
+    // edge so a big log pushes the spider away further out than a small rock.
+    // Non-blocking items are ignored entirely.
+    const near=decorNearestBlocking(s,s.spider_x,s.spider_y,66);
+    if(near){
+      const def=DECOR_KINDS[s.decor.find(d=>d.kind!==DECOR_EMPTY&&d.blocking&&
+        d.x===near.x&&d.y===near.y)?.kind];
+      const edge=near.distance-(def?def.radius:0);
+      if(edge<=26&&near.distance>.1){
+        const dx=near.x-s.spider_x,dy=near.y-s.spider_y;
+        if((dx*Math.cos(want)+dy*Math.sin(want))/near.distance>=.15){
+          const w=Math.max(0,1-edge/26);
+          a+=(wrap(Math.atan2(dy,dx)-want)>=0?-1:1)*w*PI*.6;
+        }
+      }
+    }
     let px=0,py=0;
     const dl=s.spider_x-34,dr=446-s.spider_x,top=s.spider_y-34,bot=446-s.spider_y;
     if(dl<70)px+=1-dl/70;if(dr<70)px-=1-dr/70;if(top<70)py+=1-top/70;if(bot<70)py-=1-bot/70;
@@ -735,8 +878,13 @@ function steer(s,want,dt,avoid=false){
 }
 function advance(s,speed,dt){
   const r=runtime(s);
-  r.px=clamp(r.px+Math.cos(s.spider_heading)*speed*dt,34,446);
-  r.py=clamp(r.py+Math.sin(s.spider_heading)*speed*dt,34,446);
+  const nx=clamp(r.px+Math.cos(s.spider_heading)*speed*dt,34,446);
+  const ny=clamp(r.py+Math.sin(s.spider_heading)*speed*dt,34,446);
+  // Steering normally keeps the spider out of blocking decor, but the player
+  // can drop an item straight onto it. Refuse that step rather than let the
+  // spider stand inside a rock; it steers out on the next frame.
+  if(decorBlocksPoint(s,round(nx),round(ny)))return;
+  r.px=nx;r.py=ny;
   s.spider_x=round(r.px);s.spider_y=round(r.py);
 }
 function inward(s) {

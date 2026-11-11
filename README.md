@@ -46,10 +46,10 @@ Drag toward a bug to jump; AI and prey hold still during the gesture.
 Rounded silk-bordered cards use visibly disabled Prev/Next paging rather than
 slow scrolling. Only Back navigates back; blank taps are ignored. The QWERTY
 keyboard includes WiFi Show/Hide
-password. Sixteen authored top-down enclosure scenes depict a keeper's substrate:
-an earth or stone floor with a worn trail, scattered rocks, foliage clusters and
-small flowers. They are composed at the panel's native 240x240 with a full colour
-ramp rather than quantised to a retro palette.
+password. Sixteen authored top-down enclosure scenes are **ground texture only**:
+an earth, stone or gravel substrate with a worn trail and fine grit, composed at
+the panel's native 240x240 with a full colour ramp rather than quantised to a
+retro palette. Everything that sits on the floor is placeable decor instead.
 Bent legs have visible knee joints.
 The selected enclosure survives reboot. Eight prey species unlock at levels
 1/2/4/6/10/13/16/20; existing pet progress is preserved. Distance-driven,
@@ -69,6 +69,17 @@ reposition owned items for free. Larger 64px shelters/perches/toys have explicit
 purposes, unlocks through level 40 and visible spider visits. Existing placed
 gifts and pet progress survive the save migration.
 See [the gift shop](docs/GIFTS_CATALOG.md).
+
+**Decor is the enclosure you arrange.** Sixteen kinds — rocks, pebbles, a log, a
+bark slab, a fern, moss, a succulent, two flowers, a mushroom, a shell, a
+crystal, a leaf pile, a twig and a bone — are bought with Silk (12–68) and
+unlock from level 1 to 9. Pick one in the Decor menu, tap the tank to place it,
+and twelve slots hold the result. Each item is either **blocking** or
+**non-blocking**: the spider steers around a blocking item before it reaches it,
+and walks straight over a non-blocking one. Blocking is a steering input, not a
+positional shove, so the spider turns away instead of grinding against a rock.
+Tap a placed item in the Placed Items list to flip its flag. The catalogue order
+is shared with the browser port and checked by a test that parses the C table.
 
 **A daily loop, and treats to spend Silk on.** Each in-game day offers a check-in
 whose reward grows with a consecutive-day streak (6 XP / 4 Silk on day one, up to
@@ -285,7 +296,8 @@ main/
   gift.c          gift bonuses
   species.c       data-driven bug table
   theme.c         palettes
-  terrarium.c     background, decor
+  decor.c         placeable decor catalogue, blocking, hit testing
+  terrarium.c     ground texture, decor layer, droppings
   ui_hud.c        buttons, stat rings, emote derivation
   ui_menu.c       generic list menu
   ui_setup.c      first-run colour picker

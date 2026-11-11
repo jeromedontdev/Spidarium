@@ -24,7 +24,7 @@ export class DeviceGame {
     this.ctx = this.canvas.getContext('2d'); this.ctx.imageSmoothingEnabled = false;
     this.spiderCanvas = document.createElement('canvas'); this.spiderCanvas.width = this.spiderCanvas.height = 96;
     this.spiderCtx = this.spiderCanvas.getContext('2d'); this.spiderPixels = this.spiderCtx.createImageData(96, 96);
-    this.images = new Map(); this.hud = false; this.modal = null; this.game = null; this.giftKind = null; this.aiming = false; this.lastGame = -1;
+    this.images = new Map(); this.hud = false; this.modal = null; this.game = null; this.giftKind = null; this.decorKind = null; this.aiming = false; this.lastGame = -1;
     this.error = false;
     this.audio = new DeviceAudio((message, error) => this.report(message, error));
     let storage;
@@ -104,7 +104,8 @@ export class DeviceGame {
     this.ear = element('button', 'd-ear'); this.ear.type = 'button'; this.ear.setAttribute('aria-label', 'Show or Hide Care HUD');
     this.earMark = element('span', ''); this.ear.append(this.earMark);
     this.ear.onclick = () => {
-      if (this.giftKind !== null) { this.giftKind = null; this.report('Gift Placement Cancelled.'); }
+      if (this.decorKind !== null) { this.decorKind = null; this.report('Decor Placement Cancelled.'); }
+      else if (this.giftKind !== null) { this.giftKind = null; this.report('Gift Placement Cancelled.'); }
       else { E.cancelAim(this.state); this.hud = !this.hud; }
       this.refreshHUD();
     };
@@ -116,8 +117,9 @@ export class DeviceGame {
   refreshHUD() {
     this.hudLayer.hidden = !this.hud;
     this.ear.hidden = Boolean(this.modal || this.game || !this.started);
-    this.earMark.textContent = this.giftKind !== null ? '×' : '';
-    this.ear.setAttribute('aria-label', this.giftKind !== null ? 'Cancel Gift Placement' : 'Show or Hide Care HUD');
+    const placing = this.giftKind !== null || this.decorKind !== null;
+    this.earMark.textContent = placing ? '×' : '';
+    this.ear.setAttribute('aria-label', placing ? 'Cancel Placement' : 'Show or Hide Care HUD');
     this.stats.forEach(({ key, bar, value }, i) => {
       const number = Math.round(this.state[key]); value.textContent = number;
       bar.firstChild.style.width = `${number}%`;
@@ -175,6 +177,8 @@ export class DeviceGame {
         row('Backgrounds', () => this.open('Backgrounds'), 'Enclosure Themes', { submenu: true }),
         row('Achievements', () => this.open('Achievements'), this.achievementDetail(), { submenu: true }),
         row('Prey Species', () => this.open('Prey Species'), this.speciesDetail(), { submenu: true }),
+        row('Decor', () => this.open('Decor'), `${E.decorPlacedCount(this.state)} of ${E.DECOR_SLOTS} Placed`,
+          { submenu: true }),
         /* Settings is always the last row: it is the least-used entry. */
         row('Settings', () => this.open('Settings'), 'Sound, Display, WiFi', { submenu: true }),
       ]; break;
@@ -211,6 +215,36 @@ export class DeviceGame {
           `${item.cost} Silk${this.state.silk < item.cost ? ' / Need More' : ''}`,
           { enabled: this.state.silk >= item.cost })),
       ]; break;
+      case 'Decor': {
+        rows = E.DECOR_KINDS.map((item, id) => {
+          const owned = E.decorOwned(this.state, id);
+          const unlocked = E.decorUnlocked(this.state, id);
+          const detail = !unlocked ? `Level ${item.level} / ${item.cost} Silk`
+            : owned ? `Owned / ${item.blocking ? 'Blocks' : 'Walk Over'}`
+            : `${item.cost} Silk / ${item.blocking ? 'Blocks' : 'Walk Over'}`;
+          return row(item.name, () => {
+            if (!unlocked) return;
+            if (!owned && !E.buyDecor(this.state, id)) return;
+            this.persist();
+            this.beginDecorPlacement(id);
+          }, detail, { selected: owned, enabled: unlocked });
+        });
+        rows.push(row('Placed Items', () => this.open('Placed Decor'),
+          `${E.decorPlacedCount(this.state)} of ${E.DECOR_SLOTS} Placed`, { submenu: true }));
+        break;
+      }
+      case 'Placed Decor': {
+        const placed = this.state.decor
+          .map((item, slot) => ({ item, slot }))
+          .filter(({ item }) => item.kind !== E.DECOR_EMPTY);
+        rows = placed.length ? placed.map(({ item, slot }) => row(
+          E.DECOR_KINDS[item.kind].name,
+          () => { E.toggleDecorBlocking(this.state, slot); this.persist(); this.open('Placed Decor'); },
+          `${item.blocking ? 'Blocks' : 'Walk Over'} / Tap to Change`,
+          { selected: !!item.blocking }))
+          : [row('Nothing Placed', null, 'Pick an Item First', { enabled: false })];
+        break;
+      }
       case 'Settings': rows = [
         row('WiFi', () => this.open('WiFi'), 'Networks and Time Sync', { submenu: true }),
         row('SD Card', () => this.open('SD Card'), 'Back Up and Restore', { submenu: true }),
@@ -385,6 +419,10 @@ export class DeviceGame {
     this.close(); this.giftKind = id; this.hud = false; this.refreshHUD();
     this.report('Tap the tank to place the gift. X cancels placement.'); this.persist();
   }
+  beginDecorPlacement(id) {
+    this.close(); this.decorKind = id; this.hud = false; this.refreshHUD();
+    this.report('Tap the tank to place the decor. X cancels placement.');
+  }
   play() {
     this.close(); let kind = Math.floor(Math.random() * 3);
     if (kind === this.lastGame) kind = (kind + 1 + Math.floor(Math.random() * 2)) % 3;
@@ -446,6 +484,11 @@ export class DeviceGame {
     if (!this.started || this.modal || this.game || this.hud) return;
     const p = this.point(event);
     void this.audio.unlock(this.state.sound);
+    if (this.decorKind !== null) {
+      const slot = E.placeDecor(this.state, this.decorKind, p.x, p.y);
+      if (slot < 0) { this.report('No room left for decor.', true); return; }
+      this.decorKind = null; this.refreshHUD(); this.persist(); this.report('Decor Placed.'); return;
+    }
     if (this.giftKind !== null) {
       const result = E.placeGift(this.state, this.giftKind, p.x, p.y);
       if (!result) { this.report('Gift cannot be placed here.', true); return; }
@@ -496,6 +539,18 @@ export class DeviceGame {
     const s = this.state, ctx = this.ctx;
     ctx.fillStyle = '#101c2c'; ctx.fillRect(0, 0, 480, 480);
     const bg = this.image(`background_${s.theme}_0`); if (bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, 480, 480);
+    // Decor is part of the floor, so it draws under the gift and the droppings.
+    // The source is 64x64 and the footprint radius is in playfield pixels, so
+    // the drawn size is radius*4 -- the same ratio the device uses.
+    for (const item of s.decor ?? []) {
+      if (item.kind === E.DECOR_EMPTY) continue;
+      const def = E.DECOR_KINDS[item.kind];
+      if (!def) continue;
+      const image = this.image(E.decorSprite(item.kind));
+      if (!image.complete || !image.naturalWidth) continue;
+      const size = def.radius * 4;
+      ctx.drawImage(image, item.x - size / 2, item.y - size / 2, size, size);
+    }
     if (s.gift?.used) {
       const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
       if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
@@ -556,7 +611,8 @@ export class DeviceGame {
   }
   frame(now) {
     const elapsed = Math.min(.15, Math.max(0, (now - this.last) / 1000)); this.last = now;
-    if (!document.hidden && this.started && !this.hud && !this.modal && !this.game && this.giftKind === null) {
+    if (!document.hidden && this.started && !this.hud && !this.modal && !this.game &&
+        this.giftKind === null && this.decorKind === null) {
       this.accumulator += elapsed; while (this.accumulator >= .05) { E.tick(this.state, .05); this.accumulator -= .05; }
     } else this.accumulator = 0;
     if (this.game) this.gameFrame(now);

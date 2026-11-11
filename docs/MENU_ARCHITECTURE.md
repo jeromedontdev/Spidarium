@@ -8,8 +8,13 @@ menu-stack/slider architecture; use the implemented API.
 
 ```
 Menu
-  Backgrounds            eight unlocked retro pixel-art habitats
+  Daily                  check-in and the rotating task
+  Treats                 consumables bought with Silk
+  Backgrounds            sixteen unlocked ground textures
   Achievements           read-only, paged
+  Prey species           read-only unlock list
+  Decor                  sixteen kinds; buy, then tap the tank to place
+    Placed Items         tap a row to flip blocking / walk-over
   Settings
     WiFi
       Scan networks      explicit on-demand action
@@ -26,8 +31,11 @@ Menu
     Auto Feed            one switch: wild prey and unattended hunting together
     Save Screenshot      playfield PNG to SD
     Wipe Spider          red text; confirmation before reset; always last
-  Prey species           read-only unlock list
 ```
+
+Settings is always the last row of the root menu: it is the least-used entry and
+belongs at the bottom rather than in the middle. Daily and Treats have no
+redundant full-width Back row because the corner Back button already exists.
 
 Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Back from saved network/editor
 returns to WiFi. Other submenus return to the root; root Back closes.

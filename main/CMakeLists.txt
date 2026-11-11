@@ -12,6 +12,7 @@ idf_component_register(
          "prey.c"
          "needs.c"
          "gift.c"
+         "decor.c"
          "species.c"
          "theme.c"
          "mind.c"

@@ -16,6 +16,9 @@ void terrarium_init(lv_obj_t *parent);
 /* Rebuild the gift layer (after giving or replacing the gift). */
 void terrarium_refresh_gift(void);
 
+/* Rebuild the decor layer (after placing, removing or toggling an item). */
+void terrarium_refresh_decor(void);
+
 /* Rebuild the background after a theme change. */
 void terrarium_rebuild(void);
 bool terrarium_test(void);

@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {SPECIES,GIFTS,TEMPERAMENTS,CONFIG,freshState,tick,spawnPrey,placeGift,giftBonus,aimWindow,restoreSim,minigameReward} from '../lib/sim.js';
+import {SPECIES,GIFTS,TEMPERAMENTS,CONFIG,freshState,tick,spawnPrey,placeGift,giftBonus,aimWindow,restoreSim,minigameReward,
+  DECOR_KINDS,DECOR_SLOTS,DECOR_EMPTY,decorSprite,decorUnlocked,decorOwned,buyDecor,decorPlacedCount,placeDecor,
+  removeDecor,toggleDecorBlocking,decorHitTest,decorBlocksPoint,decorNearestBlocking} from '../lib/sim.js';
 const native=name=>readFile(new URL(`../../main/${name}`,import.meta.url),'utf8');
 const neutral=()=>freshState({random:()=>.5,temperament:0});
 const keys=['energy_regen_mult','hygiene_decay_mult','pounce_range_mult','aim_window_mult','wild_spawn_bonus',
@@ -79,13 +81,15 @@ test('browser object-score callback is compatible and preserves setup/theme/colo
 });
 test('native automation has padding-stable ABI, v2 migration, and gated entries',async()=>{
   const [header,config,save,behaviour,prey]=await Promise.all(['game.h','game_config.h','save.c','behaviour.c','prey.c'].map(native));
-  assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 160/);
+  assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 236/);
   assert.match(header,/offsetof\(game_state_t, auto_feed\) == 129/);
   assert.match(header,/offsetof\(game_state_t, auto_hunt\) == 130/);
   assert.match(header,/offsetof\(game_state_t, volume\) == 131/);
   assert.match(header,/offsetof\(game_state_t, last_seen\) == 132/);
   assert.match(header,/offsetof\(game_state_t, daily_day\) == 136/);
-  assert.match(config,/#define SAVE_VERSION\s+7/);
+  assert.match(header,/offsetof\(game_state_t, decor_owned\) == 160/);
+  assert.match(header,/offsetof\(game_state_t, decor\) == 164/);
+  assert.match(config,/#define SAVE_VERSION\s+8/);
   assert.match(save,/version == 2\)[\s\S]*?state->auto_feed = 0;[\s\S]*?state->auto_hunt = 0;/);
   assert.match(save,/migrate_automation\(state, hdr\.version\)/);
   assert.match(save,/state\.auto_feed = 0xA5;[\s\S]*?state\.auto_hunt = 0x5A;[\s\S]*?migrate_automation\(&state, header\.version\)/);
@@ -105,5 +109,103 @@ test('serial schema producer emits both automation offsets and minVersion3',asyn
   assert.match(console,/\{"auto_hunt", "u8", offsetof\(game_state_t, auto_hunt\), 0, 3\}/);
   assert.match(console,/\{"volume", "u8", offsetof\(game_state_t, volume\), 0, 4\}/);
   assert.match(console,/minVersion\\":%u/);
-  assert.match(console,/SCHEMA_CAP = 3328/);
+  assert.match(console,/SCHEMA_CAP = 3584/);
+  assert.match(console,/\{"decor_owned", "u32", offsetof\(game_state_t, decor_owned\), 0, 8\}/);
+  assert.match(console,/\{"decor", "decor\[12\]", offsetof\(game_state_t, decor\), sizeof g\.decor, 8\}/);
+});
+
+test('decor catalogue matches the native table and every kind is placeable',async()=>{
+  const source=(await native('decor.c')).split('k_decor_kinds[DECOR_COUNT] = {')[1].split('};')[0];
+  const rows=[...source.matchAll(/\{\s*"([^"]+)",\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"([^"]+)"\s*\}/g)];
+  assert.equal(rows.length,DECOR_KINDS.length);
+  rows.forEach((row,id)=>{
+    const d=DECOR_KINDS[id];
+    assert.equal(d.name,row[1],`name ${id}`);
+    assert.equal(d.cost,Number(row[3]),`cost ${id}`);
+    assert.equal(d.level,Number(row[4]),`level ${id}`);
+    assert.equal(d.radius,Number(row[5]),`radius ${id}`);
+    assert.equal(d.blocking,Number(row[6]),`blocking ${id}`);
+    assert.equal(d.key,row[7].replace('decor_',''),`key ${id}`);
+    assert.equal(decorSprite(id),`decoritem_${d.key}`,`sprite ${id}`);
+  });
+});
+
+test('decor purchase, placement, blocking and hit testing behave like the device',()=>{
+  const s=neutral();
+  s.level=1;s.silk=0;
+  assert.equal(decorUnlocked(s,12),false);
+  assert.equal(buyDecor(s,0),false);
+  assert.equal(decorOwned(s,0),false);
+
+  s.silk=DECOR_KINDS[0].cost;
+  assert.equal(buyDecor(s,0),true);
+  assert.equal(decorOwned(s,0),true);
+  assert.equal(s.silk,0);
+
+  // An unowned kind cannot be placed.
+  assert.equal(placeDecor(s,3,100,100),-1);
+
+  const slot=placeDecor(s,0,100,100);
+  assert.ok(slot>=0);
+  assert.equal(decorPlacedCount(s),1);
+  assert.equal(s.decor[slot].blocking,0);
+  assert.equal(decorBlocksPoint(s,100,100),false);
+
+  assert.equal(toggleDecorBlocking(s,slot),true);
+  assert.equal(s.decor[slot].blocking,1);
+  assert.equal(decorBlocksPoint(s,100,100),true);
+  assert.equal(decorBlocksPoint(s,100+DECOR_KINDS[0].radius+4,100),false);
+
+  const near=decorNearestBlocking(s,110,100,60);
+  assert.ok(near);assert.equal(near.x,100);assert.equal(near.y,100);
+  assert.equal(decorNearestBlocking(s,110,100,2),null);
+
+  assert.equal(decorHitTest(s,100,100),slot);
+  assert.equal(decorHitTest(s,100+DECOR_KINDS[0].radius+6,100),-1);
+  assert.equal(removeDecor(s,slot),true);
+  assert.equal(decorPlacedCount(s),0);
+  assert.equal(decorBlocksPoint(s,100,100),false);
+
+  // A blocking kind defaults to blocking, and placement is clamped inside.
+  s.level=9;s.silk=DECOR_KINDS[12].cost;
+  assert.equal(buyDecor(s,12),true);
+  const crystal=placeDecor(s,12,200,200);
+  assert.ok(crystal>=0);assert.equal(s.decor[crystal].blocking,1);
+  const clamped=placeDecor(s,0,-500,-500);
+  assert.ok(clamped>=0);
+  assert.ok(s.decor[clamped].x>=34&&s.decor[clamped].y>=34);
+});
+
+test('decor slots are empty by default and survive a save round trip',()=>{
+  const s=neutral();
+  assert.equal(s.decor.length,DECOR_SLOTS);
+  assert.ok(s.decor.every(item=>item.kind===DECOR_EMPTY));
+  assert.equal(decorPlacedCount(s),0);
+
+  s.level=9;s.silk=1000;
+  assert.equal(buyDecor(s,3),true);
+  const slot=placeDecor(s,3,150,200);
+  assert.ok(slot>=0);
+  const loaded=restoreSim(JSON.parse(JSON.stringify(s)),{random:()=>.5});
+  assert.equal(decorPlacedCount(loaded),1);
+  assert.equal(loaded.decor[slot].kind,3);
+  assert.equal(loaded.decor[slot].blocking,1);
+  assert.equal(loaded.decor[slot].x,150);
+  assert.equal(loaded.decor[slot].y,200);
+  assert.equal(decorOwned(loaded,3),true);
+});
+
+test('a blocking item stops the spider walking through it',()=>{
+  const s=neutral();
+  s.level=9;s.silk=1000;
+  assert.equal(buyDecor(s,1),true);
+  const slot=placeDecor(s,1,240,240);
+  assert.ok(slot>=0);
+  assert.equal(s.decor[slot].blocking,1);
+  // Drive the spider straight at the rock from the left.
+  s.spider_x=140;s.spider_y=240;s.spider_heading=0;
+  s._engine.px=140;s._engine.py=240;
+  for(let i=0;i<200;i++)tick(s,.05);
+  assert.equal(decorBlocksPoint(s,s.spider_x,s.spider_y),false,
+    'the spider must never end a tick inside a blocking item');
 });

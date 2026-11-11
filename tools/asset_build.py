@@ -17,9 +17,9 @@ except ImportError:
 SPIDER_COUNT = 39
 LEGACY_PREY_SPECIES = ("fly", "cricket", "moth", "beetle")
 PREY_SPECIES = LEGACY_PREY_SPECIES + ("roach", "mealworm", "fruitfly", "waxworm")
-ASSET_COUNT = 142
-NON_SPIDER_COUNT = 103
-PRESERVED_ASSET_COUNT = 107
+ASSET_COUNT = 158
+NON_SPIDER_COUNT = 119
+PRESERVED_ASSET_COUNT = 123
 BACKGROUNDS = (
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
     "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
@@ -55,6 +55,11 @@ GIFTS = (
     "diamond", "crown",
 )
 DECOR = ("rock_0", "rock_1", "plant_0", "plant_1", "wood_log")
+DECOR_ITEMS = (
+    "rock_small", "rock_large", "pebbles", "log", "bark", "fern", "moss_clump",
+    "succulent", "flower_white", "flower_pink", "mushroom", "shell", "crystal",
+    "leaf_pile", "twig", "bone",
+)
 PIXEL_SCALE = 2
 MAX_VISIBLE_COLORS = 12
 
@@ -84,6 +89,9 @@ def expected_dimensions():
         "decor_plant_0.png": (48, 64),
         "decor_plant_1.png": (52, 56),
         "decor_wood_log.png": (96, 36),
+    })
+    dimensions.update({
+        f"decoritem_{name}.png": (64, 64) for name in DECOR_ITEMS
     })
     dimensions.update({
         f"background_{name}_0.png": (240, 240) for name in BACKGROUNDS
@@ -418,6 +426,7 @@ def validate_runtime_mappings(root):
         )
     required.extend(f"MMAP_STORAGE_GIFT_{name.upper()}_QOI" for name in GIFTS)
     required.extend(f"MMAP_STORAGE_DECOR_{name.upper()}_QOI" for name in DECOR)
+    required.extend(f"MMAP_STORAGE_DECORITEM_{name.upper()}_QOI" for name in DECOR_ITEMS)
     required.extend(f"MMAP_STORAGE_UI_{name.upper()}_QOI" for name in UI_ICONS)
     required.extend(f"MMAP_STORAGE_ACHIEVEMENT_{name.upper()}_QOI" for name in ACHIEVEMENTS)
     required.extend(f"MMAP_STORAGE_BACKGROUND_{name.upper()}_0_QOI" for name in BACKGROUNDS)

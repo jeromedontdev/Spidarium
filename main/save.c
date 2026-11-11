@@ -3,6 +3,7 @@
  */
 #include "save.h"
 
+#include "decor.h"
 #include "game_config.h"
 #include "net.h"
 #include "sd.h"
@@ -36,6 +37,8 @@ typedef struct {
  * v6 appended the daily-loop fields, so a v5 blob is a valid prefix of the
  * current struct and can be migrated in place instead of discarded. */
 #define SAVE_V5_PAYLOAD 136
+#define SAVE_V7_PAYLOAD 160
+#define SAVE_V8_PAYLOAD 236
 /* Byte count of the v6 game_state_t: v5 plus the daily-loop fields. v7 appended
  * the petting budget, so a v6 blob is likewise a valid prefix. */
 #define SAVE_V6_PAYLOAD 152
@@ -91,12 +94,24 @@ static void migrate_automation(game_state_t *state, uint16_t version)
         state->pet_xp_day = DAILY_NEVER;
         state->pet_xp_today = 0;
     }
+    /* Placeable decor arrived in v8. An older blob has no slots at all, so they
+     * must be marked empty rather than left as whatever the zeroed payload
+     * happens to contain -- kind 0 is a real item. */
+    if (version < 8) {
+        decor_clear_slots(state->decor, DECOR_SLOTS);
+        state->decor_owned = 0;
+    }
 }
 
 static void save_worker(void *arg)
 {
     (void)arg;
     save_job_t job;
+    /* The backup snapshot is file scope rather than a local: a save_job_t is
+     * already over a kilobyte and the worker's stack is deliberately small, so
+     * a second large local tipped it into an overflow. Only this task touches
+     * it, so a static is safe. */
+    static game_state_t snapshot;
     for (;;) {
         xQueueReceive(s_queue, &job, portMAX_DELAY);
         /* A queued save must not start during a radio-exclusive operation.
@@ -107,7 +122,6 @@ static void save_worker(void *arg)
             atomic_store(&s_writing, false);
             vTaskDelay(pdMS_TO_TICKS(20));
         }
-        game_state_t snapshot;
         if (job.sd_operation == SD_JOB_BACKUP) memcpy(&snapshot, job.payload, sizeof snapshot);
         bool ok = job.raw ? save_write_raw(job.payload, job.size) :
                   job.background ? background_write(job.background_id) :
@@ -294,7 +308,7 @@ bool save_load(void *dst, size_t size)
         return false;
     }
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
-        hdr.version != 6) {
+        hdr.version != 6 && hdr.version != 7) {
         ESP_LOGW(TAG, "save version %u != %u; rejecting",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
@@ -303,11 +317,12 @@ bool save_load(void *dst, size_t size)
                   hdr.size == offsetof(game_state_t, silk);
     /* v5 payloads are 136 bytes: everything up to and including last_seen.
      * v6 appended the daily-loop fields, so a v5 blob is a valid prefix and is
-     * accepted rather than thrown away. v7 appended the petting budget, so a v6
-     * blob is a valid prefix in the same way. */
+     * accepted rather than thrown away. v7 appended the petting budget and v8
+     * the decor, so each older blob is a valid prefix in the same way. */
     bool v5 = size == sizeof(game_state_t) && hdr.size == SAVE_V5_PAYLOAD;
     bool v6 = size == sizeof(game_state_t) && hdr.size == SAVE_V6_PAYLOAD;
-    if (hdr.size != size && !legacy && !v5 && !v6) {
+    bool v7 = size == sizeof(game_state_t) && hdr.size == SAVE_V7_PAYLOAD;
+    if (hdr.size != size && !legacy && !v5 && !v6 && !v7) {
         ESP_LOGW(TAG, "save size %u != %u; rejecting",
                  (unsigned)hdr.size, (unsigned)size);
         return false;
@@ -331,6 +346,10 @@ bool save_load(void *dst, size_t size)
         }
         if (v6) {
             ESP_LOGI(TAG, "migrated v6 save: petting budget starts fresh");
+        }
+        if (v7) {
+            ESP_LOGI(TAG, "migrated v7 save: decor starts empty");
+            decor_clear_slots(state->decor, DECOR_SLOTS);
         }
     }
     if (legacy) {
@@ -438,13 +457,14 @@ bool save_raw_valid(const void *src, size_t len)
         return false;
     }
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
-        hdr.version != 6) {
+        hdr.version != 6 && hdr.version != 7) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
     if (hdr.size != sizeof(game_state_t) && hdr.size != offsetof(game_state_t, silk) &&
-        hdr.size != SAVE_V5_PAYLOAD && hdr.size != SAVE_V6_PAYLOAD) {
+        hdr.size != SAVE_V5_PAYLOAD && hdr.size != SAVE_V6_PAYLOAD &&
+        hdr.size != SAVE_V7_PAYLOAD) {
         ESP_LOGW(TAG, "raw write: game-state size %u != %u",
                  (unsigned)hdr.size, (unsigned)sizeof(game_state_t));
         return false;
@@ -566,5 +586,30 @@ bool save_format_test(void)
     migrated.pet_xp_today = 200;
     migrate_automation(&migrated, 6);
     ok = migrated.pet_xp_day == DAILY_NEVER && migrated.pet_xp_today == 0 && ok;
+
+    /* A v7 blob is a valid prefix of the v8 struct: decor was appended, so an
+     * upgrade must keep the pet and start with an empty enclosure. */
+    header.version = 7;
+    header.size = SAVE_V7_PAYLOAD;
+    memcpy(blob, &header, sizeof header);
+    memcpy(blob + sizeof header, &g, SAVE_V7_PAYLOAD);
+    ok = save_raw_valid(blob, sizeof header + SAVE_V7_PAYLOAD) && ok;
+    /* ...and a v7 header claiming a v8 payload is a lie. */
+    header.size = sizeof(game_state_t);
+    memcpy(blob, &header, sizeof header);
+    ok = !save_raw_valid(blob, sizeof header + SAVE_V7_PAYLOAD) && ok;
+    /* The v7 migration must empty the decor slots rather than inherit them. */
+    migrated = g;
+    for (int i = 0; i < DECOR_SLOTS; i++) {
+        migrated.decor[i].kind = 0;
+        migrated.decor[i].blocking = 1;
+        migrated.decor[i].x = 40;
+        migrated.decor[i].y = 40;
+    }
+    migrate_automation(&migrated, 7);
+    bool decor_empty = true;
+    for (int i = 0; i < DECOR_SLOTS; i++)
+        decor_empty = decor_empty && migrated.decor[i].kind == 0xFF;
+    ok = decor_empty && ok;
     return ok;
 }

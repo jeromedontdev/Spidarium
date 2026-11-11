@@ -1,5 +1,34 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.13 follow-up: placeable decor
+
+Backgrounds became ground texture only on both targets, and everything that sits
+on the floor is now a decor item the player buys with Silk and places. The
+catalogue is identical: sixteen kinds, the same names, costs, unlock levels,
+footprint radii and blocking flags, in the same order. `DECOR_KINDS` in
+`site/lib/device-engine.js` is checked against `k_decor_kinds[]` in
+`main/decor.c` by a test that parses the C table, so the two cannot drift.
+
+Placement mirrors the gift flow on both: pick a kind in the menu, the menu
+closes, the next tank tap commits the position, and the corner X cancels. The
+device stores twelve slots in `game_state_t` (`decor_owned` at offset 160,
+`decor` at 164, save version 8); the browser stores the same twelve slots in its
+save blob and validates them on restore.
+
+Blocking is a steering input on both, not a positional shove. The device's
+`decor_avoidance()` in `behaviour.c` and the browser's inline block in `steer()`
+both measure the berth from the footprint edge, only steer when the item is
+ahead (`dot >= 0.15`), and turn perpendicular on the side the spider already
+leans. Both also refuse a step that would land inside a blocking footprint, so a
+player who drops a rock on the spider cannot trap it there.
+
+Non-blocking decor is ignored by steering on both targets. That is the point of
+the flag: the spider is meant to walk over a leaf pile.
+
+Browser suite 97/97 (was 93). Four new tests cover the catalogue against the
+native table, purchase/placement/blocking/hit-testing, the empty-slot default
+and save round trip, and a blocking item actually stopping the spider.
+
 ## v1.1.10 follow-up
 
 Petting exists on both targets with the same numbers: a tap within

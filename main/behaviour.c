@@ -4,6 +4,7 @@
 #include "behaviour.h"
 
 #include "audio.h"
+#include "decor.h"
 #include "game_config.h"
 #include "gift.h"
 #include "prey.h"
@@ -105,14 +106,15 @@ static void steer_toward(float want, float dt_s)
 
 /* Defined below; declared here because steering needs them first. */
 static float gift_avoidance(float heading);
+static float decor_avoidance(float heading);
 static float wall_avoidance(float want);
 
-/* Steer toward `want` while bending away from the gift in the way. This is the
- * steering-level avoidance: the spider turns around the gift instead of
- * walking into it and being shoved back out. */
+/* Steer toward `want` while bending away from the gift and any blocking decor
+ * in the way. This is the steering-level avoidance: the spider turns around an
+ * obstacle instead of walking into it and being shoved back out. */
 static void steer_avoiding(float want, float dt_s)
 {
-    float avoid = gift_avoidance(want) + wall_avoidance(want);
+    float avoid = gift_avoidance(want) + decor_avoidance(want) + wall_avoidance(want);
     steer_toward(wrap_pi(want + avoid), dt_s);
 }
 
@@ -192,6 +194,14 @@ static void advance(float speed, float dt_s)
     if (ny < (float)g_play.top)    ny = (float)g_play.top;
     if (ny > (float)g_play.bottom) ny = (float)g_play.bottom;
 
+    /* Steering normally keeps the spider out of blocking decor, but the player
+     * can drop an item straight onto it. Refuse that step rather than let the
+     * spider stand inside a rock: it will steer out on the next frame. */
+    if (decor_blocks_point((int16_t)lroundf(nx), (int16_t)lroundf(ny))) {
+        nx = s_px;
+        ny = s_py;
+    }
+
     s_px = nx;
     s_py = ny;
     g.spider_x = (int16_t)lroundf(nx);
@@ -240,6 +250,53 @@ static float gift_avoidance(float heading)
     /* Weight by proximity: barely a nudge at the edge, a firm turn up close. */
     float w = 1.0f - d / GIFT_AVOID_RADIUS;
     return turn * w * (PI_F * 0.5f);
+}
+
+/* Decor avoidance.
+ *
+ * Same principle as gift_avoidance, but for the player-placed blocking items.
+ * Non-blocking decor is ignored entirely: the spider is meant to walk over a
+ * leaf pile, and steering around it would make the blocking flag meaningless.
+ *
+ * The berth is measured from the item's footprint rather than its centre, so a
+ * big log pushes the spider away further out than a small rock. */
+#define DECOR_AVOID_MARGIN  26.0f   /* clearance beyond the footprint radius */
+
+/* Returns a heading offset that steers away from the nearest blocking decor
+ * item ahead, or 0 if the path is clear. */
+static float decor_avoidance(float heading)
+{
+    int16_t ix = 0, iy = 0;
+    float d = 0.0f;
+    if (!decor_nearest_blocking(g.spider_x, g.spider_y,
+                                DECOR_AVOID_MARGIN + 40.0f, &ix, &iy, &d))
+        return 0.0f;
+
+    int slot = decor_hit_test(ix, iy);
+    const decor_item_t *item = decor_at(slot);
+    const decor_def_t *def = item ? decor_def(item->kind) : NULL;
+    if (!def) return 0.0f;
+
+    /* Distance from the footprint edge, not the centre. */
+    float edge = d - (float)def->radius;
+    if (edge > DECOR_AVOID_MARGIN) return 0.0f;
+
+    float dx = (float)(ix - g.spider_x);
+    float dy = (float)(iy - g.spider_y);
+    if (d < 0.01f) return 0.0f;
+
+    /* Only steer around an item that is roughly AHEAD. */
+    float dot = (dx * cosf(heading) + dy * sinf(heading)) / d;
+    if (dot < 0.15f) return 0.0f;
+
+    float to_item = atan2f(dy, dx);
+    float side = wrap_pi(to_item - heading);
+    float turn = (side >= 0.0f) ? -1.0f : 1.0f;
+
+    /* Firm turn: a blocking item is a wall, not a friend. */
+    float w = 1.0f - edge / DECOR_AVOID_MARGIN;
+    if (w < 0.0f) w = 0.0f;
+    return turn * w * (PI_F * 0.6f);
 }
 
 /* Wall avoidance.

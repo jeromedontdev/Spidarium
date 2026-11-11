@@ -64,9 +64,10 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   protections, and update version-specific package/website validation together.
 - Round 43 adds three-prey Feed guards, shared silk-bordered cards, readable
   translucent identity panel, corner battery gauge/details, Sound in Settings,
-  gray/inert pagination and distinct achievement assets. There are 134 PNGs,
-  including eleven badges and eight species-specific splatters. Preserve all
-  115 other accepted images; do not revive obsolete spider PNGs as live anatomy.
+  gray/inert pagination and distinct achievement assets. There are 158 PNGs,
+  including eleven badges, eight species-specific splatters, sixteen ground
+  textures and sixteen placeable decor sprites. Preserve all 123 other accepted
+  images; do not revive obsolete spider PNGs as live anatomy.
 - Browser save tooling uses the compiled schema and validated raw export/restore.
   Restore pauses the tank and blocks subsequent saves until explicit reboot;
   never resave the old live state over a restored blob. Screenshot capture is
@@ -100,17 +101,29 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   brightness, 60s dim/300s screen-off, touch/serial wake and low-battery save.
   Power/network display ownership is serialized. Charger settings are untouched;
   USB telemetry is not proof of unplugged discharge/runtime.
-- [Artwork](ART_STYLE.md): deterministic non-spider assets, eight prey species,
-  eighteen gifts, five decor sprites and thirteen HUD icons.
+- [Artwork](ART_STYLE.md): deterministic non-spider assets in a **16-bit
+  SNES-era** direction — crescent shading, three tones per material, an ink rim
+  on every silhouette, no gradients. Eight prey species, eighteen gifts,
+  sixteen placeable decor sprites and thirteen HUD icons.
   [Inventory](ASSETS_INVENTORY.md) and [asset commands](../assets/README.md)
   define the maintenance contract. All thirty-nine spider PNGs were preserved.
-- Eight selectable retro pixel-art habitats use one reusable 460,800-byte
-  PSRAM canvas, not a web/prop object tree. No mandatory decorations or random
-  dust. Eight authored 240x240 packed background assets add 1,382,400 bytes of
-  explicit decoded PSRAM, scaled 2x into the existing canvas at selection.
-  Top-down enclosure substrates, rim/vents, upper-wall retreat
-  and anchored perimeter foliage replace landscape horizons. Preference IDs
-  remain stable in a separate NVS key, written by the persistence worker.
+- Sixteen selectable habitats use one reusable 460,800-byte PSRAM canvas, not a
+  web/prop object tree. Backgrounds are **ground texture only** — substrate,
+  trail, grain, tonal drift — with no painted props, so the spider always has a
+  clean floor behind it. Sixteen authored 240x240 packed background assets add
+  2,764,800 bytes of explicit decoded PSRAM, scaled 2x into the existing canvas
+  at selection. Preference IDs remain stable in a separate NVS key, written by
+  the persistence worker.
+- [Decor](ART_STYLE.md): sixteen kinds bought with Silk (12-68) and unlocked from
+  level 1 to 9, placed by tapping the tank into twelve slots. Each is blocking or
+  non-blocking. Blocking is a **steering input**, not a positional shove:
+  `decor_avoidance()` in `behaviour.c` measures the berth from the footprint edge
+  and only steers when the item is ahead, and `advance()` refuses a step that
+  would land inside a blocking footprint. Non-blocking decor is ignored entirely.
+  The catalogue order is shared with the browser and checked by a test that
+  parses the C table. Save version 8; `decor_owned` at offset 160, `decor` at
+  164, `game_state_t` 236 bytes. Placement mode lives in file-scope globals, not
+  in the persisted struct.
 - Prey IDs 0..3 and levels 1/2/4/6 are preserved. New roach/mealworm/fruitfly/
   waxworm unlock at 10/13/16/20. All explicit/wild/daily spawns obey eligibility;
   never reset the user's level merely to demonstrate locks.

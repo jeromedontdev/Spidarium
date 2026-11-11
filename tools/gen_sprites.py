@@ -104,6 +104,15 @@ GIFT_NAMES = [
 ]
 
 DECOR_NAMES = ["rock_0", "rock_1", "plant_0", "plant_1", "wood_log"]
+
+# Placeable decor. These are the props the player buys and arranges, so they
+# carry the 16-bit SNES-era look: a dark outline, a mid body, a lit top-left
+# face and a shadowed bottom-right face, at 32x32 so they read at panel scale.
+DECOR_ITEM_NAMES = [
+    "rock_small", "rock_large", "pebbles", "log", "bark", "fern", "moss_clump",
+    "succulent", "flower_white", "flower_pink", "mushroom", "shell", "crystal",
+    "leaf_pile", "twig", "bone",
+]
 BACKGROUND_NAMES = [
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
     "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
@@ -813,6 +822,237 @@ def draw_decor(name):
     return _enlarge(img)
 
 
+def _decor_canvas():
+    """A 32x32 canvas for a placeable decor item."""
+    return _pixel_canvas(32, 32)
+
+
+def _outline(d, points, color, width=1):
+    """Draw a closed polygon outline, so every prop reads against the floor."""
+    d.line(list(points) + [points[0]], fill=color, width=width)
+
+
+def _blob(d, cx, cy, rx, ry, body, light, dark, ink=INK):
+    """A rounded prop body with SNES-era shading.
+
+    Ink rim, mid body, then a lit crescent on the top-left and a shadowed
+    crescent on the bottom-right. Drawing the crescents as offset ellipses
+    clipped by the body is what gives the prop volume; concentric rings just
+    read as a flat disc with a border.
+    """
+    def box(inset):
+        x0, y0 = cx - rx + inset, cy - ry + inset
+        x1, y1 = cx + rx - inset, cy + ry - inset
+        return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
+
+    outer = box(0)
+    if not outer:
+        return
+    d.ellipse(outer, fill=ink)
+    inner = box(1)
+    if not inner:
+        return
+    d.ellipse(inner, fill=body)
+    # Lit crescent: a smaller ellipse nudged up-left, then the body re-stamped
+    # over its lower-right so only the crescent survives.
+    lit = (cx - rx + 1 - rx // 3, cy - ry + 1 - ry // 3,
+           cx + rx - 1 - rx // 3, cy + ry - 1 - ry // 3)
+    if lit[2] > lit[0] and lit[3] > lit[1]:
+        d.ellipse(lit, fill=light)
+        d.ellipse((cx - rx + 1 + rx // 4, cy - ry + 1 + ry // 4,
+                   cx + rx - 1, cy + ry - 1), fill=body)
+    # Shadow crescent on the opposite side.
+    shade = (cx - rx + 1 + rx // 3, cy - ry + 1 + ry // 3,
+             cx + rx - 1 + rx // 3, cy + ry - 1 + ry // 3)
+    if shade[2] > shade[0] and shade[3] > shade[1]:
+        d.ellipse(shade, fill=dark)
+        d.ellipse((cx - rx + 1, cy - ry + 1,
+                   cx + rx - 1 - rx // 4, cy + ry - 1 - ry // 4), fill=body)
+
+
+def _leaf_shape(d, base, tip, breadth, body, light, dark, ink=INK):
+    """A pointed leaf with an ink outline, a lit half and a midrib."""
+    bx, by = base
+    tx, ty = tip
+    dx, dy = tx - bx, ty - by
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / length, dx / length
+    left, right = [], []
+    for step in range(1, 9):
+        t = step / 9.0
+        width = breadth * math.sin(math.pi * t) ** 0.7
+        px, py = bx + dx * t, by + dy * t
+        left.append((px + nx * width, py + ny * width))
+        right.append((px - nx * width, py - ny * width))
+    points = [(bx, by)] + left + [(tx, ty)] + right[::-1]
+    d.polygon([(px + (1 if px >= bx else -1), py + (1 if py >= by else -1))
+               for px, py in points], fill=ink)
+    d.polygon(points, fill=body)
+    d.polygon([(bx, by)] + left + [(tx, ty)], fill=light)
+    d.line([(bx, by), (tx, ty)], fill=dark)
+
+
+def _frond(d, base, tip, curve, body, light, dark, ink=INK):
+    """A fern frond: a curved rachis with paired pinnae along it.
+
+    A fern is not a leaf. Drawing it as one pointed blade is what made the
+    earlier attempts read as grass, so this walks the rachis and stamps a
+    short leaflet on each side at every step, shrinking toward the tip.
+    """
+    bx, by = base
+    tx, ty = tip
+    dx, dy = tx - bx, ty - by
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / length, dx / length
+    steps = 9
+    spine = []
+    for step in range(steps + 1):
+        t = step / steps
+        # Bend the rachis sideways so the frond arcs instead of standing rigid.
+        bend = curve * math.sin(math.pi * t)
+        spine.append((bx + dx * t + nx * bend, by + dy * t + ny * bend))
+    d.line(spine, fill=ink, width=2)
+    d.line(spine, fill=dark, width=1)
+    for step in range(1, steps):
+        t = step / steps
+        px, py = spine[step]
+        span = 4.6 * math.sin(math.pi * (0.15 + 0.85 * t)) ** 0.6
+        if span < 1.2:
+            continue
+        for side in (1, -1):
+            ex = px + nx * span * side + dx / length * 1.6
+            ey = py + ny * span * side + dy / length * 1.6
+            d.line([(px, py), (ex, ey)], fill=ink, width=2)
+            d.line([(px, py), (ex, ey)], fill=body, width=1)
+            d.point((ex, ey), fill=light)
+
+
+def draw_decor_item(name):
+    """One placeable decor item at 32x32, doubled to 64x64."""
+    img, d = _decor_canvas()
+    stone, stone_hi, stone_dark = map(_rgba, (0x8A8F86, 0xC6C9BE, 0x5A5F58))
+    leaf, leaf_hi, leaf_dark = map(_rgba, (0x4E8A34, 0x8CC85A, 0x2E5A22))
+    bark, bark_hi, bark_dark = map(_rgba, (0xA8763C, 0xE4BC80, 0x6E4A22))
+    white, white_hi, white_dark = map(_rgba, (0xF2EEDC, 0xFFFFFF, 0xC8C2AC))
+    pink, pink_hi, pink_dark = map(_rgba, (0xE87AB0, 0xFFB8D8, 0xB84E80))
+    red, red_hi, red_dark = map(_rgba, (0xD83A2E, 0xFF7A5A, 0x8A1E18))
+    cyan, cyan_hi, cyan_dark = map(_rgba, (0x62C8D8, 0xC8F4FF, 0x2E7A8A))
+    bone, bone_hi, bone_dark = map(_rgba, (0xE8E2CC, 0xFFFDF0, 0xA8A088))
+    shell, shell_hi, shell_dark = map(_rgba, (0xF2A08E, 0xFFD8C8, 0xC06A5A))
+
+    if name == "rock_small":
+        _blob(d, 16, 19, 10, 7, stone, stone_hi, stone_dark)
+        d.line([(11, 16), (15, 14), (20, 16)], fill=stone_hi)
+        d.line([(13, 21), (18, 22)], fill=stone_dark)
+    elif name == "rock_large":
+        _blob(d, 16, 17, 14, 11, stone, stone_hi, stone_dark)
+        d.line([(7, 14), (13, 9), (21, 10)], fill=stone_hi, width=2)
+        d.line([(10, 21), (17, 24), (23, 21)], fill=stone_dark, width=2)
+        d.line([(19, 13), (22, 17)], fill=stone_dark)
+    elif name == "pebbles":
+        for cx, cy, rx, ry in ((10, 22, 5, 4), (20, 24, 4, 3), (16, 15, 6, 5),
+                               (24, 16, 3, 3), (7, 14, 3, 2)):
+            _blob(d, cx, cy, rx, ry, stone, stone_hi, stone_dark)
+    elif name == "log":
+        d.rectangle((3, 12, 28, 21), fill=INK)
+        d.rectangle((4, 13, 27, 20), fill=bark)
+        d.rectangle((4, 13, 27, 15), fill=bark_hi)
+        d.rectangle((4, 18, 27, 20), fill=bark_dark)
+        for x in (10, 16, 22):
+            d.line([(x, 14), (x - 1, 19)], fill=bark_dark)
+        d.ellipse((1, 11, 8, 22), fill=INK)
+        d.ellipse((2, 12, 7, 21), fill=bark_hi)
+        d.ellipse((3, 14, 6, 19), fill=bark_dark)
+    elif name == "bark":
+        d.polygon([(4, 20), (8, 10), (18, 7), (27, 12), (26, 22), (14, 25)],
+                  fill=INK)
+        d.polygon([(5, 19), (9, 11), (18, 8), (26, 13), (25, 21), (14, 24)],
+                  fill=bark)
+        d.polygon([(5, 19), (9, 11), (18, 8), (20, 12), (12, 20)], fill=bark_hi)
+        for x, y in ((14, 14), (19, 17), (11, 17)):
+            d.line([(x, y), (x + 3, y + 3)], fill=bark_dark)
+    elif name == "fern":
+        # A rosette of arcing fronds, the way a real fern grows from a crown.
+        for base, tip, curve in (((16, 29), (5, 8), 2.5),
+                                 ((16, 29), (16, 3), 0.0),
+                                 ((16, 29), (27, 8), -2.5),
+                                 ((16, 29), (2, 18), 3.0),
+                                 ((16, 29), (30, 18), -3.0)):
+            _frond(d, base, tip, curve, leaf, leaf_hi, leaf_dark)
+    elif name == "moss_clump":
+        for cx, cy, rx, ry in ((12, 20, 8, 6), (21, 21, 7, 5), (16, 14, 7, 5),
+                               (9, 15, 5, 4), (24, 14, 4, 3)):
+            _blob(d, cx, cy, rx, ry, leaf, leaf_hi, leaf_dark)
+    elif name == "succulent":
+        for step in range(8):
+            angle = step * math.pi / 4
+            cx = int(16 + math.cos(angle) * 9)
+            cy = int(17 + math.sin(angle) * 7)
+            _blob(d, cx, cy, 5, 4, leaf, leaf_hi, leaf_dark)
+        _blob(d, 16, 17, 6, 5, leaf_hi, white_hi, leaf_dark)
+    elif name == "flower_white":
+        for step in range(5):
+            angle = step * 2 * math.pi / 5 - math.pi / 2
+            cx = int(16 + math.cos(angle) * 7)
+            cy = int(16 + math.sin(angle) * 7)
+            _blob(d, cx, cy, 5, 5, white, white_hi, white_dark)
+        _blob(d, 16, 16, 4, 4, _rgba(0xE8C070), white_hi, _rgba(0xB89040))
+    elif name == "flower_pink":
+        for step in range(5):
+            angle = step * 2 * math.pi / 5 - math.pi / 2
+            cx = int(16 + math.cos(angle) * 7)
+            cy = int(16 + math.sin(angle) * 7)
+            _blob(d, cx, cy, 5, 5, pink, pink_hi, pink_dark)
+        _blob(d, 16, 16, 4, 4, white, white_hi, white_dark)
+    elif name == "mushroom":
+        d.rectangle((13, 17, 19, 27), fill=INK)
+        d.rectangle((14, 18, 18, 26), fill=white)
+        d.rectangle((14, 18, 15, 26), fill=white_hi)
+        _blob(d, 16, 15, 12, 9, red, red_hi, red_dark)
+        for cx, cy in ((11, 12), (20, 13), (16, 18), (23, 17)):
+            d.ellipse((cx - 2, cy - 2, cx + 2, cy + 2), fill=white_hi)
+    elif name == "shell":
+        d.polygon([(16, 28), (4, 12), (8, 6), (16, 4), (24, 6), (28, 12)],
+                  fill=INK)
+        d.polygon([(16, 27), (5, 12), (9, 7), (16, 5), (23, 7), (27, 12)],
+                  fill=shell)
+        for step in range(-2, 3):
+            d.line([(16, 27), (16 + step * 5, 6)], fill=shell_dark)
+        d.ellipse((12, 24, 20, 29), fill=shell_hi)
+    elif name == "crystal":
+        d.polygon([(16, 2), (25, 12), (22, 28), (10, 28), (7, 12)], fill=INK)
+        d.polygon([(16, 3), (24, 12), (21, 27), (11, 27), (8, 12)], fill=cyan)
+        d.polygon([(16, 3), (24, 12), (21, 27), (16, 27)], fill=cyan_hi)
+        d.polygon([(16, 3), (8, 12), (11, 27), (16, 27)], fill=cyan_dark)
+        d.line([(16, 4), (16, 26)], fill=INK)
+    elif name == "leaf_pile":
+        for base, tip, body, hi, dk in (
+            ((8, 26), (4, 12), bark, bark_hi, bark_dark),
+            ((14, 27), (12, 8), leaf, leaf_hi, leaf_dark),
+            ((20, 27), (24, 10), bark, bark_hi, bark_dark),
+            ((25, 26), (28, 14), leaf, leaf_hi, leaf_dark),
+            ((17, 24), (18, 14), leaf, leaf_hi, leaf_dark),
+        ):
+            _leaf_shape(d, base, tip, 4, body, hi, dk)
+    elif name == "twig":
+        d.line([(4, 26), (14, 16), (22, 12), (28, 5)], fill=INK, width=4)
+        d.line([(4, 25), (14, 15), (22, 11), (28, 4)], fill=bark, width=2)
+        d.line([(14, 16), (10, 8)], fill=INK, width=3)
+        d.line([(14, 15), (10, 8)], fill=bark_hi, width=1)
+        d.line([(22, 12), (26, 18)], fill=INK, width=3)
+        d.line([(22, 11), (26, 18)], fill=bark_hi, width=1)
+    else:  # bone
+        d.rectangle((10, 12, 22, 20), fill=INK)
+        d.rectangle((11, 13, 21, 19), fill=bone)
+        d.rectangle((11, 13, 21, 15), fill=bone_hi)
+        for cx, cy in ((9, 11), (9, 21), (23, 11), (23, 21)):
+            d.ellipse((cx - 4, cy - 4, cx + 4, cy + 4), fill=INK)
+            d.ellipse((cx - 3, cy - 3, cx + 3, cy + 3), fill=bone)
+            d.ellipse((cx - 3, cy - 3, cx + 1, cy), fill=bone_hi)
+        d.line([(13, 17), (19, 17)], fill=bone_dark)
+    return _enlarge(img)
+
+
 # ---------------------------------------------------------------------------
 # Enclosures — authored at the full 240x240 the panel displays, with no palette
 # cap and no pixel-grid quantisation. These are illustrations of a keeper's
@@ -1017,20 +1257,22 @@ def _noise(rng, cells):
     return field
 
 
-def _ground(d, p, rng, cells=9, contrast=1.0, path=None):
+def _ground(d, p, rng, cells=9, contrast=1.0, path=None, debris=1.0):
     """Layered value noise, a directional light, and an optional worn path.
 
-    The reference art is a smooth-shaded render: it has a lit side, a shadowed
-    side, and more than one material on the floor. Flat noise alone reads as
-    wallpaper no matter how many tones the ramp holds.
+    Backgrounds are GROUND TEXTURE ONLY. Props used to be baked in, which made
+    the floor busy enough to fight the spider for contrast and left the player
+    nothing to arrange. Everything that sits on the floor is now a decor item
+    the player buys and places, so the floor's only job is to read as a
+    material: a lit side, a shadowed side, and a grain that does not compete
+    with a moving creature on top of it.
     """
     tones = p["ground"]
     coarse = _noise(rng, cells)
     medium = _noise(rng, cells * 4)
     fine = _noise(rng, cells * 13)
-    # A meandering path of a second material, if the theme has one. The path is
-    # what stops the floor reading as wallpaper: the reference always has two
-    # materials meeting, with the props crowding the edges of the trail.
+    # A meandering path of a second material, if the theme has one. Two
+    # materials meeting is what stops a floor reading as wallpaper.
     if path is not None:
         wander = _noise(rng, 3)
         band = _noise(rng, 7)
@@ -1053,488 +1295,117 @@ def _ground(d, p, rng, cells=9, contrast=1.0, path=None):
                                               _tone(p, "trail", trail), blend))
                     continue
             d.point((x, y), fill=_tone(p, "ground", value))
-    # Scattered grit: single pixels and short fibres in every direction.
-    for _ in range(2600):
+    # Barely-there tonal drift, so the floor is not perfectly flat. Anything
+    # stronger reads as a stain, and a stain under the spider reads as a bug.
+    for _ in range(30):
+        cx, cy = rng(BG_SIZE), rng(BG_SIZE)
+        tone = _pick(tones, 0.46 + rng(12) / 100.0)
+        for _ in range(3 + rng(4)):
+            _oval(d, cx + rng(41) - 20, cy + rng(41) - 20,
+                  8 + rng(16), 6 + rng(12), tone)
+    # Fine grit only. No twigs, husks or pebbles: those are decor now, and
+    # scattering them here is what made the floor fight the spider.
+    for _ in range(int(2200 * debris)):
         x, y = rng(BG_SIZE), rng(BG_SIZE)
         d.point((x, y), fill=_pick(tones, 0.0 if rng(3) == 0 else 1.0))
-    for _ in range(900):
+    for _ in range(int(700 * debris)):
         x, y = rng(BG_SIZE), rng(BG_SIZE)
-        dx, dy = rng(7) - 3, rng(7) - 3
+        dx, dy = rng(5) - 2, rng(5) - 2
         _line(d, [(x, y), (x + dx, y + dy)],
               _pick(tones, 0.0 if rng(2) else 1.0))
-    # Gentle mounds, so the floor is not flat. Kept close to the base tone:
-    # strong patches read as stains rather than as texture.
-    for _ in range(26):
-        cx, cy = rng(BG_SIZE), rng(BG_SIZE)
-        tone = _pick(tones, 0.58 + rng(22) / 100.0)
-        for _ in range(3 + rng(4)):
-            _oval(d, cx + rng(29) - 14, cy + rng(29) - 14,
-                  5 + rng(11), 4 + rng(8), tone)
-    # Loose debris: twig fragments, seed husks and grit, which is what gives
-    # the reference floors their busy, lived-in texture.
-    for _ in range(150):
-        x, y = rng(BG_SIZE), rng(BG_SIZE)
-        angle = rng(628) / 100.0
-        length = 3 + rng(9)
-        _line(d, [(x, y), (int(x + math.cos(angle) * length),
-                           int(y + math.sin(angle) * length))],
-              _pick(tones, 0.05 if rng(2) else 0.95), 1 + rng(2))
-    for _ in range(90):
-        x, y = rng(BG_SIZE), rng(BG_SIZE)
-        _oval(d, x, y, 1 + rng(3), 1 + rng(2),
-              _pick(tones, 0.90 if rng(2) else 0.10))
-
-
-def _shade(d, cx, cy, rx, ry, tone):
-    """A soft contact shadow: concentric ellipses fading into the ground."""
-    for step in range(4, 0, -1):
-        _oval(d, cx, cy, int(rx * step / 4), int(ry * step / 4), tone)
-
-
-def _rock(d, cx, cy, r, p, rng):
-    """A rounded stone: cast shadow, dark rim, lit crown, speckled facets."""
-    tones = p["stone"]
-    _shade(d, cx + max(1, r // 3), cy + max(1, r // 3),
-           int(r * 1.15), int(r * 0.95), _tone(p, "ground", 0.0))
-    _oval(d, cx, cy, r, max(2, int(r * 0.88)), _tone(p, "stone", 0.0))
-    _oval(d, cx, cy, max(1, r - 1), max(1, int(r * 0.88) - 1), _tone(p, "stone", 0.25))
-    _oval(d, cx - max(1, r // 4), cy - max(1, r // 4),
-          max(1, int(r * 0.72)), max(1, int(r * 0.60)), _tone(p, "stone", 0.55))
-    _oval(d, cx - max(1, r // 3), cy - max(1, r // 3),
-          max(1, int(r * 0.42)), max(1, int(r * 0.34)), _tone(p, "stone", 0.85))
-    # Facets: a few short cracks and speckles, which is what stops a rock
-    # reading as a plain grey disc at this size.
-    for _ in range(max(2, r // 2)):
-        _oval(d, cx + rng(2 * r + 1) - r, cy + rng(2 * r + 1) - r,
-              max(1, rng(2)), max(1, rng(2)),
-              _tone(p, "stone", 0.95 if rng(2) else 0.05))
-    for _ in range(max(1, r // 3)):
-        ax = cx + rng(2 * r) - r
-        ay = cy + rng(2 * r) - r
-        _line(d, [(ax, ay), (ax + rng(2 * r) - r, ay + rng(2 * r) - r)],
-              _tone(p, "stone", 0.10))
-
-
-def _pebbles(d, p, rng, count=14):
-    """Scatter stones of mixed size across the whole frame, edges included."""
-    for _ in range(count):
-        _rock(d, 8 + rng(BG_SIZE - 16), 8 + rng(BG_SIZE - 16),
-              3 + rng(9), p, rng)
-
-
-def _leaf(d, base, tip, breadth, tones, rng):
-    """A pointed oval leaf with a dark outline, midrib and side veins."""
-    bx, by = base
-    tx, ty = tip
-    dx, dy = tx - bx, ty - by
-    length = math.hypot(dx, dy) or 1.0
-    nx, ny = -dy / length, dx / length
-    left, right = [], []
-    for step in range(1, 12):
-        t = step / 12.0
-        width = breadth * math.sin(math.pi * t) ** 0.7
-        px = bx + dx * t
-        py = by + dy * t
-        left.append((px + nx * width, py + ny * width))
-        right.append((px - nx * width, py - ny * width))
-    points = [(bx, by)] + left + [(tx, ty)] + right[::-1]
-    # Two-pixel dark outline, then the body, then only the lit half lifted.
-    _poly(d, [(px + (2 if px >= bx else -2), py + (2 if py >= by else -2))
-              for px, py in points], _pick(tones, 0.0))
-    _poly(d, points, _pick(tones, 0.40))
-    lit = [(bx, by)] + left + [(tx, ty)]
-    _poly(d, [(px - 1, py - 1) for px, py in lit], _pick(tones, 0.72))
-    # A brighter sliver along the lit edge, which is what gives the reference
-    # leaves their glossy read.
-    _poly(d, [(px - 2, py - 2) for px, py in lit[:len(lit) // 2 + 1]],
-          _pick(tones, 0.95))
-    _line(d, [(bx, by), (tx, ty)], _pick(tones, 0.15))
-    for step in range(2, 11, 2):
-        t = step / 12.0
-        px = bx + dx * t
-        py = by + dy * t
-        width = breadth * math.sin(math.pi * t) ** 0.7 * 0.85
-        _line(d, [(px, py), (px + nx * width, py + ny * width)], _pick(tones, 0.15))
-        _line(d, [(px, py), (px - nx * width, py - ny * width)], _pick(tones, 0.15))
-
-
-def _cluster(d, p, cx, cy, size, count, rng):
-    """A rosette of pointed leaves, the reference's signature foliage."""
-    tones = p["leaf"]
-    _shade(d, cx + 2, cy + 2, int(size * 2.4), int(size * 2.0),
-           _tone(p, "ground", 0.0))
-    for index in range(count):
-        angle = index * 2 * math.pi / count + rng(60) / 100.0
-        reach = size * (2.3 + rng(70) / 100.0)
-        tip = (int(cx + math.cos(angle) * reach),
-               int(cy + math.sin(angle) * reach))
-        _leaf(d, (cx, cy), tip, max(3, int(size * 0.66)), tones, rng)
-    _oval(d, cx, cy, max(2, int(size * 0.55)), max(2, int(size * 0.55)),
-          _pick(tones, 0.45))
-    _oval(d, cx, cy, max(1, int(size * 0.28)), max(1, int(size * 0.28)),
-          _pick(tones, 0.80))
-
-
-def _canopy(d, p, cx, cy, size, count, rng, spread=2.4):
-    """Big bold leaves with a thick dark outline, like the reference corners."""
-    tones = p["leaf"]
-    for index in range(count):
-        angle = index * 2 * math.pi / count + rng(50) / 100.0
-        reach = size * (spread - rng(50) / 100.0)
-        tip = (int(cx + math.cos(angle) * reach),
-               int(cy + math.sin(angle) * reach))
-        _leaf(d, (cx, cy), tip, max(4, int(size * 0.85)), tones, rng)
-    _oval(d, cx, cy, max(2, size // 2), max(2, size // 2), _pick(tones, 0.80))
-
-
-def _flower(d, cx, cy, r, petal, rng):
-    """A small five-petal bloom with a shaded centre."""
-    _shade(d, cx + 1, cy + 1, r + 2, r + 2, _pick(petal, 0.0))
-    for index in range(5):
-        angle = index * 2 * math.pi / 5 - math.pi / 2
-        px = int(cx + math.cos(angle) * r)
-        py = int(cy + math.sin(angle) * r)
-        _oval(d, px, py, max(1, r - 1), max(1, r - 1), _pick(petal, 0.45))
-        _oval(d, px - 1, py - 1, max(1, r - 2), max(1, r - 2), _pick(petal, 0.85))
-    _oval(d, cx, cy, max(1, r - 2), max(1, r - 2), _pick(petal, 0.15))
-
-
-def _frond(d, base, tip, reach, tones, rng):
-    """A fern frond: a curved rachis with paired pinnae."""
-    bx, by = base
-    tx, ty = tip
-    _line(d, [(bx, by), (tx, ty)], _pick(tones, 0.30), 2)
-    for step in range(1, 14):
-        t = step / 14.0
-        px = bx + (tx - bx) * t
-        py = by + (ty - by) * t
-        spread = reach * (1.0 - t * 0.6)
-        for side in (-1, 1):
-            ex = px + side * spread
-            ey = py + spread * 0.55
-            _line(d, [(px, py), (ex, ey)], _pick(tones, 0.0), 2)
-            _line(d, [(px, py - 1), (ex, ey - 1)], _pick(tones, 0.70), 1)
-
-
-def _bloom(d, cx, cy, size, petal, rng):
-    """A larger orchid-like bloom with six petals and a bright lip."""
-    _shade(d, cx + 2, cy + 2, size * 2, size * 2, _pick(petal, 0.0))
-    for dx, dy in ((-size, -size // 2), (size, -size // 2), (-size, size // 2),
-                   (size, size // 2), (0, -size), (0, size)):
-        _oval(d, cx + dx, cy + dy, size, max(1, size - 1), _pick(petal, 0.45))
-        _oval(d, cx + dx - 1, cy + dy - 1, max(1, size - 2), max(1, size - 2),
-              _pick(petal, 0.80))
-    _oval(d, cx, cy, max(1, size - 1), max(1, size - 1), _pick(petal, 0.20))
-    _oval(d, cx, cy, max(1, size // 2), max(1, size // 2), _pick(petal, 0.95))
-
-
-def _scallop(d, cx, cy, size, body, rng):
-    """A fan shell: a wedge with radiating ribs and a rounded hinge."""
-    _shade(d, cx + 2, cy + 2, size * 3, size * 2, _pick(body, 0.0))
-    _poly(d, [(cx, cy + size * 2), (cx - size * 3, cy - size),
-              (cx - size * 2, cy - size * 2), (cx, cy - size * 2),
-              (cx + size * 2, cy - size * 2), (cx + size * 3, cy - size)],
-          _pick(body, 0.45))
-    for step in range(-3, 4):
-        _line(d, [(cx, cy + size * 2), (cx + step * size, cy - size * 2)],
-              _pick(body, 0.15))
-    _oval(d, cx, cy + size * 2, max(1, size), max(1, size - 1), _pick(body, 0.85))
-
-
-def _rosette(d, cx, cy, size, leaf, tip, rng):
-    """A succulent rosette: three rings of fat leaves around a tight core."""
-    _shade(d, cx + 2, cy + 2, size * 3, size * 2, _pick(leaf, 0.0))
-    for ring, scale in ((0, 2.2), (1, 1.5), (2, 0.9)):
-        count = 9 - ring * 2
-        for step in range(count):
-            angle = step * 2 * math.pi / count + ring * 0.4
-            px = int(cx + math.cos(angle) * size * scale)
-            py = int(cy + math.sin(angle) * size * scale)
-            _oval(d, px, py, max(1, int(size * 0.80)), max(1, int(size * 0.58)),
-                  _pick(tip if ring == 0 else leaf, 0.35))
-            _oval(d, px - 1, py - 1, max(1, int(size * 0.55)),
-                  max(1, int(size * 0.38)), _pick(leaf, 0.75))
-    _oval(d, cx, cy, max(1, int(size * 0.7)), max(1, int(size * 0.7)),
-          _pick(tip, 0.90))
-
-
-def _cactus(d, cx, cy, size, body, spine, rng):
-    """Top-down cactus: a ribbed round pad with short spines."""
-    _shade(d, cx + 2, cy + 2, size + 3, size + 3, _pick(body, 0.0))
-    _oval(d, cx, cy, size, size, _pick(body, 0.35))
-    _oval(d, cx - 1, cy - 1, max(1, size - 3), max(1, size - 3),
-          _pick(body, 0.70))
-    for step in range(8):
-        angle = step * math.pi / 4
-        _line(d, [(int(cx + math.cos(angle) * size * 0.35),
-                   int(cy + math.sin(angle) * size * 0.35)),
-                  (int(cx + math.cos(angle) * size * 0.95),
-                   int(cy + math.sin(angle) * size * 0.95))], _pick(body, 0.10))
-    for step in range(6):
-        angle = step * math.pi / 3 + 0.3
-        _line(d, [(int(cx + math.cos(angle) * size * 0.75),
-                   int(cy + math.sin(angle) * size * 0.75)),
-                  (int(cx + math.cos(angle) * size * 1.2),
-                   int(cy + math.sin(angle) * size * 1.2))], _pick(spine, 0.85))
-
-
-def _crystal(d, cx, cy, size, body, rng):
-    """An angular shard: a tall kite with a lit face and a shaded face."""
-    _shade(d, cx + 2, cy + 2, size * 2, size * 2, _pick(body, 0.0))
-    _poly(d, [(cx, cy - size * 3), (cx + size * 2, cy - size),
-              (cx + size, cy + size * 2), (cx - size, cy + size * 2),
-              (cx - size * 2, cy - size)], _pick(body, 0.40))
-    _poly(d, [(cx, cy - size * 3), (cx + size * 2, cy - size),
-              (cx + size, cy + size * 2), (cx, cy + size)], _pick(body, 0.85))
-    _poly(d, [(cx, cy - size * 3), (cx - size * 2, cy - size),
-              (cx - size, cy + size * 2), (cx, cy + size)], _pick(body, 0.15))
-    _line(d, [(cx, cy - size * 3), (cx, cy + size)], _pick(body, 0.05))
-
-
-def _headstone(d, cx, cy, w, h, body, rng):
-    """A weathered slab seen from above: rounded top, chipped edges."""
-    _shade(d, cx + 2, cy + 2, w + 3, h + 3, _pick(body, 0.0))
-    _rect(d, cx - w, cy - h, cx + w, cy + h, _pick(body, 0.35))
-    _oval(d, cx, cy - h, w, max(1, w // 2), _pick(body, 0.35))
-    _oval(d, cx, cy + h, w, max(1, w // 2), _pick(body, 0.35))
-    _rect(d, cx - w + 2, cy - h + 1, cx + w - 2, cy + h - 1, _pick(body, 0.70))
-    _oval(d, cx, cy - h, max(1, w - 2), max(1, w // 2 - 1), _pick(body, 0.70))
-    _oval(d, cx, cy + h, max(1, w - 2), max(1, w // 2 - 1), _pick(body, 0.70))
-    _line(d, [(cx - w + 3, cy - 2), (cx + w - 3, cy - 2)], _pick(body, 0.10))
-    for _ in range(4):
-        _line(d, [(cx - w + rng(2 * w), cy - h + rng(2 * h)),
-                  (cx - w + rng(2 * w), cy - h + rng(2 * h))], _pick(body, 0.15))
-
-
-def _toadstool(d, cx, cy, size, cap, spot, rng):
-    """A toadstool from above: a domed cap with pale warts."""
-    _shade(d, cx + 2, cy + 2, size * 2 + 2, size * 2 + 2, _pick(cap, 0.0))
-    _oval(d, cx, cy, size * 2, size * 2, _pick(cap, 0.30))
-    _oval(d, cx - 1, cy - 1, max(1, size * 2 - 2), max(1, size * 2 - 2),
-          _pick(cap, 0.60))
-    _oval(d, cx - 2, cy - 2, max(1, size), max(1, size), _pick(cap, 0.90))
-    for _ in range(5):
-        _oval(d, cx + rng(size * 3) - size, cy + rng(size * 3) - size,
-              max(1, size // 2), max(1, size // 2), _pick(spot, 0.95))
 
 
 def _bg_cork(d, p, rng):
-    """Warm bark mulch with cork chunks and ferns."""
+    """Warm ochre bark mulch."""
     _ground(d, p, rng, path=True)
-    for _ in range(26):
-        cx, cy = rng(BG_SIZE), rng(BG_SIZE)
-        _oval(d, cx, cy, 5 + rng(9), 4 + rng(7), _pick(p["accent"][1], 0.35))
-        _oval(d, cx - 1, cy - 1, 3 + rng(5), 2 + rng(4), _pick(p["accent"][1], 0.80))
-    _canopy(d, p, 10, 10, 26, 9, rng)
-    _canopy(d, p, 230, 16, 23, 8, rng)
-    _canopy(d, p, 14, 230, 23, 8, rng)
-    _canopy(d, p, 226, 226, 26, 9, rng)
-    _pebbles(d, p, rng, 26)
-    for cx, cy in ((84, 60), (172, 88), (68, 176), (156, 184), (120, 124)):
-        _flower(d, cx, cy, 5, p["accent"][0], rng)
 
 
 def _bg_moss(d, p, rng):
-    """Deep moss cushions with dense clumps."""
+    """Dark peaty floor under moss."""
     _ground(d, p, rng, cells=11, path=True)
-    _canopy(d, p, 8, 8, 29, 10, rng)
-    _canopy(d, p, 232, 14, 26, 9, rng)
-    _canopy(d, p, 12, 232, 26, 9, rng)
-    _canopy(d, p, 228, 228, 29, 10, rng)
-    _canopy(d, p, 120, 4, 18, 7, rng)
-    _pebbles(d, p, rng, 24)
-    for cx, cy in ((88, 52), (164, 80), (60, 168), (148, 192), (116, 120)):
-        _flower(d, cx, cy, 5, p["accent"][0], rng)
 
 
 def _bg_leaf_litter(d, p, rng):
-    """Autumn drift: fallen leaves over rust loam."""
-    _ground(d, p, rng, path=True)
-    for _ in range(60):
-        bx, by = rng(BG_SIZE), rng(BG_SIZE)
-        angle = rng(628) / 100.0
-        length = 12 + rng(16)
-        tip = (int(bx + math.cos(angle) * length), int(by + math.sin(angle) * length))
-        _leaf(d, (bx, by), tip, 5 + rng(4), p["accent"][rng(3)], rng)
-    _canopy(d, p, 10, 14, 23, 8, rng)
-    _canopy(d, p, 230, 20, 22, 8, rng)
-    _canopy(d, p, 16, 228, 22, 8, rng)
-    _canopy(d, p, 224, 222, 23, 8, rng)
-    _pebbles(d, p, rng, 24)
+    """Rust autumn drift."""
+    _ground(d, p, rng, path=True, debris=1.4)
 
 
 def _bg_sand(d, p, rng):
-    """Pale gold sand with shell grit."""
-    _ground(d, p, rng, cells=13, contrast=0.7)
-    for _ in range(90):
-        cx, cy = rng(BG_SIZE), rng(BG_SIZE)
-        _oval(d, cx, cy, 1 + rng(3), 1 + rng(3), _tone(p, "ground", 0.95))
-    _canopy(d, p, 12, 16, 23, 8, rng)
-    _canopy(d, p, 228, 12, 22, 8, rng)
-    _canopy(d, p, 16, 226, 22, 8, rng)
-    _canopy(d, p, 226, 228, 23, 8, rng)
-    _pebbles(d, p, rng, 28)
-    for cx, cy in ((76, 56), (168, 84), (64, 172), (152, 188), (116, 118)):
-        _flower(d, cx, cy, 5, p["accent"][0], rng)
+    """Pale gold dunes."""
+    _ground(d, p, rng, cells=13, contrast=0.7, debris=0.8)
 
 
 def _bg_fern(d, p, rng):
-    """Vivid ferns fanning in from the corners."""
+    """Dark forest floor."""
     _ground(d, p, rng, cells=11, path=True)
-    for base, tip, reach in (((10, 10), (68, 76), 18), ((230, 10), (172, 76), 18),
-                             ((10, 230), (68, 164), 18), ((230, 230), (172, 164), 18),
-                             ((120, 4), (120, 56), 15), ((4, 120), (56, 120), 15),
-                             ((236, 120), (184, 120), 15)):
-        _frond(d, base, tip, reach, p["leaf"], rng)
-    _canopy(d, p, 10, 10, 20, 7, rng)
-    _canopy(d, p, 230, 230, 20, 7, rng)
-    _pebbles(d, p, rng, 24)
-    for cx, cy in ((88, 48), (156, 80), (72, 176), (164, 192), (120, 120)):
-        _flower(d, cx, cy, 5, p["accent"][0], rng)
 
 
 def _bg_orchid(d, p, rng):
-    """Magenta blooms scattered over plum ground."""
+    """Deep plum floor."""
     _ground(d, p, rng, cells=10)
-    _canopy(d, p, 10, 14, 23, 8, rng)
-    _canopy(d, p, 226, 22, 14, 7, rng)
-    _canopy(d, p, 18, 222, 14, 7, rng)
-    _canopy(d, p, 222, 218, 15, 7, rng)
-    for cx, cy, size in ((80, 52, 9), (168, 76, 8), (60, 168, 9), (152, 192, 8),
-                         (120, 28, 8), (24, 120, 8), (216, 124, 8), (116, 116, 9)):
-        _bloom(d, cx, cy, size, p["accent"][1], rng)
-    _pebbles(d, p, rng, 22)
 
 
 def _bg_woodland(d, p, rng):
-    """Timber and moss: twigs lying across the substrate."""
+    """Timber-brown forest floor."""
     _ground(d, p, rng, path=True)
-    for _ in range(16):
-        bx, by = rng(BG_SIZE), rng(BG_SIZE)
-        angle = rng(628) / 100.0
-        length = 30 + rng(36)
-        tip = (int(bx + math.cos(angle) * length), int(by + math.sin(angle) * length))
-        _line(d, [(bx, by), tip], _pick(p["accent"][1], 0.10), 5)
-        _line(d, [(bx, by - 1), (tip[0], tip[1] - 1)], _pick(p["accent"][1], 0.45), 3)
-        _line(d, [(bx, by - 2), (tip[0], tip[1] - 2)], _pick(p["accent"][1], 0.85), 1)
-    _canopy(d, p, 10, 10, 26, 9, rng)
-    _canopy(d, p, 230, 16, 23, 8, rng)
-    _canopy(d, p, 14, 230, 23, 8, rng)
-    _canopy(d, p, 226, 226, 26, 9, rng)
-    _pebbles(d, p, rng, 24)
 
 
 def _bg_minimal(d, p, rng):
-    """Bare pale gravel with a single sprig."""
-    _ground(d, p, rng, cells=15, contrast=0.6, path=True)
-    _canopy(d, p, 18, 18, 20, 7, rng)
-    _canopy(d, p, 222, 222, 19, 7, rng)
-    _pebbles(d, p, rng, 30)
-    _flower(d, 192, 60, 5, p["accent"][0], rng)
-    _flower(d, 60, 184, 5, p["accent"][0], rng)
+    """Bare pale gravel."""
+    _ground(d, p, rng, cells=15, contrast=0.6, path=True, debris=0.5)
 
 
 def _bg_mushroom(d, p, rng):
-    """Red toadstools clustered on warm loam."""
+    """Warm loam."""
     _ground(d, p, rng, path=True)
-    for cx, cy, size in ((36, 44, 8), (68, 28, 6), (200, 40, 8), (224, 68, 6),
-                         (44, 200, 8), (80, 220, 6), (196, 204, 8), (224, 180, 6),
-                         (116, 116, 7)):
-        _toadstool(d, cx, cy, size, p["accent"][1], p["accent"][0], rng)
-    _canopy(d, p, 8, 120, 19, 7, rng)
-    _canopy(d, p, 232, 124, 19, 7, rng)
-    _pebbles(d, p, rng, 22)
 
 
 def _bg_gothic(d, p, rng):
-    """Violet flagstones with moss in the joints."""
+    """Violet flagstones."""
     _ground(d, p, rng, cells=8, contrast=0.5)
     for row in range(9):
         x = -12 + rng(12)
         y = row * 28 - 8
         while x < BG_SIZE:
             w = 24 + rng(24)
-            _rect(d, x, y, x + w, y + 26, _tone(p, "ground", 0.0))
-            _rect(d, x + 1, y + 1, x + w - 1, y + 25, _tone(p, "ground", 0.55))
-            _rect(d, x + 2, y + 2, x + w - 2, y + 5, _tone(p, "ground", 0.80))
+            _rect(d, x, y, x + w, y + 26, _pick(p["ground"], 0.0))
+            _rect(d, x + 1, y + 1, x + w - 1, y + 25, _pick(p["ground"], 0.55))
+            _rect(d, x + 2, y + 2, x + w - 2, y + 5, _pick(p["ground"], 0.80))
             for _ in range(3):
                 _line(d, [(x + 3 + rng(w - 6), y + 6 + rng(18)),
                           (x + 3 + rng(w - 6), y + 6 + rng(18))],
-                      _tone(p, "ground", 0.30))
+                      _pick(p["ground"], 0.30))
             x += w + 4 + rng(6)
-    _canopy(d, p, 12, 12, 18, 7, rng)
-    _canopy(d, p, 228, 16, 18, 7, rng)
-    _canopy(d, p, 16, 228, 18, 7, rng)
-    _canopy(d, p, 224, 224, 18, 7, rng)
-    _pebbles(d, p, rng, 22)
 
 
 def _bg_seashell(d, p, rng):
-    """Coral scallops on pale shell sand."""
-    _ground(d, p, rng, cells=12, contrast=0.8)
-    for cx, cy, size in ((40, 48, 8), (76, 28, 6), (196, 40, 8), (224, 72, 6),
-                         (48, 200, 8), (84, 220, 6), (192, 204, 8), (224, 180, 6),
-                         (116, 116, 7)):
-        _scallop(d, cx, cy, size, p["accent"][1], rng)
-    _canopy(d, p, 8, 120, 19, 7, rng)
-    _canopy(d, p, 232, 124, 19, 7, rng)
-    _pebbles(d, p, rng, 24)
+    """Shell sand."""
+    _ground(d, p, rng, cells=12, contrast=0.8, debris=0.9)
 
 
 def _bg_succulent(d, p, rng):
-    """Sage rosettes on cool teal ground."""
+    """Cool teal floor."""
     _ground(d, p, rng, cells=10)
-    for cx, cy, size in ((36, 44, 9), (72, 26, 7), (200, 40, 9), (224, 72, 7),
-                         (44, 200, 9), (80, 220, 7), (196, 204, 9), (224, 180, 7),
-                         (116, 116, 8)):
-        _rosette(d, cx, cy, size, p["leaf"], p["accent"][1], rng)
-    _pebbles(d, p, rng, 22)
 
 
 def _bg_willow(d, p, rng):
-    """A curtain of drooping willow fronds."""
+    """Dark bank under willow."""
     _ground(d, p, rng, cells=10, path=True)
-    for base, tip, reach in (((12, 8), (32, 96), 16), ((40, 4), (60, 108), 18),
-                             ((68, 8), (84, 88), 16), ((228, 8), (208, 96), 16),
-                             ((200, 4), (180, 108), 18), ((172, 8), (156, 88), 16),
-                             ((12, 232), (32, 144), 16), ((228, 232), (208, 144), 16)):
-        _frond(d, base, tip, reach, p["leaf"], rng)
-    _canopy(d, p, 120, 6, 18, 7, rng)
-    _pebbles(d, p, rng, 22)
-    for cx, cy in ((88, 44), (156, 76), (72, 180), (164, 196), (120, 120)):
-        _flower(d, cx, cy, 5, p["accent"][0], rng)
 
 
 def _bg_desert(d, p, rng):
-    """Terracotta sand with cactus pads."""
-    _ground(d, p, rng, cells=12, contrast=0.8)
-    for cx, cy, size in ((36, 48, 11), (72, 28, 8), (200, 44, 11), (224, 76, 8),
-                         (44, 200, 11), (80, 220, 8), (196, 204, 11), (224, 180, 8),
-                         (116, 116, 9)):
-        _cactus(d, cx, cy, size, p["leaf"], p["accent"][0], rng)
-    _pebbles(d, p, rng, 28)
+    """Terracotta sand."""
+    _ground(d, p, rng, cells=12, contrast=0.8, debris=0.9)
 
 
 def _bg_crystal(d, p, rng):
-    """A geode floor: cyan and magenta shards in dark rock."""
-    _ground(d, p, rng, cells=9, contrast=0.9)
-    for cx, cy, size in ((36, 44, 8), (72, 26, 6), (200, 40, 8), (224, 72, 6),
-                         (44, 200, 8), (80, 220, 6), (196, 204, 8), (224, 180, 6),
-                         (116, 116, 7)):
-        _crystal(d, cx, cy, size, p["accent"][1], rng)
-    _pebbles(d, p, rng, 24)
+    """Dark geode rock."""
+    _ground(d, p, rng, cells=9, contrast=0.9, debris=0.7)
 
 
 def _bg_cemetery(d, p, rng):
-    """Weathered headstones on cold ground."""
-    _ground(d, p, rng, cells=9, contrast=0.7)
-    for cx, cy, w, h in ((36, 48, 13, 17), (76, 28, 10, 13), (200, 44, 13, 17),
-                         (224, 76, 10, 13), (44, 200, 13, 17), (80, 220, 10, 13),
-                         (196, 204, 13, 17), (224, 180, 10, 13)):
-        _headstone(d, cx, cy, w, h, p["accent"][1], rng)
-    _canopy(d, p, 8, 120, 19, 7, rng)
-    _canopy(d, p, 232, 124, 19, 7, rng)
-    _pebbles(d, p, rng, 22)
+    """Cold earth."""
+    _ground(d, p, rng, cells=9, contrast=0.7, debris=0.8)
 
 
 _BACKGROUND_SCENES = {
@@ -1558,7 +1429,7 @@ _BACKGROUND_SCENES = {
 
 
 def draw_background(name):
-    """Compose one top-down keeper scene at the panel's native 240x240."""
+    """Compose one top-down ground texture at the panel's native 240x240."""
     p = BACKGROUND_PALETTES[name]
     img = Image.new("RGBA", (BG_SIZE, BG_SIZE), _rgba(p["ground"][13]))
     d = ImageDraw.Draw(img)
@@ -1615,6 +1486,9 @@ def main():
 
     for decor in DECOR_NAMES:
         save(draw_decor(decor), "decor_%s.png" % decor)
+
+    for item in DECOR_ITEM_NAMES:
+        save(draw_decor_item(item), "decoritem_%s.png" % item)
 
     for background in BACKGROUND_NAMES:
         save(draw_background(background), "background_%s_0.png" % background)

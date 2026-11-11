@@ -116,6 +116,9 @@ static void cmd_help(void)
     printf("  hunttest             inject touch, jump/catch, restore pet/prey\n");
     printf("  gaittest             cadence and bounded leg geometry checks\n");
     printf("  preytest             eight level gates, restore pet level\n");
+    printf("  decortest            place every decor kind, verify the layer\n");
+    printf("  decor [place K X Y|block SLOT|clear]  inspect or edit placed decor\n");
+    printf("  setupdone            finish the naming screen without tapping\n");
     printf("  background [0-7]     show/set persistent pixel-art background\n");
     printf("  scan                 run a WiFi scan\n");
     printf("  scanloop N           N scans, check memory drift\n");
@@ -482,8 +485,10 @@ static void cmd_save_schema(void)
         {"daily_task_done", "u8", offsetof(game_state_t, daily_task_done), 0, 6},
         {"pet_xp_day", "u32", offsetof(game_state_t, pet_xp_day), 0, 7},
         {"pet_xp_today", "u8", offsetof(game_state_t, pet_xp_today), 0, 7},
+        {"decor_owned", "u32", offsetof(game_state_t, decor_owned), 0, 8},
+        {"decor", "decor[12]", offsetof(game_state_t, decor), sizeof g.decor, 8},
 #undef SAVE_FIELD
-    };    enum { SCHEMA_CAP = 3328 };
+    };    enum { SCHEMA_CAP = 3584 };
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
     int pos = snprintf(json, SCHEMA_CAP,
@@ -761,6 +766,78 @@ static void cmd_treat(const char *arg)
            (unsigned long)g.silk, g.hunger, g.mood, g.energy);
 }
 
+/* "decor" lists the catalogue; "decor place KIND X Y" buys if needed and
+ * places; "decor clear" empties the enclosure; "decor block SLOT" flips the
+ * blocking flag. Runs on the console task, so the layer refresh is marshalled
+ * through GAME_UI_REFRESH rather than calling lv_* here. */
+static void cmd_decor(const char *arg)
+{
+    if (!arg) {
+        for (int i = 0; i < DECOR_COUNT; i++) {
+            const decor_def_t *def = decor_def((uint8_t)i);
+            printf("DECOR %d name=\"%s\" cost=%u level=%u radius=%u blocking=%u owned=%d\n",
+                   i, def->name, def->cost, def->unlock_level, def->radius,
+                   def->blocking, decor_owned((uint8_t)i));
+        }
+        printf("OK decor silk=%lu placed=%d slots=%d\n", (unsigned long)g.silk,
+               decor_placed_count(), DECOR_SLOTS);
+        return;
+    }
+    if (!strncmp(arg, "clear", 5)) {
+        decor_clear();
+        game_save_now();
+        game_ui_call(GAME_UI_REFRESH);
+        printf("OK decor clear placed=%d\n", decor_placed_count());
+        return;
+    }
+    if (!strncmp(arg, "block ", 6)) {
+        int slot = atoi(arg + 6);
+        if (!decor_toggle_blocking(slot)) {
+            printf("ERR decor block %d: empty or out of range\n", slot);
+            return;
+        }
+        game_save_now();
+        game_ui_call(GAME_UI_REFRESH);
+        printf("OK decor block slot=%d blocking=%u\n", slot,
+               decor_at(slot)->blocking);
+        return;
+    }
+    if (!strncmp(arg, "place ", 6)) {
+        int kind = 0, x = 0, y = 0;
+        if (sscanf(arg + 6, "%d %d %d", &kind, &x, &y) != 3 ||
+            kind < 0 || kind >= DECOR_COUNT) {
+            printf("ERR usage: decor place KIND X Y\n");
+            return;
+        }
+        if (!decor_owned((uint8_t)kind)) {
+            /* Test-only: grant the Silk and the level so any kind can be
+             * exercised without grinding to it first. */
+            uint32_t silk = g.silk, level = g.level;
+            g.silk = decor_def((uint8_t)kind)->cost;
+            g.level = decor_def((uint8_t)kind)->unlock_level;
+            bool bought = decor_buy((uint8_t)kind);
+            g.silk = silk;
+            g.level = level;
+            if (!bought) {
+                printf("ERR decor place %d: not owned and not buyable\n", kind);
+                return;
+            }
+        }
+        int slot = decor_place((uint8_t)kind, (int16_t)x, (int16_t)y);
+        if (slot < 0) {
+            printf("ERR decor place %d: no free slot\n", kind);
+            return;
+        }
+        game_save_now();
+        game_ui_call(GAME_UI_REFRESH);
+        printf("OK decor place kind=%d slot=%d at=%d,%d blocking=%u\n", kind,
+               slot, decor_at(slot)->x, decor_at(slot)->y,
+               decor_at(slot)->blocking);
+        return;
+    }
+    printf("ERR usage: decor [place KIND X Y | block SLOT | clear]\n");
+}
+
 static void cmd_play(void)
 {
     printf("%s play\n", game_ui_call(GAME_UI_PLAY) ? "OK" : "ERR");
@@ -971,6 +1048,13 @@ static void run_line(char *line)
     }
     else if (!strcmp(line, "preytest")) {
         if (!game_ui_call(GAME_UI_TEST_PREY)) printf("ERR prey test request or assertion failed\n");
+    }
+    else if (!strcmp(line, "decortest")) {
+        if (!game_ui_call(GAME_UI_DECOR_TEST)) printf("ERR decor test request or assertion failed\n");
+    }
+    else if (!strcmp(line, "decor")) cmd_decor(arg);
+    else if (!strcmp(line, "setupdone")) {
+        if (!game_ui_call(GAME_UI_SETUP_DONE)) printf("ERR setup request failed\n");
     }
     else if (!strcmp(line, "background")) {
         if (!arg) {

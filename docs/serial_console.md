@@ -422,9 +422,31 @@ signed bend direction, original segment lengths and canvas reach. UI and hunting
 tests assert the 44px page-ear hit target at (-1,-1), press inside the fold at
 (29,29) in its inward-facing dark flap, and verify equal left/right stat-row
 margins without overlapping the ear.
-The X is hidden while the HUD is open and visible only for gift cancellation.
+The X is hidden while the HUD is open and visible only for gift or decor
+cancellation.
 `preytest` verifies all eight level thresholds, random eligibility and rejected
 locked/invalid explicit spawns, restoring the original level/prey count.
+
+### `decortest`, `decor [place K X Y | block SLOT | clear]`
+
+`decortest` places one of every decor kind through the real placement path,
+refreshes the decor layer, and asserts that every placed item has a visible
+image object at its recorded position sourced from the right asset. It then
+restores the player's enclosure, Silk, level and owned mask, so it is safe to
+run on a live pet.
+
+`decor` with no argument lists the sixteen kinds with cost, unlock level,
+footprint radius, blocking flag and whether the kind is owned, then reports the
+Silk balance and how many of the twelve slots are filled. `decor place KIND X Y`
+grants the Silk and level needed for the kind (test-only), buys it if it is not
+owned, and places it. `decor block SLOT` flips the blocking flag. `decor clear`
+empties the enclosure. All three persist and refresh the layer.
+
+### `setupdone`
+
+Finishes the naming screen without a tap, so the tank can be captured on a
+freshly erased save. Test-only; it names the spider "Test Spider" if no name was
+entered.
 
 Use `python run_tests.py COM7 results.txt --gameplay` for regression coverage
 without the default suite's care/save/spawn/state changes. The default full

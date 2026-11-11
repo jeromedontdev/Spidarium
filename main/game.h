@@ -9,6 +9,7 @@
  */
 #pragma once
 #include "lvgl.h"
+#include "decor.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -189,9 +190,13 @@ typedef struct {
     /* --- petting budget (appended; saves are disposable) --- */
     uint32_t pet_xp_day;      /* in-game day the pet XP budget was last reset */
     uint8_t  pet_xp_today;    /* XP already paid for petting on that day */
+
+    /* --- placeable decor (appended; saves are disposable) --- */
+    uint32_t decor_owned;     /* bitmask of decor_kind_t ever bought */
+    decor_item_t decor[DECOR_SLOTS];  /* kind 0xFF = empty slot */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 160, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 236, "save payload ABI changed");
 _Static_assert(offsetof(game_state_t, brightness) == 128, "brightness ABI changed");
 _Static_assert(offsetof(game_state_t, auto_feed) == 129, "auto_feed ABI changed");
 _Static_assert(offsetof(game_state_t, auto_hunt) == 130, "auto_hunt ABI changed");
@@ -204,6 +209,8 @@ _Static_assert(offsetof(game_state_t, daily_streak) == 148, "daily_streak ABI ch
 _Static_assert(offsetof(game_state_t, daily_task_done) == 149, "daily_task_done ABI changed");
 _Static_assert(offsetof(game_state_t, pet_xp_day) == 152, "pet_xp_day ABI changed");
 _Static_assert(offsetof(game_state_t, pet_xp_today) == 156, "pet_xp_today ABI changed");
+_Static_assert(offsetof(game_state_t, decor_owned) == 160, "decor_owned ABI changed");
+_Static_assert(offsetof(game_state_t, decor) == 164, "decor ABI changed");
 
 /* Live LVGL object handles. */
 typedef struct {
@@ -243,6 +250,11 @@ typedef struct {
 extern game_state_t g;
 extern game_ui_t    ui;
 extern playfield_t  g_play;
+
+/* Decor placement mode. Runtime-only, so it lives outside game_state_t and
+ * never changes the save payload. */
+extern uint8_t g_decor_mode;      /* 1 while placing decor */
+extern uint8_t g_decor_selected;  /* chosen decor kind in placement mode */
 void game_add_silk(uint32_t amount);
 
 void game_init(void);
@@ -312,6 +324,8 @@ typedef enum {
     GAME_UI_SCREEN_SD,
     GAME_UI_SCREEN_TEST,
     GAME_UI_SCREEN_RELEASE,
+    GAME_UI_DECOR_TEST,
+    GAME_UI_SETUP_DONE,
 } game_ui_action_t;
 const lv_draw_buf_t *game_screen_capture(void);
 
@@ -326,6 +340,9 @@ bool game_ui_open_menu(const char *name);
 
 /* Called by the HUD gift picker when the player chooses a kind. */
 void game_gift_chosen(uint8_t kind);
+
+/* Leave decor placement mode without placing anything. */
+void game_cancel_decor_placement(void);
 
 /* WiFi menu actions, marshalled from menu callbacks onto the LVGL task. */
 void game_ui_start_wifi_scan(void);

@@ -47,4 +47,6 @@ int sprite_achievement_index(uint32_t bit);
 /* Resolve a gift kind or named terrarium prop to its asset index. */
 int sprite_gift_index(uint8_t kind);
 int sprite_decor_index(const char *name);
+/* Resolve a placeable decor kind (decor_kind_t) to its asset index. */
+int sprite_decor_item_index(uint8_t kind);
 int sprite_background_index(uint8_t scene);

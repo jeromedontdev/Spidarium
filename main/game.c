@@ -13,6 +13,7 @@
 #include "behaviour.h"
 #include "buttons.h"
 #include "cspider.h"
+#include "decor.h"
 #include "game_config.h"
 #include "gift.h"
 #include "power.h"
@@ -50,6 +51,8 @@ static const char *TAG = "spidarium";
 game_state_t g;
 game_ui_t    ui;
 playfield_t  g_play;
+uint8_t      g_decor_mode;
+uint8_t      g_decor_selected;
 
 static uint32_t s_last_logic;
 static uint32_t s_last_save;
@@ -167,6 +170,10 @@ static void state_defaults(void)
      * its first check-in, because daily_day == 0 == today. */
     g.daily_day = DAILY_NEVER;
     g.daily_base_day = DAILY_NEVER;
+
+    /* Every decor slot starts empty. kind 0 is a real item, so a zeroed struct
+     * would otherwise place twelve small rocks on a brand-new pet. */
+    decor_clear();
 }
 
 static void state_finish_load(void)
@@ -177,6 +184,7 @@ static void state_finish_load(void)
     g.blink_until  = 0;
     g.blink_window = 0;
     g.gift_mode    = 0;
+    g_decor_mode   = 0;
 
     /* Guard against a corrupt-but-valid-header blob. */
     if (g.level == 0) g.level = 1;
@@ -189,6 +197,12 @@ static void state_finish_load(void)
     if (g.mood > 100) g.mood = 100;
     if (g.energy > 100) g.energy = 100;
     if (g.hygiene > 100) g.hygiene = 100;
+
+    /* Drop any decor slot whose kind is out of range, so a corrupt blob cannot
+     * index past the definition table. */
+    for (int i = 0; i < DECOR_SLOTS; i++)
+        if (g.decor[i].kind != 0xFF && g.decor[i].kind >= DECOR_COUNT)
+            g.decor[i].kind = 0xFF;
 }
 
 static void state_load(void)
@@ -336,6 +350,16 @@ void game_on_gift(lv_event_t *e)
     ui_hud_gift_menu_show();
 }
 
+/* Cancel decor placement from the corner X. The item stays owned, so the
+ * player can place it later from the Decor menu. */
+void game_cancel_decor_placement(void)
+{
+    if (!g_decor_mode) return;
+    g_decor_mode = 0;
+    ui_hud_set_place_mode(false, NULL);
+    ESP_LOGI(TAG, "decor placement cancelled");
+}
+
 /* Called by the HUD when the player taps a kind in the picker. */
 void game_gift_chosen(uint8_t kind)
 {
@@ -382,6 +406,8 @@ enum {
     MENU_DISPLAY,
     MENU_DAILY,
     MENU_SHOP,
+    MENU_DECOR,
+    MENU_DECOR_PLACED,
 };
 
 static void menu_open(int which);
@@ -511,6 +537,7 @@ static void on_main_pick(uint8_t id)
     case MENU_RESET:        menu_open(MENU_RESET);        break;
     case MENU_SETTINGS:     menu_open(MENU_SETTINGS);     break;
     case MENU_SPECIES:      menu_open(MENU_SPECIES);      break;
+    case MENU_DECOR:        menu_open(MENU_DECOR);        break;
     default: break;
     }
 }
@@ -548,6 +575,58 @@ static void on_shop_pick(uint8_t id)
         return;
     }
     back_to_main();
+}
+
+/* Enter decor placement mode: the next tank tap decides where the item goes.
+ * Mirrors the gift flow so the two placement gestures feel identical. */
+static void decor_begin_placement(uint8_t kind)
+{
+    const decor_def_t *def = decor_def(kind);
+    if (!def) return;
+    if (decor_placed_count() >= DECOR_SLOTS) {
+        ui_hud_bubble("No Room Left", 0xf5c86b, 1800);
+        return;
+    }
+    g_decor_selected = kind;
+    g_decor_mode = 1;
+    ui_menu_close();
+    ui_hud_set_chrome(false);
+    ui_hud_set_place_mode(true, "Tap to place; X cancels");
+}
+
+static void on_decor_pick(uint8_t id)
+{
+    if (id >= DECOR_COUNT) {
+        menu_open(MENU_DECOR_PLACED);
+        return;
+    }
+    const decor_def_t *def = decor_def(id);
+    if (!def) return;
+    if (!decor_unlocked(id)) {
+        ui_hud_bubble("Level Too Low", 0xf5c86b, 1800);
+        menu_open(MENU_DECOR);
+        return;
+    }
+    /* Buying and placing are one action: the player picked the item because
+     * they want it in the tank, so a second confirmation is just friction. */
+    if (!decor_owned(id) && !decor_buy(id)) {
+        ui_hud_bubble("Not Enough Silk", 0xf5c86b, 1800);
+        menu_open(MENU_DECOR);
+        return;
+    }
+    game_save_now();
+    decor_begin_placement(id);
+}
+
+/* Placed-item rows: tap toggles blocking, the destructive row removes. */
+static void on_decor_placed_pick(uint8_t id)
+{
+    if (id >= DECOR_SLOTS) { menu_open(MENU_DECOR); return; }
+    if (!decor_at(id)) { menu_open(MENU_DECOR_PLACED); return; }
+    decor_toggle_blocking(id);
+    terrarium_refresh_decor();
+    game_save_now();
+    menu_open(MENU_DECOR_PLACED);
 }
 
 /* Settings submenu: connectivity and storage. Both are infrastructure for OTA
@@ -697,11 +776,15 @@ static void menu_open(int which)
         items[2] = (ui_menu_item_t){ "Backgrounds", "Enclosure Themes", true, false, true, MENU_THEME };
         items[3] = (ui_menu_item_t){ "Achievements", ach_sub, true, false, true, MENU_ACHIEVEMENTS };
         items[4] = (ui_menu_item_t){ "Prey Species", species_sub, true, false, true, MENU_SPECIES };
+        static char decor_sub[48];
+        snprintf(decor_sub, sizeof decor_sub, "%d of %d Placed",
+                 decor_placed_count(), DECOR_SLOTS);
+        items[5] = (ui_menu_item_t){ "Decor", decor_sub, true, false, true, MENU_DECOR };
         /* Settings is always the last row: it is the least-used entry and the
          * one the player reaches for least often, so it belongs at the bottom
          * of the list rather than in the middle. */
-        items[5] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
-        ui_menu_open("Spidarium", items, 6, on_main_pick);
+        items[6] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
+        ui_menu_open("Spidarium", items, 7, on_main_pick);
         break;
     }
     case MENU_SETTINGS: {
@@ -977,6 +1060,65 @@ static void menu_open(int which)
         ui_menu_set_back(back_to_main);
         break;
     }
+    case MENU_DECOR: {
+        static char decor_sub[DECOR_COUNT][48];
+        static char decor_name[DECOR_COUNT][32];
+        for (int i = 0; i < DECOR_COUNT; i++) {
+            const decor_def_t *def = decor_def((uint8_t)i);
+            ui_menu_format_name(decor_name[i], sizeof decor_name[i], def->name);
+            if (!decor_unlocked((uint8_t)i)) {
+                snprintf(decor_sub[i], sizeof decor_sub[i], "Level %u / %u Silk",
+                         def->unlock_level, def->cost);
+            } else if (decor_owned((uint8_t)i)) {
+                snprintf(decor_sub[i], sizeof decor_sub[i], "Owned / %s",
+                         def->blocking ? "Blocks" : "Walk Over");
+            } else {
+                snprintf(decor_sub[i], sizeof decor_sub[i], "%u Silk / %s",
+                         def->cost, def->blocking ? "Blocks" : "Walk Over");
+            }
+            items[i] = (ui_menu_item_t){ decor_name[i], decor_sub[i], true,
+                                         decor_owned((uint8_t)i), true,
+                                         (uint8_t)i };
+        }
+        static char decor_title[48];
+        snprintf(decor_title, sizeof decor_title, "Decor / %lu Silk",
+                 (unsigned long)g.silk);
+        /* The last row opens the placed list, where blocking can be flipped. */
+        static char placed_row_sub[48];
+        snprintf(placed_row_sub, sizeof placed_row_sub, "%d of %d Placed",
+                 decor_placed_count(), DECOR_SLOTS);
+        items[DECOR_COUNT] = (ui_menu_item_t){ "Placed Items", placed_row_sub,
+                                               true, false, true,
+                                               (uint8_t)DECOR_COUNT };
+        ui_menu_open(decor_title, items, DECOR_COUNT + 1, on_decor_pick);
+        ui_menu_set_back(back_to_main);
+        break;
+    }
+    case MENU_DECOR_PLACED: {
+        static char placed_sub[DECOR_SLOTS][48];
+        static char placed_name[DECOR_SLOTS][32];
+        int n = 0;
+        for (int i = 0; i < DECOR_SLOTS; i++) {
+            const decor_item_t *item = decor_at(i);
+            if (!item) continue;
+            const decor_def_t *def = decor_def(item->kind);
+            if (!def) continue;
+            ui_menu_format_name(placed_name[n], sizeof placed_name[n], def->name);
+            snprintf(placed_sub[n], sizeof placed_sub[n], "%s / Tap to Change",
+                     item->blocking ? "Blocks" : "Walk Over");
+            items[n] = (ui_menu_item_t){ placed_name[n], placed_sub[n], true,
+                                         item->blocking, false, (uint8_t)i };
+            n++;
+        }
+        if (n == 0) {
+            items[0] = (ui_menu_item_t){ "Nothing Placed", "Pick an Item First",
+                                         false, false, false, 0 };
+            n = 1;
+        }
+        ui_menu_open("Placed Decor", items, n, on_decor_placed_pick);
+        ui_menu_set_back(back_to_main);
+        break;
+    }
     case MENU_ABOUT:
         items[0] = (ui_menu_item_t){ "Spidarium", esp_app_get_description()->version,
                                      false, false, false, 0 };
@@ -1060,6 +1202,8 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "display")) menu_open(MENU_DISPLAY);
     else if (!strcmp(name, "daily")) menu_open(MENU_DAILY);
     else if (!strcmp(name, "shop")) menu_open(MENU_SHOP);
+    else if (!strcmp(name, "decor")) menu_open(MENU_DECOR);
+    else if (!strcmp(name, "placed")) menu_open(MENU_DECOR_PLACED);
     else return false;
     return true;
 }
@@ -1192,7 +1336,7 @@ bool game_ui_call(game_ui_action_t action)
 
 bool game_ui_call_value(game_ui_action_t action, int value)
 {
-    if (action <= GAME_UI_NONE || action > GAME_UI_SCREEN_RELEASE ||
+    if (action <= GAME_UI_NONE || action > GAME_UI_SETUP_DONE ||
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
         ((action == GAME_UI_SET_AUTO_FEED || action == GAME_UI_SET_AUTO_HUNT) && (value < 0 || value > 1)) ||
@@ -1432,6 +1576,47 @@ static void ui_service_request(void)
         atomic_store(&s_ui_ok, ok);
         break;
     }
+    case GAME_UI_SETUP_DONE: {
+        /* Test-only: finish the naming screen without tapping, so the tank can
+         * be captured on a freshly erased save. */
+        ESP_LOGI(TAG, "setupdone: naming and loading the tank");
+        if (!g.name[0]) snprintf(g.name, sizeof g.name, "Test Spider");
+        game_save_now();
+        lv_screen_load(ui.screen);
+        ESP_LOGI(TAG, "setupdone: tank loaded");
+        atomic_store(&s_ui_ok, true);
+        break;
+    }
+    case GAME_UI_DECOR_TEST: {
+        /* Exercise the real render path: place one of every kind, confirm the
+         * layer matches, then restore the player's enclosure. */
+        decor_item_t saved[DECOR_SLOTS];
+        memcpy(saved, g.decor, sizeof saved);
+        uint32_t owned = g.decor_owned;
+        uint32_t silk = g.silk;
+        uint32_t level = g.level;
+        decor_clear();
+        g.decor_owned = 0xFFFFFFFFu;
+        g.level = 20;
+        g.silk = 100000;
+        bool ok = true;
+        for (int i = 0; i < DECOR_COUNT && i < DECOR_SLOTS; i++) {
+            int slot = decor_place((uint8_t)i, (int16_t)(60 + i * 30),
+                                   (int16_t)(120 + (i % 3) * 90));
+            ok = ok && slot >= 0;
+        }
+        terrarium_refresh_decor();
+        ok = ok && terrarium_test();
+        printf("%s decortest placed=%d slots=%d\n", ok ? "OK" : "ERR",
+               decor_placed_count(), DECOR_SLOTS);
+        memcpy(g.decor, saved, sizeof saved);
+        g.decor_owned = owned;
+        g.silk = silk;
+        g.level = level;
+        terrarium_refresh_decor();
+        atomic_store(&s_ui_ok, ok);
+        break;
+    }
     case GAME_UI_SCANLOOP_BEGIN:
         scanloop_paused = s_paused;
         scanloop_chrome = ui_hud_chrome_visible();
@@ -1453,6 +1638,7 @@ static void ui_service_request(void)
         bool hunger_ok = needs_hunger_test();
         hunger_ok = power_ui_test() && hunger_ok;
         hunger_ok = save_format_test() && hunger_ok;
+        hunger_ok = decor_test() && hunger_ok;
         gift_t original_gift = g.gift;
         g.gift.used = 1;
         g.gift.x = 0;
@@ -1538,7 +1724,8 @@ static void ui_service_menu_request(void)
 void game_on_terrarium_press(lv_event_t *e)
 {
     (void)e;
-    if (ui_hud_chrome_visible() || ui_menu_visible() || g.gift_mode || game_paused()) return;
+    if (ui_hud_chrome_visible() || ui_menu_visible() || g.gift_mode || g_decor_mode ||
+        game_paused()) return;
     if (!behaviour_aim_active()) return;
 
     lv_indev_t *indev = lv_indev_active();
@@ -1569,7 +1756,7 @@ void game_on_terrarium_release(lv_event_t *e)
 {
     (void)e;
     if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused() || g.gift_mode ||
-        !behaviour_aim_dragging()) {
+        g_decor_mode || !behaviour_aim_dragging()) {
         behaviour_aim_cancel();
         return;
     }
@@ -1591,6 +1778,23 @@ void game_on_terrarium_tap(lv_event_t *e)
      * the placement. The old two-tap confirm existed because the kind was
      * chosen by blind cycling; now that the player has explicitly picked what
      * to give, asking them to confirm the spot as well is just friction. */
+    /* 0. Decor placement. The item was already bought in the shop, so a tap
+     * only decides where it goes. */
+    if (g_decor_mode) {
+        if (indev) {
+            int slot = decor_place(g_decor_selected, (int16_t)p.x, (int16_t)p.y);
+            if (slot < 0) {
+                ui_hud_bubble("No Room Left", 0xf5c86b, 1800);
+                return;
+            }
+            terrarium_refresh_decor();
+            game_save_now();
+            g_decor_mode = 0;
+            ui_hud_set_place_mode(false, NULL);
+        }
+        return;
+    }
+
     if (g.gift_mode) {
         if (indev) {
             if (!gift_purchase(g.gift_selected)) {

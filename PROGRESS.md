@@ -6609,3 +6609,89 @@ by looking at the physical screen. Colour fidelity through the RGB565 capture is
 approximate. The reference image is a smooth-shaded render at 768x768; these are
 240x240 procedural illustrations, so they match its composition and material
 logic rather than its pixel-level detail.
+
+## Round 65 - Ground textures, and an enclosure you arrange
+
+Round 64 rebuilt the sixteen enclosures as painted scenes and the user rejected
+the result for a different reason than before: "those ferns dont look like ferns
+and some of the images are pretty cluttered which will make poor contrast with
+the spider." The user then proposed the architecture that this round implements:
+"we could just do the ground textures themselves, then add a system of buying
+decor that the player user can place themselves. They could purchase them on the
+web for silk", and "when the decor is placed there can be an option for blocking
+or nonblocking, meaning either the spider can walk over it or cant and will avoid
+walking on it". They also asked that the 16-bit SNES-era direction be applied
+across all assets and reflected in the documentation.
+
+### Decisions made
+
+- **Backgrounds are ground texture only.** Every `_bg_*` scene lost its canopy,
+  pebble scatter, flower clusters, fronds and prop primitives. `_ground()` gained
+  a `debris` parameter and kept only substrate, trail, grain and tonal drift.
+  This is what fixes the contrast complaint: the spider now has a clean floor
+  behind it, and no painted prop competes with it.
+- **Props became a player-owned catalogue.** `main/decor.h` and `main/decor.c`
+  define sixteen kinds with a name, effect line, Silk cost (12-68), unlock level
+  (1-9), footprint radius and blocking flag. The player buys a kind, taps the
+  tank to place it, and twelve slots hold the result.
+- **Blocking is a steering input, not a positional shove.** `decor_avoidance()`
+  in `behaviour.c` mirrors `gift_avoidance()`: it measures the berth from the
+  footprint edge, only steers when the item is ahead (`dot >= 0.15`), and turns
+  perpendicular on the side the spider already leans. `advance()` additionally
+  refuses a step that would land inside a blocking footprint, so a player who
+  drops a rock on the spider cannot trap it there. Non-blocking decor is ignored
+  entirely, which is the point of the flag.
+- **Decor renders through twelve pre-created image objects.** Creating a canvas
+  per placement would allocate on the LVGL task, which the project forbids. The
+  objects are created once in `terrarium_init()` and only re-sourced, moved or
+  hidden afterwards. Each is drawn at `radius * 16` in LVGL scale units, which is
+  `radius * 4` pixels, so the art and the collision circle agree.
+- **The catalogue order is load-bearing.** `decor_kind_t`, `k_decor_kinds[]`,
+  `k_decor_items[]`, `DECOR_ITEMS` and `DECOR_KINDS` must all agree. A browser
+  test parses the C table and compares it field by field, so the two targets
+  cannot drift.
+- **Save version 8.** `decor_owned` sits at offset 160 and `decor` at 164, taking
+  `game_state_t` from 160 to 236 bytes. A v7 blob is a valid prefix and is
+  migrated by clearing the slots -- kind 0 is a real item, so a zeroed slot would
+  otherwise place twelve small rocks on an upgraded pet.
+- **Placement mode lives outside the save struct.** `g_decor_mode` and
+  `g_decor_selected` are file-scope globals in `game.c`, not fields of
+  `game_state_t`. Adding them to the struct grew the payload without a version
+  bump and the existing save was rejected on the next boot; keeping runtime-only
+  state out of the persisted struct is the correct fix, not another version bump.
+- **The save worker's backup snapshot moved to file scope.** A `save_job_t` is
+  already over a kilobyte and the worker's stack is deliberately small, so the
+  second large local tipped it into a stack overflow once the state grew. Only
+  that task touches the snapshot, so a static is safe.
+- **A fern is a rosette of arcing fronds.** `_frond()` walks a curved rachis and
+  stamps paired pinnae along it, shrinking toward the tip. Drawing a fern as one
+  pointed blade is exactly what made the earlier attempts read as grass.
+- **The 16-bit contract is now written down.** `docs/ART_STYLE.md` was rewritten
+  around it: crescent shading rather than concentric rings, three tones per
+  material, an ink rim on every silhouette, and the explicit statement that a
+  gradient is a filtered resize in disguise.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings.
+- `asset_build.py`: 158 MMAP entries, QOI dimensions/opcodes/pixels verified;
+  158 PNGs valid; deterministic across two passes; all 123
+  spider/living-prey/UI/gift/decor PNGs byte-identical; 16 opaque 240x240 ground
+  textures.
+- `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **47 passed, 0 failed**.
+- `uitest`: `OK uitest pages=1 keyboard=1 ****** hud=1 backgrounds=1`.
+- `decortest`: `OK decortest placed=12 slots=12` -- every kind placed, the layer
+  verified against the state, then the player's enclosure restored.
+- `stability_check.py COM7 40`: `VERDICT: PASS`, 0 faults.
+- `scanloop 5`: `largest_drift=0`. `render 500`: `largest_drift=0`.
+- Internal DMA largest 63,488 bytes, above the 51,200 floor.
+- Decor survives a reboot: `decor` reports `placed=3` after `reboot`.
+- `save schema` reports `version:8`, `payloadSizes:[120,236]`, `decor_owned` at
+  160 and `decor` at 164 with `minVersion:8`.
+- Captured from the panel: the Decor menu renders 16 rows with cost and blocking
+  subtext; the tank renders a log, a fern and a crystal at their placed
+  positions.
+- Browser suite **97/97** (was 93). Four new tests cover the catalogue against
+  the native table, purchase/placement/blocking/hit-testing, the empty-slot
+  default and save round trip, and a blocking item stopping the spider.
