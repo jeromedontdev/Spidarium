@@ -53,11 +53,11 @@ rather than just recoloring one edge.
 ## Persistence and memory
 
 Save v12 has 52 hardware-compiled fields, a 268-byte fixed prefix and a counted
-six-byte decor tail. Historical v10/v11 tails still load from offset260;
+six-byte decor tail. Historical v10/v11 tails still load from offset 260;
 all supported older pet saves migrate without granting ownership from padding.
-Byte245 packs gift32..35/decor64..67 in low/high nibbles, u16 at246 stores
-background32..47, and the full u32 at248 covers decor32..63.
-Border ownership is at260/264 and selection266 (255=None).
+Byte 245 packs gifts 32..35/decor 64..67 in low/high nibbles, u16 at 246 stores
+backgrounds 32..47, and the full u32 at 248 covers decor 32..63.
+Border ownership is at 260/264 and selection at 266 (255=None).
 
 The expanded art pack contains **337 PNGs**. Native runtime retains 48px menu
 thumbnails and a single 172,800-byte PSRAM decode workspace, rather than keeping
@@ -71,21 +71,29 @@ See [gift effects/prices](GIFTS_CATALOG.md), [art rules](ART_STYLE.md),
 
 ## Verification
 
-- Wrapper build/full flash exit0, no main-source warnings.
-- Browser158/158, art22/22, package13/13; all337 packed QOI entries verified
+- Wrapper build/full flash exit 0, no main-source warnings.
+- Browser 158/158, art 22/22, package 13/13; all 337 packed QOI entries verified
   against decoded source pixels and deterministic regeneration.
-- Real hardware48/48; every48 floor/frame purchased and rendered, free
-  mix/reapply/remove and reboot ownership checked; all68 decor and12 treats.
-- Actual v12/52-field schema captured;273 placements survive export/restore,
-  reboot and high-slot editing, with high ownership and floor/frame47 intact.
-- `render500` and `scanloop5`: largest-block drift0; internal/DMA largest63,488.
-- Real SD roundtrip restores high ownership, floor/frame47 and music choices.
-  Three distinct BMPs pass full readback; repeated capture PSRAM drift20bytes.
+- Real hardware 48/48; all 48 floors/frames purchased and rendered, free
+  mix/reapply/remove and reboot ownership checked; all 68 decor and 12 treats.
+- Actual v12/52-field schema captured; 273 placements survive export/restore,
+  reboot and high-slot editing, with high ownership and floor/frame 47 intact.
+- `render 500` and `scanloop 5`: largest-block drift 0; internal/DMA largest 63,488.
+- Real SD roundtrip restores high ownership, floor/frame 47 and music choices.
+  Three distinct BMPs pass full readback; repeated capture PSRAM drift 20 bytes.
 - Five-second RTC timer deep sleep commits state and preserves the habitat.
-  Final40-second soak: `VERDICT: PASS`, zero faults/errors.
+  Final 40-second soak: `VERDICT: PASS`, zero faults/errors.
 - Real browser migrates v11 preferences, reaches the last page of all
   catalogues, buys/mixes frames, removes/reapplies free and persists on reload.
   Original hardware/browser pets restored after mutating tests.
 
 These checks do not establish subjective touchscreen/speaker approval, measured
 battery life, physical-button wake or RTC backup-battery retention.
+
+## Published
+
+[Download v1.1.22](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.22)
+or use the [live website](https://jeromedontdev.github.io/Spidarium/).
+Source 89541a2; Pages run 43103300355 succeeded. Independent public checks verify
+all five firmware hashes, full save schema, current app/style bytes and all 337
+artwork PNGs. Production reload preserves old progress and opens Borders.

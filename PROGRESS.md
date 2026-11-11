@@ -7507,10 +7507,10 @@ evidence proves delivery and continuity, not that the player likes the sound.
   Fifteen corner-silhouette families distinguish frames beyond recoloring.
 - Grow ownership with explicit words/nibbles, never shifting a 32-bit mask
   by high catalogue IDs. Save v12: 268-byte prefix, 52 compiled fields.
-  Preserve old offsets; byte245 low/high nibbles store gifts32..35/decor64..67,
-  u16 at246 backgrounds32..47, full u32 at248 decor32..63.
-  Border ownership260/264 and selection266 (255=None).
-  Read historical v10/v11 tails at260, current tails at268; old padding grants
+  Preserve old offsets; byte 245 low/high nibbles store gifts 32..35/decor 64..67,
+  u16 at 246 backgrounds 32..47, full u32 at 248 decor 32..63.
+  Border ownership 260/264 and selection 266 (255=None).
+  Read historical v10/v11 tails at 260, current tails at 268; old padding grants
   no new ownership. Reject invalid version-specific inline/tail records.
 - Keep 48px menu thumbnails, not all 96 full scenes/frames. One reusable
   172,800-byte PSRAM workspace decodes mapped QOI on explicit rebuild/test;
@@ -7527,29 +7527,45 @@ evidence proves delivery and continuity, not that the player likes the sound.
 
 ### Verification
 
-- Final wrapper build/full flash exit0, zero main-source warnings.
-- Browser158/158, art22/22, packaging13/13. All337 packed MMAP/QOI entries
+- Final wrapper build/full flash exit 0, zero main-source warnings.
+- Browser 158/158, art 22/22, packaging 13/13. All 337 packed MMAP/QOI entries
   validate dimensions, opcodes and decoded pixels; deterministic regeneration
   preserves all source bytes. No tracked earlier PNG or spider-renderer diff.
-- Hardware48/48. New real-device catalogue suite purchases/renders all48
+- Hardware 48/48. New real-device catalogue suite purchases/renders all 48
   floors and frames, confirms high-bit ownership, free mix/reapply/remove and
-  reboot persistence; renders all68 decor and buys all12 treats.
-- Compiled schema v12/52 fields captured from COM7.273 placements survive
-  export/restore/reboot, slot271 move/block and all high catalogue ownership;
-  invalid fields and restore overwrite guard rejected. Console stack free5340.
-- render500 and scanloop5 largest-block drift0; internal/DMA largest63,488,
-  above51,200. New full-source memory policy leaves about2.2MB free PSRAM.
-- Real SD v12 roundtrip restores high ownership, floor/frame47 and music35/2.
-  Three distinct numbered BMPs verified by full readback; PSRAM drift20bytes.
+  reboot persistence; renders all 68 decor and buys all 12 treats.
+- Compiled schema v12/52 fields captured from COM7. 273 placements survive
+  export/restore/reboot, slot 271 move/block and all high catalogue ownership;
+  invalid fields and restore overwrite guard rejected. Console stack free 5340.
+- render 500 and scanloop 5 largest-block drift 0; internal/DMA largest 63,488,
+  above 51,200. New full-source memory policy leaves about 2.2 MB free PSRAM.
+- Real SD v12 roundtrip restores high ownership, floor/frame 47 and music 35/2.
+  Three distinct numbered BMPs verified by full readback; PSRAM drift 20 bytes.
   Original pet restored and card backed up afterward.
-- Five-second RTC timer deep sleep: commit log, disconnect, timer wake4 and
-  preserved habitat. Final40-second soak: VERDICT PASS, zero faults/errors.
-- Real browser: v11 preferences migrate (master75/music10/track2), all last
-  catalogue pages reachable, frame47 survives reload, No Border/reapply free,
-  frame36 mixes with floor47. Original browser pet restored.
-- Local website build copies all337 PNGs and five hash-verified firmware images.
+- Five-second RTC timer deep sleep: commit log, disconnect, timer wake 4 and
+  preserved habitat. Final 40-second soak: VERDICT PASS, zero faults/errors.
+- Real browser: v11 preferences migrate (master 75/music 10/track 2), all last
+  catalogue pages reachable, frame 47 survives reload, No Border/reapply free,
+  frame 36 mixes with floor 47. Original browser pet restored.
+- Local website build copies all 337 PNGs and five hash-verified firmware images.
   v1.1.22 ZIP SHA256:
   82afa74dfe602c9a8738056a8b60e02c669f9d0b1b48f12bcf0cf45ec5c09c5a.
 - Physical touchscreen/speaker approval, battery current, physical-button wake,
   hosted HTTPS OTA and RTC backup-battery retention remain separate evidence.
   Publication/production parity must be verified after uploading the release.
+
+### Publication evidence
+
+- Source commit 89541a2, published
+  [v1.1.22](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.22).
+  Independently downloaded ZIP matches SHA256 above; five firmware images
+  validate size/hash and exclude NVS.
+- [Pages run 43103300355](https://github.com/jeromedontdev/Spidarium/actions/runs/43103300355)
+  succeeded, including Linux art/browser tests and deployment.
+  Public manifest is 1.1.22; all five public firmware hashes match the package,
+  complete schema metadata matches v12/52 fields, six app/style files match
+  source bytes, and all 337 public PNGs match the repository exactly.
+- Real production-browser reload migrated existing v10 progress to v12 with
+  free No Border, no granted border ownership and the old floor intact.
+  The new 17-page Borders menu opens and returns to root Menu correctly.
+  The older queued v1.1.21 deployment is superseded by this verified release.
