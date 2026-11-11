@@ -163,6 +163,11 @@ across ordinary validation runs. For an explicitly approved redesign, run the
 edited generator first to establish the new source baseline; this does not
 bypass any style or packed-pixel check. CI runs both art tests and source
 validation before publishing the site.
+The generator keeps an existing PNG byte-for-byte when its mode, dimensions
+and decoded pixels already match. Different platform zlib encoders must not
+silently replace approved spider/art files with equivalent compressed bytes.
+Real pixel changes still rewrite the file and fail an ordinary preservation
+check until explicitly generated as an approved redesign.
 
 Build only with the wrappers. Never hand-edit the generated MMAP header.
 After a browser build, run `tools\prepare_website.py --assets-only` to copy

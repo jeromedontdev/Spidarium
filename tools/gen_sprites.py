@@ -1707,6 +1707,19 @@ def draw_background(name):
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+def _save_png(image, path):
+    if os.path.isfile(path):
+        with Image.open(path) as existing:
+            if (existing.format == "PNG" and existing.mode == image.mode and
+                    existing.size == image.size and existing.tobytes() == image.tobytes()):
+                return False
+    encoded = io.BytesIO()
+    image.save(encoded, "PNG")
+    with open(path, "wb") as output:
+        output.write(encoded.getvalue())
+    return True
+
+
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out_dir = os.path.join(root, "assets")
@@ -1716,20 +1729,10 @@ def main():
 
     def save(img, filename):
         nonlocal count
-        encoded = io.BytesIO()
-        img.save(encoded, "PNG")
         path = os.path.join(out_dir, filename)
-        contents = encoded.getvalue()
-        if os.path.isfile(path):
-            with open(path, "rb") as existing:
-                unchanged = existing.read() == contents
-        else:
-            unchanged = False
-        if not unchanged:
-            with open(path, "wb") as output:
-                output.write(contents)
+        changed = _save_png(img, path)
         count += 1
-        print("kept" if unchanged else "wrote", filename)
+        print("wrote" if changed else "kept", filename)
 
     for view, theta in SPIDER_VIEWS:
         for anim, frames in SPIDER_ANIMS:

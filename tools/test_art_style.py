@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from asset_build import validate_pixel_art, write_preview
 from gen_sprites import (
     ACHIEVEMENT_NAMES, BACKGROUND_NAMES, DECOR_ITEM_NAMES, GIFT_NAMES,
-    PREY_ANIMS, PREY_SPECIES, UI_ICONS, _blob, _shade_materials,
+    PREY_ANIMS, PREY_SPECIES, UI_ICONS, _blob, _save_png, _shade_materials,
     draw_achievement, draw_background, draw_decor_item, draw_gift, draw_icon, draw_prey,
 )
 
@@ -98,6 +98,21 @@ class ArtStyleTests(unittest.TestCase):
             write_preview(Path(__file__).resolve().parents[1] / "assets", output)
             with Image.open(output) as sheet:
                 self.assertEqual(sheet.size, (960, 3560))
+
+    def test_equal_pixels_preserve_source_bytes_across_png_encoders(self):
+        image = draw_icon("feed")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "icon.png"
+            image.save(path, compress_level=0)
+            original = path.read_bytes()
+            self.assertFalse(_save_png(image, path))
+            self.assertEqual(path.read_bytes(), original)
+            image.putpixel((0, 0), (12, 34, 56, 255))
+            self.assertTrue(_save_png(image, path))
+            self.assertNotEqual(path.read_bytes(), original)
+            with Image.open(path) as generated:
+                self.assertEqual(generated.tobytes(), image.tobytes())
+            self.assertFalse(_save_png(image, path))
 
     def test_noisy_center_is_rejected(self):
         image = draw_background("moss")
