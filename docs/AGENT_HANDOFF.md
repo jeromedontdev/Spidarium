@@ -13,6 +13,20 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.19 [expanded habitat and music](RELEASE_v1.1.19.md): six treats,
+  thirty-four decor kinds and twenty-four
+  backgrounds, including a house, dark cave and night scene. Preserve old IDs
+  and all approved spider art. Contextual long press replaces redundant move
+  entries. Double tap dims just the enclosure, not menus or screen brightness.
+  Original ambient music has an independent Sound switch and master mute still
+  wins; the pet effect is a soft consonant bell/purr rather than a sweep.
+  Save v10 keeps old offsets, appends music/lights/extra ownership and a count,
+  then six-byte extra decor records. Fixed prefix 260 bytes, raw 272 plus tail;
+  45 compiled fields. Never truncate tails in console/browser/SD backups.
+  Extra records, snapshots and console lines are PSRAM-backed; only the internal
+  save worker touches flash. Opaque background decoding now uses RGB565 rather
+  than RGB565A8, keeping all 24 sources at the previous 16-source memory cost.
+
 - v1.1.18: [habitat controls, prey gait and RTC sleep](RELEASE_v1.1.18.md).
   Automatic ambience is disabled, superseding v1.1.17 scheduling. Keep foreground
   effects and manual sound diagnostics. Decor/gifts have explicit movement

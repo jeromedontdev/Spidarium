@@ -39,6 +39,7 @@ static atomic_uint s_generation;
 static bool s_backup_exists;
 static bool s_restored;
 static game_state_t s_restored_state;
+static decor_item_t *s_restored_extra;
 static char s_screenshot_status[96];
 static bool write_screenshot(const sd_screenshot_t *image);
 
@@ -49,6 +50,8 @@ bool sd_take_restored(game_state_t *state)
     if (!state) { ESP_LOGE(TAG, "restore copy rejected: null state"); return false; }
     if (sd_busy() || !s_restored) return false;
     *state = s_restored_state;
+    decor_restore_extra(s_restored_extra);
+    s_restored_extra = NULL;
     s_restored = false;
     return true;
 }
@@ -90,16 +93,23 @@ bool sd_request_screenshot(const sd_screenshot_t *image)
 
 bool sd_run_job(uint8_t operation, const game_state_t *snapshot, const sd_screenshot_t *image)
 {
+    if (s_restored) {
+        ESP_LOGE(TAG, "SD job rejected: restored enclosure awaits UI adoption");
+        s_status = "Restore Pending / Try Again";
+        atomic_store(&s_busy, false);
+        return false;
+    }
     s_restored = false;
     bool ok = sd_mount();
     if (ok && operation == SD_JOB_BACKUP) {
-        ok = snapshot && save_save(snapshot, sizeof *snapshot);
+        ok = snapshot && save_save(snapshot, sizeof *snapshot +
+                                  snapshot->decor_extra_count * sizeof(decor_item_t));
         if (ok) ok = sd_backup_save();
         s_status = ok ? "Backup Saved and Verified" : "Backup Failed; See Serial Log";
     }
     if (ok && operation == SD_JOB_RESTORE) {
         ok = sd_restore_save();
-        if (ok) ok = save_load(&s_restored_state, sizeof s_restored_state);
+        if (ok) ok = save_load_snapshot(&s_restored_state, sizeof s_restored_state, &s_restored_extra);
         s_restored = ok;
         s_status = ok ? "Save Restored" : "Restore Failed; See Serial Log";
     }
@@ -268,19 +278,8 @@ bool sd_backup_exists(void)
     return !sd_busy() && s_backup_exists;
 }
 
-bool sd_backup_save(void)
+static bool backup_bytes(const uint8_t *buf, size_t n)
 {
-    if (!s_mounted) return false;
-
-    /* Read the raw save blob through the same API the game uses, so the backup
-     * is byte-identical to what NVS holds. */
-    uint8_t buf[512];
-    size_t  n = save_read_raw(buf, sizeof buf);
-    if (n == 0) {
-        ESP_LOGW(TAG, "backup: no save to copy");
-        return false;
-    }
-
     FILE *f = fopen(BACKUP_PATH, "wb");
     if (!f) {
         ESP_LOGE(TAG, "backup: cannot open %s (errno=%d)", BACKUP_PATH, errno);
@@ -316,6 +315,18 @@ bool sd_backup_save(void)
     return true;
 }
 
+bool sd_backup_save(void)
+{
+    if (!s_mounted) return false;
+    size_t n = save_read_raw(NULL, 0);
+    uint8_t *buf = n && n <= SAVE_MAX_RAW ?
+        heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL;
+    if (!buf) { ESP_LOGE(TAG, "backup: no readable save or PSRAM exhausted"); return false; }
+    bool ok = save_read_raw(buf, n) == n && backup_bytes(buf, n);
+    heap_caps_free(buf);
+    return ok;
+}
+
 bool sd_restore_save(void)
 {
     if (!s_mounted) return false;
@@ -326,18 +337,14 @@ bool sd_restore_save(void)
         return false;
     }
 
-    uint8_t buf[512];
-    size_t  n = fread(buf, 1, sizeof buf, f);
-    fclose(f);
-
-    if (n == 0) {
-        ESP_LOGW(TAG, "restore: backup is empty");
-        return false;
-    }
-
-    /* save_write_raw validates the header, so a corrupt or foreign file is
-     * rejected rather than loaded as garbage. */
-    if (!save_write_raw(buf, n)) {
+    uint8_t *buf = heap_caps_malloc(SAVE_MAX_RAW, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) { fclose(f); ESP_LOGE(TAG, "restore: PSRAM exhausted"); return false; }
+    size_t n = fread(buf, 1, SAVE_MAX_RAW, f);
+    bool ok = n && !ferror(f) && fgetc(f) == EOF;
+    if (fclose(f) != 0) ok = false;
+    if (ok) ok = save_write_raw(buf, n);
+    heap_caps_free(buf);
+    if (!ok) {
         ESP_LOGW(TAG, "restore: backup rejected by save layer");
         return false;
     }

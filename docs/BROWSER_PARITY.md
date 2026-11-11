@@ -1,5 +1,22 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## Expanded habitat and ambient music
+
+The current catalogue is six treats, thirty-four decor kinds and twenty-four
+backgrounds. Native and browser IDs, costs, unlocks and footprints match. Decor
+grows past twelve placements; ownership kinds 32/33 use the extra ownership
+word instead of aliasing low bits. v10 local/raw saves preserve all records.
+Raw saves keep the legacy twelve-slot prefix and append a counted six-byte tail.
+Browser serial framing/restore pacing and SD transfers support the full tail.
+
+Hold a placed object/gift for its contextual menu; redundant Arrange Decor and
+Placed Gift navigation is removed. Double tap toggles enclosure-only dimming
+and cannot also pet. Music is original slow consonant ambient scoring, enabled
+by default and separately switchable in Sound. Master mute and hidden-page
+silence still win. The pet sound is a soft bell/purr, not a falling chirp.
+Speaker listening approval is not inferred from deterministic PCM tests.
+The older ambience policy below is historical and superseded.
+
 ## v1.1.18: habitat controls and prey movement
 
 Automatic ambience is disabled on both platforms, superseding the scheduling

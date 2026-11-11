@@ -16,17 +16,21 @@ except ImportError:
 
 SPIDER_COUNT = 39
 PREY_SPECIES = ("fly", "cricket", "moth", "beetle", "roach", "mealworm", "fruitfly", "waxworm")
-ASSET_COUNT = 158
-NON_SPIDER_COUNT = 119
+ASSET_COUNT = 201
+NON_SPIDER_COUNT = 162
 BACKGROUNDS = (
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
     "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
-    "cemetery",
+    "cemetery", "house", "dark_cave", "night", "autumn", "snow", "pond", "ruins",
+    "marsh",
 )
 PREY_CLIPS = (("walk", 2), ("flee", 2), ("dead", 1))
 UI_ICONS = (
     "feed", "clean", "play", "sleep", "decor", "status", "back",
-    "hunger", "mood", "energy", "hygiene", "xp", "lock",
+    "hunger", "mood", "energy", "hygiene", "xp", "lock", "daily", "treats",
+    "backgrounds", "achievements", "prey", "settings", "wifi", "sd", "about",
+    "battery", "display", "sound", "auto_feed", "screenshot", "reset", "volume",
+    "music",
 )
 ACHIEVEMENTS = (
     "first_meal", "first_pet", "first_clean", "first_play", "first_hunt",
@@ -56,7 +60,10 @@ DECOR = ("rock_0", "rock_1", "plant_0", "plant_1", "wood_log")
 DECOR_ITEMS = (
     "rock_small", "rock_large", "pebbles", "log", "bark", "fern", "moss_clump",
     "succulent", "flower_white", "flower_pink", "mushroom", "shell", "crystal",
-    "leaf_pile", "twig", "bone",
+    "leaf_pile", "twig", "bone", "fern_pot", "acorn_hide", "driftwood_arch",
+    "web_hammock", "dew_pool", "mushroom_pair", "flower_planter", "crystal_cluster",
+    "shell_cove", "twig_ladder", "moss_stone", "seed_pod", "silk_tent",
+    "leaf_umbrella", "bone_arch", "fossil", "lantern_cap", "stone_bridge",
 )
 PIXEL_SCALE = 2
 MAX_VISIBLE_COLORS = 12
@@ -452,6 +459,79 @@ def validate_runtime_mappings(root):
     missing = [name for name in required if name not in mappings]
     if missing:
         raise ValueError(f"Assets missing runtime index mappings: {missing}")
+
+    def named_entries(array_name):
+        match = re.search(
+            rf"static const icon_entry_t {array_name}\[\]\s*=\s*\{{(.*?)\n\}};",
+            mappings, re.DOTALL,
+        )
+        if not match:
+            raise ValueError(f"sprites.c is missing the {array_name} catalogue")
+        return re.findall(r'\{\s*"([^"]+)"\s*,\s*(MMAP_STORAGE_\w+)\s*\}', match.group(1))
+
+    expected_decor = [
+        (name, f"MMAP_STORAGE_DECORITEM_{name.upper()}_QOI") for name in DECOR_ITEMS
+    ]
+    if named_entries("k_decor_items") != expected_decor:
+        raise ValueError("Placeable decor IDs, names and sprite mappings are out of sync")
+    expected_icons = [
+        (name, f"MMAP_STORAGE_UI_{name.upper()}_QOI") for name in UI_ICONS
+    ]
+    if named_entries("k_icons") != expected_icons:
+        raise ValueError("UI icon names and sprite mappings are out of sync")
+
+    background_match = re.search(
+        r"static const int backgrounds\[\]\s*=\s*\{(.*?)\n\s*\};",
+        mappings, re.DOTALL,
+    )
+    expected_backgrounds = [
+        f"MMAP_STORAGE_BACKGROUND_{name.upper()}_0_QOI" for name in BACKGROUNDS
+    ]
+    if not background_match or re.findall(
+        r"MMAP_STORAGE_BACKGROUND_\w+_0_QOI", background_match.group(1)
+    ) != expected_backgrounds:
+        raise ValueError("Background IDs and sprite mappings are out of sync")
+
+    with open(os.path.join(root, "main", "decor.h"), encoding="utf-8") as source:
+        decor_header = source.read()
+    enum_match = re.search(
+        r"typedef enum\s*\{(.*?)\}\s*decor_kind_t\s*;", decor_header, re.DOTALL
+    )
+    if not enum_match:
+        raise ValueError("decor.h is missing decor_kind_t")
+    enum_ids = re.findall(r"^\s*(DECOR_\w+)\s*(?:=\s*\d+)?\s*,", enum_match.group(1), re.MULTILINE)
+    if enum_ids != [f"DECOR_{name.upper()}" for name in DECOR_ITEMS] + ["DECOR_COUNT"]:
+        raise ValueError("Decor enum order does not match the sprite/catalogue order")
+    with open(os.path.join(root, "main", "decor.c"), encoding="utf-8") as source:
+        decor_source = source.read()
+    decor_table = re.search(
+        r"static const decor_def_t k_decor_kinds\[DECOR_COUNT\]\s*=\s*\{(.*?)\n\};",
+        decor_source, re.DOTALL,
+    )
+    decor_rows = re.findall(
+        r'\{\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(\d+)\s*,\s*(\d+)\s*,'
+        r'\s*(\d+)\s*,\s*(\d+)\s*,\s*"decor_([^"]+)"\s*\}',
+        decor_table.group(1),
+    ) if decor_table else []
+    if len(decor_rows) != len(DECOR_ITEMS) or [
+        row[-1] for row in decor_rows
+    ] != list(DECOR_ITEMS):
+        raise ValueError("Decor prices/definitions do not match decor enum and sprite order")
+
+    with open(os.path.join(root, "main", "theme.h"), encoding="utf-8") as source:
+        theme_header = source.read()
+    if not re.search(r"#define\s+THEME_COUNT\s+24\b", theme_header):
+        raise ValueError("theme.h must expose all 24 background IDs")
+    with open(os.path.join(root, "main", "theme.c"), encoding="utf-8") as source:
+        themes = source.read()
+    theme_match = re.search(
+        r"const theme_def_t k_themes\[THEME_COUNT\]\s*=\s*\{(.*?)\n\};",
+        themes, re.DOTALL,
+    )
+    theme_names = re.findall(r'\{\s*"([^"]+)"', theme_match.group(1)) if theme_match else []
+    if [name.replace(" ", "_") for name in theme_names] != list(BACKGROUNDS):
+        raise ValueError("Theme definitions do not match background IDs and art")
+
     for name in ACHIEVEMENTS:
         symbol = f"ACH_{name.upper()}"
         asset = f"MMAP_STORAGE_ACHIEVEMENT_{name.upper()}_QOI"

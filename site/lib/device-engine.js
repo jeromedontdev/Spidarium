@@ -42,7 +42,7 @@ export const CONFIG = Object.freeze({
   DAILY_STREAK_MAX:7, DAILY_XP_BASE:6, DAILY_XP_PER_DAY:2, DAILY_SILK_BASE:4,
   DAILY_SILK_PER_DAY:2, DAILY_TASK_XP:12, DAILY_TASK_SILK:8, DAILY_TASK_COUNT:4,
   DAILY_NEVER:0xFFFFFFFF,
-  TREAT_COUNT:3, TREAT_HUNGER_COST:6, TREAT_MOOD_COST:8, TREAT_ENERGY_COST:10,
+  TREAT_COUNT:6, TREAT_HUNGER_COST:6, TREAT_MOOD_COST:8, TREAT_ENERGY_COST:10,
   TREAT_HUNGER_GAIN:25, TREAT_MOOD_GAIN:30, TREAT_ENERGY_GAIN:35,
 });const C = CONFIG, PI = Math.PI, TAU = PI*2, U32 = 0xffffffff;
 export const STATES = Object.freeze({IDLE:0,WANDER:1,STALK:2,AIM:3,POUNCE:4,EAT:5,SLEEP:6,PLAY:7,MOLT:8,SICK:9});
@@ -73,8 +73,10 @@ export function preySprite(species,dead=false,frame=0) {
   return `prey_${PREY[id]}_${dead?'dead_0':`walk_${frame%2}`}`;
 }
 export const BACKGROUNDS = ['cork','moss','leaf_litter','sand','fern','orchid','woodland','minimal',
-  'mushroom','gothic','seashell','succulent','willow','desert','crystal','cemetery'];
-export const BACKGROUND_COSTS = [0,12,12,16,20,24,28,16,32,40,28,24,32,36,48,48];
+  'mushroom','gothic','seashell','succulent','willow','desert','crystal','cemetery',
+  'house','dark_cave','night','autumn','snow','pond','ruins','marsh'];
+export const BACKGROUND_COSTS = [0,12,12,16,20,24,28,16,32,40,28,24,32,36,48,48,
+  52,60,60,54,58,64,72,68];
 export function backgroundOwned(s,id) {
   return Number.isInteger(id)&&id>=0&&id<BACKGROUNDS.length&&!!(s.backgrounds_owned&(1<<id));
 }
@@ -180,7 +182,7 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:9,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:10,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
@@ -189,7 +191,8 @@ export function freshState(options={}) {
     backgrounds_owned:1,power_mode:0,screen_timeout:3,deep_sleep_after:0,rtc_wake:0,
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
     daily_override:0xFFFFFFFF,pet_xp_day:0xFFFFFFFF,pet_xp_today:0,
-    decor_owned:0,decor:Array.from({length:DECOR_SLOTS},()=>({kind:DECOR_EMPTY,blocking:0,x:0,y:0})),
+    decor_owned:0,decor_owned_extra:0,music_enabled:1,lights_dimmed:0,
+    decor:Array.from({length:DECOR_SLOTS},()=>({kind:DECOR_EMPTY,blocking:0,x:0,y:0})),
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
   services.set(s,options);
@@ -230,7 +233,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8,9].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9,10].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -259,7 +262,8 @@ export function validateProgress(raw) {
     if(Object.hasOwn(raw,key)&&!BACKGROUNDS.includes(raw[key]))fail(`${key} is unknown`);
   number('brightness',legacy?0:10,100,!legacy);number('battery',0,100,false);
   number('volume',0,100);
-  number('backgrounds_owned',1,65535);
+  number('backgrounds_owned',1,0xffffff);
+  number('music_enabled',0,1);number('lights_dimmed',0,1);
   number('power_mode',0,2);number('screen_timeout',0,4);
   number('deep_sleep_after',0,4);number('rtc_wake',0,2);
   if(raw.version>=9&&(!Number.isInteger(raw.backgrounds_owned)||
@@ -268,9 +272,9 @@ export function validateProgress(raw) {
   number('daily_day',0,U32);number('daily_base_day',0,U32);
   number('daily_task_base',0,U32);number('daily_streak',0,255);number('daily_task_done',0,1);
   number('pet_xp_day',0,U32);number('pet_xp_today',0,255);
-  number('decor_owned',0,(1<<DECOR_KINDS.length)-1);
+  number('decor_owned',0,U32);number('decor_owned_extra',0,3);
   if(Object.hasOwn(raw,'decor')){
-    if(!Array.isArray(raw.decor)||raw.decor.length!==DECOR_SLOTS)fail('decor must be an array of slots');
+    if(!Array.isArray(raw.decor)||raw.decor.length<DECOR_SLOTS)fail('decor must be an array of slots');
     for(const item of raw.decor){
       if(!item||typeof item!=='object')fail('decor slot is invalid');
       if(!Number.isSafeInteger(item.kind)||(item.kind!==DECOR_EMPTY&&(item.kind<0||item.kind>=DECOR_KINDS.length)))
@@ -354,9 +358,14 @@ export function restoreSim(raw,options={}) {
   // Placeable decor arrived in v8. An older save has no slots, so they keep the
   // fresh-state sentinels rather than inheriting whatever the blob contains --
   // kind 0 is a real item, so a zeroed slot would place twelve small rocks.
-  s.decor_owned=integer(raw.decor_owned,0,(1<<DECOR_KINDS.length)-1);
+  s.decor_owned=integer(raw.decor_owned,0,U32);
+  s.decor_owned_extra=integer(raw.decor_owned_extra,0,3);
+  if(raw.version>=10){
+    s.music_enabled=raw.music_enabled??1;
+    s.lights_dimmed=raw.lights_dimmed??0;
+  }
   if(raw.version>=8&&Array.isArray(raw.decor))
-    s.decor=Array.from({length:DECOR_SLOTS},(_,i)=>{
+    s.decor=Array.from({length:raw.decor.length},(_,i)=>{
       const item=raw.decor[i];
       if(!item||!Number.isInteger(item.kind)||item.kind===DECOR_EMPTY||!DECOR_KINDS[item.kind])
         return {kind:DECOR_EMPTY,blocking:0,x:0,y:0};
@@ -540,6 +549,9 @@ export const TREATS=Object.freeze([
   {name:'Juicy Fly',cost:C.TREAT_HUNGER_COST,field:'hunger',gain:C.TREAT_HUNGER_GAIN},
   {name:'Silk Ribbon',cost:C.TREAT_MOOD_COST,field:'mood',gain:C.TREAT_MOOD_GAIN},
   {name:'Warm Pebble',cost:C.TREAT_ENERGY_COST,field:'energy',gain:C.TREAT_ENERGY_GAIN},
+  {name:'Honey Moth',cost:14,field:'hunger',gain:30,secondary:'mood',bonus:12},
+  {name:'Dew Drop',cost:12,field:'hygiene',gain:25,secondary:'energy',bonus:12},
+  {name:'Cozy Nest',cost:18,field:'energy',gain:28,secondary:'mood',bonus:20},
 ]);
 /** Buy and apply a treat. Returns false when Silk is short. */
 export function buyTreat(s,kind){
@@ -548,6 +560,7 @@ export function buyTreat(s,kind){
   if(s.silk<t.cost)return event(s,'rejected',{reason:'not enough Silk'});
   s.silk-=t.cost;
   s[t.field]=clamp(s[t.field]+t.gain);
+  if(t.secondary)s[t.secondary]=clamp(s[t.secondary]+t.bonus);
   return true;
 }
 /** Placeable decor. Backgrounds are ground texture only; everything that sits
@@ -571,6 +584,24 @@ export const DECOR_KINDS=Object.freeze([
   {key:'leaf_pile',name:'Leaf Pile',cost:16,level:1,radius:13,blocking:0},
   {key:'twig',name:'Twig',cost:12,level:1,radius:12,blocking:0},
   {key:'bone',name:'Bone',cost:58,level:8,radius:13,blocking:1},
+  {key:'fern_pot',name:'Fern Planter',cost:48,level:6,radius:14,blocking:1},
+  {key:'acorn_hide',name:'Acorn Hide',cost:72,level:10,radius:15,blocking:1},
+  {key:'driftwood_arch',name:'Driftwood Arch',cost:82,level:12,radius:18,blocking:1},
+  {key:'web_hammock',name:'Web Hammock',cost:64,level:8,radius:15,blocking:0},
+  {key:'dew_pool',name:'Dew Pool',cost:54,level:7,radius:14,blocking:0},
+  {key:'mushroom_pair',name:'Mushroom Pair',cost:62,level:8,radius:13,blocking:0},
+  {key:'flower_planter',name:'Flower Planter',cost:68,level:9,radius:15,blocking:1},
+  {key:'crystal_cluster',name:'Crystal Cluster',cost:98,level:14,radius:15,blocking:1},
+  {key:'shell_cove',name:'Shell Cove',cost:74,level:11,radius:16,blocking:1},
+  {key:'twig_ladder',name:'Twig Ladder',cost:46,level:6,radius:13,blocking:0},
+  {key:'moss_stone',name:'Mossy Stone',cost:42,level:5,radius:13,blocking:0},
+  {key:'seed_pod',name:'Seed Pod',cost:38,level:4,radius:10,blocking:0},
+  {key:'silk_tent',name:'Silk Tent',cost:112,level:16,radius:19,blocking:1},
+  {key:'leaf_umbrella',name:'Leaf Umbrella',cost:88,level:13,radius:15,blocking:1},
+  {key:'bone_arch',name:'Bone Arch',cost:96,level:15,radius:16,blocking:1},
+  {key:'fossil',name:'Fossil',cost:58,level:8,radius:12,blocking:0},
+  {key:'lantern_cap',name:'Lantern Cap',cost:92,level:14,radius:13,blocking:0},
+  {key:'stone_bridge',name:'Stone Bridge',cost:120,level:18,radius:20,blocking:1},
 ]);
 export const DECOR_SLOTS=12;
 export const DECOR_EMPTY=0xFF;
@@ -583,7 +614,8 @@ export function decorUnlocked(s,kind){
   return !!d&&s.level>=d.level;
 }
 export function decorOwned(s,kind){
-  return kind>=0&&kind<DECOR_KINDS.length&&(s.decor_owned&(1<<kind))!==0;
+  return kind>=0&&kind<DECOR_KINDS.length&&
+    ((kind<32?s.decor_owned:s.decor_owned_extra)&(1<<(kind%32)))!==0;
 }
 /** Buy one decor kind. Returns false and records a rejection when refused. */
 export function buyDecor(s,kind){
@@ -592,7 +624,8 @@ export function buyDecor(s,kind){
   if(!decorUnlocked(s,kind))return event(s,'rejected',{reason:'decor locked'});
   if(s.silk<d.cost)return event(s,'rejected',{reason:'not enough Silk'});
   s.silk-=d.cost;
-  s.decor_owned|=1<<kind;
+  const field=kind<32?'decor_owned':'decor_owned_extra';
+  s[field]=(s[field]|(1<<(kind%32)))>>>0;
   return true;
 }
 export function decorPlacedCount(s){
@@ -603,8 +636,8 @@ export function placeDecor(s,kind,x,y){
   const d=DECOR_KINDS[kind];
   if(!d)return -1;
   if(!decorOwned(s,kind))return -1;
-  const slot=s.decor.findIndex(item=>item.kind===DECOR_EMPTY);
-  if(slot<0)return -1;
+  let slot=s.decor.findIndex(item=>item.kind===DECOR_EMPTY);
+  if(slot<0)slot=s.decor.length;
   const r=d.radius;
   s.decor[slot]={kind,blocking:d.blocking,
     x:round(clamp(x,34+r,446-r)),y:round(clamp(y,34+r,446-r))};
@@ -613,7 +646,7 @@ export function placeDecor(s,kind,x,y){
 /** Move a placed item. Keeps its slot, kind and blocking flag; only the
  * position changes, clamped inside the playfield. */
 export function moveDecor(s,slot,x,y){
-  if(slot<0||slot>=DECOR_SLOTS||s.decor[slot].kind===DECOR_EMPTY)return false;
+  if(slot<0||slot>=s.decor.length||s.decor[slot].kind===DECOR_EMPTY)return false;
   const d=DECOR_KINDS[s.decor[slot].kind];
   if(!d)return false;
   const r=d.radius;
@@ -622,18 +655,18 @@ export function moveDecor(s,slot,x,y){
   return true;
 }
 export function removeDecor(s,slot){
-  if(slot<0||slot>=DECOR_SLOTS||s.decor[slot].kind===DECOR_EMPTY)return false;
+  if(slot<0||slot>=s.decor.length||s.decor[slot].kind===DECOR_EMPTY)return false;
   s.decor[slot]={kind:DECOR_EMPTY,blocking:0,x:0,y:0};
   return true;
 }
 export function toggleDecorBlocking(s,slot){
-  if(slot<0||slot>=DECOR_SLOTS||s.decor[slot].kind===DECOR_EMPTY)return false;
+  if(slot<0||slot>=s.decor.length||s.decor[slot].kind===DECOR_EMPTY)return false;
   s.decor[slot].blocking=s.decor[slot].blocking?0:1;
   return true;
 }
 /** The placed item whose footprint contains a point, or -1. */
 export function decorHitTest(s,x,y){
-  for(let i=DECOR_SLOTS-1;i>=0;i--){
+  for(let i=s.decor.length-1;i>=0;i--){
     const item=s.decor[i];
     if(item.kind===DECOR_EMPTY)continue;
     const d=DECOR_KINDS[item.kind];

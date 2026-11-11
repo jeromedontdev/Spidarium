@@ -3,6 +3,7 @@
  */
 #include "audio.h"
 #include "audio_ambience.h"
+#include "audio_music.h"
 
 #include "game_config.h"
 #include "net.h"
@@ -29,6 +30,13 @@ static const char *TAG = "spidarium.audio";
 /* Longest SFX we synthesize, in samples. */
 #define MAX_SAMPLES (AUDIO_SAMPLE_RATE * 400 / 1000)
 _Static_assert(AUDIO_SAMPLE_RATE == AMBIENCE_RATE, "ambience sample rate mismatch");
+_Static_assert(AUDIO_SAMPLE_RATE == MUSIC_RATE, "music sample rate mismatch");
+_Static_assert(PET_SAMPLES <= MAX_SAMPLES, "pet bell exceeds PCM buffer");
+
+/* 50 ms music chunks keep fades prompt; idle polling lets music start. */
+#define MUSIC_CHUNK 800
+#define MUSIC_POLL_MS 100
+_Static_assert(MUSIC_CHUNK <= MAX_SAMPLES && AMBIENCE_FADE <= MAX_SAMPLES, "music chunk exceeds PCM buffer");
 
 static esp_codec_dev_handle_t s_spk;
 static bool                   s_ready;
@@ -40,8 +48,15 @@ static atomic_bool s_playing;
 static atomic_bool s_muted;
 static atomic_int  s_volume = AUDIO_VOLUME;
 static atomic_int  s_volume_applied = -1;
+static atomic_bool s_music;
+/* Worker-only music stream state. */
+static bool     s_music_on;
+static uint32_t s_music_pos;
+static uint32_t s_music_fade;
+static uint32_t s_music_written;
 
 static void play_sfx(sfx_t sfx);
+static bool write_pcm(int samples);
 
 static bool apply_volume(void)
 {
@@ -56,12 +71,87 @@ static bool apply_volume(void)
     return true;
 }
 
+static bool music_wanted(void)
+{
+    return atomic_load(&s_music) && !atomic_load(&s_muted) && !net_busy() &&
+           !power_sleep_pending();
+}
+
+static const char *music_stop_reason(void)
+{
+    if (!atomic_load(&s_music)) return "disabled";
+    if (atomic_load(&s_muted)) return "muted";
+    if (net_busy()) return "network";
+    return "sleep";
+}
+
+/* Continue the periodic loop from s_music_pos with a smooth fade in; a
+ * stopping chunk additionally ramps linearly to silence. */
+static void music_render(int samples, bool stopping)
+{
+    for (int i = 0; i < samples; i++) {
+        int32_t value = music_sample(s_music_pos);
+        s_music_pos = (s_music_pos + 1u) % MUSIC_LOOP;
+        if (s_music_fade < MUSIC_FADE_IN) {
+            value = (value * music_smooth((int32_t)(s_music_fade * 32768u / MUSIC_FADE_IN))) >> 15;
+            s_music_fade++;
+        }
+        if (stopping) value = value * (samples - 1 - i) / samples;
+        s_buf[i] = (int16_t)value;
+    }
+}
+
+static void music_stop(const char *reason)
+{
+    if (!s_music_on) return;
+    music_render(AMBIENCE_FADE, true);
+    bool ok = apply_volume() && write_pcm(AMBIENCE_FADE);
+    s_music_written += ok ? AMBIENCE_FADE : 0;
+    s_music_on = false;
+    s_music_fade = 0;
+    ESP_LOGI(TAG, "music stopped: %s%s samples=%lu", reason, ok ? "" : " (fade write failed)",
+             (unsigned long)s_music_written);
+}
+
+static void music_chunk(void)
+{
+    if (!s_music_on) {
+        s_music_on = true;
+        s_music_written = 0;
+        ESP_LOGI(TAG, "music started: position=%lu", (unsigned long)s_music_pos);
+    }
+    music_render(MUSIC_CHUNK, false);
+    if (!apply_volume() || !write_pcm(MUSIC_CHUNK)) {
+        s_music_on = false;
+        s_music_fade = 0;
+        ESP_LOGE(TAG, "music stopped: codec error samples=%lu; retry in 1 s",
+                 (unsigned long)s_music_written);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        return;
+    }
+    s_music_written += MUSIC_CHUNK;
+}
+
 static void audio_worker(void *arg)
 {
     (void)arg;
     sfx_t sfx;
     for (;;) {
-        xQueueReceive(s_queue, &sfx, portMAX_DELAY);
+        /* Publish activity before checking the radio/sleep flags, matching
+         * their drains: they never observe idle while a chunk is starting. */
+        atomic_store(&s_playing, true);
+        bool music = music_wanted();
+        if (!music) {
+            if (s_music_on) music_stop(music_stop_reason());
+            atomic_store(&s_playing, false);
+        }
+        /* Music streams with zero wait; otherwise a bounded wait lets an
+         * enable start music without any call from LVGL. */
+        if (xQueueReceive(s_queue, &sfx, music ? 0 : pdMS_TO_TICKS(MUSIC_POLL_MS)) != pdPASS) {
+            if (music) music_chunk();
+            continue;
+        }
+        if (s_music_on) music_stop("effect");
         for (;;) {
             atomic_store(&s_playing, true);
             if (!net_busy() && !power_sleep_pending()) break;
@@ -242,6 +332,16 @@ void audio_set_muted(bool muted)
     atomic_store(&s_muted, muted);
 }
 
+void audio_set_music(bool enabled)
+{
+    atomic_store(&s_music, enabled);
+}
+
+bool audio_music(void)
+{
+    return atomic_load(&s_music);
+}
+
 bool audio_muted(void)
 {
     return g.muted != 0;
@@ -304,6 +404,45 @@ bool audio_test(void)
                  leafy ? "leaves" : "air", (unsigned long)sound.length,
                  (unsigned long)hash, peak, first, last, valid ? "PASS" : "FAIL");
     }
+
+    uint32_t hash = 2166136261u;
+    int peak = 0, step = 0, previous = music_sample(MUSIC_LOOP - 1u);
+    int64_t power = 0;
+    for (uint32_t i = 0; i < MUSIC_LOOP; i++) {
+        int sample = music_sample(i);
+        int magnitude = sample < 0 ? -sample : sample;
+        int change = sample > previous ? sample - previous : previous - sample;
+        if (magnitude > peak) peak = magnitude;
+        if (change > step) step = change;
+        power += (int64_t)sample * sample;
+        previous = sample;
+        uint16_t bits = (uint16_t)sample;
+        hash = (hash ^ (bits & 255u)) * 16777619u;
+        hash = (hash ^ (bits >> 8)) * 16777619u;
+    }
+    int rms = (int)sqrt((double)power / MUSIC_LOOP);
+    /* step includes the loop seam (last sample -> first sample). */
+    bool valid = hash == MUSIC_TEST_HASH && peak < 4000 && step < 1000 && rms > 300 && rms < 1300;
+    ok = valid && ok;
+    ESP_LOGI(TAG, "PCM music samples=%lu hash=%08lx peak=%d maxstep=%d rms=%d %s",
+             (unsigned long)MUSIC_LOOP, (unsigned long)hash, peak, step, rms,
+             valid ? "PASS" : "FAIL");
+
+    hash = 2166136261u;
+    peak = 0;
+    int first = pet_sample(0), last = pet_sample(PET_SAMPLES - 1);
+    for (uint32_t i = 0; i < PET_SAMPLES; i++) {
+        int sample = pet_sample(i);
+        int magnitude = sample < 0 ? -sample : sample;
+        if (magnitude > peak) peak = magnitude;
+        uint16_t bits = (uint16_t)sample;
+        hash = (hash ^ (bits & 255u)) * 16777619u;
+        hash = (hash ^ (bits >> 8)) * 16777619u;
+    }
+    valid = hash == PET_TEST_HASH && first == 0 && last == 0 && peak < 2400;
+    ok = valid && ok;
+    ESP_LOGI(TAG, "PCM pet samples=%d hash=%08lx peak=%d endpoints=%d/%d %s", PET_SAMPLES,
+             (unsigned long)hash, peak, first, last, valid ? "PASS" : "FAIL");
     return ok;
 }
 
@@ -355,7 +494,8 @@ static void play_sfx(sfx_t sfx)
         play_ambience(false);
         return;
     case SFX_CHIRP:
-        n = render_sweep(1800, 1800, 160, 0.025f);
+        /* Pet: soft rising fifth (G4 then D5) bell, no sweep. */
+        for (n = 0; n < PET_SAMPLES; n++) s_buf[n] = pet_sample((uint32_t)n);
         break;
     case SFX_DROP:
         play_ambience(true);

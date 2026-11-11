@@ -53,7 +53,7 @@ game_ui_t    ui;
 playfield_t  g_play;
 uint8_t      g_decor_mode;
 uint8_t      g_decor_selected;
-uint8_t      g_decor_move_slot = 0xFF;
+int          g_decor_move_slot = -1;
 static bool s_gift_moving;
 static bool s_testing_placement;
 
@@ -158,6 +158,7 @@ static void state_defaults(void)
     g.volume = AUDIO_VOLUME;
     g.backgrounds_owned = 1u;
     g.screen_timeout = 3;
+    g.music_enabled = 1;
 
     /* Sentinel: rolled in game_init() AFTER srand(). Rolling here would give
      * every fresh boot the same temperament, because this runs before the RNG
@@ -367,7 +368,7 @@ void game_cancel_decor_placement(void)
 {
     if (!g_decor_mode) return;
     g_decor_mode = 0;
-    g_decor_move_slot = 0xFF;
+    g_decor_move_slot = -1;
     ui_hud_set_place_mode(false, NULL);
     ESP_LOGI(TAG, "decor placement cancelled");
 }
@@ -420,7 +421,6 @@ enum {
     MENU_DAILY,
     MENU_SHOP,
     MENU_DECOR,
-    MENU_DECOR_PLACED,
     MENU_DECOR_ITEM,
     MENU_GIFT_ITEM,
     MENU_POWER_CONFIRM,
@@ -435,16 +435,49 @@ static int s_open_menu = -1;
 /* The row table handed to ui_menu_open(). File scope so a value changed
  * outside the menu (the physical volume buttons) can be pushed into the open
  * panel without rebuilding it. */
-static ui_menu_item_t s_menu_items[20];
+static ui_menu_item_t s_menu_items[DECOR_COUNT + 1];
 /* Slot whose per-item decor menu is open. */
-static uint8_t s_decor_item_slot = 0xFF;
+static int s_decor_item_slot = -1;
+static struct { decor_edit_t operation; int value, x, y, count; } s_decor_edit;
+static lv_obj_t *s_light_overlay;
+static lv_timer_t *s_pet_tap_timer;
+static lv_point_t s_pet_tap;
+static bool s_double_tap_consumed;
+
+static void apply_enclosure_lights(void)
+{
+    if (s_light_overlay) lv_obj_set_hidden(s_light_overlay, !g.lights_dimmed);
+}
+
+static void delayed_pet(lv_timer_t *timer)
+{
+    (void)timer;
+    s_pet_tap_timer = NULL;
+    if (!ui_menu_visible() && !ui_hud_chrome_visible() && !g.gift_mode && !g_decor_mode &&
+        needs_pet(s_pet_tap.x, s_pet_tap.y)) {
+        g.taps++;
+        game_save_now();
+    }
+}
+
+static void enclosure_double_tap(lv_event_t *event)
+{
+    (void)event;
+    if (ui_menu_visible() || g.gift_mode || g_decor_mode) return;
+    if (s_pet_tap_timer) { lv_timer_delete(s_pet_tap_timer); s_pet_tap_timer = NULL; }
+    behaviour_aim_cancel();
+    g.lights_dimmed = !g.lights_dimmed;
+    s_double_tap_consumed = true;
+    apply_enclosure_lights();
+    game_save_now();
+}
 static int s_saved_network;
 static char s_join_ssid[33];
 static char s_wifi_message[80];
 
 static void back_to_wifi(void) { menu_open(MENU_WIFI); }
 static void back_to_settings(void) { menu_open(MENU_SETTINGS); }
-static void back_to_placed(void) { menu_open(MENU_DECOR_PLACED); }
+static void back_to_decor(void) { menu_open(MENU_DECOR); }
 
 static bool on_password(const char *password)
 {
@@ -517,7 +550,11 @@ static void on_theme_pick(uint8_t id)
 
 static void on_sound_pick(uint8_t id)
 {
-    if (id == 1 || id == 2) audio_set_muted(id == 2);
+    if (id == 1) audio_set_muted(!audio_muted());
+    if (id == 2) {
+        g.music_enabled = !g.music_enabled;
+        audio_set_music(g.music_enabled);
+    }
     game_save_now();
     menu_open(MENU_SOUND);
 }
@@ -561,7 +598,6 @@ static void on_main_pick(uint8_t id)
     case MENU_SETTINGS:     menu_open(MENU_SETTINGS);     break;
     case MENU_SPECIES:      menu_open(MENU_SPECIES);      break;
     case MENU_DECOR:        menu_open(MENU_DECOR);        break;
-    case MENU_DECOR_PLACED: menu_open(MENU_DECOR_PLACED); break;
     case MENU_GIFT_ITEM:    menu_open(MENU_GIFT_ITEM);    break;
     default: break;
     }
@@ -608,13 +644,9 @@ static void decor_begin_placement(uint8_t kind)
 {
     const decor_def_t *def = decor_def(kind);
     if (!def) return;
-    if (decor_placed_count() >= DECOR_SLOTS) {
-        ui_hud_bubble("No Room Left", 0xf5c86b, 1800);
-        return;
-    }
     g_decor_selected = kind;
     g_decor_mode = 1;
-    g_decor_move_slot = 0xFF;
+    g_decor_move_slot = -1;
     ui_menu_close();
     ui_hud_set_chrome(false);
     ui_hud_set_place_mode(true, "Tap to place; X cancels");
@@ -622,7 +654,7 @@ static void decor_begin_placement(uint8_t kind)
 
 /* Reposition an item that is already in the tank. The item keeps its slot,
  * blocking flag and ownership; only its position changes. */
-static void decor_begin_move(uint8_t slot)
+static void decor_begin_move(int slot)
 {
     if (!decor_at(slot)) return;
     g_decor_move_slot = slot;
@@ -635,7 +667,7 @@ static void decor_begin_move(uint8_t slot)
 static void on_decor_pick(uint8_t id)
 {
     if (id >= DECOR_COUNT) {
-        menu_open(MENU_DECOR_PLACED);
+        menu_open(MENU_DECOR);
         return;
     }
     const decor_def_t *def = decor_def(id);
@@ -656,21 +688,11 @@ static void on_decor_pick(uint8_t id)
     decor_begin_placement(id);
 }
 
-/* Placed-item rows open the per-item menu, where blocking can be flipped and
- * the item can be moved or put away. */
-static void on_decor_placed_pick(uint8_t id)
-{
-    if (id >= DECOR_SLOTS) { menu_open(MENU_DECOR); return; }
-    if (!decor_at(id)) { menu_open(MENU_DECOR_PLACED); return; }
-    s_decor_item_slot = id;
-    menu_open(MENU_DECOR_ITEM);
-}
-
 /* Per-item actions. Row 0 flips blocking, row 1 starts a move, row 2 removes. */
 static void on_decor_item_pick(uint8_t id)
 {
-    uint8_t slot = s_decor_item_slot;
-    if (!decor_at(slot)) { menu_open(MENU_DECOR_PLACED); return; }
+    int slot = s_decor_item_slot;
+    if (!decor_at(slot)) { menu_open(MENU_DECOR); return; }
     switch (id) {
     case 0:
         decor_toggle_blocking(slot);
@@ -685,10 +707,10 @@ static void on_decor_item_pick(uint8_t id)
         decor_remove(slot);
         terrarium_refresh_decor();
         game_save_now();
-        menu_open(MENU_DECOR_PLACED);
+        menu_open(MENU_DECOR);
         break;
     default:
-        menu_open(MENU_DECOR_PLACED);
+        menu_open(MENU_DECOR);
         break;
     }
 }
@@ -872,16 +894,13 @@ static void menu_open(int which)
         items[3] = (ui_menu_item_t){ "Achievements", ach_sub, true, false, true, MENU_ACHIEVEMENTS };
         items[4] = (ui_menu_item_t){ "Prey Species", species_sub, true, false, true, MENU_SPECIES };
         static char decor_sub[48];
-        snprintf(decor_sub, sizeof decor_sub, "%d of %d Placed",
-                 decor_placed_count(), DECOR_SLOTS);
+        snprintf(decor_sub, sizeof decor_sub, "%d Placed", decor_placed_count());
         items[5] = (ui_menu_item_t){ "Decor", decor_sub, true, false, true, MENU_DECOR };
         /* Settings is always the last row: it is the least-used entry and the
          * one the player reaches for least often, so it belongs at the bottom
          * of the list rather than in the middle. */
-        items[6] = (ui_menu_item_t){ "Arrange Decor", "Move or Put Away", true, false, true, MENU_DECOR_PLACED };
-        items[7] = (ui_menu_item_t){ "Placed Gift", "Move Free / Keep Its Bonus", g.gift.used, false, true, MENU_GIFT_ITEM };
-        items[8] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
-        ui_menu_open("Spidarium", items, 9, on_main_pick);
+        items[6] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
+        ui_menu_open("Spidarium", items, 7, on_main_pick);
         break;
     }
     case MENU_SETTINGS: {
@@ -1056,9 +1075,12 @@ static void menu_open(int which)
         /* The slider row's readout is derived from its value by refresh_page(),
          * so no detail string is needed here. */
         items[0] = (ui_menu_item_t){ "Volume", NULL, true, false, false, 0 };
-        items[1] = (ui_menu_item_t){ "Sound On",  "Play Effects", true, !audio_muted(), false, 1 };
-        items[2] = (ui_menu_item_t){ "Sound Off", "Silence Effects", true,  audio_muted(), false, 2 };
+        items[1] = (ui_menu_item_t){ "Sound", audio_muted() ? "Off / All Audio Muted" : "On / Effects and Music",
+                                    true, !audio_muted(), false, 1 };
+        items[2] = (ui_menu_item_t){ "Background Music", "Gentle Ambient Score", true, g.music_enabled, false, 2 };
         ui_menu_open("Sound", items, 3, on_sound_pick);
+        ui_menu_set_item_checkbox(1);
+        ui_menu_set_item_checkbox(2);
         ui_menu_set_item_slider(0, audio_volume(), on_volume_slider);
         ui_menu_set_back(back_to_settings);
         break;
@@ -1112,6 +1134,8 @@ static void menu_open(int which)
         static char species_title[48];
         snprintf(species_title, sizeof species_title, "Prey / Lv %lu", (unsigned long)g.level);
         ui_menu_open(species_title, items, PREY_SPECIES_COUNT, NULL);
+        for (int i = 0; i < PREY_SPECIES_COUNT; i++)
+            ui_menu_set_item_icon(i, sprite_prey_index(i, false, false, 0));
         ui_menu_set_back(back_to_main);
         break;
     case MENU_DAILY: {
@@ -1170,6 +1194,12 @@ static void menu_open(int which)
         snprintf(shop_title, sizeof shop_title, "Treats / %lu Silk",
                  (unsigned long)g.silk);
         ui_menu_open(shop_title, items, TREAT_COUNT, on_shop_pick);
+        const int treat_icons[TREAT_COUNT] = {
+            sprite_prey_index(0, false, false, 0), sprite_icon_index("treats"),
+            sprite_decor_item_index(0), sprite_prey_index(2, false, false, 0),
+            sprite_icon_index("hygiene"), sprite_decor_item_index(DECOR_SILK_TENT),
+        };
+        for (int i = 0; i < TREAT_COUNT; i++) ui_menu_set_item_icon(i, treat_icons[i]);
         ui_menu_set_back(back_to_main);
         break;
     }
@@ -1200,14 +1230,7 @@ static void menu_open(int which)
         static char decor_title[48];
         snprintf(decor_title, sizeof decor_title, "Decor / %lu Silk",
                  (unsigned long)g.silk);
-        /* The last row opens the placed list, where blocking can be flipped. */
-        static char placed_row_sub[48];
-        snprintf(placed_row_sub, sizeof placed_row_sub, "%d of %d Placed",
-                 decor_placed_count(), DECOR_SLOTS);
-        items[DECOR_COUNT] = (ui_menu_item_t){ "Placed Items", placed_row_sub,
-                                               true, false, true,
-                                               (uint8_t)DECOR_COUNT };
-        ui_menu_open(decor_title, items, DECOR_COUNT + 1, on_decor_pick);
+        ui_menu_open(decor_title, items, DECOR_COUNT, on_decor_pick);
         /* Every row gets its own sprite, so the shop reads as a catalogue of
          * things rather than a list of names. */
         for (int i = 0; i < DECOR_COUNT; i++)
@@ -1215,41 +1238,11 @@ static void menu_open(int which)
         ui_menu_set_back(back_to_main);
         break;
     }
-    case MENU_DECOR_PLACED: {
-        static char placed_sub[DECOR_SLOTS][48];
-        static char placed_name[DECOR_SLOTS][32];
-        int n = 0;
-        for (int i = 0; i < DECOR_SLOTS; i++) {
-            const decor_item_t *item = decor_at(i);
-            if (!item) continue;
-            const decor_def_t *def = decor_def(item->kind);
-            if (!def) continue;
-            ui_menu_format_name(placed_name[n], sizeof placed_name[n], def->name);
-            snprintf(placed_sub[n], sizeof placed_sub[n], "%s / Tap to Change",
-                     item->blocking ? "Blocks" : "Walk Over");
-            items[n] = (ui_menu_item_t){ placed_name[n], placed_sub[n], true,
-                                         false, false, (uint8_t)i };
-            n++;
-        }
-        if (n == 0) {
-            items[0] = (ui_menu_item_t){ "Nothing Placed", "Pick an Item First",
-                                         false, false, false, 0 };
-            n = 1;
-        }
-        ui_menu_open("Placed Decor", items, n, on_decor_placed_pick);
-        for (int i = 0; i < n; i++) {
-            const decor_item_t *item = decor_at(items[i].id);
-            if (item) ui_menu_set_item_icon((uint8_t)i,
-                                            sprite_decor_item_index(item->kind));
-        }
-        ui_menu_set_back(back_to_main);
-        break;
-    }
     case MENU_DECOR_ITEM: {
         const decor_item_t *item = decor_at(s_decor_item_slot);
-        if (!item) { menu_open(MENU_DECOR_PLACED); break; }
+        if (!item) { menu_open(MENU_DECOR); break; }
         const decor_def_t *def = decor_def(item->kind);
-        if (!def) { menu_open(MENU_DECOR_PLACED); break; }
+        if (!def) { menu_open(MENU_DECOR); break; }
         static char item_name[32], block_sub[48], move_sub[48];
         ui_menu_format_name(item_name, sizeof item_name, def->name);
         snprintf(block_sub, sizeof block_sub, "%s / Tap to Change",
@@ -1263,7 +1256,7 @@ static void menu_open(int which)
         ui_menu_open(item_name, items, 3, on_decor_item_pick);
         ui_menu_set_item_icon(0, sprite_decor_item_index(item->kind));
         ui_menu_set_destructive(2);
-        ui_menu_set_back(back_to_placed);
+        ui_menu_set_back(back_to_decor);
         break;
     }
     case MENU_GIFT_ITEM:
@@ -1334,7 +1327,7 @@ void game_on_menu(lv_event_t *e)
 }
 
 /* Open the per-item decor menu for a slot, for the serial console. */
-bool game_ui_open_decor_item(uint8_t slot)
+bool game_ui_open_decor_item(int slot)
 {
     if (!decor_at(slot)) return false;
     s_decor_item_slot = slot;
@@ -1367,7 +1360,6 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "daily")) menu_open(MENU_DAILY);
     else if (!strcmp(name, "shop")) menu_open(MENU_SHOP);
     else if (!strcmp(name, "decor")) menu_open(MENU_DECOR);
-    else if (!strcmp(name, "placed")) menu_open(MENU_DECOR_PLACED);
     else if (!strcmp(name, "decoritem")) menu_open(MENU_DECOR_ITEM);
     else return false;
     return true;
@@ -1505,7 +1497,8 @@ bool game_ui_call_value(game_ui_action_t action, int value)
         (action == GAME_UI_DEEP_SLEEP && (value < 5 || value > 86400)) ||
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
-        ((action == GAME_UI_SET_AUTO_FEED || action == GAME_UI_SET_AUTO_HUNT) && (value < 0 || value > 1)) ||
+        ((action == GAME_UI_SET_AUTO_FEED || action == GAME_UI_SET_AUTO_HUNT ||
+          action == GAME_UI_SET_MUSIC || action == GAME_UI_SET_MUTED) && (value < 0 || value > 1)) ||
         (action == GAME_UI_SET_VOLUME && (value < 0 || value > 100)) ||
         (action == GAME_UI_BACKGROUND && (value < 0 || value >= THEME_COUNT)) ||
         (action == GAME_UI_STATE && (value < 0 || value > SPIDER_SICK)) ||
@@ -1543,6 +1536,22 @@ static void test_pointer_read(lv_indev_t *indev, lv_indev_data_t *data)
     data->state = pointer->state;
 }
 
+bool game_ui_decor_edit(decor_edit_t operation, int value, int x, int y, int *count)
+{
+    if (s_ui_req != GAME_UI_NONE || (unsigned)operation > DECOR_EDIT_BLOCK ||
+        x < INT16_MIN || x > INT16_MAX || y < INT16_MIN || y > INT16_MAX) {
+        ESP_LOGE(TAG, "decor edit request rejected: busy or invalid input");
+        return false;
+    }
+    s_decor_edit.operation = operation;
+    s_decor_edit.value = value;
+    s_decor_edit.x = x;
+    s_decor_edit.y = y;
+    bool ok = game_ui_call(GAME_UI_DECOR_EDIT);
+    if (ok && count) *count = s_decor_edit.count;
+    return ok;
+}
+
 static void test_pointer_send(lv_indev_t *indev, test_pointer_t *pointer,
                               int x, int y, lv_indev_state_t state)
 {
@@ -1554,6 +1563,7 @@ static void test_pointer_send(lv_indev_t *indev, test_pointer_t *pointer,
 static bool test_furniture_pointer(void)
 {
     game_state_t original = g;
+    decor_item_t *original_extra = decor_detach_extra();
     s_testing_placement = true;
     ui_menu_close();
     ui_hud_set_chrome(false);
@@ -1566,6 +1576,7 @@ static bool test_furniture_pointer(void)
     if (!indev) {
         ESP_LOGE(TAG, "placement test: pointer allocation failed");
         g = original;
+        decor_restore_extra(original_extra);
         s_testing_placement = false;
         return false;
     }
@@ -1594,15 +1605,24 @@ static bool test_furniture_pointer(void)
     test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_RELEASED);
     bool gift_moved = !g.gift_mode && g.gift.x == 350 && g.gift.y == 180 &&
                       g.gift.variant == 2 && g.silk == silk && g.gifts_owned == owned;
+    lv_indev_set_long_press_time(indev, 550);
+    uint8_t before_lights = g.lights_dimmed;
+    for (int i = 0; i < 2; i++) {
+        test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_PRESSED);
+        test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_RELEASED);
+    }
+    bool lights = g.lights_dimmed != before_lights;
     lv_indev_delete(indev);
     g = original;
-    g_decor_mode = 0; g_decor_move_slot = 0xFF; s_gift_moving = false;
+    decor_restore_extra(original_extra);
+    apply_enclosure_lights();
+    g_decor_mode = 0; g_decor_move_slot = -1; s_gift_moving = false;
     s_testing_placement = false;
     ui_hud_set_place_mode(false, NULL);
     terrarium_refresh_gift();
     terrarium_refresh_decor();
-    ESP_LOGI(TAG, "furniture pointer: hold=%d decor_move=%d gift_move=%d", held, moved, gift_moved);
-    return held && moved && gift_moved;
+    ESP_LOGI(TAG, "furniture pointer: hold=%d decor_move=%d gift_move=%d lights=%d", held, moved, gift_moved, lights);
+    return held && moved && gift_moved && lights;
 }
 
 static bool test_hunt_pointer(int32_t target_x, int32_t target_y)
@@ -1780,6 +1800,15 @@ static void ui_service_request(void)
         audio_set_volume(g.volume);
         game_volume_changed();
         break;
+    case GAME_UI_SET_MUSIC:
+        g.music_enabled = s_ui_value != 0;
+        audio_set_music(g.music_enabled);
+        game_save_now();
+        break;
+    case GAME_UI_SET_MUTED:
+        audio_set_muted(s_ui_value != 0);
+        game_save_now();
+        break;
     case GAME_UI_BACKGROUND:
         atomic_store(&s_ui_ok, theme_set(s_ui_value));
         if (atomic_load(&s_ui_ok)) terrarium_rebuild();
@@ -1810,20 +1839,55 @@ static void ui_service_request(void)
         atomic_store(&s_ui_ok, true);
         break;
     }
+    case GAME_UI_DECOR_EDIT: {
+        bool ok = true;
+        int value = s_decor_edit.value;
+        switch (s_decor_edit.operation) {
+        case DECOR_EDIT_STATUS: break;
+        case DECOR_EDIT_CLEAR: decor_clear(); break;
+        case DECOR_EDIT_PLACE:
+            if (value < 0 || value >= DECOR_COUNT) { ok = false; break; }
+            if (!decor_owned(value)) {
+                uint32_t silk = g.silk, level = g.level;
+                g.silk = decor_def(value)->cost;
+                g.level = decor_def(value)->unlock_level;
+                ok = decor_buy(value);
+                g.silk = silk; g.level = level;
+            }
+            if (ok) {
+                s_decor_edit.count = decor_place(value, s_decor_edit.x, s_decor_edit.y);
+                ok = s_decor_edit.count >= 0;
+            }
+            break;
+        case DECOR_EDIT_MOVE: ok = decor_move(value, s_decor_edit.x, s_decor_edit.y); break;
+        case DECOR_EDIT_BLOCK: ok = decor_toggle_blocking(value); break;
+        }
+        if (s_decor_edit.operation != DECOR_EDIT_PLACE) s_decor_edit.count = decor_placed_count();
+        if (ok && s_decor_edit.operation != DECOR_EDIT_STATUS) {
+            terrarium_refresh_decor();
+            ok = game_save_now();
+        }
+        if (!ok) ESP_LOGE(TAG, "decor edit failed operation=%u value=%d", s_decor_edit.operation, value);
+        atomic_store(&s_ui_ok, ok);
+        break;
+    }
     case GAME_UI_DECOR_TEST: {
         /* Exercise the real render path: place one of every kind, confirm the
          * layer matches, then restore the player's enclosure. */
         decor_item_t saved[DECOR_SLOTS];
         memcpy(saved, g.decor, sizeof saved);
+        uint32_t extra_count = g.decor_extra_count, extra_owned = g.decor_owned_extra;
+        decor_item_t *extra = decor_detach_extra();
         uint32_t owned = g.decor_owned;
         uint32_t silk = g.silk;
         uint32_t level = g.level;
         decor_clear();
         g.decor_owned = 0xFFFFFFFFu;
+        g.decor_owned_extra = 3;
         g.level = 20;
         g.silk = 100000;
         bool ok = true;
-        for (int i = 0; i < DECOR_COUNT && i < DECOR_SLOTS; i++) {
+        for (int i = 0; i < DECOR_COUNT; i++) {
             int slot = decor_place((uint8_t)i, (int16_t)(60 + i * 30),
                                    (int16_t)(120 + (i % 3) * 90));
             ok = ok && slot >= 0;
@@ -1833,6 +1897,9 @@ static void ui_service_request(void)
         printf("%s decortest placed=%d slots=%d\n", ok ? "OK" : "ERR",
                decor_placed_count(), DECOR_SLOTS);
         memcpy(g.decor, saved, sizeof saved);
+        decor_restore_extra(extra);
+        g.decor_extra_count = extra_count;
+        g.decor_owned_extra = extra_owned;
         g.decor_owned = owned;
         g.silk = silk;
         g.level = level;
@@ -1863,6 +1930,18 @@ static void ui_service_request(void)
         bool save_ok = save_format_test();
         bool decor_ok = decor_test();
         bool pointer_ok = test_furniture_pointer();
+        bool original_muted = audio_muted();
+        uint8_t original_music = g.music_enabled;
+        s_testing_placement = true;
+        on_sound_pick(1);
+        bool sound_ok = audio_muted() != original_muted &&
+                        g.music_enabled == original_music &&
+                        !strcmp(s_menu_items[1].label, "Sound");
+        on_sound_pick(1);
+        sound_ok = sound_ok && audio_muted() == original_muted &&
+                   g.music_enabled == original_music;
+        s_testing_placement = false;
+        ui_menu_close();
         gift_t original_gift = g.gift;
         g.gift.used = 1;
         g.gift.x = 0;
@@ -1870,11 +1949,11 @@ static void ui_service_request(void)
         keep_gift_in_playfield();
         bool gift_bounds = g.gift.x == g_play.left && g.gift.y == g_play.bottom;
         g.gift = original_gift;
-        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d\n",
+        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d sound=%d\n",
                menu_ok && hud_ok && backgrounds_ok && gift_bounds && hunger_ok &&
-               power_ok && save_ok && decor_ok && pointer_ok ? "OK" : "ERR",
+               power_ok && save_ok && decor_ok && pointer_ok && sound_ok ? "OK" : "ERR",
                menu_ok, menu_ok, menu_ok, hud_ok, backgrounds_ok, hunger_ok,
-               power_ok, save_ok, decor_ok, pointer_ok, gift_bounds);
+               power_ok, save_ok, decor_ok, pointer_ok, gift_bounds, sound_ok);
         break;
     }
     default: break;
@@ -1936,7 +2015,7 @@ static void ui_service_menu_request(void)
     } else if (!strncmp(name, "item", 4)) {
         /* "item N" opens the per-item decor menu for slot N. */
         int slot = atoi(name + 4);
-        s_ui_menu_ok = game_ui_open_decor_item((uint8_t)slot);
+        s_ui_menu_ok = game_ui_open_decor_item(slot);
     } else {
         s_ui_menu_ok = game_open_menu(name);
     }
@@ -2023,12 +2102,13 @@ void game_on_terrarium_long_press(lv_event_t *e)
 
     /* A long press must not also fire the pounce on release. */
     behaviour_aim_cancel();
-    s_decor_item_slot = (uint8_t)slot;
+    s_decor_item_slot = slot;
     menu_open(MENU_DECOR_ITEM);
 }
 
 void game_on_terrarium_tap(lv_event_t *e)
 {
+    if (s_double_tap_consumed) { s_double_tap_consumed = false; return; }
     if (ui_menu_visible()) return;
     lv_indev_t *indev = lv_indev_active();
     lv_point_t p = {0, 0};
@@ -2044,7 +2124,7 @@ void game_on_terrarium_tap(lv_event_t *e)
      * a tap only decides where it goes. */
     if (g_decor_mode) {
         if (indev) {
-            if (g_decor_move_slot != 0xFF) {
+            if (g_decor_move_slot >= 0) {
                 if (!decor_move(g_decor_move_slot, (int16_t)p.x, (int16_t)p.y)) {
                     ui_hud_bubble("Cannot Move", 0xf5c86b, 1800);
                     return;
@@ -2052,13 +2132,13 @@ void game_on_terrarium_tap(lv_event_t *e)
                 terrarium_refresh_decor();
                 game_save_now();
                 g_decor_mode = 0;
-                g_decor_move_slot = 0xFF;
+                g_decor_move_slot = -1;
                 ui_hud_set_place_mode(false, NULL);
                 return;
             }
             int slot = decor_place(g_decor_selected, (int16_t)p.x, (int16_t)p.y);
             if (slot < 0) {
-                ui_hud_bubble("No Room Left", 0xf5c86b, 1800);
+                ui_hud_bubble("Storage Full / See Log", 0xf5c86b, 1800);
                 return;
             }
             terrarium_refresh_decor();
@@ -2118,9 +2198,11 @@ void game_on_terrarium_tap(lv_event_t *e)
      * the spider's body: a pull that starts on the spider still fires, because
      * the release handler only treats a drag past AIM_MIN_PULL_PX as a shot and
      * a click only arrives when the finger did not drag. */
-    if (indev && needs_pet(p.x, p.y)) {
-        g.taps++;
-        game_save_now();
+    if (indev) {
+        s_pet_tap = p;
+        if (s_pet_tap_timer) lv_timer_delete(s_pet_tap_timer);
+        s_pet_tap_timer = lv_timer_create(delayed_pet, 450, NULL);
+        lv_timer_set_repeat_count(s_pet_tap_timer, 1);
         return;
     }
 
@@ -2241,6 +2323,11 @@ void game_tick_logic(lv_timer_t *timer)
 void game_tick_render(lv_timer_t *timer)
 {
     power_tick();
+    static bool save_failure_shown;
+    if (!save_busy() && !save_last_ok() && !save_failure_shown) {
+        ui_hud_bubble("Save Failed / See Log", 0xf5c86b, 2400);
+        save_failure_shown = true;
+    } else if (save_last_ok()) save_failure_shown = false;
     (void)timer;
 
     uint32_t now = lv_tick_get();
@@ -2280,6 +2367,8 @@ void game_tick_render(lv_timer_t *timer)
     if (sd_gen != seen_sd_gen) {
         seen_sd_gen = sd_gen;
         if (sd_take_restored(&g)) {
+            audio_set_music(g.music_enabled);
+            apply_enclosure_lights();
             state_finish_load();
             keep_gift_in_playfield();
             audio_set_muted(g.muted != 0);
@@ -2399,6 +2488,7 @@ void game_init(void)
     lv_obj_set_scrollable(ui.tap_layer, false);
     lv_obj_set_clickable(ui.tap_layer, true);
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(ui.tap_layer, enclosure_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
     /* Slingshot needs the raw press/move/release stream, not just clicks. */
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_press,
                         LV_EVENT_PRESSED, NULL);
@@ -2423,6 +2513,14 @@ void game_init(void)
     cspider_init(ui.creature_layer);
     spider_init(ui.creature_layer);
 
+    s_light_overlay = lv_obj_create(root);
+    lv_obj_remove_style_all(s_light_overlay);
+    lv_obj_set_size(s_light_overlay, ui.W, ui.H);
+    lv_obj_set_style_bg_color(s_light_overlay, lv_color_hex(0x070c20), 0);
+    lv_obj_set_style_bg_opa(s_light_overlay, 110, 0);
+    lv_obj_set_clickable(s_light_overlay, false);
+    lv_obj_set_scrollable(s_light_overlay, false);
+    apply_enclosure_lights();
     ui_hud_init(root);
 
     /* The tap layer must sit BELOW the HUD, or it swallows every button press
@@ -2438,6 +2536,7 @@ void game_init(void)
 
     /* --- audio -------------------------------------------------------- */
     audio_init();
+    audio_set_music(g.music_enabled);
 
     /* Network worker and RTC were initialized before display startup. */
     net_init();

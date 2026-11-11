@@ -68,7 +68,7 @@
 
 static const char *TAG = "spidarium.cmd";
 
-#define LINE_MAX_LEN 640
+#define LINE_MAX_LEN (SAVE_MAX_RAW * 2 + 64)
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -120,7 +120,7 @@ static void cmd_help(void)
     printf("  decortest            place every decor kind, verify the layer\n");
     printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
     printf("  setupdone            finish the naming screen without tapping\n");
-    printf("  background [0-7]     show/set persistent pixel-art background\n");
+    printf("  background [0-%d]    show/set persistent pixel-art background\n", THEME_COUNT - 1);
     printf("  scan                 run a WiFi scan\n");
     printf("  scanloop N           N scans, check memory drift\n");
     printf("  render N             N render ticks, check memory drift\n");
@@ -128,7 +128,7 @@ static void cmd_help(void)
     printf("  clean                press CLEAN\n");
     printf("  speckle [N]          drop N bug speckles (default 1)\n");
     printf("  daily [show|claim|task|reset]  inspect or drive the daily loop\n");
-    printf("  treat [0..2]         buy a treat with Silk (no arg lists them)\n");
+    printf("  treat [0..%d]         buy a treat with Silk (no arg lists them)\n", TREAT_COUNT - 1);
     printf("  play                 press PLAY\n");
     printf("  pet                  pet the spider at its current position\n");
     printf("  sleep                press SLEEP\n");
@@ -496,12 +496,16 @@ static void cmd_save_schema(void)
         {"screen_timeout", "u8", offsetof(game_state_t, screen_timeout), 0, 9},
         {"deep_sleep_after", "u8", offsetof(game_state_t, deep_sleep_after), 0, 9},
         {"rtc_wake", "u8", offsetof(game_state_t, rtc_wake), 0, 9},
+        {"decor_owned_extra", "u32", offsetof(game_state_t, decor_owned_extra), 0, 10},
+        {"music_enabled", "u8", offsetof(game_state_t, music_enabled), 0, 10},
+        {"lights_dimmed", "u8", offsetof(game_state_t, lights_dimmed), 0, 10},
+        {"decor_extra_count", "u32", offsetof(game_state_t, decor_extra_count), 0, 10},
 #undef SAVE_FIELD
-    };    enum { SCHEMA_CAP = 4608 };
+    };    enum { SCHEMA_CAP = 5120 };
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
     int pos = snprintf(json, SCHEMA_CAP,
-        "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"fields\":[",
+        "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"maxPayload\":20480,\"decorTail\":{\"offset\":260,\"stride\":6,\"countField\":\"decor_extra_count\"},\"fields\":[",
         (unsigned)SAVE_MAGIC, SAVE_VERSION, (unsigned)offsetof(game_state_t, silk),
         (unsigned)sizeof(game_state_t));
     bool ok = pos > 0 && pos < SCHEMA_CAP;
@@ -542,17 +546,24 @@ static void cmd_save_tool(const char *arg)
             printf("ERR save export snapshot not queued\n"); return;
         }
         if (!wait_save()) { printf("ERR save export persistence failed\n"); return; }
-        uint8_t blob[sizeof(game_state_t) + 12];
-        size_t size = save_read_raw(blob, sizeof blob);
-        if (!size || !save_raw_valid(blob, size)) {
+        size_t size = save_read_raw(NULL, 0);
+        uint8_t *blob = size && size <= SAVE_MAX_RAW ?
+            heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL;
+        if (!blob || save_read_raw(blob, size) != size || !save_raw_valid(blob, size)) {
+            heap_caps_free(blob);
             printf("ERR save export invalid or missing blob\n"); return;
         }
-        char hex[sizeof blob * 2 + 1];
-        for (size_t i = 0; i < size; i++) snprintf(hex + i * 2, 3, "%02x", blob[i]);
         esp_log_level_t level = esp_log_level_get("*");
         esp_log_level_set("*", level > ESP_LOG_WARN ? ESP_LOG_WARN : level);
-        bool sent = console_data("SAVE HEX ") && console_data(hex) &&
-                    console_data("\nOK save export\n");
+        bool sent = console_data("SAVE HEX ");
+        char hex[129];
+        for (size_t i = 0; sent && i < size; i += 64) {
+            size_t count = size - i < 64 ? size - i : 64;
+            for (size_t j = 0; j < count; j++) snprintf(hex + j * 2, 3, "%02x", blob[i + j]);
+            sent = console_data(hex);
+        }
+        sent = sent && console_data("\nOK save export\n");
+        heap_caps_free(blob);
         esp_log_level_set("*", level);
         if (!sent) printf("ERR save export transfer incomplete\n");
         return;
@@ -560,16 +571,19 @@ static void cmd_save_tool(const char *arg)
     if (!strncmp(arg, "restore ", 8)) {
         const char *hex = arg + 8;
         size_t length = strlen(hex);
-        uint8_t blob[sizeof(game_state_t) + 12];
-        if (length % 2 || length < 24 || length > sizeof blob * 2) {
+        if (length % 2 || length < 24 || length > SAVE_MAX_RAW * 2) {
             printf("ERR save restore invalid hex length\n"); return;
         }
+        uint8_t *blob = heap_caps_malloc(length / 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!blob) { printf("ERR save restore PSRAM exhausted\n"); return; }
         for (size_t i = 0; i < length / 2; i++) {
             int hi = hex_digit(hex[i * 2]), lo = hex_digit(hex[i * 2 + 1]);
-            if (hi < 0 || lo < 0) { printf("ERR save restore invalid hex\n"); return; }
+            if (hi < 0 || lo < 0) { heap_caps_free(blob); printf("ERR save restore invalid hex\n"); return; }
             blob[i] = (hi << 4) | lo;
         }
-        if (!save_request_raw(blob, length / 2)) {
+        bool queued = save_request_raw(blob, length / 2);
+        heap_caps_free(blob);
+        if (!queued) {
             printf("ERR save restore validation or queue rejected\n"); return;
         }
         printf("%s save restore; reboot required\n", wait_save() ? "OK" : "ERR");
@@ -777,8 +791,8 @@ static void cmd_treat(const char *arg)
 
 /* "decor" lists the catalogue; "decor place KIND X Y" buys if needed and
  * places; "decor clear" empties the enclosure; "decor block SLOT" flips the
- * blocking flag. Runs on the console task, so the layer refresh is marshalled
- * through GAME_UI_REFRESH rather than calling lv_* here. */
+ * blocking flag. Mutations and renderer updates are copied to the LVGL task;
+ * the console never reallocates records while rendering reads them. */
 static void cmd_decor(const char *arg)
 {
     if (!arg) {
@@ -788,23 +802,19 @@ static void cmd_decor(const char *arg)
                    i, def->name, def->cost, def->unlock_level, def->radius,
                    def->blocking, decor_owned((uint8_t)i));
         }
-        printf("OK decor silk=%lu placed=%d slots=%d\n", (unsigned long)g.silk,
-               decor_placed_count(), DECOR_SLOTS);
+        int count = 0;
+        if (!game_ui_decor_edit(DECOR_EDIT_STATUS, 0, 0, 0, &count)) {
+            printf("ERR decor status request failed\n"); return;
+        }
+        printf("OK decor silk=%lu placed=%d storage=growable\n", (unsigned long)g.silk, count);
         return;
     }
     if (!strncmp(arg, "clear", 5)) {
-        decor_clear();
-        game_save_now();
-        game_ui_call(GAME_UI_REFRESH);
-        printf("OK decor clear placed=%d\n", decor_placed_count());
+        printf("%s decor clear\n", game_ui_decor_edit(DECOR_EDIT_CLEAR, 0, 0, 0, NULL) ? "OK" : "ERR");
         return;
     }
     if (!strncmp(arg, "item ", 5)) {
         int slot = atoi(arg + 5);
-        if (!decor_at(slot)) {
-            printf("ERR decor item %d: empty or out of range\n", slot);
-            return;
-        }
         char name[16];
         snprintf(name, sizeof name, "item %d", slot);
         if (!game_ui_open_menu(name)) {
@@ -820,26 +830,20 @@ static void cmd_decor(const char *arg)
             printf("ERR usage: decor move SLOT X Y\n");
             return;
         }
-        if (!decor_move(slot, (int16_t)x, (int16_t)y)) {
+        if (!game_ui_decor_edit(DECOR_EDIT_MOVE, slot, x, y, NULL)) {
             printf("ERR decor move %d: empty or out of range\n", slot);
             return;
         }
-        game_save_now();
-        game_ui_call(GAME_UI_REFRESH);
-        printf("OK decor move slot=%d at=%d,%d\n", slot, decor_at(slot)->x,
-               decor_at(slot)->y);
+        printf("OK decor move slot=%d\n", slot);
         return;
     }
     if (!strncmp(arg, "block ", 6)) {
         int slot = atoi(arg + 6);
-        if (!decor_toggle_blocking(slot)) {
+        if (!game_ui_decor_edit(DECOR_EDIT_BLOCK, slot, 0, 0, NULL)) {
             printf("ERR decor block %d: empty or out of range\n", slot);
             return;
         }
-        game_save_now();
-        game_ui_call(GAME_UI_REFRESH);
-        printf("OK decor block slot=%d blocking=%u\n", slot,
-               decor_at(slot)->blocking);
+        printf("OK decor block slot=%d\n", slot);
         return;
     }
     if (!strncmp(arg, "place ", 6)) {
@@ -849,30 +853,12 @@ static void cmd_decor(const char *arg)
             printf("ERR usage: decor place KIND X Y\n");
             return;
         }
-        if (!decor_owned((uint8_t)kind)) {
-            /* Test-only: grant the Silk and the level so any kind can be
-             * exercised without grinding to it first. */
-            uint32_t silk = g.silk, level = g.level;
-            g.silk = decor_def((uint8_t)kind)->cost;
-            g.level = decor_def((uint8_t)kind)->unlock_level;
-            bool bought = decor_buy((uint8_t)kind);
-            g.silk = silk;
-            g.level = level;
-            if (!bought) {
-                printf("ERR decor place %d: not owned and not buyable\n", kind);
-                return;
-            }
-        }
-        int slot = decor_place((uint8_t)kind, (int16_t)x, (int16_t)y);
-        if (slot < 0) {
-            printf("ERR decor place %d: no free slot\n", kind);
+        int slot = -1;
+        if (!game_ui_decor_edit(DECOR_EDIT_PLACE, kind, x, y, &slot)) {
+            printf("ERR decor place %d: request failed; see log\n", kind);
             return;
         }
-        game_save_now();
-        game_ui_call(GAME_UI_REFRESH);
-        printf("OK decor place kind=%d slot=%d at=%d,%d blocking=%u\n", kind,
-               slot, decor_at(slot)->x, decor_at(slot)->y,
-               decor_at(slot)->blocking);
+        printf("OK decor place kind=%d slot=%d\n", kind, slot);
         return;
     }
     printf("ERR usage: decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]\n");
@@ -935,7 +921,8 @@ static void cmd_state(int state)
 /* Set a need directly, so a UI state can be reached without waiting. */
 static void cmd_set(const char *field, int value)
 {
-    if ((!strcmp(field, "auto_feed") || !strcmp(field, "auto_hunt")) &&
+    if ((!strcmp(field, "auto_feed") || !strcmp(field, "auto_hunt") ||
+         !strcmp(field, "music_enabled") || !strcmp(field, "muted")) &&
         (value < 0 || value > 1)) {
         printf("ERR automation checkboxes require 0 or 1\n");
         return;
@@ -953,8 +940,10 @@ static void cmd_set(const char *field, int value)
     else if (!strcmp(field, "auto_feed")) action = GAME_UI_SET_AUTO_FEED;
     else if (!strcmp(field, "auto_hunt")) action = GAME_UI_SET_AUTO_HUNT;
     else if (!strcmp(field, "volume"))  action = GAME_UI_SET_VOLUME;
+    else if (!strcmp(field, "music_enabled")) action = GAME_UI_SET_MUSIC;
+    else if (!strcmp(field, "muted")) action = GAME_UI_SET_MUTED;
     else {
-        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt volume)\n",
+        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt volume music_enabled muted)\n",
                field);
         return;
     }
@@ -1179,7 +1168,8 @@ static void console_task(void *arg)
 {
     (void)arg;
 
-    char line[LINE_MAX_LEN];
+    char *line = heap_caps_malloc(LINE_MAX_LEN, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!line) { ESP_LOGE(TAG, "console line PSRAM exhausted"); vTaskDelete(NULL); return; }
     int  len = 0;
     bool overflow = false;
 
@@ -1218,7 +1208,7 @@ static void console_task(void *arg)
             } else if (len > 0) {
                 line[len] = '\0';
                 run_line(line);
-                memset(line, 0, sizeof line);
+                memset(line, 0, LINE_MAX_LEN);
                 len = 0;
             }
             continue;

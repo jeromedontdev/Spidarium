@@ -7297,3 +7297,77 @@ SD media or external RTC backup-battery retention.
   248-byte current payload**. Live HTML, device CSS, engine, UI, audio, decoder
   and unchanged spider renderer match source bytes exactly. All **32 living
   prey PNGs** match the redesigned source files over HTTPS.
+
+## Round 73 - expanded habitat, contextual controls and ambient music
+
+### Decisions made
+
+- Add exactly three treats, eighteen decor styles and eight backgrounds,
+  retaining all old IDs and approved artwork. Totals: six treats, thirty-four
+  decor kinds, twenty-four backgrounds and 201 PNGs. The 39 spider exports and
+  both spider renderers are unchanged.
+- Replace unrelated clipboard reuse with dedicated root/settings symbols and
+  actual species/treat/background thumbnails. Volume, Sound and Background
+  Music have distinct icons. Sound is one reversible master checkbox, not
+  separate On/Off rows; the independent music preference survives master mute.
+- Remove redundant movement lists. Hold the actual decor/gift for its actions.
+  Double tap toggles an enclosure-only dim overlay below HUD/menus; deferred
+  single petting prevents double taps from also rewarding a pet.
+- Preserve the twelve inline records strictly as a legacy ABI prefix, not a
+  placement cap. Extra records and reusable renderer pointer pools grow in
+  PSRAM on explicit placement/restore, never per frame. Runtime indices are
+  integers, including contextual menus beyond slot 255.
+- Save v10 has a 260-byte fixed payload and six-byte counted extra records,
+  45 actual compiled schema fields and complete NVS/raw/SD/browser coverage.
+  Copied variable-length queue payloads are freed on completion/rejection.
+  Console mutations are marshalled to LVGL; workers never reallocate active
+  decor. The 20 KB NVS/protocol payload bound is explicit resource capacity,
+  not an arbitrary twelve-item gameplay limit. All failures are reported.
+- Decode opaque background sources as RGB565 rather than RGB565A8. All 24 now
+  occupy 2,764,800 bytes, the same source-art budget as the previous 16 scenes.
+- Replace automatic noise with an original 32-second D-Bm-G-A ambient score,
+  gentle crossfades and sparse bells. Native 50 ms chunks reuse the existing
+  12,800-byte PSRAM PCM buffer and yield with a 20 ms fade to effects, master
+  mute, music toggle, radio and sleep. Music continues through menus.
+  Petting is a quiet consonant bell/purr; manual air/leaves remain diagnostics.
+
+### Exact verification evidence
+
+- Wrapper build/full flash exit 0; zero main-source warnings.
+- Browser **138/138**, art **15/15**, packaging **11/11**. All **201 packed QOI**
+  entries match decoded PNG pixels. Deterministic generation and unchanged
+  approved spider bytes verified.
+- COM7 full suite **48 passed / 0 failed**. Native pointer:
+  **hold=1 decor_move=1 gift_move=1 lights=1**; uitest also reports **sound=1**.
+  Browser actual Sound checkbox toggles false/true with exactly one master row,
+  no old On/Off buttons, and the music preference retained. Regression tests
+  enforce unique root/species/treat/Sound-page icons.
+- Hardware variable-save test exercises runtime growth past slot 255, slot
+  271 context/move/block, extended ownership kinds 32/33, background 23,
+  music/lights, invalid fields, exact committed restore and reboot. The final
+  flashed binary retains **273 placements across reboot**; updated console help,
+  **uitest sound=1**, **largest=63488**, **console_free=5744** and another clean
+  40-second soak pass. Original
+  user snapshots are restored after mutating verification. Console stack free
+  remains above 5 KB.
+- Actual native music switch/mute/resume and complete pet codec writes pass.
+  Music: **512000 samples**, hash **6a09516a**, peak **3419**, max step **695**,
+  RMS **706**. Pet: **2560 samples**, hash **3e6c27c9**, peak **1804**,
+  endpoints **0/0**. Foreground/radio interruption measured **0.063/0.094 s**.
+- Internal/DMA largest **63,488 >= 51,200**. **render500 largest_drift=0**;
+  **scanloop5 ok=5 failed=0 largest_drift=0**. Forty-second soak:
+  **VERDICT: PASS**, **0 faults/errors**.
+- Real five-second committed RTC sleep: **commit_log=1 disconnected=1
+  wake_cause=4**; saved habitat retained with music enabled before sleeping.
+- Release bundle: five hash-verified images, no NVS image; **1,816,776 bytes**,
+  SHA-256 **9b87d115ab943ddbf98c6fdd4ff05c1c66e344ec93e0f35efc4202a01aaa4f9a**.
+  Production website build includes all 201 PNGs and the v10 schema. Actual
+  browser clicks confirm one Sound checkbox, false/true toggle, retained music
+  and three distinct volume/speaker/music-note thumbnails.
+
+### Honest boundaries
+
+No subjective speaker/touchscreen approval, battery current/runtime,
+physical-button wake, SD media, authorized association/NTP, hosted HTTPS OTA
+installation or RTC backup-battery retention is claimed. Waveform/playback
+evidence proves delivery and continuity, not that the player likes the sound.

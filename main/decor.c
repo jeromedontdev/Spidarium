@@ -9,7 +9,9 @@
 #include "decor.h"
 
 #include "game.h"
+#include "save.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include <math.h>
 #include <string.h>
 
@@ -34,6 +36,24 @@ static const decor_def_t k_decor_kinds[DECOR_COUNT] = {
     { "Leaf Pile",    "spider walks over it",   16,  1, 13, 0, "decor_leaf_pile" },
     { "Twig",         "spider walks over it",   12,  1, 12, 0, "decor_twig" },
     { "Bone",         "spider walks around it", 58,  8, 13, 1, "decor_bone" },
+    { "Fern Planter", "spider walks around it", 48,  6, 14, 1, "decor_fern_pot" },
+    { "Acorn Hide",   "spider shelters inside",72, 10, 15, 1, "decor_acorn_hide" },
+    { "Driftwood Arch","spider walks around it",82, 12, 18, 1, "decor_driftwood_arch" },
+    { "Web Hammock",  "spider walks over it",   64,  8, 15, 0, "decor_web_hammock" },
+    { "Dew Pool",     "spider walks over it",   54,  7, 14, 0, "decor_dew_pool" },
+    { "Mushroom Pair","spider walks over it",   62,  8, 13, 0, "decor_mushroom_pair" },
+    { "Flower Planter","spider walks around it",68,  9, 15, 1, "decor_flower_planter" },
+    { "Crystal Cluster","spider walks around it",98, 14, 15, 1, "decor_crystal_cluster" },
+    { "Shell Cove",   "spider shelters inside",74, 11, 16, 1, "decor_shell_cove" },
+    { "Twig Ladder",  "spider walks over it",   46,  6, 13, 0, "decor_twig_ladder" },
+    { "Mossy Stone",  "spider walks over it",   42,  5, 13, 0, "decor_moss_stone" },
+    { "Seed Pod",     "spider walks over it",   38,  4, 10, 0, "decor_seed_pod" },
+    { "Silk Tent",    "spider shelters inside",112, 16, 19, 1, "decor_silk_tent" },
+    { "Leaf Umbrella","spider walks around it", 88, 13, 15, 1, "decor_leaf_umbrella" },
+    { "Bone Arch",    "spider walks around it", 96, 15, 16, 1, "decor_bone_arch" },
+    { "Fossil",       "spider walks over it",   58,  8, 12, 0, "decor_fossil" },
+    { "Lantern Cap",  "spider walks over it",   92, 14, 13, 0, "decor_lantern_cap" },
+    { "Stone Bridge", "spider walks around it",120, 18, 20, 1, "decor_stone_bridge" },
 };
 
 const decor_def_t *decor_def(uint8_t kind)
@@ -49,7 +69,9 @@ bool decor_unlocked(uint8_t kind)
 
 bool decor_owned(uint8_t kind)
 {
-    return kind < DECOR_COUNT && (g.decor_owned & (1u << kind)) != 0;
+    if (kind >= DECOR_COUNT) return false;
+    if (kind < 32) return (g.decor_owned & (1u << kind)) != 0;
+    return (g.decor_owned_extra & (1u << (kind - 32))) != 0;
 }
 
 bool decor_can_buy(uint8_t kind)
@@ -78,24 +100,50 @@ bool decor_buy(uint8_t kind)
         return false;
     }
     g.silk -= def->cost;
-    g.decor_owned |= 1u << kind;
+    if (kind < 32) g.decor_owned |= 1u << kind;
+    else g.decor_owned_extra |= 1u << (kind - 32);
     ESP_LOGI(TAG, "bought %s for %u Silk (%lu left)", def->name, def->cost,
              (unsigned long)g.silk);
     return true;
 }
 
+static decor_item_t *s_extra;
+
+int decor_slot_count(void) { return DECOR_SLOTS + (int)g.decor_extra_count; }
+const decor_item_t *decor_extra_data(void) { return s_extra; }
+
+decor_item_t *decor_detach_extra(void)
+{
+    decor_item_t *saved = s_extra;
+    s_extra = NULL;
+    g.decor_extra_count = 0;
+    return saved;
+}
+
+void decor_restore_extra(decor_item_t *items)
+{
+    heap_caps_free(s_extra);
+    s_extra = items;
+}
+
+static decor_item_t *slot_at(int slot)
+{
+    if (slot < 0 || slot >= decor_slot_count()) return NULL;
+    return slot < DECOR_SLOTS ? &g.decor[slot] : &s_extra[slot - DECOR_SLOTS];
+}
+
 int decor_placed_count(void)
 {
     int count = 0;
-    for (int i = 0; i < DECOR_SLOTS; i++)
-        if (g.decor[i].kind != 0xFF) count++;
+    for (int i = 0; i < decor_slot_count(); i++)
+        if (slot_at(i)->kind != 0xFF) count++;
     return count;
 }
 
 const decor_item_t *decor_at(int slot)
 {
-    if (slot < 0 || slot >= DECOR_SLOTS) return NULL;
-    return g.decor[slot].kind == 0xFF ? NULL : &g.decor[slot];
+    const decor_item_t *item = slot_at(slot);
+    return item && item->kind != 0xFF ? item : NULL;
 }
 
 /* Keep a placed item fully inside the playfield. */
@@ -123,65 +171,69 @@ int decor_place(uint8_t kind, int16_t x, int16_t y)
         return -1;
     }
     int slot = -1;
-    for (int i = 0; i < DECOR_SLOTS; i++)
-        if (g.decor[i].kind == 0xFF) { slot = i; break; }
+    for (int i = 0; i < decor_slot_count(); i++)
+        if (slot_at(i)->kind == 0xFF) { slot = i; break; }
     if (slot < 0) {
-        ESP_LOGW(TAG, "place rejected: all %d slots full", DECOR_SLOTS);
-        return -1;
+        size_t count = g.decor_extra_count + 1u;
+        if (count > (SAVE_MAX_PAYLOAD - sizeof g) / sizeof *s_extra) {
+            ESP_LOGE(TAG, "place rejected: NVS storage capacity exhausted");
+            return -1;
+        }
+        decor_item_t *grown = heap_caps_realloc(s_extra, count * sizeof *grown,
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!grown) { ESP_LOGE(TAG, "place rejected: PSRAM exhausted"); return -1; }
+        s_extra = grown;
+        slot = decor_slot_count();
+        g.decor_extra_count = count;
     }
     clamp_to_playfield(&x, &y, def->radius);
-    g.decor[slot].kind = kind;
-    g.decor[slot].blocking = def->blocking;
-    g.decor[slot].x = x;
-    g.decor[slot].y = y;
+    *slot_at(slot) = (decor_item_t){kind, def->blocking, x, y};
     ESP_LOGI(TAG, "placed %s at (%d,%d) slot %d blocking=%u", def->name, x, y,
-             slot, g.decor[slot].blocking);
+             slot, slot_at(slot)->blocking);
     return slot;
 }
 
 bool decor_move(int slot, int16_t x, int16_t y)
 {
-    if (slot < 0 || slot >= DECOR_SLOTS) return false;
-    if (g.decor[slot].kind == 0xFF) return false;
-    const decor_def_t *def = decor_def(g.decor[slot].kind);
+    decor_item_t *item = slot_at(slot);
+    if (!item || item->kind == 0xFF) return false;
+    const decor_def_t *def = decor_def(item->kind);
     if (!def) return false;
     clamp_to_playfield(&x, &y, def->radius);
-    g.decor[slot].x = x;
-    g.decor[slot].y = y;
+    item->x = x;
+    item->y = y;
     ESP_LOGI(TAG, "moved slot %d to (%d,%d)", slot, x, y);
     return true;
 }
 
 bool decor_remove(int slot)
 {
-    if (slot < 0 || slot >= DECOR_SLOTS) return false;
-    if (g.decor[slot].kind == 0xFF) return false;
+    decor_item_t *item = slot_at(slot);
+    if (!item || item->kind == 0xFF) return false;
     ESP_LOGI(TAG, "removed slot %d", slot);
-    g.decor[slot].kind = 0xFF;
-    g.decor[slot].blocking = 0;
-    g.decor[slot].x = 0;
-    g.decor[slot].y = 0;
+    *item = (decor_item_t){.kind = 0xFF};
     return true;
 }
 
 bool decor_toggle_blocking(int slot)
 {
-    if (slot < 0 || slot >= DECOR_SLOTS) return false;
-    if (g.decor[slot].kind == 0xFF) return false;
-    g.decor[slot].blocking = g.decor[slot].blocking ? 0 : 1;
-    ESP_LOGI(TAG, "slot %d blocking=%u", slot, g.decor[slot].blocking);
+    decor_item_t *item = slot_at(slot);
+    if (!item || item->kind == 0xFF) return false;
+    item->blocking = !item->blocking;
+    ESP_LOGI(TAG, "slot %d blocking=%u", slot, item->blocking);
     return true;
 }
 
 int decor_hit_test(int16_t x, int16_t y)
 {
     /* Later slots are drawn on top, so search backwards to pick the visible one. */
-    for (int i = DECOR_SLOTS - 1; i >= 0; i--) {
-        if (g.decor[i].kind == 0xFF) continue;
-        const decor_def_t *def = decor_def(g.decor[i].kind);
+    for (int i = decor_slot_count() - 1; i >= 0; i--) {
+        const decor_item_t *item = decor_at(i);
+        if (!item) continue;
+        const decor_def_t *def = decor_def(item->kind);
         if (!def) continue;
-        float dx = (float)(x - g.decor[i].x);
-        float dy = (float)(y - g.decor[i].y);
+        float dx = (float)(x - item->x);
+        float dy = (float)(y - item->y);
         float hit = def->radius < 28 ? 28 : def->radius;
         if (dx * dx + dy * dy <= hit * hit) return i;
     }
@@ -190,12 +242,13 @@ int decor_hit_test(int16_t x, int16_t y)
 
 bool decor_blocks_point(int16_t x, int16_t y)
 {
-    for (int i = 0; i < DECOR_SLOTS; i++) {
-        if (g.decor[i].kind == 0xFF || !g.decor[i].blocking) continue;
-        const decor_def_t *def = decor_def(g.decor[i].kind);
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || !item->blocking) continue;
+        const decor_def_t *def = decor_def(item->kind);
         if (!def) continue;
-        float dx = (float)(x - g.decor[i].x);
-        float dy = (float)(y - g.decor[i].y);
+        float dx = (float)(x - item->x);
+        float dy = (float)(y - item->y);
         if (dx * dx + dy * dy <= (float)def->radius * def->radius) return true;
     }
     return false;
@@ -206,16 +259,17 @@ bool decor_nearest_blocking(int16_t x, int16_t y, float max_distance,
 {
     float best = max_distance * max_distance;
     int found = -1;
-    for (int i = 0; i < DECOR_SLOTS; i++) {
-        if (g.decor[i].kind == 0xFF || !g.decor[i].blocking) continue;
-        float dx = (float)(g.decor[i].x - x);
-        float dy = (float)(g.decor[i].y - y);
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || !item->blocking) continue;
+        float dx = (float)(item->x - x);
+        float dy = (float)(item->y - y);
         float d2 = dx * dx + dy * dy;
         if (d2 < best) { best = d2; found = i; }
     }
     if (found < 0) return false;
-    if (out_x) *out_x = g.decor[found].x;
-    if (out_y) *out_y = g.decor[found].y;
+    if (out_x) *out_x = decor_at(found)->x;
+    if (out_y) *out_y = decor_at(found)->y;
     if (out_distance) *out_distance = sqrtf(best);
     return true;
 }
@@ -234,17 +288,24 @@ void decor_clear_slots(decor_item_t *slots, int count)
 void decor_clear(void)
 {
     decor_clear_slots(g.decor, DECOR_SLOTS);
+    heap_caps_free(s_extra);
+    s_extra = NULL;
+    g.decor_extra_count = 0;
 }
 
 bool decor_test(void)
 {
+    uint32_t extra_count = g.decor_extra_count;
+    decor_item_t *extra = decor_detach_extra();
     uint32_t silk = g.silk, owned = g.decor_owned, level = g.level;
+    uint32_t owned_extra = g.decor_owned_extra;
     decor_item_t saved[DECOR_SLOTS];
     memcpy(saved, g.decor, sizeof saved);
     bool ok = true;
 
     decor_clear();
     g.decor_owned = 0;
+    g.decor_owned_extra = 0;
     g.level = 1;
     g.silk = 0;
 
@@ -319,6 +380,9 @@ bool decor_test(void)
     ok = ok && decor_at(slot)->y >= g_play.top;
 
     g.silk = silk; g.decor_owned = owned; g.level = level;
+    g.decor_owned_extra = owned_extra; g.level = level;
     memcpy(g.decor, saved, sizeof saved);
+    decor_restore_extra(extra);
+    g.decor_extra_count = extra_count;
     return ok;
 }

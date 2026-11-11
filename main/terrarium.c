@@ -17,10 +17,9 @@ static lv_obj_t *s_background, *s_decor_layer, *s_gift_layer, *s_poop_layer,
                 *s_preview_ring;
 static uint16_t *s_pixels;
 static uint8_t *s_gift_pixels;
-/* One image object per decor slot, created once at init and only re-sourced,
- * moved or hidden afterwards. Creating canvases per placement would allocate
- * on the LVGL task, which the project forbids. */
-static lv_obj_t *s_decor_obj[DECOR_SLOTS];
+/* Grow only on explicit placement/restore; rendering reuses the high-water pool. */
+static lv_obj_t **s_decor_obj;
+static int s_decor_capacity;
 static uint32_t s_poop_at[MAX_POOP];
 /* Dirt points each dropping is worth, so Clean can pay for the mess it actually
  * removed instead of for the tap. */
@@ -29,9 +28,9 @@ static uint8_t s_poop_dirt[MAX_POOP];
 static const lv_image_dsc_t *background_asset(int scene)
 {
     const lv_image_dsc_t *image = assets_image(sprite_background_index(scene));
-    if (!image || image->header.cf != LV_COLOR_FORMAT_RGB565A8 ||
+    if (!image || image->header.cf != LV_COLOR_FORMAT_RGB565 ||
         image->header.w != 240 || image->header.h != 240 ||
-        image->data_size != 240 * 240 * 3) {
+        image->data_size != 240 * 240 * 2) {
         ESP_LOGE("spidarium.tank", "background %d missing or incompatible", scene);
         return NULL;
     }
@@ -61,8 +60,6 @@ bool terrarium_test(void)
         uint32_t hash = 2166136261u;
         for (int i = 0; i < 240 * 240 * 2; i++)
             hash = (hash ^ image->data[i]) * 16777619u;
-        for (int i = 240 * 240 * 2; i < 240 * 240 * 3; i++)
-            ok = ok && image->data[i] == 255;
         hashes[scene] = hash;
         for (int i = 0; i < scene; i++) ok = ok && hashes[i] != hash;
     }
@@ -93,7 +90,7 @@ bool terrarium_test(void)
      * every empty slot must be hidden. lv_obj_get_x() reads the cached coords,
      * which are only refreshed by a layout pass, so force one first. */
     lv_obj_update_layout(s_decor_layer);
-    for (int i = 0; i < DECOR_SLOTS; i++) {
+    for (int i = 0; i < s_decor_capacity; i++) {
         const decor_item_t *item = decor_at(i);
         lv_obj_t *obj = s_decor_obj[i];
         if (!obj) { ok = false; continue; }
@@ -174,7 +171,20 @@ void terrarium_refresh_gift(void)
 void terrarium_refresh_decor(void)
 {
     if (!s_decor_layer) return;
-    for (int i = 0; i < DECOR_SLOTS; i++) {
+    int count = decor_slot_count();
+    if (count > s_decor_capacity) {
+        lv_obj_t **grown = heap_caps_realloc(s_decor_obj, count * sizeof *grown,
+                                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!grown) { ESP_LOGE("spidarium.tank", "decor renderer: PSRAM exhausted"); return; }
+        s_decor_obj = grown;
+        while (s_decor_capacity < count) {
+            lv_obj_t *obj = lv_image_create(s_decor_layer);
+            lv_obj_set_clickable(obj, false);
+            lv_obj_set_scrollable(obj, false);
+            s_decor_obj[s_decor_capacity++] = obj;
+        }
+    }
+    for (int i = 0; i < s_decor_capacity; i++) {
         const decor_item_t *item = decor_at(i);
         lv_obj_t *obj = s_decor_obj[i];
         if (!obj) continue;
@@ -331,12 +341,7 @@ void terrarium_init(lv_obj_t *parent)
     /* Decor is part of the floor, so its layer is created before the gift and
      * the droppings and therefore draws beneath them. */
     s_decor_layer = layer(parent);
-    for (int i = 0; i < DECOR_SLOTS; i++) {
-        s_decor_obj[i] = lv_image_create(s_decor_layer);
-        lv_obj_set_clickable(s_decor_obj[i], false);
-        lv_obj_set_scrollable(s_decor_obj[i], false);
-        lv_obj_set_hidden(s_decor_obj[i], true);
-    }
+    terrarium_refresh_decor();
     s_gift_layer = layer(parent);
     s_gift_pixels = heap_caps_malloc(64 * 64 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     ESP_ERROR_CHECK(s_gift_pixels ? ESP_OK : ESP_ERR_NO_MEM);

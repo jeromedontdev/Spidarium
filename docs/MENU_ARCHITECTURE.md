@@ -9,14 +9,11 @@ menu-stack/slider architecture; use the implemented API.
 ```
 Menu
   Daily                  check-in and the rotating task
-  Treats                 consumables bought with Silk
-  Backgrounds            sixteen ground textures, buy once with Silk
+  Treats                 six consumables bought with Silk
+  Backgrounds            twenty-four ground textures, buy once with Silk
   Achievements           read-only, paged
   Prey species           read-only unlock list
-  Decor                  sixteen kinds; buy, then tap the tank to place
-    Placed Items         tap a row to flip blocking / walk-over
-  Arrange Decor          placed items: move, blocking / walk-over, put away
-  Placed Gift            move for free / put away without losing ownership
+  Decor                  thirty-four kinds; buy, then tap the tank to place
   Settings
     WiFi
       Scan networks      explicit on-demand action
@@ -29,7 +26,7 @@ Menu
     About                firmware and hardware information
     Battery              status, profiles, timeout, RTC sleep delay/wake
     Display              brightness slider, screen rotation
-    Sound                volume slider, sound on/off
+    Sound                volume, single Sound checkbox, independent music switch
     Auto Feed            one switch: wild prey and unattended hunting together
     Save Screenshot      playfield PNG to SD
     Wipe Spider          red text; confirmation before reset; always last
@@ -43,6 +40,14 @@ Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Back from sav
 returns to WiFi. Other submenus return to the root; root Back closes.
 Only the explicit Back control navigates back. Blank panel/backdrop taps are
 absorbed without navigating; disabled cards do not dismiss the menu.
+
+Hold the actual decor/gift in the enclosure to move or put it away. Decor also
+offers blocking/walk-over in that contextual menu; neither movement action has
+a redundant root/shop entry. Placement storage grows beyond the twelve legacy
+save slots, subject to available PSRAM and NVS storage, not a twelve-item cap.
+Double tap the enclosure to toggle its dim lighting. The overlay stays below
+HUD/menus and does not change screen brightness or power timeouts. Single-tap
+petting waits 450 ms so a double tap cannot also pet the spider.
 
 ## Rows and lifetimes
 

@@ -33,7 +33,7 @@ static uint32_t read_be32(const uint8_t *p)
 
 static bool decode_qoi_rgb565a8(const uint8_t *qoi, size_t qoi_size,
                                 uint32_t width, uint32_t height,
-                                uint8_t *pixels_out)
+                                uint8_t *pixels_out, bool opaque)
 {
     if (!qoi || !pixels_out || qoi_size < 22 ||
         memcmp(qoi, "qoif", 4) != 0 ||
@@ -114,7 +114,8 @@ static bool decode_qoi_rgb565a8(const uint8_t *qoi, size_t qoi_size,
                                     ((uint16_t)b >> 3));
         rgb[0] = (uint8_t)color;
         rgb[1] = (uint8_t)(color >> 8);
-        pixels_out[pixel_count * 2 + px] = a;
+        if (opaque && a != 255) return false;
+        if (!opaque) pixels_out[pixel_count * 2 + px] = a;
 
         uint8_t hash = (uint8_t)((r * 3u + g * 5u + b * 7u + a * 11u) & 0x3f);
         index[hash][0] = r;
@@ -158,7 +159,8 @@ static bool decode_assets_to_psram(void)
             return false;
         }
 
-        size_t decoded_size = pixel_count * 3;
+        bool opaque = width == 240 && height == 240;
+        size_t decoded_size = pixel_count * (opaque ? 2 : 3);
         uint8_t *decoded = heap_caps_malloc(decoded_size,
                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!decoded) {
@@ -168,7 +170,7 @@ static bool decode_assets_to_psram(void)
             return false;
         }
         if (!decode_qoi_rgb565a8(qoi, (size_t)qoi_size, (uint32_t)width,
-                                 (uint32_t)height, decoded)) {
+                                 (uint32_t)height, decoded, opaque)) {
             ESP_LOGE(TAG, "QOI decode failed for asset %d (%s)",
                      i, mmap_assets_get_name(s_assets, i));
             heap_caps_free(decoded);
@@ -179,7 +181,7 @@ static bool decode_assets_to_psram(void)
         lv_image_dsc_t *d = &s_dsc[i];
         memset(d, 0, sizeof *d);
         d->header.magic = LV_IMAGE_HEADER_MAGIC;
-        d->header.cf = LV_COLOR_FORMAT_RGB565A8;
+        d->header.cf = opaque ? LV_COLOR_FORMAT_RGB565 : LV_COLOR_FORMAT_RGB565A8;
         d->header.w = (uint32_t)width;
         d->header.h = (uint32_t)height;
         d->data = decoded;

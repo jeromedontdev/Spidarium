@@ -98,6 +98,12 @@ def validate_save_schema(root: Path) -> Path:
                      for field in fields), default=1)
     if not ends or (max(ends) + alignment - 1) // alignment * alignment != sizes[1]:
         raise ValueError("Save schema does not describe the complete current payload")
+    if schema["version"] >= 10:
+        expected_tail = {"offset": 260, "stride": 6, "countField": "decor_extra_count"}
+        if (schema.get("decorTail") != expected_tail or schema.get("maxPayload") != 20480 or
+                not any(field["name"] == "decor_extra_count" and field["offset"] == 256 and
+                        field["type"] == "u32" for field in fields)):
+            raise ValueError("Save schema does not describe variable decoration records")
     return schema_path
 
 

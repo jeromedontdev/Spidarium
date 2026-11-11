@@ -360,15 +360,17 @@ backup filename. Never format or erase the card as a workaround.
 
 Queue one synthesized effect, obeying mute. IDs 0..6 are gameplay effects
 (pounce is now a soft noise whoosh, not a rising laser tone); 7 is eight seconds
-of air, 8 a quiet 160 ms pet chirp, 9 ten seconds of leaves. IDs are unchanged.
+of air, 8 a soft consonant bell/purr, 9 ten seconds of leaves. IDs are unchanged.
 Muted output explicitly says `OK sound muted`; unavailable/full queues return
 `ERR`. Queue acceptance is not playback completion: the worker logs written
 foreground sample counts and `ambience ... complete/interrupted/codec error`
 with actual written/total samples.
 
-Automatic ambience is disabled in v1.1.18 after listening feedback. Manual
-air/leaves remain diagnostic effects, not automatically scheduled habitat
-sound. The existing worker streams manual textures in 100 ms chunks with slow
+The v1.1.18 automatic-noise policy is superseded by original slow ambient
+music, default on and independently switchable in Sound. Master mute, zero
+volume and radio/sleep drains silence it. Manual air/leaves remain diagnostics,
+not the background score. The worker streams through its existing PSRAM buffer
+and yields promptly to foreground effects. Manual textures use slow
 attack/release envelopes, fading over 20 ms for foreground sound, mute or
 radio work. Long ambience must not block the radio's three-second drain.
 
@@ -478,16 +480,18 @@ without the default suite's care/save/spawn/state changes. The default full
 suite deliberately modifies and saves the pet; do not use it casually on a
 user's existing pet.
 
-### `background [0-15]`
+### `background [0-23]`
 
 Without an argument, reports the active habitat. With an ID, uses the same
 purchase/selection path as Menu > Backgrounds and waits off-LVGL for saving.
 IDs: 0 cork, 1 moss, 2 leaf litter, 3 sand, 4 fern, 5 orchid, 6 woodland, 7 minimal.
 8 mushroom, 9 gothic, 10 seashell, 11 succulent, 12 willow, 13 desert,
-14 crystal, 15 cemetery. Prices in ID order are
-0, 12, 12, 16, 20, 24, 28, 16, 32, 40, 28, 24, 32, 36, 48, 48 Silk.
+14 crystal, 15 cemetery, 16 house, 17 dark cave, 18 night, 19 autumn, 20 snow,
+21 pond, 22 ruins, 23 marsh. Prices in ID order are
+0, 12, 12, 16, 20, 24, 28, 16, 32, 40, 28, 24, 32, 36, 48, 48,
+52, 60, 60, 54, 58, 64, 72, 68 Silk.
 All are available from level 1; owned selections are free. Failed purchases
-do not change the active theme or ownership. Save v9 includes ownership and
+do not change the active theme or ownership. Save v10 includes ownership and
 selection in pet backups. Older saves inherit their equipped old separate NVS
 preference and cork free once, not the whole catalogue.
 
@@ -650,9 +654,9 @@ small day number therefore cannot be written to it.
 
 `reset` clears the claim and the streak so the next `claim` pays again.
 
-### `treat [0..2]`
+### `treat [0..5]`
 
-Lists or buys a treat. With no argument it lists all three with their costs and
+Lists or buys a treat. With no argument it lists all six with their costs and
 the current Silk balance:
 
 ```
@@ -660,11 +664,17 @@ the current Silk balance:
 TREAT 0 name="Juicy Fly" cost=6
 TREAT 1 name="Silk Ribbon" cost=8
 TREAT 2 name="Warm Pebble" cost=10
+TREAT 3 name="Honey Moth" cost=14
+TREAT 4 name="Dew Drop" cost=12
+TREAT 5 name="Cozy Nest" cost=18
 OK treat silk=64
 ```
 
 Buying deducts Silk and applies the boost. A purchase the player cannot afford
 is refused and logged, leaving the balance untouched:
+
+Honey Moth adds 30 food/12 mood, Dew Drop 25 hygiene/12 energy, and Cozy Nest
+28 energy/20 mood, each capped at 100.
 
 ```
 >>> treat 0
@@ -862,15 +872,18 @@ using Web Serial. Browser credentials go only to the selected USB device.
 
 The schema is generated from compiled `offsetof(game_state_t, ...)` values,
 not guessed browser offsets. It includes the header magic/version, 12-byte
-header size, legacy 120/current 248-byte payload sizes and 41 named fields with
+header size, legacy 120/current 260-byte fixed payload sizes and 45 named fields with
 little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
 Export snapshots on LVGL, waits for the existing internal-stack persistence
-worker on the console task, then reads the raw NVS blob. A new v9 backup is
-260 bytes; older supported v2-v8 payloads remain readable. It contains no
+worker on the console task, then reads the raw NVS blob. A new v10 backup is
+272 bytes plus six bytes per extra decor slot; supported v2-v9 payloads remain
+readable. `decorTail` identifies offset 260, stride 6 and the count field;
+`maxPayload` is the 20 KB NVS/protocol storage bound. It contains no
 network credentials. Background ownership/selection and power preferences are
-now included; saved WiFi credentials remain separate NVS keys.
+included, along with extended decor ownership, music and enclosure lighting;
+saved WiFi credentials remain separate NVS keys.
 Use `save stored` to compare committed bytes without normal live needs/mood/
 clock advancement producing a new snapshot.
 
@@ -882,8 +895,12 @@ A failed restore clears the pending guard. Export while pending reads the
 restored bytes directly instead of saving the old live state. Nothing resets
 or erases WiFi. Back up first: a valid restore deliberately replaces the pet.
 
-The single USB-JTAG driver's RX buffer is 1,024 bytes and line buffer 640,
-holding the complete 534-byte v9 restore line. No second driver is installed.
+The single USB-JTAG driver's RX buffer is 1,024 bytes. The command line is now
+PSRAM heap-backed and sized for the complete maximum raw restore. Long commands
+must be paced in 128-byte chunks, 20 ms apart, with the newline sent last.
+The browser and hardware contract script implement this pacing. Exports stream
+bounded hex chunks; browser framing accepts the full variable-length save.
+No second driver is installed.
 Console stack is 8KB in
 PSRAM; `mem` reports `STACK console_free=N` (minimum-ever free bytes). Real
 valid/invalid restore tests check at least 2KB headroom and byte-exact

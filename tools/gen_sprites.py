@@ -63,6 +63,9 @@ PREY_ANIMS = [("walk", 2), ("flee", 2), ("dead", 1)]
 UI_ICONS = [
     "feed", "clean", "play", "sleep", "decor", "status", "back",
     "hunger", "mood", "energy", "hygiene", "xp", "lock",
+    "daily", "treats", "backgrounds", "achievements", "prey", "settings",
+    "wifi", "sd", "about", "battery", "display", "sound", "auto_feed",
+    "screenshot", "reset", "volume", "music",
 ]
 
 ACHIEVEMENT_NAMES = [
@@ -92,11 +95,16 @@ DECOR_ITEM_NAMES = [
     "rock_small", "rock_large", "pebbles", "log", "bark", "fern", "moss_clump",
     "succulent", "flower_white", "flower_pink", "mushroom", "shell", "crystal",
     "leaf_pile", "twig", "bone",
+    "fern_pot", "acorn_hide", "driftwood_arch", "web_hammock", "dew_pool",
+    "mushroom_pair", "flower_planter", "crystal_cluster", "shell_cove",
+    "twig_ladder", "moss_stone", "seed_pod", "silk_tent", "leaf_umbrella",
+    "bone_arch", "fossil", "lantern_cap", "stone_bridge",
 ]
 BACKGROUND_NAMES = [
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
     "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
     "cemetery",
+    "house", "dark_cave", "night", "autumn", "snow", "pond", "ruins", "marsh",
 ]
 
 GIFT_COLORS = {
@@ -709,6 +717,12 @@ def draw_icon(name):
         "back": 0xDDE8E1, "hunger": 0xF5B342, "mood": 0x58D68D,
         "energy": 0x7C9CFF, "hygiene": 0x4FD1C5, "xp": 0xF5B342,
         "lock": 0x8B93A7,
+        "daily": 0xE9A44F, "treats": 0xE781A5, "backgrounds": 0x72C58B,
+        "achievements": 0xD8AE43, "prey": 0xC59558, "settings": 0xA8C6C7,
+        "wifi": 0x68C8C0, "sd": 0x7C9CFF, "about": 0xA7D8E0,
+        "battery": 0x72C58B, "display": 0x91A7E8, "sound": 0xC6B9DE,
+        "auto_feed": 0xE9A44F, "screenshot": 0x68C8C0, "reset": 0xD5634D,
+        "volume": 0x68C8C0, "music": 0xC6B9DE,
     }[name])
     shade = tuple(max(0, v - 48) for v in accent[:3]) + (255,)
     if name == "feed":
@@ -777,7 +791,137 @@ def draw_icon(name):
         d.line([(12, 20), (16, 19)], fill=shade)
     elif name == "xp":
         _pixel_star(d, accent)
-    else:
+    elif name == "daily":
+        d.rectangle((4, 5, 20, 20), fill=accent, outline=INK)
+        d.rectangle((6, 8, 18, 18), fill=CREAM)
+        d.rectangle((7, 3, 9, 8), fill=shade)
+        d.rectangle((15, 3, 17, 8), fill=shade)
+        d.line([(8, 13), (10, 15), (15, 11)], fill=accent, width=2)
+        d.line([(6, 9), (18, 9)], fill=shade)
+    elif name == "treats":
+        _shape(d, [(4, 8), (7, 5), (10, 8), (14, 8), (17, 5), (20, 8),
+                   (20, 16), (17, 19), (14, 16), (10, 16), (7, 19), (4, 16)], accent)
+        d.rectangle((8, 9, 16, 15), fill=shade)
+        d.line([(8, 8), (11, 11), (13, 11), (16, 8)], fill=CREAM)
+        d.rectangle((10, 12, 14, 14), fill=CREAM)
+    elif name == "backgrounds":
+        d.rectangle((3, 5, 21, 19), fill=shade, outline=INK)
+        d.rectangle((5, 7, 19, 17), fill=CREAM)
+        _shape(d, [(5, 16), (9, 11), (12, 14), (16, 9), (19, 14), (19, 17), (5, 17)], accent)
+        d.ellipse((7, 8, 10, 11), fill=_rgba(0xF5B342))
+        d.line([(5, 20), (19, 20)], fill=INK, width=2)
+    elif name == "achievements":
+        _shape(d, [(6, 4), (18, 4), (18, 11), (16, 15), (14, 17),
+                   (14, 20), (18, 20), (18, 22), (6, 22), (6, 20),
+                   (10, 20), (10, 17), (8, 15), (6, 11)], accent)
+        d.rectangle((8, 6, 16, 10), fill=CREAM)
+        d.line([(8, 5), (5, 5), (5, 10), (8, 12)], fill=shade, width=2)
+        d.line([(16, 5), (19, 5), (19, 10), (16, 12)], fill=shade, width=2)
+        d.line([(11, 13), (13, 13)], fill=CREAM, width=2)
+    elif name == "prey":
+        _octagon(d, (9, 8, 15, 16), accent, 2)
+        d.ellipse((7, 5, 10, 8), fill=shade, outline=INK)
+        d.ellipse((14, 5, 17, 8), fill=shade, outline=INK)
+        for y in (10, 13, 16):
+            d.line([(9, y), (5, y - 2), (3, y - 2)], fill=INK, width=2)
+            d.line([(15, y), (19, y - 2), (21, y - 2)], fill=INK, width=2)
+            d.line([(9, y), (6, y + 2)], fill=CREAM)
+            d.line([(15, y), (18, y + 2)], fill=CREAM)
+        d.point((11, 10), fill=CREAM)
+        d.point((14, 10), fill=CREAM)
+    elif name == "settings":
+        _shape(d, [(10, 3), (14, 3), (15, 6), (18, 7), (21, 6), (22, 10),
+                   (20, 12), (20, 14), (22, 16), (20, 20), (17, 19),
+                   (15, 21), (14, 23), (10, 23), (9, 20), (6, 19),
+                   (3, 20), (2, 16), (4, 14), (4, 11), (2, 9), (4, 5),
+                   (7, 6), (9, 5)], accent)
+        _octagon(d, (7, 7, 17, 17), shade, 3)
+        _octagon(d, (10, 10, 14, 14), CREAM, 2)
+    elif name == "wifi":
+        d.arc((3, 4, 21, 20), 220, 320, fill=INK, width=4)
+        d.arc((3, 5, 21, 21), 220, 320, fill=accent, width=2)
+        d.arc((7, 8, 17, 19), 220, 320, fill=INK, width=4)
+        d.arc((7, 9, 17, 20), 220, 320, fill=CREAM, width=2)
+        _octagon(d, (10, 16, 14, 20), shade, 2)
+        d.point((11, 17), fill=CREAM)
+    elif name == "sd":
+        _shape(d, [(6, 3), (15, 3), (20, 8), (20, 21), (4, 21), (4, 5)], accent)
+        d.polygon([(15, 3), (15, 8), (20, 8)], fill=CREAM)
+        d.rectangle((7, 6, 9, 12), fill=shade)
+        d.rectangle((11, 5, 13, 12), fill=CREAM)
+        d.rectangle((15, 9, 17, 12), fill=shade)
+        d.rectangle((7, 15, 17, 18), fill=_rgba(0x263F5F), outline=INK)
+        d.line([(8, 16), (16, 16)], fill=CREAM)
+    elif name == "about":
+        _octagon(d, (3, 3, 21, 21), accent, 5)
+        d.rectangle((11, 10, 13, 17), fill=CREAM)
+        d.rectangle((11, 6, 13, 8), fill=shade)
+        d.line([(7, 5), (10, 4)], fill=CREAM)
+    elif name == "battery":
+        d.rectangle((4, 7, 19, 19), fill=accent, outline=INK)
+        d.rectangle((19, 10, 21, 16), fill=shade, outline=INK)
+        d.rectangle((6, 9, 17, 17), fill=CREAM)
+        d.rectangle((7, 10, 11, 16), fill=accent)
+        d.rectangle((12, 10, 16, 16), fill=shade)
+        d.line([(7, 8), (16, 8)], fill=CREAM)
+    elif name == "display":
+        d.rectangle((3, 4, 21, 17), fill=accent, outline=INK)
+        d.rectangle((5, 6, 19, 15), fill=CREAM)
+        _shape(d, [(5, 14), (9, 10), (12, 13), (15, 8), (19, 13), (19, 15), (5, 15)], shade)
+        d.rectangle((10, 18, 14, 20), fill=INK)
+        d.rectangle((7, 21, 17, 22), fill=shade)
+    elif name == "sound":
+        _shape(d, [(3, 9), (8, 9), (14, 4), (16, 4), (16, 20),
+                   (14, 20), (8, 15), (3, 15)], accent)
+        d.line([(5, 10), (8, 10), (13, 6)], fill=CREAM)
+        d.arc((11, 7, 20, 17), 300, 60, fill=INK, width=3)
+        d.arc((12, 8, 19, 16), 300, 60, fill=CREAM, width=2)
+        d.arc((13, 4, 23, 20), 300, 60, fill=shade, width=2)
+    elif name == "auto_feed":
+        d.rectangle((4, 14, 20, 20), fill=accent, outline=INK)
+        d.line([(5, 15), (8, 18), (16, 18), (19, 15)], fill=CREAM)
+        d.arc((6, 3, 18, 15), 180, 350, fill=shade, width=3)
+        d.polygon([(17, 5), (21, 7), (17, 9)], fill=shade)
+        d.ellipse((9, 8, 11, 10), fill=CREAM)
+        d.ellipse((13, 7, 15, 9), fill=CREAM)
+    elif name == "screenshot":
+        d.rectangle((3, 7, 21, 19), fill=accent, outline=INK)
+        d.polygon([(7, 7), (9, 4), (15, 4), (17, 7)], fill=shade, outline=INK)
+        _octagon(d, (8, 8, 16, 16), INK, 3)
+        _octagon(d, (10, 10, 14, 14), CREAM, 2)
+        d.rectangle((17, 9, 19, 11), fill=CREAM)
+        d.line([(5, 17), (7, 17)], fill=shade)
+    elif name == "reset":
+        d.arc((4, 4, 20, 20), 35, 315, fill=INK, width=4)
+        d.arc((5, 5, 19, 19), 35, 315, fill=accent, width=2)
+        d.polygon([(5, 3), (10, 4), (7, 8)], fill=shade)
+        d.line([(9, 12), (12, 15), (16, 10)], fill=CREAM, width=2)
+    elif name == "volume":
+        # A horizontal level track and draggable-looking control knob.
+        d.rounded_rectangle((3, 10, 21, 14), radius=2, fill=INK)
+        d.rectangle((5, 11, 12, 13), fill=shade)
+        d.rectangle((5, 11, 10, 13), fill=accent)
+        _octagon(d, (9, 5, 17, 19), INK, 3)
+        _octagon(d, (10, 6, 16, 18), accent, 3)
+        d.line([(12, 8), (14, 8)], fill=CREAM)
+        d.line([(12, 16), (14, 16)], fill=shade)
+        d.rectangle((4, 16, 6, 18), fill=shade)
+        d.rectangle((19, 16, 21, 18), fill=shade)
+    elif name == "music":
+        # Paired eighth notes with separate stems and a joined beam.
+        d.ellipse((4, 16, 10, 20), fill=INK)
+        d.ellipse((5, 16, 9, 19), fill=accent)
+        d.ellipse((14, 13, 20, 17), fill=INK)
+        d.ellipse((15, 13, 19, 16), fill=accent)
+        d.rectangle((9, 4, 11, 17), fill=INK)
+        d.rectangle((10, 5, 11, 16), fill=CREAM)
+        d.rectangle((19, 2, 21, 14), fill=INK)
+        d.rectangle((20, 3, 21, 13), fill=CREAM)
+        d.polygon([(10, 4), (10, 2), (21, 1), (21, 4)], fill=INK)
+        d.polygon([(11, 3), (20, 2), (20, 3)], fill=shade)
+        d.point((7, 17), fill=CREAM)
+        d.point((17, 14), fill=CREAM)
+    else:  # lock
         _octagon(d, (7, 3, 17, 14), shade, 3)
         d.rectangle((10, 6, 14, 12), fill=(0, 0, 0, 0))
         d.rectangle((5, 10, 19, 21), fill=accent, outline=INK)
@@ -1239,7 +1383,219 @@ def draw_decor_item(name):
         d.point((4, 25), fill=_rgba(0xF3DAA2))
         d.line([(25, 16), (26, 17)], fill=_rgba(0xBF8951))
         d.line([(12, 12), (13, 14)], fill=_rgba(0xD6A36B))
-    else:  # bone
+    elif name == "fern_pot":
+        d.polygon([(7, 18), (25, 18), (22, 29), (10, 29)], fill=INK)
+        d.polygon([(9, 19), (23, 19), (20, 27), (11, 27)], fill=red)
+        d.line([(10, 20), (22, 20)], fill=red_hi, width=2)
+        d.line([(12, 23), (20, 23)], fill=red_dark)
+        for base, tip, curve in (((16, 20), (6, 6), 1.0), ((16, 20), (12, 3), 0.5),
+                                 ((16, 20), (23, 4), -0.5), ((16, 20), (29, 9), -1.0)):
+            _frond(d, base, tip, curve, leaf, leaf_hi, leaf_dark)
+        _blob(d, 16, 20, 5, 2, bark_dark, grain, INK)
+    elif name == "acorn_hide":
+        d.polygon([(4, 15), (7, 8), (13, 5), (21, 6), (27, 11),
+                   (29, 20), (25, 27), (7, 27), (3, 22)], fill=INK)
+        d.polygon([(6, 15), (9, 9), (14, 7), (21, 8), (25, 12),
+                   (27, 20), (23, 24), (8, 24), (5, 21)], fill=bark)
+        d.polygon([(5, 14), (8, 9), (14, 7), (20, 8), (24, 12), (20, 15),
+                   (13, 14), (8, 17)], fill=bark_hi)
+        d.ellipse((9, 15, 23, 25), fill=INK)
+        d.ellipse((11, 17, 21, 24), fill=bark_dark)
+        d.arc((12, 18, 20, 24), 190, 350, fill=grain, width=2)
+        for x in range(9, 24, 4):
+            d.line([(x, 9), (x + 2, 12)], fill=grain)
+    elif name == "driftwood_arch":
+        d.polygon([(3, 27), (5, 10), (9, 5), (14, 6), (13, 10),
+                   (10, 12), (9, 25), (23, 25), (22, 12), (18, 10),
+                   (17, 6), (23, 5), (27, 11), (29, 28)], fill=INK)
+        d.polygon([(6, 25), (8, 11), (11, 8), (13, 9), (12, 12),
+                   (11, 14), (11, 27), (21, 27), (21, 14), (19, 12),
+                   (19, 9), (22, 8), (25, 12), (26, 25)], fill=bark)
+        d.line([(8, 12), (10, 9), (12, 9)], fill=bark_hi, width=2)
+        d.line([(22, 9), (24, 12), (24, 16)], fill=grain, width=2)
+        d.line([(9, 19), (10, 22)], fill=bark_dark)
+        d.line([(22, 19), (23, 23)], fill=cut)
+        d.line([(11, 26), (20, 26)], fill=grain)
+    elif name == "web_hammock":
+        d.line([(3, 7), (8, 8), (12, 16), (16, 20), (20, 16), (24, 8), (29, 7)],
+               fill=INK, width=4)
+        d.line([(3, 6), (8, 7), (12, 15), (16, 19), (20, 15), (24, 7), (29, 6)],
+               fill=stone_hi, width=2)
+        d.line([(7, 8), (11, 14), (16, 18), (21, 14), (25, 8)], fill=cyan)
+        for offset in range(1, 5):
+            x = 8 + offset * 3
+            y = 8 + min(offset, 5 - offset) * 2
+            d.line([(x, y), (32 - x, y)], fill=cyan_dark)
+        d.line([(4, 5), (2, 26)], fill=bark, width=3)
+        d.line([(28, 5), (30, 26)], fill=bark, width=3)
+        d.line([(3, 8), (4, 6)], fill=bark_hi)
+        d.line([(28, 7), (29, 9)], fill=bark_hi)
+        _blob(d, 16, 20, 4, 2, cyan, cyan_hi, cyan_dark)
+    elif name == "dew_pool":
+        d.ellipse((3, 13, 29, 27), fill=INK)
+        d.ellipse((5, 13, 27, 24), fill=cyan_dark)
+        d.ellipse((7, 12, 25, 22), fill=cyan)
+        d.polygon([(16, 14), (10, 17), (8, 20), (14, 21), (20, 19), (24, 16)],
+                  fill=cyan_hi)
+        d.line([(8, 17), (12, 14), (18, 14)], fill=white_hi)
+        d.line([(7, 22), (12, 24), (20, 23)], fill=cyan_dark)
+        _leaf_shape(d, (20, 16), (27, 12), 3, leaf, leaf_hi, leaf_dark)
+        _blob(d, 20, 16, 2, 1, _rgba(0xE9A44F), _rgba(0xFFF0C0), bark_dark)
+    elif name == "mushroom_pair":
+        d.rectangle((8, 16, 12, 26), fill=INK)
+        d.rectangle((9, 17, 11, 25), fill=white)
+        _blob(d, 10, 14, 8, 6, red, red_hi, red_dark)
+        for x, y in ((7, 12), (12, 14), (9, 17)):
+            d.point((x, y), fill=white_hi)
+        d.rectangle((20, 20, 23, 28), fill=INK)
+        d.rectangle((21, 21, 22, 27), fill=white)
+        _blob(d, 22, 19, 6, 4, red, red_hi, red_dark)
+        d.point((21, 18), fill=white_hi)
+        d.line([(8, 27), (25, 27)], fill=leaf_dark)
+        d.point((6, 24), fill=leaf_hi)
+    elif name == "flower_planter":
+        d.polygon([(4, 19), (28, 19), (25, 28), (7, 28)], fill=INK)
+        d.polygon([(6, 20), (26, 20), (23, 26), (9, 26)], fill=bark)
+        d.line([(7, 20), (25, 20)], fill=bark_hi, width=2)
+        for x, y in ((10, 16), (17, 13), (24, 16)):
+            d.line([(x, 19), (x, y + 2)], fill=leaf_dark, width=2)
+            for dx, dy in ((-3, 0), (0, -3), (3, 0), (0, 3)):
+                _blob(d, x + dx, y + dy, 3, 3, pink, pink_hi, pink_dark)
+            d.ellipse((x - 1, y - 1, x + 1, y + 1), fill=white_hi)
+        d.point((12, 23), fill=grain)
+        d.point((21, 24), fill=cut)
+    elif name == "crystal_cluster":
+        for x, y, width, height, body, light, dark in (
+            (7, 15, 5, 13, cyan, cyan_hi, cyan_dark),
+            (15, 3, 7, 25, pink, pink_hi, pink_dark),
+            (25, 12, 5, 16, cyan, cyan_hi, cyan_dark),
+            (12, 18, 4, 10, stone_mid, stone_glint, stone_dark),
+        ):
+            d.polygon([(x, y + 5), (x + width, y), (x + width - 1, y + height),
+                       (x - width + 1, y + height), (x - width, y + 5)], fill=INK)
+            d.polygon([(x, y + 1), (x - width + 1, y + 5), (x - 1, y + height - 1)],
+                      fill=body)
+            d.polygon([(x, y + 1), (x + width - 1, y + 5),
+                       (x + width - 2, y + height - 1), (x, y + height - 1)], fill=dark)
+            d.line([(x - 1, y + 4), (x, y + 2), (x + 1, y + 5)], fill=light)
+        d.polygon([(4, 28), (10, 26), (17, 28), (25, 26), (29, 29)], fill=stone_dark)
+        d.line([(6, 29), (26, 29)], fill=stone_glint)
+    elif name == "shell_cove":
+        d.polygon([(3, 24), (4, 15), (8, 7), (15, 4), (23, 7),
+                   (28, 15), (29, 24), (24, 28), (8, 28)], fill=INK)
+        d.polygon([(5, 23), (6, 15), (9, 9), (15, 6), (22, 9),
+                   (26, 15), (27, 23), (23, 26), (9, 26)], fill=shell)
+        d.ellipse((9, 14, 23, 25), fill=shell_dark)
+        d.ellipse((11, 15, 21, 24), fill=INK)
+        d.polygon([(11, 19), (15, 16), (21, 18), (19, 23), (13, 23)], fill=cyan_dark)
+        d.line([(6, 16), (9, 10), (15, 7), (21, 10)], fill=shell_hi)
+        for x in (8, 11, 14, 17, 20, 23):
+            d.line([(16, 23), (x, 10 + abs(16 - x) // 2)], fill=shell_hi)
+        d.point((16, 19), fill=cyan_hi)
+    elif name == "twig_ladder":
+        d.line([(7, 4), (11, 27)], fill=INK, width=5)
+        d.line([(23, 4), (19, 27)], fill=INK, width=5)
+        d.line([(7, 5), (11, 26)], fill=bark, width=2)
+        d.line([(23, 5), (19, 26)], fill=bark_hi, width=2)
+        for y in (8, 13, 18, 23):
+            d.line([(9, y), (21, y)], fill=INK, width=4)
+            d.line([(10, y - 1), (20, y - 1)], fill=cut, width=2)
+            d.point((12, y), fill=grain)
+        d.line([(6, 7), (7, 5)], fill=bark_hi)
+        d.line([(20, 26), (21, 28)], fill=grain)
+    elif name == "moss_stone":
+        _blob(d, 16, 20, 13, 8, stone, stone_hi, stone_dark)
+        d.polygon([(5, 18), (8, 14), (14, 12), (21, 13), (27, 17),
+                   (24, 20), (15, 19), (9, 21)], fill=leaf_dark)
+        for cx, cy, rx, ry in ((10, 15, 5, 3), (17, 14, 6, 4), (23, 16, 4, 3)):
+            _blob(d, cx, cy, rx, ry, leaf, leaf_hi, leaf_dark)
+        for x, y in ((8, 14), (13, 12), (20, 13), (24, 15)):
+            d.point((x, y), fill=leaf_hi)
+        d.line([(10, 23), (15, 25), (21, 23)], fill=stone_dark)
+        d.line([(7, 19), (10, 18)], fill=stone_glint)
+    elif name == "seed_pod":
+        d.polygon([(7, 24), (6, 18), (9, 12), (16, 8), (23, 9),
+                   (27, 14), (25, 21), (19, 26), (12, 27)], fill=INK)
+        d.polygon([(9, 23), (8, 18), (11, 13), (16, 10), (22, 11),
+                   (25, 15), (23, 20), (18, 24), (12, 25)], fill=leaf)
+        d.polygon([(9, 21), (10, 15), (15, 11), (19, 12), (16, 18)], fill=leaf_hi)
+        d.line([(10, 22), (16, 19), (22, 13)], fill=leaf_dark, width=2)
+        for x, y in ((12, 19), (16, 16), (19, 14)):
+            _blob(d, x, y, 2, 2, red, red_hi, red_dark)
+        d.line([(16, 10), (17, 5), (20, 3)], fill=bark, width=2)
+        d.line([(17, 10), (18, 6)], fill=bark_hi)
+    elif name == "silk_tent":
+        d.polygon([(3, 27), (8, 8), (16, 3), (24, 8), (29, 27),
+                   (22, 27), (16, 17), (10, 27)], fill=INK)
+        d.polygon([(6, 25), (10, 9), (16, 5), (22, 9), (26, 25),
+                   (21, 25), (16, 15), (11, 25)], fill=white)
+        d.polygon([(13, 24), (16, 16), (20, 25)], fill=stone_dark)
+        d.line([(10, 9), (16, 5), (22, 9)], fill=white_hi, width=2)
+        for y in (12, 16, 20):
+            d.line([(11, y), (16, y + 2), (21, y)], fill=cyan)
+        d.line([(5, 26), (27, 26)], fill=bark, width=2)
+        d.point((16, 8), fill=cyan_hi)
+    elif name == "leaf_umbrella":
+        d.line([(16, 13), (16, 28)], fill=INK, width=4)
+        d.line([(16, 14), (16, 27)], fill=bark, width=2)
+        d.line([(16, 25), (18, 28), (21, 28)], fill=bark_hi)
+        d.polygon([(2, 14), (5, 8), (12, 4), (20, 4), (27, 8),
+                   (30, 14), (26, 18), (22, 13), (17, 17), (12, 13),
+                   (7, 18)], fill=INK)
+        d.polygon([(4, 13), (7, 9), (13, 6), (20, 6), (26, 9),
+                   (28, 13), (25, 15), (22, 11), (17, 15), (12, 11),
+                   (7, 15)], fill=leaf)
+        d.polygon([(4, 13), (7, 9), (13, 6), (16, 7), (16, 13),
+                   (12, 11), (7, 15)], fill=leaf_hi)
+        d.line([(5, 12), (16, 13), (27, 12)], fill=leaf_dark, width=2)
+        d.line([(16, 13), (16, 8)], fill=leaf_hi)
+    elif name == "bone_arch":
+        d.line([(6, 28), (6, 13), (8, 7), (12, 5), (15, 9)], fill=INK, width=6)
+        d.line([(26, 28), (26, 13), (24, 7), (20, 5), (17, 9)], fill=INK, width=6)
+        d.line([(6, 27), (6, 13), (8, 8), (12, 6), (15, 10)], fill=bone, width=3)
+        d.line([(26, 27), (26, 13), (24, 8), (20, 6), (17, 10)], fill=bone_hi, width=3)
+        d.ellipse((3, 5, 10, 12), fill=bone)
+        d.ellipse((22, 5, 29, 12), fill=bone_hi)
+        d.ellipse((5, 7, 8, 10), fill=bone_dark)
+        d.ellipse((24, 7, 27, 10), fill=bone_dark)
+        d.line([(8, 27), (24, 27)], fill=stone_dark)
+        d.point((8, 13), fill=white_hi)
+        d.point((24, 13), fill=white_hi)
+    elif name == "fossil":
+        _blob(d, 16, 20, 13, 7, stone_dark, stone, INK)
+        d.ellipse((7, 9, 25, 25), fill=INK)
+        d.ellipse((9, 11, 23, 23), fill=stone)
+        d.arc((11, 13, 21, 23), 190, 350, fill=stone_hi, width=3)
+        d.arc((13, 15, 19, 21), 40, 320, fill=stone_dark, width=2)
+        d.ellipse((15, 17, 18, 20), fill=stone_glint)
+        d.line([(9, 12), (12, 10), (16, 10)], fill=stone_glint)
+        d.line([(19, 24), (23, 22)], fill=stone_dark)
+        d.point((7, 21), fill=stone_mid)
+    elif name == "lantern_cap":
+        d.line([(15, 9), (15, 3), (19, 2)], fill=bark, width=2)
+        d.line([(16, 9), (16, 4)], fill=bark_hi)
+        d.rectangle((13, 18, 19, 27), fill=INK)
+        d.rectangle((14, 19, 18, 26), fill=white)
+        d.rectangle((14, 19, 16, 25), fill=white_hi)
+        _blob(d, 16, 16, 11, 8, _rgba(0xD8AE43), _rgba(0xFFF0B0), red_dark)
+        d.arc((7, 8, 25, 22), 190, 350, fill=red, width=2)
+        for x, y in ((11, 14), (17, 12), (21, 16)):
+            d.point((x, y), fill=white_hi)
+        d.line([(9, 16), (12, 13), (16, 12)], fill=white_hi)
+        d.line([(15, 27), (18, 27)], fill=leaf_dark)
+    elif name == "stone_bridge":
+        d.polygon([(2, 10), (7, 6), (25, 6), (30, 10), (28, 18),
+                   (24, 14), (20, 12), (12, 12), (8, 15), (4, 19)], fill=INK)
+        d.polygon([(4, 10), (8, 8), (24, 8), (28, 10), (26, 15),
+                   (22, 12), (19, 11), (13, 11), (9, 13), (5, 16)], fill=stone)
+        d.polygon([(8, 17), (11, 14), (14, 13), (18, 13), (21, 14), (24, 17),
+                   (23, 25), (9, 25)], fill=stone_dark)
+        d.rectangle((11, 18, 21, 24), fill=INK)
+        d.line([(7, 10), (12, 9), (21, 9)], fill=stone_hi, width=2)
+        d.line([(6, 14), (9, 12)], fill=stone_mid)
+        d.line([(24, 12), (26, 14)], fill=stone_glint)
+        d.line([(4, 26), (28, 26)], fill=leaf_dark)
+    elif name == "bone":
         d.rectangle((10, 12, 22, 20), fill=INK)
         d.rectangle((11, 13, 21, 19), fill=bone)
         d.rectangle((11, 13, 21, 15), fill=bone_hi)
@@ -1252,6 +1608,8 @@ def draw_decor_item(name):
         d.line([(11, 16), (20, 16)], fill=_rgba(0xE1D2B0))
         d.line([(7, 23), (10, 24)], fill=_rgba(0xB7A58B))
         d.point((22, 10), fill=_rgba(0xF5EACF))
+    else:
+        raise ValueError(f"Unknown decor item: {name}")
     # Broken surface highlights and small material marks, clipped to the prop.
     texture = {
         "rock_small": stone_mid, "rock_large": stone_mid, "pebbles": stone_mid,
@@ -1269,7 +1627,17 @@ def draw_decor_item(name):
             for x in range(3, 29):
                 if (x * 37 + y * 61) % 29 == 0 and pixels[x, y] in candidates:
                     d.point((x, y), fill=texture)
-    return _enlarge(img)
+    material_shading = {
+        "acorn_hide": (bark, bark_hi),
+        "driftwood_arch": (bark, bark_hi, grain),
+        "shell_cove": (shell, shell_hi),
+        "twig_ladder": (bark, cut),
+        "silk_tent": (white, cyan),
+        "leaf_umbrella": (leaf, bark),
+        "bone_arch": (bone, bone_hi),
+        "stone_bridge": (stone,),
+    }.get(name, ())
+    return _enlarge(_shade_materials(img, material_shading))
 
 
 # ---------------------------------------------------------------------------
@@ -1353,6 +1721,30 @@ BACKGROUND_PALETTES = {
     # cemetery — cold earth
     "cemetery": _palette((200, 0.43, 0.24), (110, 0.34, 0.54), (210, 0.47, 0.16),
                          ((52, 0.90, 0.10), (206, 0.24, 0.72), (200, 0.30, 0.86))),
+    # house — warm timber floor and woven rugs
+    "house": _palette((28, 0.47, 0.50), (100, 0.48, 0.62), (34, 0.58, 0.10),
+                      ((42, 0.88, 0.16), (18, 0.50, 0.68), (350, 0.70, 0.55))),
+    # dark cave — cool slate in a deep geode
+    "dark_cave": _palette((248, 0.29, 0.38), (178, 0.40, 0.52), (235, 0.42, 0.18),
+                          ((190, 0.78, 0.78), (274, 0.60, 0.68), (47, 0.74, 0.72))),
+    # night — blue-black earth with distant firefly lights
+    "night": _palette((222, 0.31, 0.38), (126, 0.42, 0.50), (218, 0.44, 0.16),
+                      ((49, 0.86, 0.75), (195, 0.72, 0.68), (278, 0.62, 0.60))),
+    # autumn — russet loam and copper leaf banks
+    "autumn": _palette((21, 0.43, 0.57), (83, 0.40, 0.58), (34, 0.55, 0.16),
+                       ((29, 0.78, 0.68), (3, 0.54, 0.68), (48, 0.72, 0.68))),
+    # snow — cold blue-white ground and ice
+    "snow": _palette((205, 0.70, 0.22), (148, 0.44, 0.42), (212, 0.60, 0.14),
+                     ((194, 0.84, 0.58), (204, 0.52, 0.62), (224, 0.82, 0.30))),
+    # pond — green bank beside a quiet water edge
+    "pond": _palette((92, 0.39, 0.42), (112, 0.48, 0.66), (38, 0.55, 0.12),
+                     ((188, 0.55, 0.68), (171, 0.40, 0.58), (56, 0.76, 0.68))),
+    # ruins — warm gray flagstone with broken masonry
+    "ruins": _palette((37, 0.40, 0.34), (93, 0.39, 0.46), (30, 0.51, 0.14),
+                      ((44, 0.78, 0.24), (16, 0.43, 0.58), (71, 0.68, 0.48))),
+    # marsh — olive mud with reed-lined pools
+    "marsh": _palette((76, 0.37, 0.48), (108, 0.43, 0.56), (39, 0.52, 0.14),
+                      ((169, 0.40, 0.54), (42, 0.54, 0.68), (90, 0.72, 0.52))),
 }
 
 
@@ -1361,6 +1753,8 @@ BACKGROUND_SEEDS = {
     "fern": 53, "orchid": 67, "woodland": 71, "minimal": 83,
     "mushroom": 97, "gothic": 101, "seashell": 113, "succulent": 127,
     "willow": 131, "desert": 149, "crystal": 157, "cemetery": 163,
+    "house": 179, "dark_cave": 191, "night": 199, "autumn": 211,
+    "snow": 223, "pond": 227, "ruins": 233, "marsh": 239,
 }
 
 BG_SIZE = 240
@@ -1626,6 +2020,148 @@ def _bg_cemetery(d, p, rng):
     _ground(d, p, rng, "ruins")
 
 
+def _bg_house(d, p, rng):
+    """A snug timber room with an uncluttered playable floor."""
+    _ground(d, p, rng, "wood")
+    g = list(map(_rgba, p["ground"]))
+    wood = list(map(_rgba, p["accent"][1]))
+    d.rectangle((0, 0, 239, 8), fill=g[1])
+    d.rectangle((0, 231, 239, 239), fill=g[1])
+    d.rectangle((0, 0, 8, 239), fill=g[1])
+    d.rectangle((231, 0, 239, 239), fill=g[1])
+    for y in (3, 235):
+        d.line([(0, y), (239, y)], fill=wood[3], width=2)
+        d.line([(0, y + 3), (239, y + 3)], fill=wood[0])
+    for x in (4, 235):
+        d.line([(x, 0), (x, 239)], fill=wood[3], width=2)
+    # A small inset hearth and window remain outside the clear central play area.
+    d.rectangle((13, 14, 33, 32), fill=wood[0], outline=wood[4])
+    d.rectangle((16, 17, 30, 29), fill=g[2], outline=wood[1])
+    d.line([(18, 19), (28, 19)], fill=wood[4], width=2)
+    d.line([(18, 25), (22, 23), (26, 25)], fill=wood[2])
+    for x in (19, 25, 30, 208, 221):
+        y = 18 if x < 40 else 222
+        d.line([(x, y), (x + 2, y - 5), (x + 4, y)], fill=wood[2])
+        d.point((x + 2, y - 6), fill=wood[4])
+
+
+def _bg_dark_cave(d, p, rng):
+    """A deep geode floor with crystalline walls gathered around the rim."""
+    _ground(d, p, rng, "mineral", "bare")
+    stone = p["stone"]
+    for x, y, radius in ((9, 24, 12), (31, 7, 9), (229, 19, 12),
+                         (8, 218, 14), (233, 227, 11), (212, 7, 8)):
+        _terrain_stone(d, x, y, radius, stone)
+    for x, y, color in ((8, 40, p["accent"][0][4]),
+                        (225, 39, p["accent"][1][4]),
+                        (21, 229, p["accent"][0][3]),
+                        (229, 208, p["accent"][1][3])):
+        d.polygon([(x, y - 7), (x + 4, y - 2), (x + 2, y + 5),
+                   (x - 2, y + 3), (x - 3, y - 3)], fill=_rgba(color))
+        d.line([(x, y - 6), (x, y + 2)], fill=_rgba(p["accent"][0][4]))
+
+
+def _bg_night(d, p, rng):
+    """A quiet midnight floor with fireflies and a thin corner moon."""
+    _ground(d, p, rng, "slate", "bare")
+    moon, star, dim = (list(map(_rgba, ramp)) for ramp in p["accent"])
+    d.ellipse((9, 9, 34, 34), fill=dim[0])
+    d.ellipse((7, 7, 30, 30), fill=moon[2])
+    d.ellipse((11, 3, 32, 24), fill=_rgba(p["ground"][3]))
+    d.line([(12, 12), (17, 9), (23, 9)], fill=moon[4], width=2)
+    for x, y in ((51, 14), (92, 23), (163, 19), (202, 12),
+                 (19, 71), (220, 93), (11, 177), (226, 176), (47, 220), (189, 225)):
+        if x < 40 or x >= 200 or y < 40 or y >= 200:
+            d.point((x, y), fill=star[4])
+            d.line([(x - 2, y), (x + 2, y)], fill=star[2])
+            d.line([(x, y - 2), (x, y + 2)], fill=star[2])
+            d.point((x + 3, y + 2), fill=dim[4])
+
+
+def _bg_autumn(d, p, rng):
+    """Warm leaf drifts ring a broad, softly shaded russet clearing."""
+    _ground(d, p, rng, "leaves", "bare")
+    for x, y, index in ((14, 18, 1), (228, 16, 2), (17, 226, 2),
+                        (224, 222, 1), (4, 103, 1), (235, 137, 2),
+                        (67, 8, 1), (182, 232, 2)):
+        ramp = list(map(_rgba, p["accent"][index]))
+        for dx, dy, angle in ((-5, 0, -1), (0, 0, 1), (5, 3, -1)):
+            _leaf_shape(d, (x + dx, y + dy), (x + dx + 5 * angle, y + dy - 7),
+                        3, ramp[2], ramp[4], ramp[0])
+    leaf = list(map(_rgba, p["leaf"]))
+    for x, y in ((28, 42), (211, 53), (28, 198), (210, 192)):
+        d.line([(x - 7, y), (x, y - 2), (x + 8, y)], fill=leaf[2], width=2)
+        d.point((x - 3, y - 4), fill=leaf[4])
+
+
+def _bg_snow(d, p, rng):
+    """Pale packed snow with blue ice chips along the enclosure edges."""
+    _ground(d, p, rng, "minimal", "bare")
+    snow, ice = list(map(_rgba, p["ground"])), list(map(_rgba, p["stone"]))
+    for x, y, radius in ((8, 16, 11), (36, 11, 8), (218, 18, 13),
+                         (13, 228, 10), (228, 220, 12), (192, 235, 8)):
+        _terrain_stone(d, x, y, radius, p["stone"])
+    for y, reverse in ((17, False), (223, True)):
+        points = [(0, y + 9), (18, y + 4), (32, y + 7), (40, y + 3),
+                  (40, y - 2), (20, y - 4), (0, y)]
+        if reverse:
+            points = [(x, 239 - yy) for x, yy in points]
+        d.polygon(points, fill=snow[1])
+        d.line(points[:4], fill=snow[5], width=2)
+    for x, y in ((4, 48), (235, 64), (12, 187), (226, 177)):
+        d.line([(x - 5, y), (x, y - 3), (x + 4, y)], fill=snow[6], width=2)
+        d.point((x - 2, y - 5), fill=snow[4])
+        d.point((x + 6, y + 2), fill=ice[3])
+
+
+def _bg_pond(d, p, rng):
+    """A green pond bank with ripples confined to the far edge."""
+    _ground(d, p, rng, "moss", "bare")
+    water = list(map(_rgba, p["accent"][0]))
+    d.polygon([(0, 213), (22, 210), (39, 216), (39, 239), (0, 239)], fill=water[1])
+    d.polygon([(0, 226), (18, 220), (39, 226), (39, 239), (0, 239)], fill=water[0])
+    d.line([(2, 217), (16, 215), (28, 218), (37, 217)], fill=water[4], width=2)
+    for x, y in ((8, 224), (23, 231), (13, 236)):
+        d.line([(x, y), (x + 8, y)], fill=water[3])
+        d.line([(x + 2, y + 3), (x + 6, y + 3)], fill=water[2])
+    leaf = list(map(_rgba, p["leaf"]))
+    for x, y in ((8, 209), (22, 210), (232, 203), (224, 28), (13, 34)):
+        d.line([(x, y + 14), (x + 1, y + 6), (x - 2, y)], fill=leaf[1], width=2)
+        _leaf_shape(d, (x - 2, y + 7), (x - 8, y + 2), 3, leaf[2], leaf[5], leaf[0])
+        _leaf_shape(d, (x + 1, y + 8), (x + 7, y + 1), 3, leaf[2], leaf[5], leaf[0])
+
+
+def _bg_ruins(d, p, rng):
+    """Weathered sandstone blocks and broken seams at the outer edge."""
+    _ground(d, p, rng, "ruins", "bare")
+    for x, y, radius in ((7, 23, 12), (231, 13, 10), (12, 225, 13),
+                         (232, 228, 12), (4, 125, 8), (236, 107, 9)):
+        _terrain_stone(d, x, y, radius, p["stone"])
+    stone = list(map(_rgba, p["stone"]))
+    for x, y in ((4, 43), (233, 52), (20, 200), (216, 206)):
+        d.line([(x, y), (x + 3, y + 4), (x + 1, y + 9), (x + 6, y + 13)],
+               fill=stone[0], width=2)
+        d.line([(x + 1, y + 1), (x + 4, y + 5)], fill=stone[4])
+
+
+def _bg_marsh(d, p, rng):
+    """Olive peat with pools and cattails kept to the perimeter."""
+    _ground(d, p, rng, "moss", "bare")
+    water = list(map(_rgba, p["accent"][0]))
+    for box in ((0, 18, 28, 33), (213, 203, 239, 221), (2, 225, 30, 239)):
+        d.ellipse(box, fill=water[0])
+        x0, y0, x1, y1 = box
+        d.arc(box, 190, 350, fill=water[4], width=2)
+        d.line([(x0 + 5, y1 - 4), (x0 + 11, y1 - 4)], fill=water[2])
+    leaf = list(map(_rgba, p["leaf"]))
+    for x, y, lean in ((8, 39, -5), (20, 42, 4), (229, 193, -4),
+                       (216, 188, 5), (10, 211, 3), (232, 36, -4)):
+        d.line([(x, y + 16), (x + lean // 2, y + 7), (x + lean, y)], fill=leaf[1], width=2)
+        d.line([(x + lean, y + 3), (x + lean, y - 5)], fill=leaf[0], width=2)
+        d.ellipse((x + lean - 2, y - 7, x + lean + 2, y - 3), fill=water[3])
+        d.point((x + lean, y - 5), fill=water[4])
+
+
 _BACKGROUND_SCENES = {
     "cork": _bg_cork,
     "moss": _bg_moss,
@@ -1643,6 +2179,14 @@ _BACKGROUND_SCENES = {
     "desert": _bg_desert,
     "crystal": _bg_crystal,
     "cemetery": _bg_cemetery,
+    "house": _bg_house,
+    "dark_cave": _bg_dark_cave,
+    "night": _bg_night,
+    "autumn": _bg_autumn,
+    "snow": _bg_snow,
+    "pond": _bg_pond,
+    "ruins": _bg_ruins,
+    "marsh": _bg_marsh,
 }
 
 

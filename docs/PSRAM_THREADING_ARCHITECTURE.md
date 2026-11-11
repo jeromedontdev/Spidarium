@@ -15,7 +15,9 @@ Choose memory by the consumer's capabilities, not just allocation size.
 | Selected 64x64 RGB565A8 gift canvas | Explicit PSRAM, 12,288 bytes; reused for replacements |
 | Battery worker stack | 3,072 bytes explicit PSRAM; no flash writes |
 | Static 480x480 RGB565 habitat canvas | Explicit PSRAM, 460,800 bytes; reused for every background |
-| Eight 240x240 RGB565A8 enclosure sources | Explicit PSRAM, 1,382,400 bytes total; decoded at boot |
+| Twenty-four opaque 240x240 RGB565 enclosure sources | Explicit PSRAM, 2,764,800 bytes total; decoded at boot |
+| Additional decor records / renderer object-pointer pool | Explicit PSRAM; grows on placement/restore, never per frame |
+| Save job snapshots and raw/SD transfer buffers | Explicit PSRAM; copied before enqueue, freed after completion/rejection |
 | Audio and serial-worker stacks | `xTaskCreateWithCaps`, SPIRAM + 8BIT |
 | Network and save/SD worker stacks | Explicit internal RAM: flash operations disable caches |
 | Synthesized audio PCM buffer | Explicit PSRAM, 12,800 bytes |
@@ -66,7 +68,13 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   Restored state is loaded on that worker and copied back to LVGL; no NVS read
   occurs from the external-stack LVGL task.
   Save acknowledgements propagate queue rejection instead of reporting success.
-  Background ownership/selection and power settings share the v9 pet snapshot.
+  Background ownership/selection, power, music and enclosure lighting share
+  the v10 pet snapshot: 260-byte fixed prefix plus six bytes per extra decor
+  slot. The original twelve slots/older offsets remain unchanged. The 20 KB
+  serialized-payload ceiling is a storage-resource/protocol bound, not a
+  twelve-item gameplay limit; storage/allocation/commit failures are explicit.
+  Queue entries own their variable PSRAM payloads. SD restore transfers owned
+  records to LVGL after worker completion instead of mutating active records.
   Boot reads the old separate background key only for one-time v8 migration.
   Deep-sleep requests copy the live snapshot on LVGL; only this internal-stack
   worker enters sleep after an actual successful save, bounded audio/power drain
@@ -75,8 +83,9 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
 - **Console worker:** one USB Serial/JTAG driver. UI commands request an action
   and wait on this worker, never on LVGL. Its explicit PSRAM stack is 8 KB;
   the old 4 KB stack overflowed during raw restore validation. Final real
-  v9 restore testing leaves at least 3,284 bytes free. Driver RX is 1,024 bytes
-  and line capacity 640 to hold the complete 534-byte v9 restore command;
+  v9 restore testing left at least 3,284 bytes free. Driver RX is 1,024 bytes;
+  the v10 command line is now heap-backed in PSRAM, with capacity derived from
+  the maximum raw payload. Hosts pace long restore lines in 128-byte chunks;
   there is still only one driver.
   Schema/export/screenshots use bounded 128-byte direct-driver writes and
   TX-drain acknowledgements. Large ordinary VFS printf writes proved lossy.
@@ -87,7 +96,10 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   codec writes use a reusable PSRAM PCM buffer and a 4 KB PSRAM stack. Muting is
   atomically published. Active playback drains before radio startup; pending
   effects wait until the network job finishes.
-  Automatic ambience is disabled in v1.1.18. Manual filtered air (8 seconds) /
+  Original 32-second D-Bm-G-A ambient music streams in 50 ms chunks through the
+  same buffer, fades in over 1.5 seconds and yields with a 20 ms fade to effects,
+  mute, its independent toggle, radio or sleep. It continues in menus. No new
+  PCM buffer or LVGL codec calls. Manual filtered air (8 seconds) /
   leaves (10 seconds) remain diagnostic effects. No automatic chirps, pitched
   drops or sweeps. Two-second attacks and three-second releases
   prevent abrupt entrances/exits. Stream 100 ms chunks in the existing PCM

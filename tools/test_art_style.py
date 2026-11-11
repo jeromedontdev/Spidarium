@@ -15,6 +15,25 @@ from gen_sprites import (
 
 
 class ArtStyleTests(unittest.TestCase):
+    def test_expanded_catalogue_assets_are_appended_without_reordering(self):
+        self.assertEqual(len(DECOR_ITEM_NAMES), 34)
+        self.assertEqual(DECOR_ITEM_NAMES[16:], [
+            "fern_pot", "acorn_hide", "driftwood_arch", "web_hammock", "dew_pool",
+            "mushroom_pair", "flower_planter", "crystal_cluster", "shell_cove",
+            "twig_ladder", "moss_stone", "seed_pod", "silk_tent", "leaf_umbrella",
+            "bone_arch", "fossil", "lantern_cap", "stone_bridge",
+        ])
+        self.assertEqual(len(BACKGROUND_NAMES), 24)
+        self.assertEqual(BACKGROUND_NAMES[16:], [
+            "house", "dark_cave", "night", "autumn", "snow", "pond", "ruins", "marsh",
+        ])
+        self.assertEqual(len(UI_ICONS), 30)
+        self.assertEqual(UI_ICONS[13:], [
+            "daily", "treats", "backgrounds", "achievements", "prey", "settings",
+            "wifi", "sd", "about", "battery", "display", "sound", "auto_feed",
+            "screenshot", "reset", "volume", "music",
+        ])
+
     def test_insect_leg_roots_are_fixed_and_feet_alternate_tripods(self):
         for species in ("fly", "fruitfly", "cricket", "roach", "beetle", "moth"):
             first, second = (prey_leg_paths(species, frame) for frame in (0, 1))
@@ -40,11 +59,14 @@ class ArtStyleTests(unittest.TestCase):
                 contents.add(image.tobytes())
 
     def test_every_decor_item_has_richer_materials_on_the_pixel_grid(self):
+        contents = set()
         for name in DECOR_ITEM_NAMES:
             with self.subTest(item=name):
                 image = draw_decor_item(name)
                 self.assertEqual(image.size, (64, 64))
                 validate_pixel_art(image, f"decoritem_{name}.png")
+                self.assertNotIn(image.tobytes(), contents)
+                contents.add(image.tobytes())
 
     def test_all_gift_furnishings_are_distinct_and_richly_shaded(self):
         contents = set()
@@ -83,9 +105,14 @@ class ArtStyleTests(unittest.TestCase):
             ("ui", UI_ICONS, draw_icon),
             ("achievement", ACHIEVEMENT_NAMES, draw_achievement),
         ):
+            contents = set()
             for name in names:
                 with self.subTest(group=prefix, asset=name):
-                    validate_pixel_art(renderer(name), f"{prefix}_{name}.png")
+                    image = renderer(name)
+                    validate_pixel_art(image, f"{prefix}_{name}.png")
+                    if prefix == "ui":
+                        self.assertNotIn(image.tobytes(), contents)
+                        contents.add(image.tobytes())
 
     def test_material_shading_preserves_mask_ink_and_direction(self):
         image = Image.new("RGBA", (8, 8))
@@ -112,7 +139,7 @@ class ArtStyleTests(unittest.TestCase):
             output = Path(directory) / "review.png"
             write_preview(Path(__file__).resolve().parents[1] / "assets", output)
             with Image.open(output) as sheet:
-                self.assertEqual(sheet.size, (960, 3560))
+                self.assertEqual(sheet.size, (960, 4780))
 
     def test_equal_pixels_preserve_source_bytes_across_png_encoders(self):
         image = draw_icon("feed")

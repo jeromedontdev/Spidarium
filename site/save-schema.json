@@ -1,11 +1,17 @@
 {
   "magic": 1397770564,
-  "version": 9,
+  "version": 10,
   "headerSize": 12,
   "payloadSizes": [
     120,
-    248
+    260
   ],
+  "maxPayload": 20480,
+  "decorTail": {
+    "offset": 260,
+    "stride": 6,
+    "countField": "decor_extra_count"
+  },
   "fields": [
     {
       "name": "hunger",
@@ -293,6 +299,34 @@
       "type": "u8",
       "length": 0,
       "minVersion": 9
+    },
+    {
+      "name": "decor_owned_extra",
+      "offset": 248,
+      "type": "u32",
+      "length": 0,
+      "minVersion": 10
+    },
+    {
+      "name": "music_enabled",
+      "offset": 252,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 10
+    },
+    {
+      "name": "lights_dimmed",
+      "offset": 253,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 10
+    },
+    {
+      "name": "decor_extra_count",
+      "offset": 256,
+      "type": "u32",
+      "length": 0,
+      "minVersion": 10
     }
   ]
 }

@@ -142,6 +142,24 @@ static const icon_entry_t k_decor_items[] = {
     { "leaf_pile",    MMAP_STORAGE_DECORITEM_LEAF_PILE_QOI    },
     { "twig",         MMAP_STORAGE_DECORITEM_TWIG_QOI         },
     { "bone",         MMAP_STORAGE_DECORITEM_BONE_QOI         },
+    { "fern_pot",      MMAP_STORAGE_DECORITEM_FERN_POT_QOI      },
+    { "acorn_hide",    MMAP_STORAGE_DECORITEM_ACORN_HIDE_QOI    },
+    { "driftwood_arch",MMAP_STORAGE_DECORITEM_DRIFTWOOD_ARCH_QOI},
+    { "web_hammock",   MMAP_STORAGE_DECORITEM_WEB_HAMMOCK_QOI   },
+    { "dew_pool",      MMAP_STORAGE_DECORITEM_DEW_POOL_QOI      },
+    { "mushroom_pair", MMAP_STORAGE_DECORITEM_MUSHROOM_PAIR_QOI },
+    { "flower_planter",MMAP_STORAGE_DECORITEM_FLOWER_PLANTER_QOI},
+    { "crystal_cluster",MMAP_STORAGE_DECORITEM_CRYSTAL_CLUSTER_QOI},
+    { "shell_cove",    MMAP_STORAGE_DECORITEM_SHELL_COVE_QOI    },
+    { "twig_ladder",   MMAP_STORAGE_DECORITEM_TWIG_LADDER_QOI   },
+    { "moss_stone",    MMAP_STORAGE_DECORITEM_MOSS_STONE_QOI    },
+    { "seed_pod",      MMAP_STORAGE_DECORITEM_SEED_POD_QOI      },
+    { "silk_tent",     MMAP_STORAGE_DECORITEM_SILK_TENT_QOI     },
+    { "leaf_umbrella", MMAP_STORAGE_DECORITEM_LEAF_UMBRELLA_QOI },
+    { "bone_arch",     MMAP_STORAGE_DECORITEM_BONE_ARCH_QOI     },
+    { "fossil",        MMAP_STORAGE_DECORITEM_FOSSIL_QOI        },
+    { "lantern_cap",   MMAP_STORAGE_DECORITEM_LANTERN_CAP_QOI   },
+    { "stone_bridge",  MMAP_STORAGE_DECORITEM_STONE_BRIDGE_QOI  },
 };
 
 static const icon_entry_t k_icons[] = {
@@ -158,6 +176,23 @@ static const icon_entry_t k_icons[] = {
     { "hygiene", MMAP_STORAGE_UI_HYGIENE_QOI },
     { "xp",      MMAP_STORAGE_UI_XP_QOI      },
     { "lock",    MMAP_STORAGE_UI_LOCK_QOI    },
+    { "daily",        MMAP_STORAGE_UI_DAILY_QOI        },
+    { "treats",       MMAP_STORAGE_UI_TREATS_QOI       },
+    { "backgrounds", MMAP_STORAGE_UI_BACKGROUNDS_QOI  },
+    { "achievements",MMAP_STORAGE_UI_ACHIEVEMENTS_QOI },
+    { "prey",         MMAP_STORAGE_UI_PREY_QOI         },
+    { "settings",     MMAP_STORAGE_UI_SETTINGS_QOI     },
+    { "wifi",         MMAP_STORAGE_UI_WIFI_QOI         },
+    { "sd",           MMAP_STORAGE_UI_SD_QOI           },
+    { "about",        MMAP_STORAGE_UI_ABOUT_QOI        },
+    { "battery",      MMAP_STORAGE_UI_BATTERY_QOI      },
+    { "display",      MMAP_STORAGE_UI_DISPLAY_QOI      },
+    { "sound",        MMAP_STORAGE_UI_SOUND_QOI        },
+    { "auto_feed",    MMAP_STORAGE_UI_AUTO_FEED_QOI    },
+    { "screenshot",   MMAP_STORAGE_UI_SCREENSHOT_QOI   },
+    { "reset",        MMAP_STORAGE_UI_RESET_QOI        },
+    { "volume",       MMAP_STORAGE_UI_VOLUME_QOI       },
+    { "music",        MMAP_STORAGE_UI_MUSIC_QOI        },
 };
 
 sprite_view_t sprite_view_for_heading(float heading_rad)
@@ -272,6 +307,14 @@ int sprite_background_index(uint8_t scene)
         MMAP_STORAGE_BACKGROUND_DESERT_0_QOI,
         MMAP_STORAGE_BACKGROUND_CRYSTAL_0_QOI,
         MMAP_STORAGE_BACKGROUND_CEMETERY_0_QOI,
+        MMAP_STORAGE_BACKGROUND_HOUSE_0_QOI,
+        MMAP_STORAGE_BACKGROUND_DARK_CAVE_0_QOI,
+        MMAP_STORAGE_BACKGROUND_NIGHT_0_QOI,
+        MMAP_STORAGE_BACKGROUND_AUTUMN_0_QOI,
+        MMAP_STORAGE_BACKGROUND_SNOW_0_QOI,
+        MMAP_STORAGE_BACKGROUND_POND_0_QOI,
+        MMAP_STORAGE_BACKGROUND_RUINS_0_QOI,
+        MMAP_STORAGE_BACKGROUND_MARSH_0_QOI,
     };
     return scene < sizeof backgrounds / sizeof backgrounds[0] ? backgrounds[scene] : -1;
 }

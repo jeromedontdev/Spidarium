@@ -119,6 +119,22 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(size=size), self.assertRaisesRegex(ValueError, "complete current payload"):
                 validate_save_schema(self.build)
 
+    def test_v10_variable_tail_metadata_is_required(self):
+        path, schema = self.schema_fixture()
+        (self.build / "main" / "game_config.h").write_text("#define SAVE_VERSION 10\n")
+        tail = {"offset": 260, "stride": 6, "countField": "decor_extra_count"}
+        schema.update(version=10, payloadSizes=[120, 260], maxPayload=20480, decorTail=tail)
+        schema["fields"].append({"name": "decor_extra_count", "type": "u32",
+                                 "length": 0, "offset": 256})
+        path.write_text(json.dumps(schema))
+        self.assertEqual(validate_save_schema(self.build), path)
+        for invalid in (None, {**tail, "offset": 248}, {**tail, "stride": 8},
+                        {**tail, "countField": "decor_owned"}):
+            schema["decorTail"] = invalid
+            path.write_text(json.dumps(schema))
+            with self.subTest(tail=invalid), self.assertRaisesRegex(ValueError, "variable decoration"):
+                validate_save_schema(self.build)
+
 
 if __name__ == "__main__":
     unittest.main()

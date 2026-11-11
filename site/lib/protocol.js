@@ -3,7 +3,7 @@ export function cleanLine(line) {
 }
 
 export class LineFramer {
-  constructor(onLine, limit = 16384) { this.onLine = onLine; this.limit = limit; this.pending = ''; this.decoder = new TextDecoder(); }
+  constructor(onLine, limit = 49152) { this.onLine = onLine; this.limit = limit; this.pending = ''; this.decoder = new TextDecoder(); }
   push(bytes) {
     this.pending += this.decoder.decode(bytes, { stream: true });
     if (this.pending.length > this.limit) throw new Error('Serial frame too large');
@@ -75,7 +75,15 @@ export class SerialConsole {
         }, timeout);
         const request = { accept, dataPrefix, sensitive, done: result => finish(resolve, result), fail: error => finish(reject, error) };
         this.active = request;
-        this.writer.write(new TextEncoder().encode(command + '\n')).catch(() => {
+        const transmit = async () => {
+          const bytes = new TextEncoder().encode(command + '\n');
+          for(let offset=0;offset<bytes.length;offset+=128){
+            if(this.active!==request)return;
+            await this.writer.write(bytes.subarray(offset,offset+128));
+            if(offset+128<bytes.length)await new Promise(resolve=>setTimeout(resolve,20));
+          }
+        };
+        transmit().catch(() => {
           if (this.active === request) request.fail(new Error('Serial write failed'));
         });
       });

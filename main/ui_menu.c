@@ -26,6 +26,7 @@
 #define MENU_WIDTH (ui.W - 2 * UI_CORNER)
 #define MENU_HEIGHT (ui.H - 2 * UI_CORNER)
 #define PLAY_ROUNDS 8
+#define MENU_ITEMS 40
 
 static lv_obj_t *s_menu, *s_backdrop, *s_page_label, *s_prev, *s_next;
 static lv_obj_t *s_row[PAGE_ROWS], *s_label[PAGE_ROWS], *s_detail[PAGE_ROWS];
@@ -34,9 +35,9 @@ static lv_obj_t *s_accent[PAGE_ROWS];
 static lv_obj_t *s_icons[PAGE_ROWS];
 static lv_obj_t *s_checks[PAGE_ROWS];
 static lv_obj_t *s_sliders[PAGE_ROWS];
-static ui_menu_slider_cb s_slider_cb[20];
-static bool s_check_items[20];
-static int s_icon_indices[20];
+static ui_menu_slider_cb s_slider_cb[MENU_ITEMS];
+static bool s_check_items[MENU_ITEMS];
+static int s_icon_indices[MENU_ITEMS];
 static ui_menu_pick_cb s_cb;
 static ui_menu_back_cb s_back;
 static const ui_menu_item_t *s_items;
@@ -68,17 +69,18 @@ static int menu_icon(const char *text)
 {
     if (!text) return sprite_icon_index("status");
     static const struct { const char *label, *icon; } icons[] = {
-        {"Daily","xp"}, {"Check In","xp"}, {"Treats","feed"}, {"Backgrounds","decor"},
-        {"Achievements","xp"}, {"Prey Species","feed"}, {"Decor","decor"},
-        {"Arrange Decor","decor"}, {"Placed Gift","decor"}, {"Placed Items","decor"},
+        {"Daily","daily"}, {"Check In","daily"}, {"Treats","treats"}, {"Backgrounds","backgrounds"},
+        {"Achievements","achievements"}, {"Prey Species","prey"}, {"Decor","decor"},
+        {"Settings","settings"}, {"WiFi","wifi"}, {"SD Card","sd"}, {"About","about"},
         {"Catch 3 Prey","feed"}, {"Clean 2 Times","clean"}, {"Play 3 Times","play"},
-        {"Pet 4 Times","mood"}, {"Battery","energy"}, {"Runtime","energy"},
+        {"Pet 4 Times","mood"}, {"Battery","battery"}, {"Runtime","battery"}, {"Display","display"},
         {"Power Mode","energy"}, {"Screen Timeout","sleep"}, {"Deep Sleep After","sleep"},
         {"RTC Wake Interval","energy"}, {"Deep Sleep Now","sleep"}, {"Save and Sleep","sleep"},
-        {"Volume","mood"}, {"Sound","mood"}, {"Sound On","mood"}, {"Sound Off","sleep"},
-        {"Brightness","energy"}, {"Auto Feed","feed"}, {"Move","decor"}, {"Move Gift","decor"},
+        {"Volume","volume"}, {"Sound","sound"},
+        {"Background Music","music"},
+        {"Brightness","energy"}, {"Auto Feed","auto_feed"}, {"Move","decor"}, {"Move Gift","decor"},
         {"Blocking","lock"}, {"Put Away","back"}, {"Put Gift Away","back"},
-        {"Wipe Spider","lock"}, {"Save Screenshot","decor"},
+        {"Wipe Spider","reset"}, {"Save Screenshot","screenshot"},
     };
     for (size_t i = 0; i < sizeof icons / sizeof icons[0]; i++)
         if (!strcmp(text, icons[i].label)) return sprite_icon_index(icons[i].icon);
@@ -321,7 +323,7 @@ static void refresh_page(void)
 
 void ui_menu_set_item_icon(uint8_t item, int asset_index)
 {
-    if (!s_items || item >= s_count || item >= 20) {
+    if (!s_items || item >= s_count || item >= MENU_ITEMS) {
         ESP_LOGE("spidarium.menu", "item icon rejected: invalid row %u", item);
         return;
     }
@@ -332,7 +334,7 @@ void ui_menu_set_item_icon(uint8_t item, int asset_index)
 
 void ui_menu_set_item_checkbox(uint8_t item)
 {
-    if (!s_items || item >= s_count || item >= 20) {
+    if (!s_items || item >= s_count || item >= MENU_ITEMS) {
         ESP_LOGE("spidarium.menu", "checkbox rejected: invalid row %u", item);
         return;
     }
@@ -342,7 +344,7 @@ void ui_menu_set_item_checkbox(uint8_t item)
 
 void ui_menu_set_item_slider(uint8_t item, uint8_t value, ui_menu_slider_cb cb)
 {
-    if (!s_items || item >= s_count || item >= 20 || !cb) {
+    if (!s_items || item >= s_count || item >= MENU_ITEMS || !cb) {
         ESP_LOGE("spidarium.menu", "slider rejected: invalid row %u", item);
         return;
     }
@@ -354,7 +356,7 @@ void ui_menu_set_item_slider(uint8_t item, uint8_t value, ui_menu_slider_cb cb)
 
 void ui_menu_set_slider_value(uint8_t item, uint8_t value)
 {
-    if (!s_items || item >= s_count || item >= 20 || !s_slider_cb[item]) return;
+    if (!s_items || item >= s_count || item >= MENU_ITEMS || !s_slider_cb[item]) return;
     ((ui_menu_item_t *)s_items)[item].id = value > 100 ? 100 : value;
     refresh_page();
 }
@@ -678,14 +680,14 @@ static void on_slider(lv_event_t *e)
 void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
                   ui_menu_pick_cb cb)
 {
-    if (!items || count <= 0 || count > 20) {
+    if (!items || count <= 0 || count > MENU_ITEMS) {
         ESP_LOGE("spidarium.menu", "menu rejected: no items");
         return;
     }
     open_panel(title);
     s_items = items;
     s_count = count;
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < MENU_ITEMS; i++) {
         s_icon_indices[i] = i < count ? menu_icon(items[i].label) : -1;
         s_check_items[i] = false;
         s_slider_cb[i] = NULL;

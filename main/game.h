@@ -200,9 +200,15 @@ typedef struct {
     uint8_t screen_timeout;   /* 30s, 1m, 2m, 5m, never */
     uint8_t deep_sleep_after; /* never, 5m, 15m, 30m, 1h */
     uint8_t rtc_wake;         /* 15m, 1h, 6h */
+    uint32_t decor_owned_extra;
+    uint8_t music_enabled;
+    uint8_t lights_dimmed;
+    uint32_t decor_extra_count;
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 248, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 260, "save payload ABI changed");
+_Static_assert(offsetof(game_state_t, decor_owned_extra) == 248, "extra ownership ABI changed");
+_Static_assert(offsetof(game_state_t, decor_extra_count) == 256, "extra decor ABI changed");
 _Static_assert(offsetof(game_state_t, backgrounds_owned) == 236, "background ownership ABI changed");
 _Static_assert(offsetof(game_state_t, background_id) == 240, "background selection ABI changed");
 _Static_assert(offsetof(game_state_t, brightness) == 128, "brightness ABI changed");
@@ -264,7 +270,7 @@ extern playfield_t  g_play;
 extern uint8_t g_decor_mode;      /* 1 while placing decor */
 extern uint8_t g_decor_selected;  /* chosen decor kind in placement mode */
 /* Slot being repositioned, or 0xFF when not moving. */
-extern uint8_t g_decor_move_slot;
+extern int g_decor_move_slot;
 void game_add_silk(uint32_t amount);
 
 void game_init(void);
@@ -323,6 +329,8 @@ typedef enum {
     GAME_UI_SET_AUTO_FEED,
     GAME_UI_SET_AUTO_HUNT,
     GAME_UI_SET_VOLUME,
+    GAME_UI_SET_MUSIC,
+    GAME_UI_SET_MUTED,
     GAME_UI_TEST_UI,
     GAME_UI_BACKGROUND,
     GAME_UI_TEST_HUNT,
@@ -337,9 +345,14 @@ typedef enum {
     GAME_UI_SCREEN_TEST,
     GAME_UI_SCREEN_RELEASE,
     GAME_UI_DECOR_TEST,
+    GAME_UI_DECOR_EDIT,
     GAME_UI_SETUP_DONE,
     GAME_UI_DEEP_SLEEP,
 } game_ui_action_t;
+typedef enum {
+    DECOR_EDIT_STATUS, DECOR_EDIT_CLEAR, DECOR_EDIT_PLACE, DECOR_EDIT_MOVE, DECOR_EDIT_BLOCK
+} decor_edit_t;
+bool game_ui_decor_edit(decor_edit_t operation, int value, int x, int y, int *count);
 const lv_draw_buf_t *game_screen_capture(void);
 
 /* Request a UI action. Blocks until the render tick has performed it, bounded
@@ -352,7 +365,7 @@ bool game_ui_call_value(game_ui_action_t action, int value);
 bool game_ui_open_menu(const char *name);
 /* Open the per-item decor menu for a slot. Returns false when the slot is
  * empty. Used by the serial console. */
-bool game_ui_open_decor_item(uint8_t slot);
+bool game_ui_open_decor_item(int slot);
 
 /* Called by the HUD gift picker when the player chooses a kind. */
 void game_gift_chosen(uint8_t kind);
@@ -425,6 +438,9 @@ typedef enum {
     TREAT_HUNGER = 0,
     TREAT_MOOD,
     TREAT_ENERGY,
+    TREAT_MOTH,
+    TREAT_DEW,
+    TREAT_NEST,
 } treat_t;
 
 uint32_t treat_cost(treat_t kind);

@@ -33,8 +33,6 @@ typedef struct {
     uint32_t size;
 } save_header_t;
 
-#define SAVE_MAX_PAYLOAD 1024
-
 /* Byte count of the v5 game_state_t: everything up to and including last_seen.
  * v6 appended the daily-loop fields, so a v5 blob is a valid prefix of the
  * current struct and can be migrated in place instead of discarded. */
@@ -55,7 +53,7 @@ typedef struct {
     uint8_t background_id;
     uint32_t sleep_seconds;
     sd_screenshot_t screenshot;
-    uint8_t payload[SAVE_MAX_PAYLOAD];
+    uint8_t *payload;
 } save_job_t;
 static QueueHandle_t s_queue;
 static atomic_uint s_pending;
@@ -112,6 +110,12 @@ static void migrate_automation(game_state_t *state, uint16_t version)
         state->deep_sleep_after = 0;
         state->rtc_wake = 0;
     }
+    if (version < 10) {
+        state->decor_owned_extra = 0;
+        state->decor_extra_count = 0;
+        state->music_enabled = 1;
+        state->lights_dimmed = 0;
+    }
 }
 
 static void save_worker(void *arg)
@@ -122,7 +126,6 @@ static void save_worker(void *arg)
      * already over a kilobyte and the worker's stack is deliberately small, so
      * a second large local tipped it into an overflow. Only this task touches
      * it, so a static is safe. */
-    static game_state_t snapshot;
     for (;;) {
         xQueueReceive(s_queue, &job, portMAX_DELAY);
         /* A queued save must not start during a radio-exclusive operation.
@@ -133,11 +136,10 @@ static void save_worker(void *arg)
             atomic_store(&s_writing, false);
             vTaskDelay(pdMS_TO_TICKS(20));
         }
-        if (job.sd_operation == SD_JOB_BACKUP) memcpy(&snapshot, job.payload, sizeof snapshot);
         bool ok = job.raw ? save_write_raw(job.payload, job.size) :
                   job.background ? background_write(job.background_id) :
                   job.sd_operation ? sd_run_job(job.sd_operation,
-                      job.sd_operation == SD_JOB_BACKUP ? &snapshot : NULL,
+                      job.sd_operation == SD_JOB_BACKUP ? (const game_state_t *)job.payload : NULL,
                       job.sd_operation == SD_JOB_SCREENSHOT ? &job.screenshot : NULL) :
                   job.erase ? save_erase() : save_save(job.payload, job.size);
         atomic_store(&s_last_ok, ok);
@@ -147,6 +149,7 @@ static void save_worker(void *arg)
             power_sleep_failed();
         }
         if (job.sd_operation == SD_JOB_SCREENSHOT) heap_caps_free(job.screenshot.pixels);
+        heap_caps_free(job.payload);
         if (job.raw && !ok) atomic_store(&s_restore_pending, false);
         atomic_store(&s_writing, false);
         atomic_fetch_sub(&s_pending, 1);
@@ -193,6 +196,34 @@ static bool queue_save(const save_job_t *job)
     return true;
 }
 
+static bool snapshot_job(save_job_t *job, const void *src, size_t size)
+{
+    if (!src || size != sizeof(game_state_t)) {
+        ESP_LOGE(TAG, "save snapshot rejected: invalid base state");
+        return false;
+    }
+    const game_state_t *state = src;
+    size_t count = state->decor_extra_count;
+    if (count > (SAVE_MAX_PAYLOAD - size) / sizeof(decor_item_t) ||
+        (count && !decor_extra_data())) {
+        ESP_LOGE(TAG, "save snapshot rejected: enclosure exceeds NVS storage capacity");
+        return false;
+    }
+    job->size = size + count * sizeof(decor_item_t);
+    job->payload = heap_caps_malloc(job->size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!job->payload) { ESP_LOGE(TAG, "save snapshot: PSRAM exhausted"); return false; }
+    memcpy(job->payload, src, size);
+    if (count) memcpy(job->payload + size, decor_extra_data(), count * sizeof(decor_item_t));
+    return true;
+}
+
+static bool queue_owned(save_job_t *job)
+{
+    if (queue_save(job)) return true;
+    heap_caps_free(job->payload);
+    return false;
+}
+
 bool save_request(const void *src, size_t size)
 {
     if (!src || !size || size > SAVE_MAX_PAYLOAD) {
@@ -205,25 +236,23 @@ bool save_request(const void *src, size_t size)
         ESP_LOGW(TAG, "save request skipped: raw restore pending reboot");
         return false;
     }
-    save_job_t job = { .size = size };
-    memcpy(job.payload, src, size);
-    return queue_save(&job);
+    save_job_t job = {0};
+    return snapshot_job(&job, src, size) && queue_owned(&job);
 }
 bool save_request_sleep(uint32_t seconds)
 {
-    save_job_t job = { .size = sizeof g, .sleep_seconds = seconds };
+    save_job_t job = { .sleep_seconds = seconds };
     game_state_t snapshot = g;
     time_t now = time(NULL);
     if (now >= 946684800) snapshot.last_seen = (uint32_t)now;
-    memcpy(job.payload, &snapshot, sizeof snapshot);
-    return queue_save(&job);
+    return snapshot_job(&job, &snapshot, sizeof snapshot) && queue_owned(&job);
 }
 bool save_request_erase(void) { return queue_save(&(save_job_t){ .erase = true }); }
 bool save_request_sd(uint8_t operation)
 {
     save_job_t job = { .sd_operation = operation };
-    if (operation == SD_JOB_BACKUP) memcpy(job.payload, &g, sizeof g);
-    return queue_save(&job);
+    if (operation == SD_JOB_BACKUP && !snapshot_job(&job, &g, sizeof g)) return false;
+    return queue_owned(&job);
 }
 bool save_request_background(uint8_t id)
 {
@@ -247,8 +276,14 @@ bool save_request_raw(const void *src, size_t len)
         return false;
     }
     save_job_t job = { .size = len, .raw = true };
+    job.payload = heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!job.payload) {
+        ESP_LOGE(TAG, "raw restore: PSRAM exhausted");
+        atomic_store(&s_restore_pending, false);
+        return false;
+    }
     memcpy(job.payload, src, len);
-    if (queue_save(&job)) return true;
+    if (queue_owned(&job)) return true;
     atomic_store(&s_restore_pending, false);
     return false;
 }
@@ -302,9 +337,12 @@ static bool background_write(uint8_t id)
     return err == ESP_OK;
 }
 
-bool save_load(void *dst, size_t size)
+bool save_load_snapshot(void *dst, size_t size, decor_item_t **extra)
 {
-    if (!dst || size == 0 || size > SAVE_MAX_PAYLOAD) return false;
+    if (!dst || size != sizeof(game_state_t) || !extra) {
+        ESP_LOGE(TAG, "save load rejected: invalid destination");
+        return false;
+    }
     if (!ensure_nvs()) return false;
 
     nvs_handle_t h;
@@ -313,85 +351,51 @@ bool save_load(void *dst, size_t size)
         return false;
     }
 
-    uint8_t buf[sizeof(save_header_t) + SAVE_MAX_PAYLOAD];
-    size_t len = sizeof buf;
-    esp_err_t err = nvs_get_blob(h, SAVE_KEY, buf, &len);
+    size_t len = 0;
+    esp_err_t err = nvs_get_blob(h, SAVE_KEY, NULL, &len);
+    if (err != ESP_OK || len > SAVE_MAX_RAW || len < sizeof(save_header_t)) {
+        nvs_close(h);
+        ESP_LOGW(TAG, "save missing or exceeds storage capacity");
+        return false;
+    }
+    uint8_t *buf = heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) { nvs_close(h); ESP_LOGE(TAG, "load buffer: PSRAM exhausted"); return false; }
+    err = nvs_get_blob(h, SAVE_KEY, buf, &len);
     nvs_close(h);
-
-    if (err != ESP_OK) {
-        ESP_LOGI(TAG, "no save blob; using defaults");
-        return false;
-    }
-
-    if (len < sizeof(save_header_t)) {
-        ESP_LOGW(TAG, "save blob too short (%u); rejecting", (unsigned)len);
-        return false;
-    }
-
-    save_header_t hdr;
-    memcpy(&hdr, buf, sizeof hdr);
-
-    if (hdr.magic != SAVE_MAGIC) {
-        ESP_LOGW(TAG, "save magic 0x%08x != 0x%08x; rejecting",
-                 (unsigned)hdr.magic, (unsigned)SAVE_MAGIC);
-        return false;
-    }
-    if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
-        hdr.version != 6 && hdr.version != 7 && hdr.version != 8) {
-        ESP_LOGW(TAG, "save version %u != %u; rejecting",
-                 (unsigned)hdr.version, (unsigned)SAVE_VERSION);
-        return false;
-    }
-    bool legacy = size == sizeof(game_state_t) &&
-                  hdr.size == offsetof(game_state_t, silk);
-    /* v5 payloads are 136 bytes: everything up to and including last_seen.
-     * v6 appended the daily-loop fields, so a v5 blob is a valid prefix and is
-     * accepted rather than thrown away. v7 appended the petting budget and v8
-     * the decor, so each older blob is a valid prefix in the same way. */
-    bool v5 = size == sizeof(game_state_t) && hdr.size == SAVE_V5_PAYLOAD;
-    bool v6 = size == sizeof(game_state_t) && hdr.size == SAVE_V6_PAYLOAD;
-    bool v7 = size == sizeof(game_state_t) && hdr.size == SAVE_V7_PAYLOAD;
-    bool v8 = size == sizeof(game_state_t) && hdr.size == SAVE_V8_PAYLOAD;
-    if (hdr.size != size && !legacy && !v5 && !v6 && !v7 && !v8) {
-        ESP_LOGW(TAG, "save size %u != %u; rejecting",
-                 (unsigned)hdr.size, (unsigned)size);
-        return false;
-    }
-    if (len != sizeof(save_header_t) + hdr.size ||
-        (hdr.version >= 9 && hdr.size != sizeof(game_state_t))) {
-        ESP_LOGW(TAG, "save blob length %u != %u; rejecting",
-                 (unsigned)len, (unsigned)(sizeof(save_header_t) + hdr.size));
-        return false;
-    }
-
-    memset(dst, 0, size);
-    memcpy(dst, buf + sizeof(save_header_t), hdr.size);
-    if (size == sizeof(game_state_t)) {
-        game_state_t *state = dst;
-        migrate_automation(state, hdr.version);
-        if (hdr.version == 2) {
-            ESP_LOGI(TAG, "migrated v2 automation: feed=0 hunt=0");
+    if (err == ESP_OK && save_raw_valid(buf, len)) {
+        save_header_t header;
+        memcpy(&header, buf, sizeof header);
+        game_state_t state = {0};
+        memcpy(&state, buf + sizeof header,
+               header.size < sizeof state ? header.size : sizeof state);
+        migrate_automation(&state, header.version);
+        if (header.size == offsetof(game_state_t, silk)) {
+            state.silk = 20;
+            state.brightness = 50;
+            if (state.gift.used && state.gift.kind < GIFT_KINDS)
+                state.gifts_owned = 1u << state.gift.kind;
         }
-        if (v5) {
-            ESP_LOGI(TAG, "migrated v5 save: daily loop starts fresh");
-        }
-        if (v6) {
-            ESP_LOGI(TAG, "migrated v6 save: petting budget starts fresh");
-        }
-        if (v7) {
-            ESP_LOGI(TAG, "migrated v7 save: decor starts empty");
-            decor_clear_slots(state->decor, DECOR_SLOTS);
-        }
+        size_t extra_bytes = state.decor_extra_count * sizeof(decor_item_t);
+        *extra = extra_bytes ? heap_caps_malloc(extra_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL;
+        bool loaded = !extra_bytes || *extra;
+        if (loaded && extra_bytes) memcpy(*extra, buf + sizeof header + sizeof state, extra_bytes);
+        if (!loaded) ESP_LOGE(TAG, "save extra records: PSRAM exhausted");
+        if (loaded) memcpy(dst, &state, size);
+        heap_caps_free(buf);
+        ESP_LOGI(TAG, "loaded v%u base=%u extra_decor=%lu", header.version,
+                 (unsigned)size, (unsigned long)state.decor_extra_count);
+        return loaded;
     }
-    if (legacy) {
-        game_state_t *state = dst;
-        state->silk = 20;
-        state->brightness = 50;
-        if (state->gift.used && state->gift.kind < GIFT_KINDS)
-            state->gifts_owned = 1u << state->gift.kind;
-        ESP_LOGI(TAG, "migrated pet: starter Silk=20; placed gift retained");
-    }
-    ESP_LOGI(TAG, "loaded %u bytes (v%u)", (unsigned)size, (unsigned)hdr.version);
+    heap_caps_free(buf);
+    ESP_LOGE(TAG, "stored save rejected; see validation log");
+    return false;
+}
+
+bool save_load(void *dst, size_t size)
+{
+    decor_item_t *extra = NULL;
+    if (!save_load_snapshot(dst, size, &extra)) return false;
+    decor_restore_extra(extra);
     return true;
 }
 
@@ -406,7 +410,9 @@ bool save_save(const void *src, size_t size)
     }
     if (!ensure_nvs()) return false;
 
-    uint8_t buf[sizeof(save_header_t) + SAVE_MAX_PAYLOAD];
+    uint8_t *buf = heap_caps_malloc(sizeof(save_header_t) + size,
+                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) { ESP_LOGE(TAG, "write buffer: PSRAM exhausted"); return false; }
     save_header_t hdr = {
         .magic    = SAVE_MAGIC,
         .version  = SAVE_VERSION,
@@ -419,12 +425,14 @@ bool save_save(const void *src, size_t size)
     nvs_handle_t h;
     if (nvs_open(SAVE_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
         ESP_LOGE(TAG, "nvs_open failed");
+        heap_caps_free(buf);
         return false;
     }
 
     esp_err_t err = nvs_set_blob(h, SAVE_KEY, buf, sizeof hdr + size);
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
+    heap_caps_free(buf);
 
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "save failed (%s)", esp_err_to_name(err));
@@ -458,13 +466,12 @@ bool save_erase(void)
 
 size_t save_read_raw(void *dst, size_t cap)
 {
-    if (!dst || cap == 0) return 0;
     if (!ensure_nvs()) return 0;
 
     nvs_handle_t h;
     if (nvs_open(SAVE_NAMESPACE, NVS_READONLY, &h) != ESP_OK) return 0;
 
-    size_t len = cap;
+    size_t len = dst ? cap : 0;
     esp_err_t err = nvs_get_blob(h, SAVE_KEY, dst, &len);
     nvs_close(h);
 
@@ -474,7 +481,7 @@ size_t save_read_raw(void *dst, size_t cap)
 
 bool save_raw_valid(const void *src, size_t len)
 {
-    if (!src || len < sizeof(save_header_t) || len > SAVE_MAX_PAYLOAD) {
+    if (!src || len < sizeof(save_header_t) || len > SAVE_MAX_RAW) {
         ESP_LOGW(TAG, "raw save rejected: invalid length");
         return false;
     }
@@ -483,17 +490,20 @@ bool save_raw_valid(const void *src, size_t len)
     save_header_t hdr;
     memcpy(&hdr, src, sizeof hdr);
 
-    if (hdr.magic != SAVE_MAGIC) {
+    if (hdr.magic != SAVE_MAGIC || hdr.reserved != 0) {
         ESP_LOGW(TAG, "raw write: bad magic 0x%08x", (unsigned)hdr.magic);
         return false;
     }
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
-        hdr.version != 6 && hdr.version != 7 && hdr.version != 8) {
+        hdr.version != 3 && hdr.version != 4 &&
+        hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
-    if (hdr.size != sizeof(game_state_t) && hdr.size != offsetof(game_state_t, silk) &&
+    if (!(hdr.version == 10 && hdr.size >= sizeof(game_state_t)) &&
+        hdr.size != sizeof(game_state_t) && hdr.size != 132 && hdr.size != 248 &&
+        hdr.size != offsetof(game_state_t, silk) &&
         hdr.size != SAVE_V5_PAYLOAD && hdr.size != SAVE_V6_PAYLOAD &&
         hdr.size != SAVE_V7_PAYLOAD && hdr.size != SAVE_V8_PAYLOAD) {
         ESP_LOGW(TAG, "raw write: game-state size %u != %u",
@@ -505,8 +515,29 @@ bool save_raw_valid(const void *src, size_t len)
                  (unsigned)len, (unsigned)(sizeof(save_header_t) + hdr.size));
         return false;
     }
+    static const uint16_t historical_sizes[] = {0, 0, 0, 132, 132, 136, 152, 160, 236, 248};
+    if (hdr.version >= 3 && hdr.version < 10 && hdr.size != historical_sizes[hdr.version]) {
+        ESP_LOGW(TAG, "raw save rejected: historical version/size mismatch");
+        return false;
+    }
     game_state_t state = {0};
-    memcpy(&state, (const uint8_t *)src + sizeof hdr, hdr.size);
+    memcpy(&state, (const uint8_t *)src + sizeof hdr,
+           hdr.size < sizeof state ? hdr.size : sizeof state);
+    if (hdr.version == 10) {
+        if (state.decor_extra_count > (SAVE_MAX_PAYLOAD - sizeof state) / sizeof(decor_item_t) ||
+            hdr.size != sizeof state + state.decor_extra_count * sizeof(decor_item_t) ||
+            state.music_enabled > 1 || state.lights_dimmed > 1 || state.decor_owned_extra > 3) {
+            ESP_LOGW(TAG, "raw save rejected: invalid extended habitat");
+            return false;
+        }
+        const decor_item_t *extra = (const decor_item_t *)((const uint8_t *)src + sizeof hdr + sizeof state);
+        for (uint32_t i = 0; i < state.decor_extra_count; i++)
+            if ((extra[i].kind != 255 && extra[i].kind >= DECOR_COUNT) || extra[i].blocking > 1 ||
+                extra[i].x < 0 || extra[i].x > 480 || extra[i].y < 0 || extra[i].y > 480) {
+                ESP_LOGW(TAG, "raw save rejected: invalid extended decor record %lu", (unsigned long)i);
+                return false;
+            }
+    }
     if (state.hunger > 100 || state.mood > 100 || state.energy > 100 ||
         state.hygiene > 100 || state.stage > STAGE_ADULT || state.sick > 1 ||
         state.muted > 1 || state.gift.used > 1 ||
@@ -516,7 +547,7 @@ bool save_raw_valid(const void *src, size_t len)
         (hdr.version >= 3 && (state.auto_feed > 1 || state.auto_hunt > 1)) ||
         (hdr.version >= 4 && state.volume > 100) ||
         (hdr.size >= SAVE_V5_PAYLOAD && (state.brightness < 10 || state.brightness > 100)) ||
-        (hdr.version >= 9 && (state.background_id >= 16 || state.backgrounds_owned > 65535 ||
+        (hdr.version >= 9 && (state.background_id >= 24 || state.backgrounds_owned > 0xffffff ||
          !(state.backgrounds_owned & 1u) ||
          !(state.backgrounds_owned & (1u << state.background_id)) ||
          state.power_mode > 2 || state.screen_timeout > 4 ||
@@ -549,12 +580,14 @@ bool save_write_raw(const void *src, size_t len)
 
 bool save_format_test(void)
 {
+    game_state_t base = g;
+    base.decor_extra_count = 0;
     uint8_t blob[sizeof(save_header_t) + sizeof(game_state_t)];
     save_header_t header = { .magic = SAVE_MAGIC, .version = SAVE_VERSION, .size = sizeof g };
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &g, sizeof g);
+    memcpy(blob + sizeof header, &base, sizeof base);
     bool ok = save_raw_valid(blob, sizeof blob);
-    game_state_t state = g;
+    game_state_t state = base;
     state.auto_feed = 2;
     memcpy(blob + sizeof header, &state, sizeof state);
     ok = !save_raw_valid(blob, sizeof blob) && ok;
@@ -568,19 +601,19 @@ bool save_format_test(void)
     migrate_automation(&state, header.version);
     ok = state.auto_feed == 0 && state.auto_hunt == 0 && ok;
     header.version = SAVE_VERSION;
-    state = g;
+    state = base;
     state.auto_hunt = 2;
     memcpy(blob, &header, sizeof header);
     memcpy(blob + sizeof header, &state, sizeof state);
     ok = !save_raw_valid(blob, sizeof blob) && ok;
-    state = g;
+    state = base;
     state.volume = 101;
     memcpy(blob + sizeof header, &state, sizeof state);
     ok = !save_raw_valid(blob, sizeof blob) && ok;
     state.volume = 0;
     memcpy(blob + sizeof header, &state, sizeof state);
     ok = save_raw_valid(blob, sizeof blob) && ok;
-    memcpy(blob + sizeof header, &g, sizeof g);
+    memcpy(blob + sizeof header, &base, sizeof base);
     header.version = 2;
     header.size = offsetof(game_state_t, silk);
     memcpy(blob, &header, sizeof header);

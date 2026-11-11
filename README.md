@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.18](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.18)**
+| **[Download v1.1.19](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.19)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -18,13 +18,15 @@ give it gifts. It remembers all of it across reboots.
 
 ## What makes it interesting
 
-**A quieter, customizable habitat.** Automatic ambience is off; foreground
-effects still respect Sound settings. Buy backgrounds with Silk, arrange decor
-and move placed gifts for free. Framed pixel icons and gold menu ornaments
+**An atmospheric, customizable habitat.** Gentle original background music has
+its own Sound switch; master mute silences everything. Six treats, 24 backgrounds
+and 34 decor styles share the retro artwork. Placement grows beyond twelve;
+hold decor/gifts to move them for free and double tap to dim the enclosure.
+Distinct pixel icons and gold menu ornaments
 leave Back clear. Prey have thorax-attached legs, alternating tripod steps,
 travel-driven ground animation and heading-aware sprites; the spider is unchanged.
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
-See [v1.1.18 release notes](docs/RELEASE_v1.1.18.md).
+See [v1.1.19 release notes](docs/RELEASE_v1.1.19.md).
 
 **The spider is one canvas, not a scene graph.** It is drawn from scratch into a
 single 96×96 RGB565A8 buffer every frame — legs, body, fuzz, eyes, fangs, gait,
@@ -81,11 +83,12 @@ purposes, unlocks through level 40 and visible spider visits. Existing placed
 gifts and pet progress survive the save migration.
 See [the gift shop](docs/GIFTS_CATALOG.md).
 
-**Decor is the enclosure you arrange.** Sixteen kinds — rocks, pebbles, a log, a
-bark slab, a fern, moss, a succulent, two flowers, a mushroom, a shell, a
-crystal, a leaf pile, a twig and a bone — are bought with Silk (12–68) and
-unlock from level 1 to 9. Pick one in the Decor menu, tap the tank to place it,
-and twelve slots hold the result. Each item is either **blocking** or
+**Decor is the enclosure you arrange.** Thirty-four kinds include rocks,
+plants, hides, arches, a hammock, pools, a tent, a lantern and a bridge.
+They cost 12–120 Silk and unlock from level 1 to 18. Pick one in the Decor menu,
+then tap the tank to place it. Storage grows beyond twelve items, subject to
+available PSRAM/NVS space rather than an arbitrary twelve-item cap.
+Each item is either **blocking** or
 **non-blocking**: the spider steers around a blocking item before it reaches it,
 and walks straight over a non-blocking one. Blocking is a steering input, not a
 positional shove, so the spider turns away instead of grinding against a rock.

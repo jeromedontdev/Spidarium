@@ -63,7 +63,8 @@ def main():
         schema = json.loads((Path(__file__).resolve().parents[1] / "site" / "save-schema.json").read_text())
         stable = {"name", "colour", "silk", "gifts_owned", "decor_owned", "decor",
                   "backgrounds_owned", "background_id", "power_mode", "screen_timeout",
-                  "deep_sleep_after", "rtc_wake"}
+                  "deep_sleep_after", "rtc_wake", "decor_owned_extra",
+                  "decor_extra_count", "music_enabled", "lights_dimmed"}
         for field in schema["fields"]:
             if field["name"] not in stable:
                 continue
@@ -71,6 +72,8 @@ def main():
             width = {"u8": 1, "u32": 4}.get(field["type"], field["length"])
             if before[offset:offset + width] != after[offset:offset + width]:
                 raise RuntimeError("Sleep changed saved field: " + field["name"])
+        if before[272:] != after[272:]:
+            raise RuntimeError("Sleep changed extended decor records")
         command(connection, "open close")
         print(f"DEEP SLEEP: PASS commit_log={int(committed)} timer_wake=4 disconnected={int(disconnected)} "
               "duration=5s saved_habitat=preserved; physical-button wake/current not measured")

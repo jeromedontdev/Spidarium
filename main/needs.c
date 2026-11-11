@@ -697,7 +697,11 @@ uint32_t treat_cost(treat_t kind)
     switch (kind) {
     case TREAT_HUNGER: return TREAT_HUNGER_COST;
     case TREAT_MOOD:   return TREAT_MOOD_COST;
-    default:           return TREAT_ENERGY_COST;
+    case TREAT_ENERGY: return TREAT_ENERGY_COST;
+    case TREAT_MOTH: return 14;
+    case TREAT_DEW: return 12;
+    case TREAT_NEST: return 18;
+    default: return 0;
     }
 }
 
@@ -706,12 +710,20 @@ const char *treat_name(treat_t kind)
     switch (kind) {
     case TREAT_HUNGER: return "Juicy Fly";
     case TREAT_MOOD:   return "Silk Ribbon";
-    default:           return "Warm Pebble";
+    case TREAT_ENERGY: return "Warm Pebble";
+    case TREAT_MOTH: return "Honey Moth";
+    case TREAT_DEW: return "Dew Drop";
+    case TREAT_NEST: return "Cozy Nest";
+    default: return "Unknown Treat";
     }
 }
 
 bool treat_buy(treat_t kind)
 {
+    if ((unsigned)kind >= TREAT_COUNT) {
+        ESP_LOGW(TAG, "treat rejected: invalid kind %u", (unsigned)kind);
+        return false;
+    }
     uint32_t cost = treat_cost(kind);
     if (g.silk < cost) {
         ESP_LOGW(TAG, "treat %u refused: silk=%lu cost=%lu",
@@ -727,8 +739,20 @@ bool treat_buy(treat_t kind)
     case TREAT_MOOD:
         g.mood = clamp100((int)g.mood + TREAT_MOOD_GAIN);
         break;
-    default:
+    case TREAT_ENERGY:
         g.energy = clamp100((int)g.energy + TREAT_ENERGY_GAIN);
+        break;
+    case TREAT_MOTH:
+        g.hunger = clamp100((int)g.hunger + 30);
+        g.mood = clamp100((int)g.mood + 12);
+        break;
+    case TREAT_DEW:
+        g.hygiene = clamp100((int)g.hygiene + 25);
+        g.energy = clamp100((int)g.energy + 12);
+        break;
+    case TREAT_NEST:
+        g.energy = clamp100((int)g.energy + 28);
+        g.mood = clamp100((int)g.mood + 20);
         break;
     }
     needs_recompute_mood();

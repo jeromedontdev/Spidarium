@@ -27,6 +27,14 @@ const theme_def_t k_themes[THEME_COUNT] = {
     { "desert",     1, 0x6e6044, 0x64573d, 0x5a4630, 0xc2bfa2, 0x9a8452 },
     { "crystal",    1, 0x2c3038, 0x252930, 0x4a5460, 0xb4bcc6, 0x74808c },
     { "cemetery",   1, 0x2c302a, 0x252922, 0x4a5244, 0xb2b8a4, 0x76806a },
+    { "house",      1, 0x493729, 0x403126, 0x936a42, 0xc4a16d, 0x9a734a },
+    { "dark cave",  1, 0x252b3b, 0x1d2231, 0x41586c, 0x9bacc3, 0x558b98 },
+    { "night",      1, 0x222c42, 0x1c2438, 0x455b78, 0xa2b4d2, 0xbaa66a },
+    { "autumn",     1, 0x463027, 0x3c2923, 0x84513a, 0xc49b69, 0xb2703e },
+    { "snow",       1, 0x687d8b, 0x5f7483, 0x7594a8, 0xc5d5d9, 0xa9d0df },
+    { "pond",       1, 0x30443a, 0x273b34, 0x3a7067, 0x9ebd9d, 0x5e9f91 },
+    { "ruins",      1, 0x423c33, 0x38342d, 0x766c57, 0xb7aa8a, 0x9a8057 },
+    { "marsh",      1, 0x363b2c, 0x2d3327, 0x4b6250, 0xa2ad88, 0x6d8661 },
 };
 
 static uint8_t s_current;
@@ -55,7 +63,8 @@ const theme_def_t *theme_current(void)
 }
 
 static const uint16_t k_costs[THEME_COUNT] = {
-    0, 12, 12, 16, 20, 24, 28, 16, 32, 40, 28, 24, 32, 36, 48, 48
+    0, 12, 12, 16, 20, 24, 28, 16, 32, 40, 28, 24, 32, 36, 48, 48,
+    52, 60, 60, 54, 58, 64, 72, 68
 };
 
 uint16_t theme_cost(uint8_t id) { return id < THEME_COUNT ? k_costs[id] : 0; }
@@ -71,7 +80,7 @@ void theme_restore(void)
     if (g.background_id == 255 && s_current < THEME_COUNT)
         g.background_id = s_current;
     if (g.background_id >= THEME_COUNT) g.background_id = 0;
-    g.backgrounds_owned = (g.backgrounds_owned & 65535u) | 1u | (1u << g.background_id);
+    g.backgrounds_owned = (g.backgrounds_owned & 0xFFFFFFu) | 1u | (1u << g.background_id);
     s_current = g.background_id;
 }
 

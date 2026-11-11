@@ -10,12 +10,12 @@ const SPLAT_COLOURS = ['#8a6a3a', '#4f6b2f', '#8a7a5a', '#3f3a2a', '#5a3a2a', '#
 const title = name => name.split(/[ _]+/).map(word => word[0].toUpperCase() + word.slice(1)).join(' ');
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const MENU_ICONS = {
-  Daily:'xp', 'Check In':'xp', Treats:'feed', Backgrounds:'decor', Achievements:'xp',
-  'Prey Species':'feed', Decor:'decor', 'Arrange Decor':'decor', 'Placed Items':'decor',
-  'Placed Gift':'decor', Settings:'status', WiFi:'status', 'SD Card':'status', About:'status',
-  Battery:'energy', Runtime:'energy', Display:'status', Brightness:'energy',
-  Sound:'mood', Volume:'mood', 'Sound On':'mood', 'Sound Off':'sleep',
-  'Auto Feed':'feed', 'Save Screenshot':'decor', 'Wipe Spider':'lock',
+  Daily:'daily', 'Check In':'daily', Treats:'treats', Backgrounds:'backgrounds', Achievements:'achievements',
+  'Prey Species':'prey', Decor:'decor', 'Placed Items':'decor',
+  Settings:'settings', WiFi:'wifi', 'SD Card':'sd', About:'about',
+  Battery:'battery', Runtime:'battery', Display:'display', Brightness:'energy',
+  Sound:'sound', Volume:'volume', 'Background Music':'music',
+  'Auto Feed':'auto_feed', 'Save Screenshot':'screenshot', 'Wipe Spider':'reset',
   'Catch 3 Prey':'feed', 'Clean 2 Times':'clean', 'Play 3 Times':'play', 'Pet 4 Times':'mood',
   Move:'decor', 'Move Gift':'decor', 'Put Away':'back', 'Put Gift Away':'back', Blocking:'lock',
   'Power Mode':'energy', 'Screen Timeout':'sleep', 'Deep Sleep After':'sleep', 'RTC Wake Interval':'energy',
@@ -203,10 +203,8 @@ export class DeviceGame {
         row('Backgrounds', () => this.open('Backgrounds'), 'Enclosure Themes', { submenu: true }),
         row('Achievements', () => this.open('Achievements'), this.achievementDetail(), { submenu: true }),
         row('Prey Species', () => this.open('Prey Species'), this.speciesDetail(), { submenu: true }),
-        row('Decor', () => this.open('Decor'), `${E.decorPlacedCount(this.state)} of ${E.DECOR_SLOTS} Placed`,
+        row('Decor', () => this.open('Decor'), `${E.decorPlacedCount(this.state)} Placed`,
           { submenu: true }),
-        row('Arrange Decor', () => this.open('Placed Decor'), 'Move or Put Away', { submenu: true }),
-        row('Placed Gift', () => this.open('Gift Item'), 'Move Free / Keep Its Bonus', { submenu: true, enabled: !!this.state.gift.used }),
         /* Settings is always the last row: it is the least-used entry. */
         row('Settings', () => this.open('Settings'), 'Sound, Display, WiFi', { submenu: true }),
       ]; break;
@@ -241,7 +239,9 @@ export class DeviceGame {
         ...E.TREATS.map((item, id) => row(item.name,
           () => { E.buyTreat(this.state, id); this.persist(); this.open('Treats'); },
           `${item.cost} Silk${this.state.silk < item.cost ? ' / Need More' : ''}`,
-          { enabled: this.state.silk >= item.cost })),
+          { enabled: this.state.silk >= item.cost,
+            icon:['prey_fly_walk_0','ui_treats','decoritem_rock_small',
+              'prey_moth_walk_0','ui_hygiene','decoritem_silk_tent'][id] })),
       ]; break;
       case 'Decor': {
         rows = E.DECOR_KINDS.map((item, id) => {
@@ -261,26 +261,12 @@ export class DeviceGame {
             this.beginDecorPlacement(id);
           }, detail, { icon: E.decorSprite(id), enabled: unlocked });
         });
-        rows.push(row('Placed Items', () => this.open('Placed Decor'),
-          `${E.decorPlacedCount(this.state)} of ${E.DECOR_SLOTS} Placed`, { submenu: true }));
-        break;
-      }
-      case 'Placed Decor': {
-        const placed = this.state.decor
-          .map((item, slot) => ({ item, slot }))
-          .filter(({ item }) => item.kind !== E.DECOR_EMPTY);
-        rows = placed.length ? placed.map(({ item, slot }) => row(
-          E.DECOR_KINDS[item.kind].name,
-          () => this.open('Decor Item', 0, slot),
-          `${item.blocking ? 'Blocks' : 'Walk Over'} / Tap to Change`,
-          { icon: E.decorSprite(item.kind) }))
-          : [row('Nothing Placed', null, 'Pick an Item First', { enabled: false })];
         break;
       }
       case 'Decor Item': {
         const slot = this.decorSlot;
         const item = this.state.decor[slot];
-        if (!item || item.kind === E.DECOR_EMPTY) { this.open('Placed Decor'); return; }
+        if (!item || item.kind === E.DECOR_EMPTY) { this.open('Decor'); return; }
         rows = [
           row('Blocking', () => {
             E.toggleDecorBlocking(this.state, slot); this.persist(); this.open('Decor Item', 0, slot);
@@ -288,7 +274,7 @@ export class DeviceGame {
           { icon: E.decorSprite(item.kind), selected: !!item.blocking }),
           row('Move', () => this.beginDecorMove(slot), `At ${item.x}, ${item.y}`, { submenu: true }),
           row('Put Away', () => {
-            E.removeDecor(this.state, slot); this.persist(); this.open('Placed Decor');
+            E.removeDecor(this.state, slot); this.persist(); this.open('Decor');
           }, 'Returns It to the Shop', { destructive: true }),
         ];
         break;
@@ -306,8 +292,11 @@ export class DeviceGame {
       ]; break;
       case 'Sound': rows = [
         row('Volume', null, `${this.state.volume}%`, { slider: { value: this.state.volume, min: 0, max: 100, step: 5, change: value => { this.state.volume = value; this.persist(); } } }),
-        row('Sound On', () => { this.state.sound = true; void this.audio.unlock(true); this.persist(); this.open(name); }, 'Play Effects', { selected: this.state.sound }),
-        row('Sound Off', () => { this.state.sound = false; void this.audio.unlock(false); this.persist(); this.open(name); }, 'Silence Effects', { selected: !this.state.sound }),
+        row('Sound', () => { this.state.sound = !this.state.sound; void this.audio.unlock(this.state.sound); this.persist(); this.open(name); },
+          this.state.sound ? 'On / Effects and Music' : 'Off / All Audio Muted',
+          { checkbox:true, selected:this.state.sound }),
+        row('Background Music', () => { this.state.music_enabled = this.state.music_enabled ? 0 : 1; this.persist(); this.open(name); },
+          'Gentle Ambient Score', { checkbox:true, selected:!!this.state.music_enabled }),
       ]; break;
       case 'Backgrounds': rows = E.BACKGROUNDS.map((key,id) => row(title(key), () => {
         if (!E.buyBackground(this.state,id)) { this.report('Not enough Silk for that background.',true); return; }
@@ -359,8 +348,7 @@ export class DeviceGame {
   back(name) {
     if (name === 'Menu' || name === 'Gifts') this.close();
     else if (name === 'Daily' || name === 'Treats') this.open('Menu');
-    else if (name === 'Decor Item') this.open('Placed Decor');
-    else if (name === 'Placed Decor') this.open('Decor');
+    else if (name === 'Decor Item') this.open('Decor');
     else this.open(['Backgrounds', 'Achievements', 'Prey Species', 'Decor', 'Settings'].includes(name) ? 'Menu' : 'Settings');
   }
   /** The Daily row's subtitle: what is waiting for the player right now. */
@@ -608,11 +596,31 @@ export class DeviceGame {
   pointerUp(event) {
     this.cancelLongPress();
     if (this.pointerConsumed || this.modal || this.game || this.hud) return;
+    const point = this.point(event), now = performance.now();
+    const tapping = this.pointerOrigin &&
+      Math.hypot(point.x-this.pointerOrigin.x,point.y-this.pointerOrigin.y) <= 12;
+    if(tapping){
+      if(this.lastTap && now-this.lastTap.time<=400 &&
+          Math.hypot(point.x-this.lastTap.x,point.y-this.lastTap.y)<=30){
+        clearTimeout(this.petTapTimer);this.petTapTimer=null;this.lastTap=null;
+        this.aiming=false;E.cancelAim(this.state);
+        this.state.lights_dimmed=this.state.lights_dimmed?0:1;
+        this.persist();this.report(this.state.lights_dimmed?'Enclosure Lights Dimmed.':'Enclosure Lights Restored.');
+        return;
+      }
+      this.lastTap={...point,time:now};
+    }else this.lastTap=null;
     if (!this.aiming) {
       /* A tap that did not start an aim is a pet if it landed on the spider.
        * The engine enforces the hit radius and the cooldown. */
       const p = this.point(event);
-      if (E.pet(this.state, p.x, p.y)) { this.persist(); this.report('Spider Petted.'); }
+      clearTimeout(this.petTapTimer);
+      this.petTapTimer=setTimeout(()=>{
+        this.petTapTimer=null;
+        if(!this.modal&&!this.game&&!this.hud&&E.pet(this.state,p.x,p.y)){
+          this.persist();this.report('Spider Petted.');
+        }
+      },450);
       return;
     }
     this.aiming = false;
@@ -722,6 +730,9 @@ export class DeviceGame {
           ctx.restore();
         }
       }
+      if(s.lights_dimmed){
+        ctx.fillStyle='rgba(7,12,32,0.43)';ctx.fillRect(0,0,480,480);
+      }
     }
   }
   frame(now) {
@@ -732,7 +743,7 @@ export class DeviceGame {
     } else this.accumulator = 0;
     if (this.game) this.gameFrame(now);
     if (this.started) this.audio.tick(E.STATE_NAMES[this.state.state], now, this.state.sound && !document.hidden,
-      this.state.volume, !this.hud && !this.modal && !this.game);
+      this.state.volume, !this.hud && !this.modal && !this.game, !!this.state.music_enabled);
     this.draw(); this.refreshHUD();
     if (now - this.lastSave >= 5000) { this.persist(); this.lastSave = now; }
     requestAnimationFrame(time => this.frame(time));

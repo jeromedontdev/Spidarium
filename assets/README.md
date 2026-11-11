@@ -4,9 +4,9 @@ Edit [tools/gen_sprites.py](../tools/gen_sprites.py), not individual PNGs.
 The [style contract](../docs/ART_STYLE.md) and
 [SNES handoff](../docs/ART_HANDOFF_SNES.md) describe the current direction.
 
-The deterministic set contains **158 RGBA PNGs**: 39 spider exports, 40 prey
-frames, 13 UI icons, 11 achievement badges, 18 gifts, 16 placeable decor,
-five legacy decor and 16 backgrounds. IDs and dimensions are stable.
+The deterministic set contains **201 RGBA PNGs**: 39 spider exports, 40 prey
+frames, 30 UI icons, 11 achievement badges, 18 gifts, 34 placeable decor,
+five legacy decor and 24 backgrounds. Existing IDs and dimensions are stable.
 
 ## Shared SNES artwork
 
@@ -17,7 +17,7 @@ Strong detail stays near the edges; the central 160x160 pixels use at most
 three substrate tones with luminance span <=24/255. Each background is opaque
 and uses at most 64 colors. Large furniture remains optional player decor.
 
-Sixteen `decoritem_*.png` props are authored at 32x32 and doubled to 64x64,
+Thirty-four `decoritem_*.png` props are authored at 32x32 and doubled to 64x64,
 with 8-12 visible material tones, ink rims, lit/shadow planes and surface
 details. The five legacy `decor_*.png` derive from the same art at their
 unchanged dimensions.
@@ -25,7 +25,7 @@ unchanged dimensions.
 All eighteen `gift_*.png` furnishings also use 8-12 material tones, with the
 same shaded wood, stone, foliage, facets and ink rims. This includes every
 shelter, perch, hammock, garden and toy, not only the separate decor catalogue.
-All forty prey frames, thirteen UI glyphs and eleven achievement badges now
+All forty prey frames, thirty UI glyphs and eleven achievement badges
 share discrete material lighting, without changing their recognizable motifs,
 species IDs. Living insects have six fixed thoracic leg attachments with
 alternating tripod feet; cricket hind legs have enlarged jointed femurs.
@@ -61,11 +61,11 @@ powershell -File build.ps1
 ```
 
 Validation checks the exact file set, dimensions, PNG/RGBA format, style,
-determinism across two generator passes and preservation of all 158 source
+determinism across two generator passes and preservation of all 201 source
 PNGs. For an approved redesign, generate first
 to establish its new source baseline. `--png-only` skips a stale pack, not
 preservation or runtime mapping checks.
-Add `--preview PATH.png` to write a review sheet of all 119 non-spider assets.
+Add `--preview PATH.png` to write a review sheet of all 162 non-spider assets.
 The publication workflow runs the art tests and source validation.
 
 The build wrapper packs QOI into the memory-mapped `storage` partition.

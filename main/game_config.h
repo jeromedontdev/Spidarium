@@ -149,7 +149,7 @@
 /* Gifts are permanent and one-time, so once all eighteen are owned Silk has
  * nothing to buy. Treats are consumables: they cost Silk every time and give a
  * short, visible boost. */
-#define TREAT_COUNT            3
+#define TREAT_COUNT            6
 #define TREAT_HUNGER_COST      6      /* Silk */
 #define TREAT_MOOD_COST        8
 #define TREAT_ENERGY_COST      10
@@ -499,6 +499,6 @@
 #define SAVE_MAGIC             0x53504944u   /* "SPID" */
 /* v3 uses two former padding bytes for opt-in automation. v2 progress is
  * retained, with both flags cleared; unsupported v1 layouts remain rejected. */
-#define SAVE_VERSION           9
+#define SAVE_VERSION           10
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

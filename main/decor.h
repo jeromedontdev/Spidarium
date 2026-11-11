@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 /* Decor kinds. Order is the shop order and must match k_decor_kinds[] in
  * decor.c and the sprite table in sprites.c. */
@@ -37,10 +38,28 @@ typedef enum {
     DECOR_LEAF_PILE,
     DECOR_TWIG,
     DECOR_BONE,
+    DECOR_FERN_POT,
+    DECOR_ACORN_HIDE,
+    DECOR_DRIFTWOOD_ARCH,
+    DECOR_WEB_HAMMOCK,
+    DECOR_DEW_POOL,
+    DECOR_MUSHROOM_PAIR,
+    DECOR_FLOWER_PLANTER,
+    DECOR_CRYSTAL_CLUSTER,
+    DECOR_SHELL_COVE,
+    DECOR_TWIG_LADDER,
+    DECOR_MOSS_STONE,
+    DECOR_SEED_POD,
+    DECOR_SILK_TENT,
+    DECOR_LEAF_UMBRELLA,
+    DECOR_BONE_ARCH,
+    DECOR_FOSSIL,
+    DECOR_LANTERN_CAP,
+    DECOR_STONE_BRIDGE,
     DECOR_COUNT,
 } decor_kind_t;
 
-/* How many items can be placed at once. */
+/* Legacy inline slots retained for old save compatibility, not a placement cap. */
 #define DECOR_SLOTS 12
 
 typedef struct {
@@ -79,6 +98,11 @@ int decor_placed_count(void);
 
 /* The placed item at a slot, or NULL when the slot is empty. */
 const decor_item_t *decor_at(int slot);
+int decor_slot_count(void);
+const decor_item_t *decor_extra_data(void);
+decor_item_t *decor_detach_extra(void);
+/* Adopt a worker/test-owned PSRAM record array; g carries its restored count. */
+void decor_restore_extra(decor_item_t *items);
 
 /* Place an owned kind at a playfield position. Returns the slot, or -1. */
 int decor_place(uint8_t kind, int16_t x, int16_t y);

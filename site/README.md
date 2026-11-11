@@ -105,11 +105,13 @@ Keyboard: M toggles care, arrows aim, Space releases a pounce. Auto Feed is one
 Settings switch, off by default, that drives both wild prey and unattended
 hunting. Manual feeding and
 aim/release are otherwise required. Gifts cost Silk and unlock by level.
-Hold decor/a gift to move it, or use Arrange Decor / Placed Gift in Menu.
+Hold decor/a gift to move it; redundant movement menu entries are removed.
 Gift movement is free and preserves variant/bonus/ownership. Backgrounds cost
-Silk once; cork and reapplying owned themes are free. Save v9 migrates old
-equipment without charging. Automatic ambience is disabled; foreground sound
-and volume/mute remain. Ground prey gait follows travel and plants feet at
+Silk once; cork and reapplying owned themes are free. There are 24 backgrounds,
+34 decor styles and six treats. Placement grows past twelve and save v10 keeps
+all extra records, music and lights. Double tap dims just the enclosure.
+Gentle ambient music has an independent Sound switch; master mute still
+silences everything. Ground prey gait follows travel and plants feet at
 rest; eight-heading sprites use 48x48 native size. The spider is unchanged.
 Achievement rows use the unique native icons; unavailable pages are disabled.
 Promotional spiders are rendered from the same `lib/spider-renderer.js` the game
@@ -177,7 +179,8 @@ publisher authentication. Use a trusted release/site.
 Export reads `SAVE HEX …` plus `OK save export` and downloads the **complete raw
 binary save**, not only its payload. Offline viewer accepts raw `.bin` or
 hex `.txt`/`.hex` and uses the bundled compiled schema. It checks the 12-byte
-little-endian magic/version/reserved/payload-size header, 120/132-byte payload,
+little-endian magic/version/reserved/payload-size header, legacy fixed payloads
+and v10's 260-byte prefix plus counted six-byte decor tail,
 schema field boundaries and finite numeric values. It shows absent appended
 fields in legacy saves without inventing values. It does not edit device blobs.
 Firmware remains the authority on field-level compatibility.
@@ -222,8 +225,9 @@ The corrected production page was also verified to render the native 96×96
 canvas, request no obsolete spider-sheet PNGs, default to “SPIDER” with an
 empty name input, and offer Play rather than Pet. Renderer tests compare all
 eight angular leg poses to the exact native C regression fixtures.
-The current bundled hardware-compiled v9 schema has 41 fields. Save-codec tests
-exercise the 120-byte legacy and 248-byte current payloads plus v2-v8 prefixes.
+The current hardware schema is v10 with 45 fields and a 260-byte fixed payload
+plus six bytes per extra decor slot. Save-codec tests exercise historical
+v2-v9 prefixes, variable tails, high ownership bits and malformed records.
 
 Captured screenshots are in `site/screenshots/`: `desktop.png` (whole website),
 `simulator.png` (interactive section), and `mobile.png` (390-CSS-pixel layout).

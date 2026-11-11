@@ -12,6 +12,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "sd.h"
+#include "decor.h"
+#define SAVE_MAX_PAYLOAD 20480u
+#define SAVE_MAX_RAW (SAVE_MAX_PAYLOAD + 12u)
 
 /* Allocate the queue and internal flash-writing stack before starting LVGL. */
 bool save_init(void);
@@ -20,6 +23,7 @@ bool save_init(void);
  * its magic, version and size all matched. On any mismatch `dst` is left
  * untouched so the caller can apply defaults. */
 bool save_load(void *dst, size_t size);
+bool save_load_snapshot(void *dst, size_t size, decor_item_t **extra);
 
 /* Persist `size` bytes from `src`, stamping the current magic/version/size. */
 bool save_save(const void *src, size_t size);

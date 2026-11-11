@@ -1,8 +1,9 @@
-"""Verify real codec writes and prompt ambience interruption, without changing the pet.
+"""Verify PCM parity, real codec writes and prompt ambience interruption, without changing the pet.
 
 Usage: python audio_check.py COM7
 Requires sound enabled. Logs prove PCM writes, not subjective speaker quality.
 """
+import json
 import re
 import sys
 import time
@@ -55,8 +56,39 @@ def main() -> None:
                 read()
 
         command("open sound")
+        start = command("save schema")
+        schema = json.loads(next(text.removeprefix("SAVE SCHEMA ")
+                                 for _, text in events[start:] if text.startswith("SAVE SCHEMA ")))
+        offsets = {field["name"]: 12 + field["offset"] for field in schema["fields"]}
+        start = command("save export")
+        original = bytes.fromhex(next(text.removeprefix("SAVE HEX ")
+                                      for _, text in events[start:] if text.startswith("SAVE HEX ")))
+        original_music, original_muted, original_volume = (
+            original[offsets[key]] for key in ("music_enabled", "muted", "volume"))
         try:
-            command("audiotest")
+            command("set muted 0")
+            command("set volume 70")
+            command("set music_enabled 0")
+            settle(0.3)
+            start = command("set music_enabled 1")
+            wait(r"music started: position=", start)
+            settle(1.6)
+            start = command("set music_enabled 0")
+            wait(r"music stopped: disabled samples=[1-9]", start)
+            start = command("set music_enabled 1")
+            wait(r"music started: position=", start)
+            settle(0.4)
+            start = command("set muted 1")
+            wait(r"music stopped: muted samples=[1-9]", start)
+            start = command("set muted 0")
+            wait(r"music started: position=", start)
+            print("PASS music actual playback, independent toggle, master mute and resume", flush=True)
+            start = command("audiotest")
+            for name in ("air", "leaves", "music", "pet"):
+                wait(fr"PCM {name} .*PASS", start)
+            start = command("sound 8")
+            wait(r"effect 8: written samples=2560", start)
+            print("PASS pet bell full codec write", flush=True)
             for effect, name, samples, seconds in [(7, "air", 128000, 8),
                                                    (9, "leaves", 160000, 10)]:
                 started = time.monotonic()
@@ -88,8 +120,11 @@ def main() -> None:
                        if (match := re.search(r"largest=(\d+)", text))):
                 raise RuntimeError("largest internal block below 51200")
         finally:
+            command(f"set music_enabled {original_music}")
+            command(f"set muted {original_muted}")
+            command(f"set volume {original_volume}")
             command("open close")
-    print("VERDICT: PASS - PCM parity, full writes, foreground/radio interruption")
+    print("VERDICT: PASS - music toggles/mute/resume, PCM parity, full writes, foreground/radio interruption")
 
 
 if __name__ == "__main__":

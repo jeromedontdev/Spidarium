@@ -38,7 +38,7 @@ int sprite_spider_index(sprite_view_t view, spider_anim_t anim, int frame);
 /* Resolve a prey frame to an asset index, or -1 if unavailable. */
 int sprite_prey_index(prey_species_t species, bool fleeing, bool dead, int frame);
 
-/* Resolve a UI icon to an asset index, or -1 if unavailable. */
+/* Resolve a stable snake_case UI catalogue key to an asset index, or -1. */
 int sprite_icon_index(const char *name);
 
 /* Resolve one ACH_* bit to its dedicated badge, or -1 for an invalid bit. */
@@ -48,5 +48,6 @@ int sprite_achievement_index(uint32_t bit);
 int sprite_gift_index(uint8_t kind);
 int sprite_decor_index(const char *name);
 /* Resolve a placeable decor kind (decor_kind_t) to its asset index. */
+/* Resolve a decor_kind_t id or theme id to its matching generated asset. */
 int sprite_decor_item_index(uint8_t kind);
 int sprite_background_index(uint8_t scene);
