@@ -7176,3 +7176,25 @@ silence and ten seconds of leaves, without loudness normalization. No physical
 speaker/headphone listening or user approval is claimed from sample hashes,
 envelope metrics or successful codec writes. No new claims of authorized
 association/SNTP, hosted OTA installation, SD media or RTC backup retention.
+
+### Publication and browser follow-up
+
+- Release commit/tag **bcad63a / v1.1.17**, pushed to origin/main and published
+  at <https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.17>.
+  Downloaded official ZIP matches the local verified SHA-256 above.
+- Added only the **v1.1.17 tag** to the existing protected Pages allowlist.
+  Release-triggered <https://github.com/jeromedontdev/Spidarium/actions/runs/43078060961>
+  completed **successfully** from bcad63a, including Linux art/browser gates.
+- HTTPS production manifest reports **1.1.17**, NVS excluded; verified all five
+  actual image hashes. Live HTML, app, device UI and audio module match source
+  bytes exactly.
+- Real production Web Audio opened in **running** state, created a ten-second
+  **160000-frame / 16000 Hz** leaf source, then muted/cleaned it to **zero
+  remaining sources**, with no reported audio errors. This verifies the actual
+  browser API path, not perceived sound quality.
+- **Decision made:** final review found that unchanged settings still appended
+  gain automation on every animation frame. Cache enabled/volume changes
+  instead. A 3,600-frame regression confirms no repeated automation while
+  preserving a new event for a mute transition. Final browser suite
+  **117 passed, 0 failed**; website build passed. Firmware, artwork and the
+  immutable release tag/package are unchanged by this website-only follow-up.

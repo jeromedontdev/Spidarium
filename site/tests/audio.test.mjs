@@ -108,3 +108,13 @@ test('automatic ambience never schedules pet chirps or foreground jump sounds', 
   assert.equal(effects.at(-1), 'pounce');
   assert.equal(effects.length, 21, 'no ambient trigger during a pounce');
 });
+
+test('unchanged per-frame settings do not accumulate gain automation events', () => {
+  const sound = audio();
+  sound.settings(true, 25);
+  const count = sound.master.gain.events.length;
+  for (let frame = 0; frame < 3600; frame++) sound.tick('idle', frame * 16, true, 25, false);
+  assert.equal(sound.master.gain.events.length, count);
+  sound.settings(false, 25);
+  assert.equal(sound.master.gain.events.length, count + 1);
+});

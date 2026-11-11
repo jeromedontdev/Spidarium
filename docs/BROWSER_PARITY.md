@@ -14,6 +14,7 @@ petting retains a short, soft chirp. Foreground audio fades existing ambience
 over 20 ms. Browser volume now controls a master gain; muting fades/stops
 already-playing sources, including when Sound settings are open. Hidden tabs
 also silence existing sound. Source nodes are disconnected on completion.
+Unchanged per-frame settings do not enqueue repeated gain-automation events.
 Native ambience reuses its PSRAM buffer, yields to pending effects/mute/radio
 between 100 ms chunks, and reports actual codec-write results.
 

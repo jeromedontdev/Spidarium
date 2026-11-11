@@ -78,8 +78,10 @@ export class DeviceAudio {
     source.stop(now + .02);
   }
   settings(enabled, volume) {
-    this.enabled = enabled; this.volume = clamp(volume, 0, 100) / 100;
-    if (!this.context || !this.master) return;
+    const level = clamp(volume, 0, 100) / 100;
+    const changed = enabled !== this.enabled || level !== this.volume;
+    this.enabled = enabled; this.volume = level;
+    if (!changed || !this.context || !this.master) return;
     this.master.gain.setTargetAtTime(enabled ? this.volume : 0, this.context.currentTime, .01);
     if (!enabled) for (const source of this.sources) this.fade(source);
   }
