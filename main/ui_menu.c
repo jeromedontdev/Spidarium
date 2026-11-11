@@ -26,7 +26,7 @@
 #define MENU_WIDTH (ui.W - 2 * UI_CORNER)
 #define MENU_HEIGHT (ui.H - 2 * UI_CORNER)
 #define PLAY_ROUNDS 8
-#define MENU_ITEMS 40
+#define MENU_ITEMS DECOR_COUNT
 
 static lv_obj_t *s_menu, *s_backdrop, *s_page_label, *s_prev, *s_next;
 static lv_obj_t *s_row[PAGE_ROWS], *s_label[PAGE_ROWS], *s_detail[PAGE_ROWS];

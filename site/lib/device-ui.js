@@ -1,8 +1,8 @@
-import * as E from './sim.js?v=1.1.21';
+import * as E from './sim.js?v=1.1.22';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.21';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.22';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -221,6 +221,8 @@ export class DeviceGame {
         row('Prey Species', () => this.open('Prey Species'), this.speciesDetail(), { submenu: true }),
         row('Decor', () => this.open('Decor'), `${E.decorPlacedCount(this.state)} Placed`,
           { submenu: true }),
+        row('Borders', () => this.open('Borders'), 'Mix and Match Frames',
+          { submenu: true,icon:`border_${this.state.background}_0` }),
         /* Settings is always the last row: it is the least-used entry. */
         row('Settings', () => this.open('Settings'), 'Sound, Display, WiFi', { submenu: true }),
       ]; break;
@@ -256,8 +258,7 @@ export class DeviceGame {
           () => { E.buyTreat(this.state, id); this.persist(); this.open('Treats'); },
           `${item.cost} Silk${this.state.silk < item.cost ? ' / Need More' : ''}`,
           { enabled: this.state.silk >= item.cost,
-            icon:['prey_fly_walk_0','ui_treats','decoritem_rock_small',
-              'prey_moth_walk_0','ui_hygiene','decoritem_silk_tent'][id] })),
+            icon:item.asset })),
       ]; break;
       case 'Decor': {
         rows = E.DECOR_KINDS.map((item, id) => {
@@ -329,13 +330,23 @@ export class DeviceGame {
         this.persist(); this.open(name, page);
       }, this.state.theme === key ? 'In Use' : E.backgroundOwned(this.state,id) ? 'Owned / Apply Free' : `${E.BACKGROUND_COSTS[id]} Silk / Buy`,
       { selected: this.state.theme === key, icon: `background_${key}_0` })); break;
+      case 'Borders': rows = [
+        row('No Border',()=>{E.buyBorder(this.state,255);this.persist();this.open('Borders');},
+          'Remove Frame / Free',{selected:this.state.border_id===255,icon:'border_minimal_0'}),
+        ...E.BACKGROUNDS.map((key,id)=>row(title(key),()=>{
+          if(!E.buyBorder(this.state,id)){this.report('Not enough Silk for this frame.',true);return;}
+          this.persist();this.open('Borders',Math.floor((id+1)/3));
+        },this.state.border_id===id?'In Use':E.borderOwned(this.state,id)?'Owned / Apply Free':
+          `${E.borderCost(id)} Silk / Buy Frame`,
+        {selected:this.state.border_id===id,icon:`border_${key}_0`}))
+      ];break;
       case 'Achievements': rows = E.ACHIEVEMENTS.filter(item => item.id !== 'first_pet').map(item => row(item.name, null,
         this.state.achievements & item.bit ? 'Earned' : 'Not Yet', { selected: Boolean(this.state.achievements & item.bit), icon: item.asset })); break;
       case 'Prey Species': rows = E.SPECIES.map(item => row(title(item.name), null,
         `${this.state.level >= item.unlock_level ? 'Available' : 'Locked'} / Level ${item.unlock_level} / Food x${item.hunger_mult.toFixed(1)}`,
         { icon: `prey_${item.key}_walk_0` })); break;
       case 'Gifts': rows = E.GIFTS.map(item => {
-        const owned = Boolean(this.state.gifts_owned & (1 << item.id));
+        const owned = E.giftOwned(this.state, item.id);
         const current = this.state.gift.used && this.state.gift.kind === item.id;
         const available = this.state.level >= item.level && (owned || this.state.silk >= item.cost);
         const status = this.state.level < item.level ? `Level ${item.level} / ${item.cost} Silk`
@@ -383,7 +394,7 @@ export class DeviceGame {
     else if (name === 'Soundtrack') this.open('Sound', 1);
     else if (name === 'Daily' || name === 'Treats') this.open('Menu');
     else if (name === 'Decor Item') this.open('Decor');
-    else this.open(['Backgrounds', 'Achievements', 'Prey Species', 'Decor', 'Settings'].includes(name) ? 'Menu' : 'Settings');
+    else this.open(['Backgrounds', 'Borders', 'Achievements', 'Prey Species', 'Decor', 'Settings'].includes(name) ? 'Menu' : 'Settings');
   }
   /** The Daily row's subtitle: what is waiting for the player right now. */
   dailyDetail() {
@@ -694,6 +705,10 @@ export class DeviceGame {
     const s = this.state, ctx = this.ctx;
     ctx.fillStyle = '#101c2c'; ctx.fillRect(0, 0, 480, 480);
     const bg = this.image(`background_${s.theme}_0`); if (bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, 480, 480);
+    if(s.border_id!==255){
+      const border=this.image(`border_${E.BACKGROUNDS[s.border_id]}_0`);
+      if(border.complete&&border.naturalWidth)ctx.drawImage(border,0,0,480,480);
+    }
     // Decor is part of the floor, so it draws under the gift and the droppings.
     // The source is 64x64 and the footprint radius is in playfield pixels, so
     // the drawn size is radius*4 -- the same ratio the device uses.

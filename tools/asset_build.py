@@ -16,13 +16,19 @@ except ImportError:
 
 SPIDER_COUNT = 39
 PREY_SPECIES = ("fly", "cricket", "moth", "beetle", "roach", "mealworm", "fruitfly", "waxworm")
-ASSET_COUNT = 201
-NON_SPIDER_COUNT = 162
+ASSET_COUNT = 337
+NON_SPIDER_COUNT = 298
 BACKGROUNDS = (
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
     "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
     "cemetery", "house", "dark_cave", "night", "autumn", "snow", "pond", "ruins",
     "marsh",
+    "fairy_glade", "moonflower_grove", "cathedral", "rose_courtyard",
+    "library", "observatory", "kitchen", "sewing_room", "witch_garden",
+    "moon_altar", "primeval_jungle", "amber_basin", "neon_alley",
+    "circuit_garden", "lunar_base", "starship", "enchanted_court",
+    "dragon_heath", "lost_city", "sunken_temple", "zen_garden",
+    "bamboo_grove", "sakura_courtyard", "cloud_sanctuary",
 )
 PREY_CLIPS = (("walk", 2), ("flee", 2), ("dead", 1))
 UI_ICONS = (
@@ -55,6 +61,10 @@ GIFTS = (
     "pebble", "leaf", "twig", "acorn", "moss", "sap", "flower", "crystal",
     "amber", "coral", "silk", "bone", "pearl", "ruby", "sapphire", "emerald",
     "diamond", "crown",
+    "fairy_cottage", "moon_bed", "reading_nook", "teapot_hide", "witch_hat",
+    "fern_nest", "neon_den", "star_capsule", "dragon_roost", "sun_temple",
+    "zen_pavilion", "petal_swing", "velvet_throne", "scholar_perch",
+    "potion_hide", "fossil_cradle", "holo_garden", "torii_retreat",
 )
 DECOR = ("rock_0", "rock_1", "plant_0", "plant_1", "wood_log")
 DECOR_ITEMS = (
@@ -64,7 +74,16 @@ DECOR_ITEMS = (
     "web_hammock", "dew_pool", "mushroom_pair", "flower_planter", "crystal_cluster",
     "shell_cove", "twig_ladder", "moss_stone", "seed_pod", "silk_tent",
     "leaf_umbrella", "bone_arch", "fossil", "lantern_cap", "stone_bridge",
+    "fairy_ring", "foxglove_lantern", "pixie_door", "gargoyle", "iron_gate",
+    "rose_urn", "book_stack", "globe", "quill_desk", "tea_cup", "spool",
+    "thimble", "cauldron", "broom", "potion_rack", "amber_fossil", "cycad",
+    "dinosaur_egg", "neon_sign", "holo_terminal", "cable_coil", "moon_rover",
+    "solar_array", "oxygen_pod", "wizard_tower", "dragon_statue",
+    "treasure_chest", "sun_obelisk", "glyph_tablet", "broken_column",
+    "stone_lantern", "bamboo_fountain", "bonsai", "fairy_bridge",
 )
+TREATS = ("hunger", "mood", "energy", "dew", "pollen", "silk",
+          "moon", "amber", "neon", "star", "lotus", "rune")
 PIXEL_SCALE = 2
 MAX_VISIBLE_COLORS = 12
 MAX_BACKGROUND_COLORS = 64
@@ -87,6 +106,8 @@ def expected_dimensions():
         dimensions[f"ui_{icon}.png"] = (48, 48)
     for achievement in ACHIEVEMENTS:
         dimensions[f"achievement_{achievement}.png"] = (48, 48)
+    for treat in TREATS:
+        dimensions[f"treat_{treat}.png"] = (48, 48)
     for gift in GIFTS:
         dimensions[f"gift_{gift}.png"] = (32, 32)
     dimensions.update({
@@ -101,6 +122,9 @@ def expected_dimensions():
     })
     dimensions.update({
         f"background_{name}_0.png": (240, 240) for name in BACKGROUNDS
+    })
+    dimensions.update({
+        f"border_{name}_0.png": (240, 240) for name in BACKGROUNDS
     })
     return dimensions
 
@@ -132,6 +156,7 @@ def validate_pixel_art(image, name):
     width, height = image.size
     is_background = name.startswith("background_")
     is_spider = name.startswith("spider_")
+    is_border = name.startswith("border_")
     if not is_background and (width % PIXEL_SCALE or height % PIXEL_SCALE):
         raise ValueError(f"{name}: dimensions must align to the 2x2 pixel grid")
     pixels = image.load()
@@ -152,11 +177,17 @@ def validate_pixel_art(image, name):
                 raise ValueError(f"{name}: nonuniform 2x2 pixel block at {(x, y)}")
     if not colors:
         raise ValueError(f"{name}: empty pixel-art silhouette")
-    if not is_background and len(colors) > MAX_VISIBLE_COLORS:
+    limit = 16 if is_border else MAX_VISIBLE_COLORS
+    if not is_background and len(colors) > limit:
         raise ValueError(
-            f"{name}: {len(colors)} visible RGBA colors exceeds {MAX_VISIBLE_COLORS}"
+            f"{name}: {len(colors)} visible RGBA colors exceeds {limit}"
         )
-    if name.startswith(("decoritem_", "gift_")) and len(colors) < 8:
+    if is_border:
+        if image.size != (240, 240):
+            raise ValueError(f"{name}: border must be 240x240")
+        if image.getchannel("A").crop((16, 16, 224, 224)).getbbox():
+            raise ValueError(f"{name}: border paints inside the transparent opening")
+    if name.startswith(("decoritem_", "gift_", "treat_")) and len(colors) < 8:
         raise ValueError(f"{name}: furnishings need at least 8 visible material tones")
     minimum = (6 if "_dead_" in name else 9) if name.startswith("prey_") else (
         8 if name.startswith("achievement_") else 5 if name.startswith("ui_") else 0)
@@ -454,8 +485,10 @@ def validate_runtime_mappings(root):
     required.extend(f"MMAP_STORAGE_DECOR_{name.upper()}_QOI" for name in DECOR)
     required.extend(f"MMAP_STORAGE_DECORITEM_{name.upper()}_QOI" for name in DECOR_ITEMS)
     required.extend(f"MMAP_STORAGE_UI_{name.upper()}_QOI" for name in UI_ICONS)
+    required.extend(f"MMAP_STORAGE_TREAT_{name.upper()}_QOI" for name in TREATS)
     required.extend(f"MMAP_STORAGE_ACHIEVEMENT_{name.upper()}_QOI" for name in ACHIEVEMENTS)
     required.extend(f"MMAP_STORAGE_BACKGROUND_{name.upper()}_0_QOI" for name in BACKGROUNDS)
+    required.extend(f"MMAP_STORAGE_BORDER_{name.upper()}_0_QOI" for name in BACKGROUNDS)
     missing = [name for name in required if name not in mappings]
     if missing:
         raise ValueError(f"Assets missing runtime index mappings: {missing}")
@@ -492,6 +525,18 @@ def validate_runtime_mappings(root):
     ) != expected_backgrounds:
         raise ValueError("Background IDs and sprite mappings are out of sync")
 
+    for array_name, prefix, names, suffix in (
+        ("borders", "BORDER", BACKGROUNDS, "_0"),
+        ("treats", "TREAT", TREATS, ""),
+    ):
+        array = re.search(
+            rf"static const int {array_name}\[\]\s*=\s*\{{(.*?)\n\s*\}};",
+            mappings, re.DOTALL,
+        )
+        expected = [f"MMAP_STORAGE_{prefix}_{name.upper()}{suffix}_QOI" for name in names]
+        if not array or re.findall(r"MMAP_STORAGE_\w+_QOI", array.group(1)) != expected:
+            raise ValueError(f"{array_name} IDs and dedicated sprite mappings are out of sync")
+
     with open(os.path.join(root, "main", "decor.h"), encoding="utf-8") as source:
         decor_header = source.read()
     enum_match = re.search(
@@ -520,8 +565,8 @@ def validate_runtime_mappings(root):
 
     with open(os.path.join(root, "main", "theme.h"), encoding="utf-8") as source:
         theme_header = source.read()
-    if not re.search(r"#define\s+THEME_COUNT\s+24\b", theme_header):
-        raise ValueError("theme.h must expose all 24 background IDs")
+    if not re.search(rf"#define\s+THEME_COUNT\s+{len(BACKGROUNDS)}\b", theme_header):
+        raise ValueError(f"theme.h must expose all {len(BACKGROUNDS)} background IDs")
     with open(os.path.join(root, "main", "theme.c"), encoding="utf-8") as source:
         themes = source.read()
     theme_match = re.search(
@@ -557,8 +602,9 @@ def validate_runtime_mappings(root):
 def write_preview(directory, destination):
     """Make a review sheet from validated sources, never filtered game artwork."""
     names = sorted(expected_dimensions())
-    backgrounds = [name for name in names if name.startswith("background_")]
-    sprites = [name for name in names if not name.startswith(("background_", "spider_"))]
+    backgrounds = [name for name in names if name.startswith(("background_", "border_"))]
+    sprites = [name for name in names
+               if not name.startswith(("background_", "border_", "spider_"))]
     top = ((len(backgrounds) + 3) // 4) * 260
     sheet = Image.new("RGB", (960, top + ((len(sprites) + 5) // 6) * 140), "#16283c")
     draw = ImageDraw.Draw(sheet)
@@ -567,7 +613,7 @@ def write_preview(directory, destination):
     ):
         for index, name in enumerate(group):
             with Image.open(os.path.join(directory, name)) as source:
-                scale = 1 if name.startswith("background_") else min(
+                scale = 1 if name.startswith(("background_", "border_")) else min(
                     2, 128 // max(source.size))
                 image = source.resize((source.width * scale, source.height * scale),
                                       Image.Resampling.NEAREST)
@@ -641,7 +687,7 @@ def main():
 
     print(f"VALID: {len(expected)} PNGs, RGBA, expected dimensions and names")
     print(f"PIXEL ART: {NON_SPIDER_COUNT} non-spider PNGs, binary alpha; sprites use uniform "
-          f"2x2 blocks and at most {MAX_VISIBLE_COLORS} visible colors each")
+          f"2x2 blocks, at most {MAX_VISIBLE_COLORS} colors (borders: 16)")
     print("DETERMINISTIC: two generation passes have identical SHA-256 hashes")
     print(f"SPIDER: {SPIDER_COUNT} frames exported from main/cspider.c geometry and palette")
     print(f"PRESERVED: all {len(preserved)} source PNGs are byte-identical across generation")
@@ -651,6 +697,8 @@ def main():
           f"at most {MAX_BACKGROUND_COLORS} colors, quiet three-tone 160x160 centers")
     print(f"DECOR: {len(DECOR_ITEMS)} placeable props with 8-12 material tones each")
     print(f"GIFTS: {len(GIFTS)} furnishings with 8-12 material tones each")
+    print(f"TREATS: {len(TREATS)} dedicated 48x48 fictional game item icons")
+    print(f"BORDERS: {len(BACKGROUNDS)} 240x240 frames; transparent [16,224) opening")
 
 
 if __name__ == "__main__":

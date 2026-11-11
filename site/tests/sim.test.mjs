@@ -328,10 +328,10 @@ test('achievement bits reward once, recursion-safe level5 grants exactly15XP',as
     await access(new URL(`../../assets/${a.asset}.png`,import.meta.url));
   }
 });
-test('18 gift shop levels/prices/native effective bonuses and neutral removal',async()=>{
+test('36 gift shop levels/prices/native effective bonuses and neutral removal',async()=>{
   const source=await native('gift.c');
   const levels=source.match(/levels\[GIFT_KINDS\]\s*=\s*\{([^}]+)\}/)[1].trim().split(',').map(Number);
-  assert.equal(GIFTS.length,18);assert.deepEqual(GIFTS.map(g=>g.level),levels);
+  assert.equal(GIFTS.length,36);assert.deepEqual(GIFTS.map(g=>g.level),levels);
   const s=state();
   assert.equal(purchaseGift(s,17),false);assert.equal(purchaseGift(s,0),true);assert.equal(s.silk,4);
   assert.equal(s.gift.used,0);assert.equal(purchaseGift(s,0),true);assert.equal(s.silk,4);
@@ -342,7 +342,7 @@ test('18 gift shop levels/prices/native effective bonuses and neutral removal',a
     assert.equal(g.cost,12+g.level*4);assert.equal(placeGift(s,g.id),true);
     for(const [key,value] of Object.entries(g.bonuses))if(key!=='bonus_synergy_mult')near(giftBonus(s)[key],value);
   }
-  near(giftBonus(s).pounce_range_mult,1.3);near(giftBonus(s).fear_mult,1/1.3);
+  placeGift(s,17);near(giftBonus(s).pounce_range_mult,1.3);near(giftBonus(s).fear_mult,1/1.3);
   placeGift(s,16);near(giftBonus(s).pounce_range_mult,1.2);
   removeGift(s);for(const [key,value] of Object.entries(giftBonus(s)))assert.equal(value,key==='wild_spawn_bonus'?0:1);
 });
@@ -404,10 +404,10 @@ test('restore migrates old progress/ownership and resets runtime, no offline dec
   const before=s.hunger;tick(s,2.95);assert.equal(s.hunger,before);assert.equal(s.age_ticks,0);
   const restored=restoreSim(JSON.parse(JSON.stringify({...state(),auto_feed:1,auto_hunt:1})),{random:()=>.5});
   assert.equal(restored.autoFeed,true);assert.equal(restored.autoHunt,true);
-  assert.equal(BACKGROUNDS.length,24);
+  assert.equal(BACKGROUNDS.length,48);
 });
 test('null restore creates fresh state but corrupt saves throw descriptive errors',()=>{
-  assert.equal(restoreSim(null,{random:()=>.5}).version,11);
+  assert.equal(restoreSim(null,{random:()=>.5}).version,12);
   const good=()=>JSON.parse(JSON.stringify(state()));
   for(const value of [[],new Date(),42,'{}',{}, {version:99}, {version:4}]){
     assert.throws(()=>restoreSim(value),/Invalid browser progress:/);
@@ -415,7 +415,7 @@ test('null restore creates fresh state but corrupt saves throw descriptive error
   for(const [key,value] of [
     ['xp',-1],['silk','20'],['hunger',101],['energy',NaN],['mood',Infinity],
     ['auto_feed',2],['auto_hunt',true],['autoFeed','yes'],['colour',6],
-    ['fang_colour',9],['name',false],['level',0],['gifts_owned',1<<18],
+    ['fang_colour',9],['name',false],['level',0],['gifts_owned',0x100000000],
     ['achievements',1<<11],['state',99],['background','fake'],['setup_complete',1],
     ['createdAt','not a timestamp'],['gift',{kind:99,used:1,x:240,y:240,variant:0}],
     ['_engine',null],['spider',{x:'x',y:240,heading:0,gait_phase:0}],
@@ -433,7 +433,7 @@ test('both valid legacy versions retain earned progress and clamp legacy need ra
     const raw={version,hunger:-5,mood:102,energy:999,hygiene:70.5,xp:80,silk:24,
       name:'Legacy spider',owned:[0,1],gift:1,background:'fern',autoFeed:true,autoHunt:true};
     const s=restoreSim(raw,{random:()=>.5});
-    assert.equal(s.version,11);assert.equal(s.level,3);assert.equal(s.xp,100);
+    assert.equal(s.version,12);assert.equal(s.level,3);assert.equal(s.xp,100);
     assert.deepEqual([s.hunger,s.mood,s.energy,s.hygiene],[0,100,100,70]);
     assert.equal(s.silk,24);assert.equal(s.gifts_owned,3);assert.equal(s.gift.kind,1);
     assert.equal(s.name,'Legacy spider');assert.equal(s.auto_feed,0);assert.equal(s.auto_hunt,0);
@@ -553,7 +553,7 @@ test('a v5 save restores with fresh daily fields and a baseline on first tick',(
   for(const key of ['daily_day','daily_base_day','daily_task_base','daily_streak','daily_task_done'])
     delete raw[key];
   const s=restoreSim(raw,{random:()=>.5});
-  assert.equal(s.version,11);
+  assert.equal(s.version,12);
   assert.equal(s.daily_day,CONFIG.DAILY_NEVER);
   assert.equal(s.daily_streak,0);
   assert.equal(dailyAvailable(s),true);

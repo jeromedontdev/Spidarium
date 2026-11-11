@@ -1,7 +1,7 @@
 import { SerialConsole } from './lib/protocol.js';
-import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.21';
+import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.22';
 import { loadFirmware, flashFirmware } from './lib/flasher.js';
-import { DeviceGame } from './lib/device-ui.js?v=1.1.21';
+import { DeviceGame } from './lib/device-ui.js?v=1.1.22';
 import { renderSpider } from './lib/spider-renderer.js';
 
 const $ = selector => document.querySelector(selector);

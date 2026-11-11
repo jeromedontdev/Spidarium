@@ -20,8 +20,8 @@
 /* Gift kinds. There is exactly ONE gift in the tank at a time: the player
  * gives it, and the spider keeps it until it is replaced. This replaces the
  * old 12-slot decor system, which was fiddly to place and read as clutter.
- * Expanded to 18 gifts in major overhaul (2026-11-07). */
-#define GIFT_KINDS 18  /* pebble, leaf, twig, acorn, moss, sap, flower, crystal, amber, coral, silk, bone, pearl, ruby, sapphire, emerald, diamond, crown */
+ * Existing kind IDs remain stable as the catalogue grows. */
+#define GIFT_KINDS 36
 #define NUM_LEGS   8
 #define NUM_EYES   8
 #define NUM_STATS  4
@@ -200,15 +200,25 @@ typedef struct {
     uint8_t screen_timeout;   /* 30s, 1m, 2m, 5m, never */
     uint8_t deep_sleep_after; /* never, 5m, 15m, 30m, 1h */
     uint8_t rtc_wake;         /* 15m, 1h, 6h */
+    /* Former padding: low nibble gifts 32..35, high nibble decor 64..67. */
+    uint8_t catalogue_owned_high;
+    uint16_t backgrounds_owned_extra; /* backgrounds 32..47 */
     uint32_t decor_owned_extra;
     uint8_t music_enabled;
     uint8_t lights_dimmed;
     uint8_t music_volume;
     uint8_t music_track;
     uint32_t decor_extra_count;
+    uint32_t borders_owned;
+    uint16_t borders_owned_extra;
+    uint8_t border_id;        /* 255 = no frame; otherwise background theme ID */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 260, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 268, "save payload ABI changed");
+_Static_assert(offsetof(game_state_t, borders_owned) == 260, "border ownership ABI changed");
+_Static_assert(offsetof(game_state_t, border_id) == 266, "border selection ABI changed");
+_Static_assert(offsetof(game_state_t, catalogue_owned_high) == 245, "catalogue ownership ABI changed");
+_Static_assert(offsetof(game_state_t, backgrounds_owned_extra) == 246, "background extension ABI changed");
 _Static_assert(offsetof(game_state_t, decor_owned_extra) == 248, "extra ownership ABI changed");
 _Static_assert(offsetof(game_state_t, decor_extra_count) == 256, "extra decor ABI changed");
 _Static_assert(offsetof(game_state_t, music_volume) == 254, "music volume ABI changed");
@@ -355,6 +365,7 @@ typedef enum {
     GAME_UI_DECOR_EDIT,
     GAME_UI_SETUP_DONE,
     GAME_UI_DEEP_SLEEP,
+    GAME_UI_BORDER,
 } game_ui_action_t;
 typedef enum {
     DECOR_EDIT_STATUS, DECOR_EDIT_CLEAR, DECOR_EDIT_PLACE, DECOR_EDIT_MOVE, DECOR_EDIT_BLOCK
@@ -448,6 +459,12 @@ typedef enum {
     TREAT_MOTH,
     TREAT_DEW,
     TREAT_NEST,
+    TREAT_MOON,
+    TREAT_AMBER,
+    TREAT_NEON,
+    TREAT_STAR,
+    TREAT_LOTUS,
+    TREAT_RUNE,
 } treat_t;
 
 uint32_t treat_cost(treat_t kind);

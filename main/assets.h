@@ -26,5 +26,12 @@ bool assets_ready(void);
  * decoded RGB565A8 pixels live in PSRAM and must not be freed. */
 const lv_image_dsc_t *assets_image(int index);
 
+/* LVGL-task-only full background workspace; valid until the next call for a
+ * different background. Decode from mapped QOI without I/O or allocation.
+ * Menu thumbnails from assets_image() remain persistent and independent. */
+const lv_image_dsc_t *assets_background(int index);
+/* Shares the same workspace; RGB565A8 frame with transparent center. */
+const lv_image_dsc_t *assets_border(int index);
+
 /* Convenience: number of files in the asset partition. */
 int assets_count(void);

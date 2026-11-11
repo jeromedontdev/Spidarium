@@ -1,5 +1,6 @@
 """Verify real SD backup/restore and screenshots, restoring the original pet."""
 import argparse
+import json
 from pathlib import Path
 import re
 import sys
@@ -42,17 +43,29 @@ def main():
                 command(connection, "sd restore")
                 (args.evidence_dir / "storage-previous-sd-backup.bin").write_bytes(export(connection))
                 restore(original)
+            schema = json.loads(next(line.removeprefix("SAVE SCHEMA ") for line in
+                command(connection, "save schema") if line.startswith("SAVE SCHEMA ")))
+            offsets = {field["name"]: 12 + field["offset"] for field in schema["fields"]}
+            funded = bytearray(original)
+            funded[offsets["silk"]:offsets["silk"] + 4] = (100000).to_bytes(4, "little")
+            funded[offsets["catalogue_owned_high"]] = 255
+            funded[offsets["backgrounds_owned_extra"]:offsets["backgrounds_owned_extra"] + 2] = b"\xff\xff"
+            restore(funded)
+            command(connection, "background 47")
+            command(connection, "border 47")
             command(connection, "set music_volume 35")
             command(connection, "set music_track 2")
             expected = export(connection)
             print("\n".join(command(connection, "sd backup")))
             command(connection, "set music_volume 80")
             command(connection, "set music_track 1")
+            command(connection, "background 0")
+            command(connection, "border none")
             print("\n".join(command(connection, "sd restore")))
             restored = export(connection)
             if restored[176:] != expected[176:]:
                 raise RuntimeError("SD restore changed habitat records or music preferences")
-            print("SD ROUNDTRIP PASS: full habitat tail, music volume=35, track=2")
+            print("SD ROUNDTRIP PASS: full habitat tail, high ownership, floor/frame=47, music volume=35, track=2")
             command(connection, "open settings")
             time.sleep(0.2)
             before = "\n".join(command(connection, "mem"))

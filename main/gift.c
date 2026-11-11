@@ -20,7 +20,11 @@ const char *gift_kind_name(uint8_t kind)
         "Moss Patch", "Sap Trail", "Flower Lure", "Crystal Lookout",
         "Amber Hearth", "Coral Scrubber", "Silk Hammock", "Bone Tunnel",
         "Pearl Toy", "Ruby Launchpad", "Sapphire Lookout", "Emerald Garden",
-        "Diamond Retreat", "Royal Perch"
+        "Diamond Retreat", "Royal Perch",
+        "Fairy Cottage", "Moon Bed", "Reading Nook", "Teapot Hide", "Witch Hat",
+        "Fern Nest", "Neon Den", "Star Capsule", "Dragon Roost", "Sun Temple",
+        "Zen Pavilion", "Petal Swing", "Velvet Throne", "Scholar Perch",
+        "Potion Hide", "Fossil Cradle", "Holo Garden", "Torii Retreat"
     };
     return names[kind % GIFT_KINDS];
 }
@@ -45,7 +49,25 @@ const char *gift_kind_effect(uint8_t kind)
         "Watch prey; detection +20%, aim time +15%",
         "Explore a garden; all needs decay 5% slower",
         "Rest in a retreat; balanced bonuses +20%",
-        "Climb a royal perch; balanced bonuses +30%"
+        "Climb a royal perch; balanced bonuses +30%",
+        "Rest in a cottage; energy recovery +40%",
+        "Rest under the moon; mood gain +15%",
+        "Read in peace; aim time +20%",
+        "Hide in porcelain; grime falls 30% slower",
+        "Hide under a hat; calmer hunting",
+        "Rest in ferns; energy recovery +35%",
+        "Explore neon; movement costs less energy",
+        "Rest in a capsule; grime falls 25% slower",
+        "Practice at a roost; jump range +20%",
+        "Watch from a temple; detection +25%",
+        "Rest in a pavilion; mood gain +15%",
+        "Play on petals; mood gain +20%",
+        "Rest on velvet; energy recovery +30%",
+        "Watch from books; aim time +20%",
+        "Hide with potions; fleeing prey 15% slower",
+        "Rest in a cradle; energy recovery +40%",
+        "Explore a hologram; all needs decay 5% slower",
+        "Rest under torii; balanced bonuses +15%"
     };
     return effects[kind % GIFT_KINDS];
 }
@@ -53,7 +75,8 @@ const char *gift_kind_effect(uint8_t kind)
 uint32_t gift_unlock_level(uint8_t kind)
 {
     static const uint8_t levels[GIFT_KINDS] = {
-        1,2,3,4,5,6,8,10,12,14,16,18,20,23,26,30,35,40
+        1,2,3,4,5,6,8,10,12,14,16,18,20,23,26,30,35,40,
+        4,6,8,3,10,7,12,14,16,18,5,9,13,11,15,17,20,22
     };
     return levels[kind % GIFT_KINDS];
 }
@@ -66,7 +89,18 @@ bool gift_unlocked(uint8_t kind)
 uint32_t gift_cost(uint8_t kind) { return 12 + gift_unlock_level(kind) * 4; }
 bool gift_owned(uint8_t kind)
 {
-    return kind < GIFT_KINDS && (g.gifts_owned & (1u << kind)) != 0;
+    if (kind >= GIFT_KINDS) return false;
+    return kind < 32 ? (g.gifts_owned & (1u << kind)) != 0 :
+        (g.catalogue_owned_high & (1u << (kind - 32))) != 0;
+}
+void gift_mark_owned(uint8_t kind)
+{
+    if (kind >= GIFT_KINDS) {
+        ESP_LOGW("spidarium.gift", "ownership rejected: invalid kind=%u", kind);
+        return;
+    }
+    if (kind < 32) g.gifts_owned |= 1u << kind;
+    else g.catalogue_owned_high |= 1u << (kind - 32);
 }
 bool gift_can_place(uint8_t kind)
 {
@@ -81,7 +115,7 @@ bool gift_purchase(uint8_t kind)
     }
     if (!gift_owned(kind)) {
         g.silk -= gift_cost(kind);
-        g.gifts_owned |= 1u << kind;
+        gift_mark_owned(kind);
     }
     return true;
 }
@@ -90,13 +124,17 @@ const char *gift_interaction(uint8_t kind)
     static const char *const actions[GIFT_KINDS] = {
         "Resting", "Hiding", "Climbing", "Hiding", "Exploring", "Exploring",
         "Watching", "Watching", "Resting", "Grooming", "Resting", "Exploring",
-        "Playing", "Climbing", "Watching", "Exploring", "Resting", "Climbing"
+        "Playing", "Climbing", "Watching", "Exploring", "Resting", "Climbing",
+        "Resting", "Resting", "Watching", "Hiding", "Hiding", "Resting",
+        "Exploring", "Resting", "Climbing", "Watching", "Resting", "Playing",
+        "Resting", "Watching", "Hiding", "Resting", "Exploring", "Resting"
     };
     return actions[kind % GIFT_KINDS];
 }
 bool gift_economy_test(void)
 {
     uint32_t wallet = g.silk, owned = g.gifts_owned, level = g.level;
+    uint8_t high_owned = g.catalogue_owned_high;
     g.silk = 0; g.gifts_owned = 0; g.level = 1;
     bool ok = !gift_can_place(0) && !gift_unlocked(17);
     g.silk = gift_cost(0);
@@ -106,6 +144,15 @@ bool gift_economy_test(void)
     ok = ok && !gift_can_place(17);
     g.level = 40;
     ok = gift_purchase(17) && ok && g.silk == 1000 - gift_cost(17);
+    g.silk = 10000;
+    g.catalogue_owned_high &= 0xF0;
+    for (int i = 18; i < GIFT_KINDS; i++) {
+        uint32_t before = g.silk;
+        bool was_owned = gift_owned(i);
+        ok = gift_purchase(i) && gift_owned(i) &&
+             g.silk == before - (was_owned ? 0 : gift_cost(i)) && ok;
+    }
+    g.catalogue_owned_high = high_owned;
     g.silk = wallet; g.gifts_owned = owned; g.level = level;
     return ok;
 }

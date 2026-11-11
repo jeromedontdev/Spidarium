@@ -876,14 +876,15 @@ using Web Serial. Browser credentials go only to the selected USB device.
 
 The schema is generated from compiled `offsetof(game_state_t, ...)` values,
 not guessed browser offsets. It includes the header magic/version, 12-byte
-header size, legacy 120/current 260-byte fixed payload sizes and 47 named fields with
+header size, legacy 120/current 268-byte fixed payload sizes and 52 named fields with
 little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
 Export snapshots on LVGL, waits for the existing internal-stack persistence
-worker on the console task, then reads the raw NVS blob. A new v11 backup is
-272 bytes plus six bytes per extra decor slot; supported v2-v10 payloads remain
-readable. `decorTail` identifies offset 260, stride 6 and the count field;
+worker on the console task, then reads the raw NVS blob. A new v12 backup is
+280 bytes plus six bytes per extra decor slot; supported v2-v11 payloads remain
+readable. `decorTail` identifies offset 268, stride 6 and the count field;
+v10/v11 tails retain their historical offset 260 when read.
 `maxPayload` is the 20 KB NVS/protocol storage bound. It contains no
 network credentials. Background ownership/selection and power preferences are
 included, along with extended decor ownership, music and enclosure lighting;
@@ -892,6 +893,12 @@ Music volume and track occupy former padding at offsets 254/255. Older saves
 default to 100 and track 0. `set music_volume 0..100` and `set music_track 0..2`
 use copied LVGL requests; invalid values are rejected. Tracks are Silk Garden,
 Moonlit Hollow and Rainy Canopy. Master mute and master volume still win.
+v12 ownership uses byte245 for gift32..35 (low nibble) and decor64..67 (high),
+u16 at246 for background32..47, and the full u32 at248 for decor32..63.
+Border ownership is u32 at260/u16 at264, with selection at266 (255=None).
+Earlier saves ignore those padding bytes and begin with no borders.
+`border [0..47|none]` shows or buys/applies a frame using the real Silk economy.
+`open borders` opens its picker; frame and floor are independent purchases.
 Use `save stored` to compare committed bytes without normal live needs/mood/
 clock advancement producing a new snapshot.
 

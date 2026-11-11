@@ -13,6 +13,19 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.22 doubles to 68 decor, 12 treats, 36 gifts and 48 backgrounds; all old
+  IDs/art remain unchanged. Borders offers 48 independently purchased matching
+  frames plus free None; owned frames reapply free with any floor.
+  Save v12: 268-byte prefix, 52 compiled fields, six-byte decor tail now at 268.
+  v10/v11 tails still read at 260. Former padding 245 packs gift IDs32..35 in
+  its low nibble and decor IDs64..67 high; u16 at246 stores background32..47.
+  Decor32..63 uses the full existing extra word. Border words at260/264 and
+  selection266; 255=None. Earlier saves ignore old padding and start frameless.
+  Runtime keeps 48px menu thumbnails, not all 96 full scenes/frames: one reusable
+  172,800-byte PSRAM QOI workspace decodes on explicit rebuild/test, composites
+  frame into the existing floor canvas. No per-frame allocations/worker LVGL.
+  `background 0..47`, `border 0..47|none`, `open borders` use real shop rules.
+
 - v1.1.21 adds three selectable original scores and independent music gain.
   Sound page 2 holds Music Volume and Soundtrack. Master volume/mute still win;
   effect volume is not reduced by music gain. Save v11 uses former padding

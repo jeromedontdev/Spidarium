@@ -64,15 +64,17 @@ def main():
         stable = {"name", "colour", "silk", "gifts_owned", "decor_owned", "decor",
                   "backgrounds_owned", "background_id", "power_mode", "screen_timeout",
                   "deep_sleep_after", "rtc_wake", "decor_owned_extra",
-                  "decor_extra_count", "music_enabled", "lights_dimmed", "music_volume", "music_track"}
+                  "decor_extra_count", "music_enabled", "lights_dimmed", "music_volume", "music_track",
+                  "catalogue_owned_high", "backgrounds_owned_extra", "borders_owned",
+                  "borders_owned_extra", "border_id"}
         for field in schema["fields"]:
             if field["name"] not in stable:
                 continue
             offset = 12 + field["offset"]
-            width = {"u8": 1, "u32": 4}.get(field["type"], field["length"])
+            width = {"u8": 1, "u16": 2, "u32": 4}.get(field["type"], field["length"])
             if before[offset:offset + width] != after[offset:offset + width]:
                 raise RuntimeError("Sleep changed saved field: " + field["name"])
-        if before[272:] != after[272:]:
+        if before[12 + schema["decorTail"]["offset"]:] != after[12 + schema["decorTail"]["offset"]:]:
             raise RuntimeError("Sleep changed extended decor records")
         command(connection, "open close")
         print(f"DEEP SLEEP: PASS commit_log={int(committed)} timer_wake=4 disconnected={int(disconnected)} "

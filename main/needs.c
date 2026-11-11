@@ -701,6 +701,12 @@ uint32_t treat_cost(treat_t kind)
     case TREAT_MOTH: return 14;
     case TREAT_DEW: return 12;
     case TREAT_NEST: return 18;
+    case TREAT_MOON: return 16;
+    case TREAT_AMBER: return 14;
+    case TREAT_NEON: return 18;
+    case TREAT_STAR: return 20;
+    case TREAT_LOTUS: return 16;
+    case TREAT_RUNE: return 22;
     default: return 0;
     }
 }
@@ -714,6 +720,12 @@ const char *treat_name(treat_t kind)
     case TREAT_MOTH: return "Honey Moth";
     case TREAT_DEW: return "Dew Drop";
     case TREAT_NEST: return "Cozy Nest";
+    case TREAT_MOON: return "Moon Mousse";
+    case TREAT_AMBER: return "Amber Drop";
+    case TREAT_NEON: return "Neon Jelly";
+    case TREAT_STAR: return "Star Wafer";
+    case TREAT_LOTUS: return "Lotus Nectar";
+    case TREAT_RUNE: return "Rune Biscuit";
     default: return "Unknown Treat";
     }
 }
@@ -753,6 +765,30 @@ bool treat_buy(treat_t kind)
     case TREAT_NEST:
         g.energy = clamp100((int)g.energy + 28);
         g.mood = clamp100((int)g.mood + 20);
+        break;
+    case TREAT_MOON:
+        g.mood = clamp100((int)g.mood + 28);
+        g.energy = clamp100((int)g.energy + 14);
+        break;
+    case TREAT_AMBER:
+        g.hunger = clamp100((int)g.hunger + 32);
+        g.energy = clamp100((int)g.energy + 8);
+        break;
+    case TREAT_NEON:
+        g.energy = clamp100((int)g.energy + 30);
+        g.mood = clamp100((int)g.mood + 16);
+        break;
+    case TREAT_STAR:
+        g.hunger = clamp100((int)g.hunger + 28);
+        g.energy = clamp100((int)g.energy + 22);
+        break;
+    case TREAT_LOTUS:
+        g.hygiene = clamp100((int)g.hygiene + 30);
+        g.mood = clamp100((int)g.mood + 12);
+        break;
+    case TREAT_RUNE:
+        g.hunger = clamp100((int)g.hunger + 20);
+        g.mood = clamp100((int)g.mood + 24);
         break;
     }
     needs_recompute_mood();

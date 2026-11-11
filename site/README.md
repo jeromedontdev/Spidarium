@@ -107,8 +107,11 @@ hunting. Manual feeding and
 aim/release are otherwise required. Gifts cost Silk and unlock by level.
 Hold decor/a gift to move it; redundant movement menu entries are removed.
 Gift movement is free and preserves variant/bonus/ownership. Backgrounds cost
-Silk once; cork and reapplying owned themes are free. There are 24 backgrounds,
-34 decor styles and six treats. Placement grows past twelve and save v11 keeps
+Silk once; cork and reapplying owned themes are free. There are 48 backgrounds,
+68 decor styles, 36 gifts and twelve treats. Borders offers 48 corresponding
+frames, bought independently with Silk, mixable with any floor, with free
+reapplication/removal. All eleven requested theme families are included.
+Placement grows past twelve and save v12 keeps
 all extra records, music and lights. Double tap dims just the enclosure.
 Gentle ambient music has an independent Sound switch; master mute still
 silences everything. Ground prey gait follows travel and plants feet at
@@ -184,14 +187,15 @@ Export reads `SAVE HEX …` plus `OK save export` and downloads the **complete r
 binary save**, not only its payload. Offline viewer accepts raw `.bin` or
 hex `.txt`/`.hex` and uses the bundled compiled schema. It checks the 12-byte
 little-endian magic/version/reserved/payload-size header, legacy fixed payloads
-and v10/v11's 260-byte prefix plus counted six-byte decor tail,
+v10/v11's 260-byte and v12's 268-byte prefixes plus counted six-byte decor tails,
 schema field boundaries and finite numeric values. It shows absent appended
 fields in legacy saves without inventing values. It does not edit device blobs.
 Firmware remains the authority on field-level compatibility.
 
 Restore requires a live device schema, an explicit checkbox and a second
-confirmation. `save restore HEX` is capped at the supported 144-byte blob
-(288 hex characters). Only `OK save restore; reboot required` counts as success.
+confirmation. `save restore HEX` respects the schema's 20 KB payload ceiling
+and paces serial chunks for the complete variable tail. Only
+`OK save restore; reboot required` counts as success.
 The device is left paused; **Reboot device** requires separate confirmation.
 Keep the original backup. Never close/reconnect as a substitute for a carefully
 confirmed reboot: opening the console may itself reset a device.
@@ -229,7 +233,7 @@ The corrected production page was also verified to render the native 96×96
 canvas, request no obsolete spider-sheet PNGs, default to “SPIDER” with an
 empty name input, and offer Play rather than Pet. Renderer tests compare all
 eight angular leg poses to the exact native C regression fixtures.
-The current hardware schema is v11 with 47 fields and a 260-byte fixed payload
+The current hardware schema is v12 with 52 fields and a 268-byte fixed payload
 plus six bytes per extra decor slot. Save-codec tests exercise historical
 v2-v9 prefixes, variable tails, high ownership bits and malformed records.
 

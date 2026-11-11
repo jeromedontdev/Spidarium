@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.21](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.21)**
+| **[Download v1.1.22](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.22)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -19,14 +19,18 @@ give it gifts. It remembers all of it across reboots.
 ## What makes it interesting
 
 **An atmospheric, customizable habitat.** Gentle original background music has
-its own Sound switch; master mute silences everything. Six treats, 24 backgrounds
-and 34 decor styles share the retro artwork. Placement grows beyond twelve;
+its own Sound switch, three scores and independent music volume; master mute
+silences everything. Twelve treats, 48 backgrounds, 68 decor styles and 36 gifts
+share the retro artwork. Buy 48 matching enclosure borders separately with Silk,
+mix them with any background, or remove the frame for free. Themes include
+woodland fairy, gothic, academia, household, witchy, prehistoric, cyberpunk,
+sci-fi, fantasy, lost civilizations and Japanese zen. Placement grows beyond twelve;
 hold decor/gifts to move them for free and double tap to dim the enclosure.
 Distinct pixel icons and gold menu ornaments
 leave Back clear. Prey have thorax-attached legs, alternating tripod steps,
 travel-driven ground animation and heading-aware sprites; the spider is unchanged.
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
-See [v1.1.21 release notes](docs/RELEASE_v1.1.21.md).
+See [v1.1.22 release notes](docs/RELEASE_v1.1.22.md).
 
 **The spider is one canvas, not a scene graph.** It is drawn from scratch into a
 single 96×96 RGB565A8 buffer every frame — legs, body, fuzz, eyes, fangs, gait,
@@ -373,7 +377,7 @@ read and written only by the CPU belongs in PSRAM.
 - **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** — Five-part roadmap: menu, WiFi, gifts, assets, docs
 - **[docs/MENU_ARCHITECTURE.md](docs/MENU_ARCHITECTURE.md)** — Hierarchical menu system design
 - **[docs/WIFI_ARCHITECTURE.md](docs/WIFI_ARCHITECTURE.md)** — WiFi state machine and user controls
-- **[docs/GIFTS_CATALOG.md](docs/GIFTS_CATALOG.md)** — Complete gift catalogue (5→18 gifts)
+- **[docs/GIFTS_CATALOG.md](docs/GIFTS_CATALOG.md)** — Complete 36-gift catalogue
 - **[docs/ART_STYLE.md](docs/ART_STYLE.md)** — Visual design guide: colors, icons, sprites
 - **[docs/ASSETS_INVENTORY.md](docs/ASSETS_INVENTORY.md)** — Asset status and creation priority
 - **[docs/AGENT_HANDOFF.md](docs/AGENT_HANDOFF.md)** — Everything new agents need to know

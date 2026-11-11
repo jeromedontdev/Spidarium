@@ -124,6 +124,24 @@ const gift_def_t k_gifts[GIFT_KINDS] = {
     /* Tier 11+: Legendary (Endgame) */
     { "diamond", "perfection",         12, 0xb9f2ff, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.50f },
     { "crown",   "ruler vivarium",     15, 0xffd700, 1.00f, 1.00f, 1.00f, 1.00f, 0,    1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 1.00f, 2.00f },
+    { "fairy_cottage", "rests faster", 4, 0x9cba7a, 1.40f, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "moon_bed", "lifts mood", 6, 0xb9afd2, 1, 1, 1, 1, 0, 1, 1, 1.15f, 1, 1, 1, 1, 1, 1 },
+    { "reading_nook", "longer aim window", 8, 0xb39465, 1, 1, 1, 1.20f, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "teapot_hide", "stays cleaner", 3, 0xcbb4a7, 1, .70f, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "witch_hat", "calmer hunting", 10, 0x9775ad, 1, 1, 1, 1, 0, 1, 1, 1, .75f, 1, 1, 1, 1, 1 },
+    { "fern_nest", "builds energy", 7, 0x759c63, 1.35f, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "neon_den", "uses less energy", 12, 0x65bcb9, 1, 1, 1, 1, 0, 1, 1.15f, 1, 1, 1, 1, 1, 1, 1 },
+    { "star_capsule", "stays cleaner", 14, 0x97b1cb, 1, .75f, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "dragon_roost", "leaps further", 16, 0xad795c, 1, 1, 1.20f, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "sun_temple", "watches prey", 18, 0xc3a963, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1.25f, 1, 1 },
+    { "zen_pavilion", "lifts mood", 5, 0x8eab85, 1, 1, 1, 1, 0, 1, 1, 1.15f, 1, 1, 1, 1, 1, 1 },
+    { "petal_swing", "lifts mood", 9, 0xd59ab4, 1, 1, 1, 1, 0, 1, 1, 1.20f, 1, 1, 1, 1, 1, 1 },
+    { "velvet_throne", "builds energy", 13, 0xad728c, 1.30f, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "scholar_perch", "longer aim window", 11, 0x9d8b6b, 1, 1, 1, 1.20f, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "potion_hide", "slower fleeing prey", 15, 0xa595bc, 1, 1, 1, 1, 0, 1, 1, 1, 1, .85f, 1, 1, 1, 1 },
+    { "fossil_cradle", "rests faster", 17, 0xbda16b, 1.40f, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+    { "holo_garden", "slower needs decay", 20, 0x7bbca4, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, .95f, 1 },
+    { "torii_retreat", "balanced bonuses", 22, 0xb17b65, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1.15f },
 };
 
 const gift_def_t *gift_def(uint8_t kind)

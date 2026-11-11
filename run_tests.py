@@ -155,7 +155,7 @@ def main():
         if cmd == "radio":
             valid = valid and any("active=0 busy=0" in line for line in lines)
         if cmd == "gifttest":
-            valid = valid and any("tested=18 removed_neutral=1" in line for line in lines)
+            valid = valid and any("tested=36 removed_neutral=1" in line for line in lines)
         if valid:
             passed += 1
         else:

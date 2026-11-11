@@ -61,6 +61,7 @@ uint32_t gift_unlock_level(uint8_t kind);
 bool gift_unlocked(uint8_t kind);
 uint32_t gift_cost(uint8_t kind);
 bool gift_owned(uint8_t kind);
+void gift_mark_owned(uint8_t kind);
 bool gift_can_place(uint8_t kind);
 bool gift_purchase(uint8_t kind);
 const char *gift_interaction(uint8_t kind);

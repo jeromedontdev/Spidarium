@@ -51,23 +51,23 @@ test('WiFi validation enforces byte lengths, open networks and protocol injectio
 });
 test('bundled hardware-compiled schema decodes both actual ABI payload sizes', async () => {
   const actual = validateSchema(JSON.parse(await readFile(new URL('../save-schema.json', import.meta.url), 'utf8')));
-  assert.equal(actual.version, 11);
-  assert.equal(actual.fields.length, 47);
+  assert.equal(actual.version, 12);
+  assert.equal(actual.fields.length, 52);
   for (const size of actual.payloadSizes) {
     const bytes = new Uint8Array(12 + size), view = new DataView(bytes.buffer);
     view.setUint32(0, actual.magic, true); view.setUint16(4, size === 120 ? 2 : actual.version, true); view.setUint32(8, size, true);
     bytes[12] = 83;
-    if (size === 260) bytes[12 + 236] = 1;
+    if (size === 268) { bytes[12 + 236] = 1; bytes[12 + 266] = 255; }
     const name = actual.fields.find(field => field.name === 'name');
     bytes.set(new TextEncoder().encode('Schema Test'), 12 + name.offset);
     const silk = actual.fields.find(field => field.name === 'silk');
     if (silk.offset + 4 <= size) view.setUint32(12 + silk.offset, 12345, true);
     const parsed = decodeSave(fromHex(toHex(bytes)), actual);
     assert.equal(parsed.fields.name, 'Schema Test'); assert.equal(parsed.fields.hunger, 83);
-    if (size === 260) assert.equal(parsed.fields.silk, 12345);
+    if (size === 268) assert.equal(parsed.fields.silk, 12345);
     else assert.match(parsed.fields.silk, /older save/);
-    assert.equal(parsed.fields.volume, size === 260 ? 0 : 70);
-    if (size === 260) assert.equal(parsed.fields.decor.length, 12);
+    assert.equal(parsed.fields.volume, size === 268 ? 0 : 70);
+    if (size === 268) assert.equal(parsed.fields.decor.length, 12);
   }
 });
 test('current compiled schema reads v5-v9 prefixes and all twelve little-endian decor slots', async () => {

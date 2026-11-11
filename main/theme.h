@@ -19,7 +19,7 @@ typedef struct {
     uint32_t    dust;            /* fixed highlight */
 } theme_def_t;
 
-#define THEME_COUNT 24
+#define THEME_COUNT 48
 
 /* The catalogue. Indexed by theme id. */
 extern const theme_def_t k_themes[THEME_COUNT];
@@ -40,6 +40,9 @@ bool theme_unlocked(uint8_t id);
 bool theme_owned(uint8_t id);
 uint16_t theme_cost(uint8_t id);
 void theme_restore(void);
+bool border_owned(uint8_t id);
+uint16_t border_cost(uint8_t id);
+bool border_set(uint8_t id); /* 255 removes the frame without changing ownership */
 
 /* Cycle to the next unlocked theme. Returns the new id. */
 uint8_t theme_next(void);

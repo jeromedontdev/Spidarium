@@ -25,10 +25,12 @@ spider geometry, palettes or rendering.
 | Prey splatters | 24x24 | 48x48 | 6-12 |
 | UI icons | 24x24 | 48x48 | 5-12; simple arrows remain readable |
 | Achievement badges | 24x24 | 48x48 | 8-12 |
+| Dedicated treat icons | 24x24 | 48x48 | 8-12 |
 | Gifts | 16x16 | 32x32; gifts displayed at 64x64 | 8-12 |
 | Placeable decor | 32x32 | 64x64; runtime uses footprint radius | 8-12 |
 | Legacy decor | Half its PNG dimensions | Existing dimensions unchanged | At most 12 |
 | Backgrounds | 240x240 | 240x240, enlarged to 480x480 | At most 64 |
+| Enclosure borders | 120x120 | 240x240, enlarged to 480x480 | At most 16 |
 | Spider exports | 96x96 | 96x96 | At most 12; approved renderer unchanged |
 
 Sprites use exact nearest-neighbor doubling: each aligned 2x2 block is uniform.
@@ -38,7 +40,8 @@ No smoothing, blur, continuous gradients or translucent shadows.
 
 ## Terrain: detail at the edges, breathing room in the middle
 
-All sixteen saved theme IDs remain unchanged. Backgrounds are low-profile
+All twenty-four existing saved theme IDs remain unchanged; twenty-four append.
+Backgrounds are low-profile
 terrain, not pre-furnished rooms:
 
 - Cork and woodland: warm substrate with rimmed bark chips.
@@ -74,7 +77,7 @@ art quality: inspect the actual composition with the spider and placed items.
 
 ## Decor
 
-All sixteen placeable sprites have 8-12 visible tones. Distinct material
+All sixty-eight placeable sprites have 8-12 visible tones. Distinct material
 surfaces matter more than simply adding colors:
 
 - Rocks have lit upper faces, cool shadow planes, small chips and broken rims.
@@ -92,7 +95,7 @@ highlight/shadow ellipses outside an ink rim. `_leaf_shape()` draws lit and
 shadowed halves and a midrib. Top-left lighting is shared throughout.
 Legacy `decor_*.png` derive from the same redesigned placeable art.
 
-**Decor includes all eighteen gift furnishings**, not only the sixteen
+**Decor includes all thirty-six gift furnishings**, not only the sixty-eight
 `decoritem_*.png` props. Gifts use the same top-left light, ink rims, shaded
 wood/stone/foliage and 8-12 visible tones within their smaller 16x16 logical
 canvas. Their stable filenames denote gameplay IDs, not literal jewels:
@@ -104,6 +107,42 @@ facets, foliage has separate leaf planes, and silk has woven folds.
 Never change catalogue IDs, ordering, footprint radii, blocking defaults or
 save data for an art-only change. The C enum/catalogue, sprite mappings,
 validator and browser catalogue must continue to agree.
+
+## Appended catalogue and enclosure frames
+
+The 34 appended props and 18 appended furnishings have separately authored
+silhouettes: fairy doors and bridges, ironwork and urns, books and globes,
+household sewing tools, witchcraft props, fossils and cycads, neon machinery,
+space equipment, fantasy monuments, lost-city stonework and Japanese gardens.
+The 24 appended backgrounds echo these themes through different architectural,
+vegetation, celestial, water and circuit edge compositions, with the same
+quiet-center contract. All original 201 PNGs and both spider renderers remain
+unchanged.
+
+Each of the 48 backgrounds has a separate `border_{theme}_0.png`. Borders are
+transparent enclosure overlays, never backgrounds with an opaque center.
+Their 120x120 logical pixels double without filtering to 240x240. The entire
+source opening `[16,224)` on both axes must be alpha zero; only the outer
+16-pixel band may contain ink/materials. Theme-specific vines, flowers,
+masonry, shells, crystals, books, circuits, clouds and raked stone edge motifs
+use binary alpha and at most 16 colors. Rotation is exact, never interpolated.
+Fifteen separately authored corner silhouette families reinforce theme identity:
+leaf boughs, fairy mushrooms, gothic gargoyle/arches, academia books, sewing
+buttons/spools, witch potions/moons, fossil ribs, cyberpunk cog/wires, space
+stars/solar panels, fantasy battlements/dragons, ancient stepped temples/runes,
+zen torii/bamboo, shells, crystal shards and desert dunes/cacti. Corner
+ornaments extend along both edges but never intrude into the transparent opening.
+Material ramps likewise differ by family: cold steel/cyan and navy/magenta
+are not shaded wood; gothic stone is cool with burgundy accents; academia
+is oak/brass; household goods are porcelain/cloth; witchcraft is black-plum
+and herb green; fossils are umber/amber; Japanese props are bamboo/stone.
+
+Twelve dedicated treat icons use 24x24 logical pixels and 8-12 tones.
+Legacy filename keys do not rename items: `hunger`, `mood`, `energy`, `dew`,
+`pollen`, `silk` mean Juicy Fly, Silk Ribbon, Warm Pebble, Honey Moth,
+Dew Drop and Cozy Nest respectively. The six appended keys are `moon`,
+`amber`, `neon`, `star`, `lotus`, `rune`. Treats are explicitly fictional game
+rewards; art must not imply real spider nutrition or animal-care advice.
 
 ## Prey, glyphs and badges
 

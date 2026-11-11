@@ -24,6 +24,8 @@ static bool                 s_ready;
 /* Persistent per-asset descriptors. See assets_image(). */
 static lv_image_dsc_t s_dsc[MMAP_STORAGE_FILES];
 static bool           s_dsc_used[MMAP_STORAGE_FILES];
+static lv_image_dsc_t s_background;
+static int s_background_index = -1;
 
 static uint32_t read_be32(const uint8_t *p)
 {
@@ -129,6 +131,9 @@ static bool decode_qoi_rgb565a8(const uint8_t *qoi, size_t qoi_size,
 
 static void clear_decoded_assets(void)
 {
+    heap_caps_free((void *)s_background.data);
+    memset(&s_background, 0, sizeof s_background);
+    s_background_index = -1;
     for (int i = 0; i < MMAP_STORAGE_FILES; i++) {
         if (s_dsc_used[i]) {
             heap_caps_free((void *)s_dsc[i].data);
@@ -140,6 +145,16 @@ static void clear_decoded_assets(void)
 
 static bool decode_assets_to_psram(void)
 {
+    uint8_t *background = heap_caps_malloc(240 * 240 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!background) {
+        ESP_LOGE(TAG, "background workspace: PSRAM exhausted");
+        return false;
+    }
+    s_background = (lv_image_dsc_t){
+        .header = { .magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565,
+                    .w = 240, .h = 240 },
+        .data = background, .data_size = 240 * 240 * 2,
+    };
     for (int i = 0; i < MMAP_STORAGE_FILES; i++) {
         const uint8_t *qoi = mmap_assets_get_mem(s_assets, i);
         int qoi_size = mmap_assets_get_size(s_assets, i);
@@ -159,8 +174,10 @@ static bool decode_assets_to_psram(void)
             return false;
         }
 
-        bool opaque = width == 240 && height == 240;
-        size_t decoded_size = pixel_count * (opaque ? 2 : 3);
+        bool full = width == 240 && height == 240;
+        bool opaque = full && strncmp(mmap_assets_get_name(s_assets, i), "background_", 11) == 0;
+        /* Background menus retain thumbnails, not forty-eight full sources. */
+        size_t decoded_size = full ? 48 * 48 * (opaque ? 2 : 3) : pixel_count * 3;
         uint8_t *decoded = heap_caps_malloc(decoded_size,
                                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!decoded) {
@@ -170,20 +187,29 @@ static bool decode_assets_to_psram(void)
             return false;
         }
         if (!decode_qoi_rgb565a8(qoi, (size_t)qoi_size, (uint32_t)width,
-                                 (uint32_t)height, decoded, opaque)) {
+                                 (uint32_t)height, full ? background : decoded, opaque)) {
             ESP_LOGE(TAG, "QOI decode failed for asset %d (%s)",
                      i, mmap_assets_get_name(s_assets, i));
             heap_caps_free(decoded);
             clear_decoded_assets();
             return false;
         }
+        if (full) {
+            for (int y = 0; y < 48; y++)
+                for (int x = 0; x < 48; x++) {
+                    ((uint16_t *)decoded)[y * 48 + x] = ((uint16_t *)background)[y * 5 * 240 + x * 5];
+                    if (!opaque) decoded[48 * 48 * 2 + y * 48 + x] =
+                        background[240 * 240 * 2 + y * 5 * 240 + x * 5];
+                }
+            s_background_index = i;
+        }
 
         lv_image_dsc_t *d = &s_dsc[i];
         memset(d, 0, sizeof *d);
         d->header.magic = LV_IMAGE_HEADER_MAGIC;
         d->header.cf = opaque ? LV_COLOR_FORMAT_RGB565 : LV_COLOR_FORMAT_RGB565A8;
-        d->header.w = (uint32_t)width;
-        d->header.h = (uint32_t)height;
+        d->header.w = full ? 48 : (uint32_t)width;
+        d->header.h = full ? 48 : (uint32_t)height;
         d->data = decoded;
         d->data_size = (uint32_t)decoded_size;
         s_dsc_used[i] = true;
@@ -252,3 +278,30 @@ const lv_image_dsc_t *assets_image(int index)
     if (!s_ready || index < 0 || index >= MMAP_STORAGE_FILES) return NULL;
     return s_dsc_used[index] ? &s_dsc[index] : NULL;
 }
+
+static const lv_image_dsc_t *full_image(int index, bool opaque)
+{
+    if (!s_ready || index < 0 || index >= MMAP_STORAGE_FILES ||
+        strncmp(mmap_assets_get_name(s_assets, index), opaque ? "background_" : "border_", opaque ? 11 : 7) != 0 ||
+        mmap_assets_get_width(s_assets, index) != 240 ||
+        mmap_assets_get_height(s_assets, index) != 240) {
+        ESP_LOGE(TAG, "invalid background index %d", index);
+        return NULL;
+    }
+    if (s_background_index != index) {
+        if (!decode_qoi_rgb565a8(mmap_assets_get_mem(s_assets, index),
+                mmap_assets_get_size(s_assets, index), 240, 240,
+                (uint8_t *)s_background.data, opaque)) {
+            s_background_index = -1;
+            ESP_LOGE(TAG, "background decode failed: %d", index);
+            return NULL;
+        }
+        s_background_index = index;
+    }
+    s_background.header.cf = opaque ? LV_COLOR_FORMAT_RGB565 : LV_COLOR_FORMAT_RGB565A8;
+    s_background.data_size = 240 * 240 * (opaque ? 2 : 3);
+    return &s_background;
+}
+
+const lv_image_dsc_t *assets_background(int index) { return full_image(index, true); }
+const lv_image_dsc_t *assets_border(int index) { return full_image(index, false); }

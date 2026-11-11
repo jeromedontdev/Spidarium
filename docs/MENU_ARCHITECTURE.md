@@ -9,11 +9,12 @@ menu-stack/slider architecture; use the implemented API.
 ```
 Menu
   Daily                  check-in and the rotating task
-  Treats                 six consumables bought with Silk
-  Backgrounds            twenty-four ground textures, buy once with Silk
+  Treats                 twelve consumables bought with Silk
+  Backgrounds            forty-eight ground textures, buy once with Silk
   Achievements           read-only, paged
   Prey species           read-only unlock list
-  Decor                  thirty-four kinds; buy, then tap the tank to place
+  Decor                  sixty-eight kinds; buy, then tap the tank to place
+  Borders                No Border + forty-eight theme frames; buy once with Silk
   Settings
     WiFi
       Scan networks      explicit on-demand action
@@ -36,6 +37,10 @@ Menu
 Settings is always the last row of the root menu: it is the least-used entry and
 belongs at the bottom rather than in the middle. Daily and Treats have no
 redundant full-width Back row because the corner Back button already exists.
+Gifts has thirty-six furnishings, one active at a time. Borders are independent
+of backgrounds: buying a frame does not buy/change its floor. Owned frames
+reapply free, No Border removes one free without losing ownership. Native menu
+metadata capacity follows DECOR_COUNT (68); visible objects remain three cards.
 
 Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Back from saved network/editor
 returns to WiFi. Other submenus return to the root; root Back closes.

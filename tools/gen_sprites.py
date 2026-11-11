@@ -84,6 +84,10 @@ GIFT_NAMES = [
     "pebble", "leaf", "twig", "acorn", "moss", "sap", "flower", "crystal",
     "amber", "coral", "silk", "bone", "pearl", "ruby", "sapphire", "emerald",
     "diamond", "crown",
+    "fairy_cottage", "moon_bed", "reading_nook", "teapot_hide", "witch_hat",
+    "fern_nest", "neon_den", "star_capsule", "dragon_roost", "sun_temple",
+    "zen_pavilion", "petal_swing", "velvet_throne", "scholar_perch",
+    "potion_hide", "fossil_cradle", "holo_garden", "torii_retreat",
 ]
 
 DECOR_NAMES = ["rock_0", "rock_1", "plant_0", "plant_1", "wood_log"]
@@ -99,12 +103,30 @@ DECOR_ITEM_NAMES = [
     "mushroom_pair", "flower_planter", "crystal_cluster", "shell_cove",
     "twig_ladder", "moss_stone", "seed_pod", "silk_tent", "leaf_umbrella",
     "bone_arch", "fossil", "lantern_cap", "stone_bridge",
+    "fairy_ring", "foxglove_lantern", "pixie_door", "gargoyle", "iron_gate",
+    "rose_urn", "book_stack", "globe", "quill_desk", "tea_cup", "spool",
+    "thimble", "cauldron", "broom", "potion_rack", "amber_fossil", "cycad",
+    "dinosaur_egg", "neon_sign", "holo_terminal", "cable_coil", "moon_rover",
+    "solar_array", "oxygen_pod", "wizard_tower", "dragon_statue",
+    "treasure_chest", "sun_obelisk", "glyph_tablet", "broken_column",
+    "stone_lantern", "bamboo_fountain", "bonsai", "fairy_bridge",
 ]
 BACKGROUND_NAMES = [
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
     "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
     "cemetery",
     "house", "dark_cave", "night", "autumn", "snow", "pond", "ruins", "marsh",
+    "fairy_glade", "moonflower_grove", "cathedral", "rose_courtyard",
+    "library", "observatory", "kitchen", "sewing_room", "witch_garden",
+    "moon_altar", "primeval_jungle", "amber_basin", "neon_alley",
+    "circuit_garden", "lunar_base", "starship", "enchanted_court",
+    "dragon_heath", "lost_city", "sunken_temple", "zen_garden",
+    "bamboo_grove", "sakura_courtyard", "cloud_sanctuary",
+]
+
+TREAT_NAMES = [
+    "hunger", "mood", "energy", "dew", "pollen", "silk",
+    "moon", "amber", "neon", "star", "lotus", "rune",
 ]
 
 GIFT_COLORS = {
@@ -922,7 +944,9 @@ def draw_icon(name):
 
 
 def draw_gift(name):
-    """All eighteen furnishings share the terrain/decor material language."""
+    """Furnishings share the terrain/decor material language."""
+    if name in GIFT_NAMES[18:]:
+        return _draw_catalogue_gift(name)
     img, d = _pixel_canvas(16, 16)
     ink, shadow, grain, wood, cut, light = map(
         _rgba, (0x232332, 0x623C39, 0x875239, 0xAE743D, 0xC99459, 0xEAC58A))
@@ -1205,6 +1229,8 @@ def _frond(d, base, tip, curve, body, light, dark, ink=INK):
 
 def draw_decor_item(name):
     """One placeable decor item at 32x32, doubled to 64x64."""
+    if name in DECOR_ITEM_NAMES[34:]:
+        return _draw_catalogue_decor(name)
     img, d = _decor_canvas()
     stone, stone_hi, stone_dark = map(_rgba, (0x909188, 0xD6CEAC, 0x505568))
     leaf, leaf_hi, leaf_dark = map(_rgba, (0x52963A, 0xB5D65C, 0x245B49))
@@ -2182,12 +2208,1029 @@ _BACKGROUND_SCENES = {
 
 def draw_background(name):
     """Compose one top-down ground texture at the panel's native 240x240."""
+    if name in BACKGROUND_NAMES[24:]:
+        return _draw_catalogue_background(name)
     p = BACKGROUND_PALETTES[name]
     img = Image.new("RGBA", (BG_SIZE, BG_SIZE), _rgba(p["ground"][3]))
     d = ImageDraw.Draw(img)
     rng = _rng(BACKGROUND_SEEDS[name])
     _BACKGROUND_SCENES[name](d, p, rng)
     return img
+
+
+# Appended catalogue art uses three discrete material ramps and a shared ink.
+# The original renderers above remain untouched so all published bytes survive.
+_CATALOGUE_RAMPS = (
+    (0x594156, 0xAD7957, 0xE9C68E),
+    (0x493A68, 0xA269AF, 0xF5BADD),
+    (0x234D50, 0x579B83, 0xC0D99A),
+)
+
+_THEME_MATERIALS = {
+    "woodland": ((0x49382E, 0x947049, 0xD4BA7D), (0x68423E, 0xB67B58, 0xF0C694),
+                 (0x1B4F38, 0x4C8D42, 0xABCA70)),
+    "fairy": ((0x654340, 0xB08467, 0xF0D8A1), (0x713C83, 0xC477BC, 0xFFD4E5),
+              (0x245741, 0x68A66A, 0xD0EAA0)),
+    "gothic": ((0x303947, 0x697A8A, 0xADBCC6), (0x3B2038, 0x812F4D, 0xD7758C),
+               (0x393E56, 0x747A98, 0xC4CADC)),
+    "academia": ((0x493025, 0x94603C, 0xD6A36B), (0x65502D, 0xAD8B48, 0xEDD998),
+                 (0x233E41, 0x41676A, 0x91B6AC)),
+    "household": ((0x6B6472, 0xB3C4CC, 0xF3F4E1), (0x61435E, 0xB77B9E, 0xF2C2D3),
+                  (0x354C64, 0x6D9AAE, 0xB8DEE5)),
+    "witchy": ((0x211C30, 0x43344F, 0x82718F), (0x48254F, 0x89538F, 0xDB9BD0),
+               (0x244435, 0x5E8B43, 0xBFCE74)),
+    "prehistoric": ((0x4B3126, 0x8B5933, 0xCFA06A), (0x8B421B, 0xD68B2F, 0xFFE09A),
+                    (0x39452B, 0x718244, 0xC3BC75)),
+    "cyberpunk": ((0x151F37, 0x344962, 0x819EB5), (0x642657, 0xCF419E, 0xFFADD9),
+                  (0x15495A, 0x28BFC8, 0xB2FFFF)),
+    "scifi": ((0x28374B, 0x718A9B, 0xD2E0E2), (0x222C53, 0x4F68AA, 0xA7BEF0),
+               (0x19566A, 0x42BCCB, 0xC3FFFF)),
+    "fantasy": ((0x45495E, 0x9396AE, 0xDFE1EB), (0x47245F, 0x8F50B2, 0xD6A2EF),
+                (0x6C4B22, 0xC79C42, 0xFFE7A0)),
+    "ancient": ((0x625540, 0xA89970, 0xE2D6A7), (0x315652, 0x528F83, 0xACD1AF),
+                (0x74552B, 0xB79243, 0xF0D785)),
+    "zen": ((0x434950, 0x929B98, 0xDDE0CA), (0x4C5933, 0x8C9952, 0xDBD69C),
+            (0x334E35, 0x6E9360, 0xBBD294)),
+    "water": ((0x3D5362, 0x7299AD, 0xC2E5E5), (0x794F61, 0xD39B9F, 0xFFE2CD),
+              (0x205851, 0x559D83, 0xB8D5AD)),
+    "mineral": ((0x3F4355, 0x79778E, 0xBFC0CE), (0x493F7A, 0x9681C7, 0xE2C8FF),
+                (0x266374, 0x62B6BD, 0xBCF4EB)),
+    "desert": ((0x78523B, 0xBC9662, 0xF1DDA2), (0x664335, 0xA36E4A, 0xDFAB72),
+               (0x43583D, 0x7C9462, 0xC7CB84)),
+}
+
+_THEME_KEYS = {
+    "woodland": "cork moss leaf_litter fern woodland succulent willow autumn fern_nest",
+    "fairy": "fairy_ring foxglove_lantern pixie_door fairy_bridge fairy_cottage petal_swing "
+             "fairy_glade moonflower_grove orchid",
+    "gothic": "gargoyle iron_gate rose_urn moon_bed velvet_throne gothic cemetery cathedral rose_courtyard",
+    "academia": "book_stack globe quill_desk reading_nook scholar_perch library observatory",
+    "household": "tea_cup spool thimble teapot_hide house kitchen sewing_room",
+    "witchy": "cauldron broom potion_rack witch_hat potion_hide witch_garden moon_altar moon",
+    "prehistoric": "amber_fossil cycad dinosaur_egg fossil_cradle primeval_jungle amber_basin amber",
+    "cyberpunk": "neon_sign holo_terminal cable_coil neon_den holo_garden neon_alley circuit_garden neon",
+    "scifi": "moon_rover solar_array oxygen_pod star_capsule lunar_base starship star",
+    "fantasy": "wizard_tower dragon_statue treasure_chest dragon_roost enchanted_court dragon_heath "
+               "cloud_sanctuary night",
+    "ancient": "sun_obelisk glyph_tablet broken_column sun_temple lost_city sunken_temple ruins rune",
+    "zen": "stone_lantern bamboo_fountain bonsai zen_pavilion torii_retreat zen_garden bamboo_grove "
+           "sakura_courtyard lotus",
+    "water": "seashell pond marsh pollen",
+    "mineral": "crystal dark_cave snow",
+    "desert": "sand desert minimal",
+}
+
+
+def _material_family(name):
+    return next((family for family, keys in _THEME_KEYS.items() if name in keys.split()),
+                "woodland")
+
+
+def _catalogue_canvas(size):
+    image = Image.new("RGBA", (size, size))
+    return image, ImageDraw.Draw(image), [_rgba(r[1]) for r in _CATALOGUE_RAMPS]
+
+
+def _catalogue_finish(image, family=None):
+    """Shade only material pixels; preserve ink, silhouette and binary alpha."""
+    for ramp in _CATALOGUE_RAMPS:
+        body = _rgba(ramp[1])
+        points = [(x, y) for y in range(image.height) for x in range(image.width)
+                  if image.getpixel((x, y)) == body]
+        if not points:
+            continue
+        x0, y0 = min(x for x, _ in points), min(y for _, y in points)
+        x1, y1 = max(x for x, _ in points), max(y for _, y in points)
+        span = max(1, x1 - x0 + y1 - y0)
+        for x, y in points:
+            phase = (x - x0 + y - y0) / span
+            tone = 2 if phase < 0.34 else 0 if phase > 0.72 else 1
+            # A few broken highlights read as woven grain, stone chips or glaze.
+            if (x + 3 * y) % 11 == 0:
+                tone = 2
+            image.putpixel((x, y), _rgba(ramp[tone]))
+    if family:
+        translated = {
+            _rgba(old): _rgba(new)
+            for old_ramp, new_ramp in zip(_CATALOGUE_RAMPS, _THEME_MATERIALS[family])
+            for old, new in zip(old_ramp, new_ramp)
+        }
+        pixels = image.load()
+        image.putdata([
+            translated.get(pixels[x, y], pixels[x, y])
+            for y in range(image.height) for x in range(image.width)
+        ])
+    return _enlarge(image)
+
+
+def _panel(d, box, material):
+    d.rectangle(box, fill=material, outline=INK)
+
+
+def _oval(d, box, material):
+    d.ellipse(box, fill=material, outline=INK)
+
+
+def _poly(d, points, material):
+    d.polygon(points, fill=material, outline=INK)
+
+
+def _draw_catalogue_decor(name):
+    image, d, (wood, gem, leaf) = _catalogue_canvas(32)
+    if name == "fairy_ring":
+        d.ellipse((2, 14, 29, 29), outline=leaf, width=3)
+        for x, y in ((5, 17), (14, 12), (25, 16), (22, 24), (10, 25)):
+            _panel(d, (x, y, x + 2, y + 5), wood)
+            _oval(d, (x - 3, y - 3, x + 5, y + 1), gem)
+    elif name == "foxglove_lantern":
+        d.line((15, 29, 17, 4), fill=leaf, width=3)
+        for x, y in ((10, 8), (18, 12), (9, 19)):
+            _poly(d, [(x, y), (x + 6, y), (x + 7, y + 7),
+                      (x - 1, y + 7)], gem)
+            _oval(d, (x, y + 4, x + 6, y + 8), wood)
+        _poly(d, [(16, 27), (24, 21), (26, 23), (20, 28)], leaf)
+    elif name == "pixie_door":
+        _oval(d, (6, 3, 26, 29), leaf)
+        _oval(d, (9, 6, 24, 29), wood)
+        _panel(d, (9, 17, 24, 29), wood)
+        d.line((16, 8, 16, 28), fill=INK)
+        _oval(d, (19, 20, 22, 23), gem)
+    elif name == "gargoyle":
+        _poly(d, [(13, 15), (3, 5), (2, 23), (12, 21)], gem)
+        _poly(d, [(20, 15), (29, 5), (30, 23), (20, 21)], gem)
+        _panel(d, (7, 26, 26, 30), wood)
+        _oval(d, (10, 13, 23, 28), wood)
+        _poly(d, [(10, 4), (15, 7), (21, 4), (23, 16), (16, 20), (9, 15)], leaf)
+        d.point((13, 12), fill=INK)
+        d.point((20, 12), fill=INK)
+    elif name == "iron_gate":
+        for x in (4, 10, 16, 22, 28):
+            _poly(d, [(x, 3), (x - 2, 8), (x - 1, 8), (x - 1, 29),
+                      (x + 1, 29), (x + 1, 8), (x + 2, 8)], wood)
+        _panel(d, (3, 13, 29, 16), leaf)
+        _panel(d, (3, 23, 29, 25), gem)
+    elif name == "rose_urn":
+        _poly(d, [(7, 15), (25, 15), (22, 24), (18, 26), (21, 29),
+                  (11, 29), (14, 26), (10, 24)], wood)
+        for x, y in ((8, 8), (17, 4), (23, 9)):
+            d.line((16, 17, x, y + 2), fill=leaf, width=3)
+            _oval(d, (x - 4, y - 3, x + 3, y + 3), gem)
+            d.line((x - 1, y + 1, x + 1, y - 1), fill=INK)
+    elif name == "book_stack":
+        for box, color in (((4, 23, 27, 29), wood), ((8, 16, 29, 22), leaf),
+                           ((3, 8, 24, 15), gem)):
+            _panel(d, box, color)
+            x, y, right, _ = box
+            d.line((x + 3, y + 3, right - 2, y + 3), fill=wood)
+            d.line((x + 2, y + 1, x + 2, y + 5), fill=INK)
+    elif name == "globe":
+        d.arc((4, 2, 27, 25), 230, 70, fill=gem, width=3)
+        _oval(d, (7, 4, 24, 21), leaf)
+        _poly(d, [(11, 6), (19, 7), (16, 11), (20, 15), (15, 18),
+                  (13, 12), (9, 11)], wood)
+        _panel(d, (15, 23, 18, 28), gem)
+        _oval(d, (8, 27, 25, 30), wood)
+    elif name == "quill_desk":
+        _panel(d, (3, 17, 29, 22), wood)
+        for x in (5, 24):
+            _panel(d, (x, 22, x + 3, 30), wood)
+        _panel(d, (7, 13, 18, 17), leaf)
+        _oval(d, (21, 12, 27, 17), gem)
+        _poly(d, [(23, 13), (21, 4), (28, 1), (29, 7)], gem)
+        d.line((23, 15, 27, 4), fill=wood)
+    elif name == "tea_cup":
+        _oval(d, (22, 11, 30, 23), wood)
+        _oval(d, (24, 14, 27, 20), leaf)
+        _oval(d, (2, 24, 28, 30), gem)
+        _poly(d, [(5, 10), (25, 10), (22, 25), (10, 25)], wood)
+        _oval(d, (5, 7, 25, 14), leaf)
+        d.line((10, 18, 13, 20, 17, 17), fill=gem, width=2)
+    elif name == "spool":
+        _panel(d, (9, 7, 24, 25), gem)
+        for y in (10, 14, 18, 22):
+            d.line((10, y, 23, y + 1), fill=leaf)
+        _oval(d, (5, 3, 27, 10), wood)
+        _oval(d, (5, 23, 27, 30), wood)
+        _oval(d, (13, 4, 19, 7), gem)
+    elif name == "thimble":
+        _poly(d, [(7, 27), (9, 7), (13, 3), (21, 3), (25, 7), (27, 27)], leaf)
+        for y in (9, 14, 19):
+            for x in (12, 17, 22):
+                _panel(d, (x, y, x + 2, y + 2), gem)
+        _panel(d, (6, 25, 28, 29), wood)
+    elif name == "cauldron":
+        _oval(d, (3, 10, 29, 28), gem)
+        _oval(d, (4, 8, 28, 15), leaf)
+        for x in (7, 23):
+            _panel(d, (x, 26, x + 3, 30), wood)
+        d.arc((3, 3, 28, 25), 185, 355, fill=wood, width=2)
+        for box in ((12, 2, 16, 6), (20, 5, 23, 8)):
+            _oval(d, box, leaf)
+    elif name == "broom":
+        _poly(d, [(25, 1), (28, 3), (14, 22), (11, 20)], wood)
+        _poly(d, [(11, 16), (19, 21), (14, 30), (2, 25)], leaf)
+        for x in (5, 9, 13):
+            d.line((x, 25, 13, 20), fill=wood)
+        d.line((9, 19, 17, 24), fill=gem, width=3)
+    elif name == "potion_rack":
+        _panel(d, (3, 4, 6, 29), wood)
+        _panel(d, (26, 4, 29, 29), wood)
+        for y in (14, 28):
+            _panel(d, (3, y, 29, y + 2), wood)
+            for x in (9, 20):
+                _oval(d, (x - 2, y - 8, x + 4, y - 1), leaf if x == 9 else gem)
+                _panel(d, (x, y - 11, x + 2, y - 7), wood)
+    elif name == "amber_fossil":
+        _poly(d, [(8, 3), (23, 5), (29, 15), (25, 27), (10, 30), (3, 20)], wood)
+        _oval(d, (10, 10, 21, 22), gem)
+        d.line((12, 12, 23, 24), fill=leaf, width=2)
+        for y in (14, 18, 22):
+            d.line((10, y + 2, 16, y, 22, y - 2), fill=INK)
+    elif name == "cycad":
+        _panel(d, (13, 16, 19, 30), wood)
+        for tip in ((2, 9), (7, 2), (17, 1), (28, 5), (30, 14), (3, 20)):
+            _poly(d, [(16, 18), tip, (tip[0], tip[1] + 4)], leaf)
+            d.line((16, 18, *tip), fill=gem)
+            for step in (2, 4, 6):
+                x = 16 + (tip[0] - 16) * step // 8
+                y = 18 + (tip[1] - 18) * step // 8
+                d.line((x - 2, y + 1, x, y, x + 2, y - 2), fill=leaf)
+    elif name == "dinosaur_egg":
+        _oval(d, (2, 23, 30, 30), leaf)
+        _oval(d, (8, 2, 25, 28), wood)
+        for box in ((12, 7, 16, 11), (19, 15, 23, 20), (11, 21, 15, 24)):
+            _oval(d, box, gem)
+        d.line((16, 13, 13, 16, 17, 19), fill=INK)
+    elif name == "neon_sign":
+        _panel(d, (5, 3, 27, 25), wood)
+        _panel(d, (8, 6, 24, 22), gem)
+        d.line((11, 19, 11, 10, 16, 16, 21, 9, 21, 19), fill=leaf, width=2)
+        _panel(d, (14, 25, 18, 30), leaf)
+    elif name == "holo_terminal":
+        _poly(d, [(5, 29), (9, 22), (25, 22), (29, 29)], wood)
+        _panel(d, (7, 4, 25, 19), leaf)
+        _panel(d, (11, 8, 20, 12), gem)
+        d.line((11, 16, 21, 16), fill=gem)
+        d.line((12, 25, 23, 25), fill=leaf, width=2)
+    elif name == "cable_coil":
+        for box in ((3, 8, 24, 25), (7, 11, 20, 22), (10, 14, 17, 19)):
+            d.ellipse(box, outline=INK, width=4)
+            d.ellipse(tuple(v + (1 if i < 2 else -1) for i, v in enumerate(box)),
+                      outline=gem, width=2)
+        d.line((20, 23, 28, 28, 29, 17), fill=wood, width=3)
+        _panel(d, (26, 11, 31, 17), leaf)
+    elif name == "moon_rover":
+        _poly(d, [(3, 13), (20, 13), (27, 21), (7, 24)], wood)
+        for x in (7, 23):
+            _oval(d, (x - 4, 22, x + 4, 30), gem)
+        _panel(d, (10, 7, 21, 16), leaf)
+        d.line((15, 7, 15, 2, 23, 2), fill=wood, width=2)
+        _oval(d, (23, 1, 27, 5), leaf)
+    elif name == "solar_array":
+        _panel(d, (14, 17, 18, 29), wood)
+        _panel(d, (8, 28, 24, 30), wood)
+        _poly(d, [(3, 4), (25, 4), (30, 20), (8, 20)], leaf)
+        for x in (8, 14, 20):
+            d.line((x, 6, x + 4, 18), fill=gem, width=2)
+        d.line((6, 12, 26, 12), fill=wood)
+    elif name == "oxygen_pod":
+        _oval(d, (7, 2, 25, 29), leaf)
+        _panel(d, (8, 22, 24, 29), wood)
+        _oval(d, (11, 6, 21, 20), gem)
+        d.line((16, 8, 16, 17), fill=leaf, width=2)
+        d.line((13, 12, 19, 12), fill=leaf, width=2)
+    elif name == "wizard_tower":
+        _panel(d, (9, 13, 24, 29), wood)
+        _poly(d, [(5, 14), (16, 1), (28, 14)], gem)
+        _panel(d, (14, 21, 19, 29), leaf)
+        _oval(d, (13, 14, 20, 19), leaf)
+        d.line((18, 2, 25, 4, 20, 6), fill=wood)
+    elif name == "dragon_statue":
+        _panel(d, (4, 27, 29, 30), wood)
+        _poly(d, [(12, 25), (6, 13), (3, 6), (16, 13), (23, 7),
+                  (20, 18), (28, 24), (23, 26)], gem)
+        _poly(d, [(13, 26), (16, 16), (14, 9), (18, 3), (26, 6),
+                  (29, 10), (22, 12), (22, 19), (25, 26)], leaf)
+        d.point((22, 7), fill=INK)
+    elif name == "treasure_chest":
+        _oval(d, (3, 7, 28, 23), wood)
+        _panel(d, (3, 16, 28, 29), wood)
+        for x in (7, 23):
+            _panel(d, (x, 10, x + 2, 28), leaf)
+        _panel(d, (13, 15, 19, 22), gem)
+        d.point((16, 19), fill=INK)
+    elif name == "sun_obelisk":
+        _poly(d, [(12, 5), (17, 1), (22, 5), (25, 27), (9, 27)], wood)
+        _panel(d, (6, 27, 28, 30), leaf)
+        _oval(d, (13, 9, 21, 17), gem)
+        d.line((17, 19, 17, 24), fill=gem, width=2)
+    elif name == "glyph_tablet":
+        _poly(d, [(5, 4), (24, 2), (28, 7), (25, 29), (4, 27)], wood)
+        for x, y in ((9, 9), (18, 8), (8, 19), (18, 18)):
+            d.line((x, y, x + 4, y + 2, x + 1, y + 6), fill=gem, width=2)
+        d.line((5, 24, 10, 25, 12, 28), fill=leaf, width=2)
+    elif name == "broken_column":
+        _panel(d, (5, 26, 28, 30), leaf)
+        _poly(d, [(10, 26), (10, 9), (14, 12), (18, 5), (22, 9),
+                  (24, 26)], wood)
+        for x in (14, 18, 21):
+            d.line((x, 14, x, 24), fill=gem)
+        _poly(d, [(2, 22), (6, 19), (9, 24), (7, 27)], gem)
+    elif name == "stone_lantern":
+        _panel(d, (14, 17, 19, 27), wood)
+        _panel(d, (9, 27, 24, 30), leaf)
+        _panel(d, (9, 9, 24, 19), wood)
+        _panel(d, (13, 11, 20, 17), gem)
+        _poly(d, [(4, 10), (11, 5), (16, 2), (22, 5), (29, 10)], leaf)
+    elif name == "bamboo_fountain":
+        _oval(d, (3, 21, 30, 30), wood)
+        _oval(d, (6, 23, 27, 28), gem)
+        _panel(d, (21, 3, 26, 24), leaf)
+        _poly(d, [(7, 10), (26, 7), (27, 12), (8, 15)], leaf)
+        d.line((10, 16, 10, 24), fill=gem, width=2)
+        d.line((22, 17, 25, 17), fill=INK)
+    elif name == "bonsai":
+        _poly(d, [(5, 24), (28, 24), (25, 30), (8, 30)], gem)
+        d.line((16, 24, 13, 18, 19, 12, 17, 6), fill=wood, width=4)
+        for box in ((2, 10, 16, 17), (14, 4, 29, 12), (7, 2, 22, 9)):
+            _oval(d, box, leaf)
+    elif name == "fairy_bridge":
+        d.arc((2, 12, 30, 38), 185, 355, fill=INK, width=9)
+        d.arc((3, 14, 29, 37), 185, 355, fill=wood, width=5)
+        for x, y in ((4, 21), (10, 15), (22, 15), (28, 21)):
+            _panel(d, (x - 1, y - 7, x + 1, y + 2), leaf)
+            _oval(d, (x - 2, y - 9, x + 2, y - 5), gem)
+        d.arc((3, 5, 29, 32), 185, 355, fill=leaf, width=2)
+    else:
+        raise ValueError(f"Unknown appended decor: {name}")
+    return _catalogue_finish(image, _material_family(name))
+
+
+def _draw_catalogue_gift(name):
+    image, d, (wood, gem, leaf) = _catalogue_canvas(16)
+    if name == "fairy_cottage":
+        _panel(d, (3, 7, 13, 14), wood)
+        _poly(d, [(1, 8), (7, 1), (15, 8)], leaf)
+        _oval(d, (6, 9, 10, 15), gem)
+    elif name == "moon_bed":
+        _oval(d, (2, 1, 13, 13), gem)
+        d.ellipse((6, 0, 15, 10), fill=(0, 0, 0, 0))
+        _panel(d, (2, 11, 14, 14), wood)
+        _panel(d, (5, 10, 12, 12), leaf)
+    elif name == "reading_nook":
+        _panel(d, (1, 2, 5, 14), wood)
+        for y in (4, 8, 12):
+            d.line((2, y, 4, y), fill=leaf)
+        _panel(d, (7, 6, 13, 13), gem)
+        _panel(d, (6, 11, 15, 14), leaf)
+        _panel(d, (10, 1, 12, 5), wood)
+    elif name == "teapot_hide":
+        _oval(d, (10, 4, 15, 11), leaf)
+        _poly(d, [(4, 8), (0, 4), (1, 11), (5, 12)], wood)
+        _oval(d, (3, 4, 13, 14), wood)
+        _panel(d, (5, 3, 11, 5), leaf)
+        _oval(d, (6, 8, 10, 14), gem)
+    elif name == "witch_hat":
+        _poly(d, [(3, 11), (7, 1), (11, 2), (9, 4), (13, 12)], gem)
+        _oval(d, (0, 10, 15, 14), gem)
+        _panel(d, (5, 8, 12, 10), leaf)
+        _panel(d, (7, 8, 9, 11), wood)
+    elif name == "fern_nest":
+        _oval(d, (2, 8, 14, 14), wood)
+        _oval(d, (4, 9, 12, 12), gem)
+        for x, y in ((1, 3), (7, 1), (14, 4)):
+            _poly(d, [(7, 10), (x, y), (x + 1, y + 5)], leaf)
+    elif name == "neon_den":
+        _poly(d, [(1, 14), (1, 5), (5, 1), (14, 1), (14, 14)], wood)
+        _panel(d, (4, 4, 11, 14), gem)
+        d.line((2, 12, 2, 5, 6, 2, 13, 2), fill=leaf, width=2)
+    elif name == "star_capsule":
+        _oval(d, (3, 1, 13, 14), leaf)
+        _panel(d, (2, 11, 14, 14), wood)
+        _oval(d, (5, 4, 11, 11), gem)
+        d.line((8, 5, 8, 9), fill=wood)
+        d.line((6, 7, 10, 7), fill=wood)
+    elif name == "dragon_roost":
+        _poly(d, [(1, 8), (1, 1), (7, 6), (14, 1), (14, 9)], leaf)
+        _oval(d, (2, 8, 14, 14), wood)
+        _oval(d, (5, 9, 11, 12), gem)
+        d.line((3, 12, 7, 14, 13, 11), fill=leaf)
+    elif name == "sun_temple":
+        _panel(d, (1, 12, 14, 15), wood)
+        for x in (3, 11):
+            _panel(d, (x, 5, x + 2, 12), leaf)
+        _poly(d, [(0, 5), (7, 0), (15, 5)], wood)
+        _oval(d, (5, 2, 10, 6), gem)
+    elif name == "zen_pavilion":
+        for x in (3, 12):
+            _panel(d, (x, 6, x + 1, 13), wood)
+        _poly(d, [(0, 7), (4, 4), (7, 1), (11, 4), (15, 7)], leaf)
+        _panel(d, (1, 13, 15, 15), wood)
+        _panel(d, (6, 9, 10, 12), gem)
+    elif name == "petal_swing":
+        d.line((2, 1, 13, 1), fill=wood, width=2)
+        for x in (3, 12):
+            d.line((x, 2, x, 10), fill=leaf)
+        _oval(d, (2, 8, 13, 14), gem)
+        _poly(d, [(7, 11), (4, 8), (7, 5), (10, 8)], leaf)
+    elif name == "velvet_throne":
+        _poly(d, [(3, 11), (3, 1), (7, 3), (12, 1), (12, 11)], wood)
+        _panel(d, (5, 5, 10, 11), gem)
+        _panel(d, (1, 10, 14, 13), leaf)
+        for x in (3, 11):
+            _panel(d, (x, 13, x + 1, 15), wood)
+    elif name == "scholar_perch":
+        _panel(d, (7, 5, 9, 13), wood)
+        _panel(d, (2, 12, 14, 15), wood)
+        _poly(d, [(1, 3), (7, 1), (8, 3), (14, 1), (14, 7),
+                  (8, 8), (2, 7)], leaf)
+        d.line((8, 3, 8, 7), fill=gem, width=2)
+        d.line((3, 4, 6, 3), fill=gem)
+    elif name == "potion_hide":
+        _panel(d, (5, 1, 11, 4), wood)
+        _oval(d, (1, 5, 15, 15), leaf)
+        _panel(d, (5, 9, 11, 15), gem)
+        d.line((3, 7, 5, 5, 11, 5), fill=wood)
+    elif name == "fossil_cradle":
+        _oval(d, (1, 8, 15, 15), wood)
+        _oval(d, (4, 7, 12, 12), gem)
+        for x, y in ((2, 2), (7, 0), (12, 3)):
+            d.arc((x, y, x + 3, 13), 90, 280, fill=leaf, width=2)
+    elif name == "holo_garden":
+        _poly(d, [(1, 11), (10, 8), (15, 12), (7, 15)], wood)
+        _panel(d, (4, 2, 12, 9), gem)
+        d.line((8, 9, 8, 3), fill=leaf, width=2)
+        d.line((5, 4, 8, 6, 11, 3), fill=leaf, width=2)
+    elif name == "torii_retreat":
+        for x in (3, 11):
+            _panel(d, (x, 4, x + 1, 14), wood)
+        _poly(d, [(0, 1), (4, 3), (11, 3), (15, 1), (14, 5), (1, 5)], gem)
+        _panel(d, (2, 7, 13, 9), wood)
+        _oval(d, (5, 11, 10, 15), leaf)
+    else:
+        raise ValueError(f"Unknown appended gift: {name}")
+    return _catalogue_finish(image, _material_family(name))
+
+
+def draw_treat(name):
+    """Fictional confectionery, never a depiction of real spider nutrition."""
+    image, d, (wood, gem, leaf) = _catalogue_canvas(24)
+    if name == "hunger":  # Juicy Fly, a fictional game reward.
+        for box in ((3, 3, 11, 14), (12, 3, 21, 14)):
+            _oval(d, box, leaf)
+        for y in (11, 15, 19):
+            d.line((3, y + 2, 9, y, 15, y, 21, y + 2), fill=wood, width=2)
+        _oval(d, (8, 8, 16, 22), wood)
+        _oval(d, (8, 3, 16, 11), gem)
+        d.point((10, 6), fill=INK)
+        d.point((14, 6), fill=INK)
+    elif name == "mood":  # Silk Ribbon
+        _poly(d, [(10, 11), (3, 4), (1, 7), (3, 15), (10, 14)], gem)
+        _poly(d, [(14, 11), (21, 4), (23, 7), (21, 15), (14, 14)], gem)
+        _poly(d, [(10, 13), (4, 22), (9, 20), (12, 22), (13, 14)], leaf)
+        _poly(d, [(13, 13), (15, 22), (18, 20), (22, 22), (15, 12)], leaf)
+        _oval(d, (9, 9, 15, 16), wood)
+    elif name == "energy":  # Warm Pebble
+        _oval(d, (3, 10, 21, 21), wood)
+        _poly(d, [(6, 13), (10, 10), (16, 11), (12, 15)], leaf)
+        _poly(d, [(14, 16), (20, 14), (18, 19), (12, 20)], gem)
+        for x in (6, 12, 18):
+            d.line((x, 7, x - 1, 5, x + 1, 2), fill=gem, width=2)
+    elif name == "dew":  # Honey Moth
+        _poly(d, [(10, 8), (3, 2), (1, 9), (5, 14), (2, 20),
+                  (10, 18), (12, 12)], wood)
+        _poly(d, [(14, 8), (21, 2), (23, 9), (19, 14), (22, 20),
+                  (14, 18), (12, 12)], wood)
+        for box in ((4, 7, 8, 12), (16, 7, 20, 12)):
+            _oval(d, box, gem)
+        _oval(d, (10, 7, 14, 21), leaf)
+        d.line((11, 7, 8, 2), fill=leaf)
+        d.line((13, 7, 16, 2), fill=leaf)
+    elif name == "pollen":  # Dew Drop
+        _poly(d, [(12, 1), (20, 12), (20, 18), (15, 22), (8, 22),
+                  (4, 18), (4, 12)], leaf)
+        _oval(d, (7, 11, 12, 17), gem)
+        _poly(d, [(13, 17), (18, 15), (17, 20), (13, 21)], wood)
+    elif name == "silk":  # Cozy Nest
+        _oval(d, (1, 9, 23, 21), wood)
+        _oval(d, (4, 10, 20, 17), gem)
+        for y in (16, 19):
+            d.line((3, y, 8, y + 2, 15, y, 21, y + 1), fill=leaf, width=2)
+        _poly(d, [(12, 13), (7, 6), (11, 2), (16, 5), (17, 11)], leaf)
+        d.line((10, 5, 14, 11), fill=wood)
+    elif name == "moon":
+        _oval(d, (3, 16, 21, 22), wood)
+        _poly(d, [(7, 18), (5, 12), (7, 8), (11, 7), (11, 4), (16, 8),
+                  (18, 17)], gem)
+        d.arc((8, 6, 18, 15), 60, 260, fill=leaf, width=3)
+    elif name == "amber":
+        _poly(d, [(7, 3), (16, 2), (21, 10), (18, 20), (8, 22),
+                  (2, 14)], wood)
+        _poly(d, [(8, 9), (11, 6), (16, 11), (12, 16), (7, 14)], gem)
+        d.line((7, 18, 17, 6), fill=leaf, width=2)
+    elif name == "neon":
+        _panel(d, (3, 6, 21, 21), gem)
+        _poly(d, [(3, 6), (8, 2), (22, 2), (21, 6)], leaf)
+        _poly(d, [(13, 7), (8, 14), (13, 14), (11, 19), (18, 11),
+                  (13, 11)], wood)
+    elif name == "star":
+        _poly(d, [(12, 1), (15, 8), (23, 9), (17, 14), (19, 22),
+                  (12, 18), (5, 22), (7, 14), (1, 9), (9, 8)], wood)
+        _oval(d, (8, 9, 16, 17), gem)
+        d.line((9, 12, 12, 15, 15, 11), fill=leaf, width=2)
+    elif name == "lotus":
+        _panel(d, (8, 15, 16, 22), wood)
+        for points in ([(12, 16), (2, 12), (3, 5), (10, 9)],
+                       [(12, 16), (22, 12), (21, 5), (14, 9)],
+                       [(8, 12), (12, 1), (16, 12), (12, 17)]):
+            _poly(d, points, gem)
+        _oval(d, (9, 10, 15, 16), leaf)
+    elif name == "rune":
+        _poly(d, [(5, 3), (18, 3), (22, 8), (21, 19), (16, 22),
+                  (4, 20), (2, 9)], wood)
+        d.line((8, 17, 8, 7, 16, 11, 8, 13), fill=gem, width=3)
+        _oval(d, (15, 15, 19, 19), leaf)
+    else:
+        raise ValueError(f"Unknown fictional treat: {name}")
+    return _catalogue_finish(image, _material_family(name))
+
+
+def _draw_catalogue_background(name):
+    """Architectural/organic edge compositions around a three-tone play floor."""
+    index = BACKGROUND_NAMES.index(name) - 24
+    grounds = (
+        (0x354A42, 0x3D5249, 0x465A50), (0x39394D, 0x414155, 0x49495D),
+        (0x42404B, 0x4A4853, 0x52505B), (0x58484C, 0x605054, 0x68585C),
+        (0x574636, 0x5F4E3E, 0x675646), (0x343B50, 0x3C4358, 0x444B60),
+        (0x6B6050, 0x736858, 0x7B7060), (0x594B59, 0x615361, 0x695B69),
+        (0x39463A, 0x414E42, 0x49564A), (0x3C394B, 0x444153, 0x4C495B),
+        (0x354335, 0x3D4B3D, 0x455345), (0x63503A, 0x6B5842, 0x73604A),
+        (0x303C4D, 0x384455, 0x404C5D), (0x304A48, 0x385250, 0x405A58),
+        (0x565866, 0x5E606E, 0x666876), (0x354453, 0x3D4C5B, 0x455463),
+        (0x59525E, 0x615A66, 0x69626E), (0x55464B, 0x5D4E53, 0x65565B),
+        (0x5F5744, 0x675F4C, 0x6F6754), (0x345054, 0x3C585C, 0x446064),
+        (0x6A675B, 0x726F63, 0x7A776B), (0x3E5040, 0x465848, 0x4E6050),
+        (0x62545A, 0x6A5C62, 0x72646A), (0x686475, 0x706C7D, 0x787485),
+    )
+    ground = list(map(_rgba, grounds[index]))
+    image = Image.new("RGBA", (240, 240), ground[1])
+    d = ImageDraw.Draw(image)
+    wood, gem, leaf = (_rgba(r[1]) for r in _CATALOGUE_RAMPS)
+    dark, light = _rgba(0x252A3C), _rgba(0xDACCA6)
+
+    def masonry(box, step=18):
+        x0, y0, x1, y1 = box
+        d.rectangle(box, fill=dark)
+        for y in range(y0, y1, 10):
+            for x in range(x0 - (step // 2 if (y - y0) // 10 % 2 else 0), x1, step):
+                left, right = max(x0, x), min(x1, x + step - 2)
+                if left < right:
+                    d.rectangle((left, y + 1, right, min(y1, y + 8)), fill=wood)
+                    d.line((left, y + 1, right, y + 1), fill=light)
+
+    def flower(x, y, radius=7):
+        for dx, dy in ((-radius, 0), (radius, 0), (0, -radius), (0, radius)):
+            _oval(d, (x + dx - 5, y + dy - 5, x + dx + 5, y + dy + 5), gem)
+        _oval(d, (x - 4, y - 4, x + 4, y + 4), light)
+
+    def frond(x, y, height=28):
+        d.line((x, y, x + 2, y - height), fill=wood, width=3)
+        for step in range(3, height, 5):
+            for side in (-1, 1):
+                _poly(d, [(x + 1, y - step), (x + side * (height - step) // 2,
+                           y - step - 7), (x + side * 4, y - step + 2)], leaf)
+
+    def arch(x, width=30):
+        _oval(d, (x, 3, x + width, 34), wood)
+        _oval(d, (x + 5, 7, x + width - 5, 36), gem)
+        d.line((x + width // 2, 8, x + width // 2, 35), fill=light, width=2)
+
+    def circuit(box, pitch):
+        x0, y0, x1, y1 = box
+        for x in range(x0, x1 - 4, pitch):
+            d.line((x, y1, x, y0 + 8, x + 5, y0 + 3, x + 5, y0), fill=leaf, width=2)
+            _panel(d, (x - 2, y1 - 6, x + 3, y1 - 1), gem)
+
+    if name in ("fairy_glade", "moonflower_grove"):
+        for x, y in ((16, 29), (220, 29), (18, 233), (225, 228)):
+            frond(x, y, 27)
+            flower(x + 2, y - 14, 5)
+        if name == "fairy_glade":
+            for x in range(45, 202, 27):
+                _panel(d, (x, 18, x + 4, 34), wood)
+                _oval(d, (x - 6, 10, x + 10, 22), gem)
+            d.arc((28, 203, 208, 256), 190, 350, fill=leaf, width=4)
+        else:
+            d.ellipse((85, 2, 136, 34), fill=light)
+            d.ellipse((101, 0, 144, 26), fill=ground[1])
+            for x in (52, 163, 187):
+                flower(x, 221, 6)
+    elif name == "cathedral":
+        masonry((0, 0, 239, 37))
+        for x in (17, 74, 132, 190):
+            arch(x)
+        for x in (3, 224):
+            _panel(d, (x, 42, x + 11, 198), wood)
+            for y in (55, 112, 170):
+                _panel(d, (x - 2, y, x + 13, y + 5), light)
+    elif name == "rose_courtyard":
+        masonry((0, 0, 239, 18))
+        masonry((0, 221, 239, 239))
+        for x in (17, 222):
+            d.line((x, 210, x, 28), fill=leaf, width=4)
+            for y in (35, 75, 120, 163, 203):
+                flower(x, y, 5)
+    elif name == "library":
+        for y in (1, 218):
+            _panel(d, (0, y, 239, y + 20), wood)
+            for x in range(4, 235, 9):
+                h = 9 + (x * 3) % 8
+                _panel(d, (x, y + 19 - h, x + 6, y + 18), gem if x % 2 else leaf)
+                d.line((x + 1, y + 17, x + 5, y + 17), fill=light)
+        for y in range(44, 195, 22):
+            _panel(d, (7, y, 31, y + 16), wood)
+            d.line((10, y + 4, 28, y + 4), fill=light)
+    elif name == "observatory":
+        d.arc((24, -45, 215, 37), 0, 180, fill=wood, width=7)
+        for x, y in ((19, 22), (64, 13), (110, 22), (170, 15), (215, 25)):
+            d.line((x - 4, y, x + 4, y), fill=light)
+            d.line((x, y - 4, x, y + 4), fill=light)
+        _poly(d, [(204, 207), (220, 202), (236, 218), (218, 227)], leaf)
+        d.line((220, 220, 209, 239), fill=wood, width=4)
+        d.line((220, 220, 232, 239), fill=wood, width=4)
+    elif name == "kitchen":
+        for x in range(0, 240, 30):
+            _panel(d, (x, 0, x + 28, 32), wood)
+            _panel(d, (x + 4, 5, x + 24, 24), leaf)
+            d.rectangle((x + 18, 13, x + 21, 16), fill=light)
+        _panel(d, (0, 211, 100, 239), light)
+        for x in (10, 53):
+            _oval(d, (x, 215, x + 30, 236), dark)
+            d.arc((x + 5, 219, x + 25, 233), 0, 300, fill=gem, width=3)
+    elif name == "sewing_room":
+        _panel(d, (0, 0, 239, 29), wood)
+        for x in (12, 49, 88, 132, 178, 215):
+            _panel(d, (x, 7, x + 13, 26), gem if x % 2 else leaf)
+            for y in (4, 25):
+                _oval(d, (x - 3, y, x + 16, y + 4), light)
+        _panel(d, (205, 206, 237, 237), gem)
+        for x in range(208, 237, 6):
+            d.line((x, 208, x, 234), fill=light)
+        for y in range(209, 237, 6):
+            d.line((207, y, 235, y), fill=leaf)
+    elif name == "witch_garden":
+        for x in range(5, 238, 19):
+            _poly(d, [(x, 2), (x + 4, 8), (x + 4, 30), (x - 3, 30),
+                      (x - 3, 8)], wood)
+        d.line((0, 19, 239, 19), fill=leaf, width=3)
+        for x, y in ((15, 88), (223, 143), (21, 229), (218, 231)):
+            frond(x, y, 25)
+            _oval(d, (x - 7, y - 5, x + 8, y + 8), gem)
+    elif name == "moon_altar":
+        masonry((48, 0, 192, 34))
+        d.ellipse((99, 3, 137, 31), fill=light)
+        d.ellipse((109, 0, 143, 23), fill=wood)
+        for x in (15, 215):
+            for y in (27, 214):
+                _panel(d, (x, y, x + 8, y + 21), gem)
+                _poly(d, [(x + 4, y - 8), (x, y + 2), (x + 8, y + 2)], light)
+    elif name == "primeval_jungle":
+        for x in (9, 31, 208, 231):
+            d.line((x, 0, x - 5, 29, x + 3, 81), fill=wood, width=6)
+        for x, y in ((16, 36), (61, 31), (108, 27), (173, 31), (221, 37),
+                     (20, 236), (72, 235), (195, 237), (227, 229)):
+            frond(x, y, 30)
+    elif name == "amber_basin":
+        for x, y in ((12, 19), (48, 11), (183, 15), (223, 33),
+                     (13, 222), (224, 224)):
+            _poly(d, [(x - 9, y + 7), (x - 5, y - 12), (x + 8, y - 8),
+                      (x + 12, y + 12)], wood)
+            d.line((x - 3, y + 5, x + 3, y - 6), fill=light, width=3)
+            d.arc((x - 4, y - 3, x + 7, y + 8), 0, 300, fill=gem, width=2)
+        for x in (57, 110, 165):
+            d.arc((x, 209, x + 40, 249), 190, 350, fill=leaf, width=3)
+    elif name == "neon_alley":
+        masonry((0, 0, 239, 35), 26)
+        for x in (12, 85, 178):
+            _panel(d, (x, 4, x + 48, 29), dark)
+            d.line((x + 5, 23, x + 5, 9, x + 20, 20, x + 37, 8,
+                    x + 37, 23), fill=gem, width=3)
+        circuit((4, 54, 29, 200), 11)
+        d.line((214, 239, 214, 214, 239, 214), fill=leaf, width=3)
+    elif name == "circuit_garden":
+        circuit((0, 1, 235, 31), 19)
+        circuit((2, 210, 235, 239), 23)
+        for x, y in ((17, 78), (223, 167)):
+            _panel(d, (x - 10, y - 15, x + 10, y + 15), dark)
+            _panel(d, (x - 6, y - 10, x + 6, y + 10), leaf)
+            d.line((x, y - 7, x, y + 7), fill=gem, width=2)
+    elif name == "lunar_base":
+        d.polygon([(0, 0), (239, 0), (225, 33), (17, 33)], fill=wood)
+        for x in (24, 91, 158):
+            _oval(d, (x, 3, x + 46, 28), dark)
+            _oval(d, (x + 7, 6, x + 40, 24), leaf)
+        for x, y in ((14, 125), (220, 200), (30, 226)):
+            d.ellipse((x - 12, y - 6, x + 12, y + 6), outline=dark, width=3)
+            d.arc((x - 9, y - 4, x + 10, y + 5), 185, 350, fill=light)
+    elif name == "starship":
+        _poly(d, [(0, 0), (239, 0), (215, 34), (24, 34)], dark)
+        for x in range(8, 231, 30):
+            _panel(d, (x, 4, x + 22, 23), leaf)
+            d.line((x + 3, 10, x + 16, 10), fill=light)
+            d.line((x + 3, 17, x + 11, 17), fill=gem)
+        for x in (3, 218):
+            _panel(d, (x, 57, x + 17, 190), wood)
+            for y in (64, 110, 159):
+                _panel(d, (x + 4, y, x + 12, y + 22), gem)
+    elif name == "enchanted_court":
+        for x in (8, 58, 108, 158, 208):
+            arch(x, 24)
+        for x in (15, 223):
+            d.line((x, 207, x, 63), fill=wood, width=4)
+            for y in (74, 134, 194):
+                _poly(d, [(x, y - 10), (x + 9, y), (x, y + 10),
+                          (x - 9, y)], gem)
+    elif name == "dragon_heath":
+        for x, y in ((14, 33), (225, 35), (24, 235), (219, 230)):
+            _poly(d, [(x - 12, y), (x - 3, y - 30), (x + 4, y - 15),
+                      (x + 12, y - 23), (x + 10, y + 2)], dark)
+            d.line((x - 2, y - 4, x + 2, y - 16), fill=gem, width=3)
+        d.line((52, 15, 82, 23, 93, 10, 127, 28, 151, 13, 188, 21),
+               fill=wood, width=4)
+    elif name == "lost_city":
+        masonry((0, 0, 239, 34), 25)
+        for x in (14, 75, 143, 205):
+            _panel(d, (x, 6, x + 18, 27), leaf)
+            d.line((x + 5, 11, x + 13, 11, x + 8, 20, x + 14, 23),
+                   fill=light, width=2)
+        for x, y in ((15, 216), (220, 206)):
+            masonry((x - 10, y, x + 12, 239), 12)
+            frond(x, y + 15, 25)
+    elif name == "sunken_temple":
+        for x in (4, 217):
+            masonry((x, 0, x + 18, 239), 18)
+        for x in (45, 95, 155):
+            d.arc((x, 3, x + 32, 35), 0, 300, fill=leaf, width=4)
+        for x, y in ((26, 82), (218, 159), (30, 229), (207, 220)):
+            d.line((x, y, x - 5, y - 12, x, y - 23), fill=leaf, width=3)
+            for dx, dy in ((0, -29), (7, -35)):
+                d.ellipse((x + dx, y + dy, x + dx + 5, y + dy + 5), outline=light)
+    elif name == "zen_garden":
+        for y in (10, 19, 28, 213, 222, 231):
+            d.line((37, y, 204, y), fill=light)
+        for x, y in ((16, 25), (218, 219)):
+            for radius in (9, 14, 19):
+                d.arc((x - radius, y - radius, x + radius, y + radius),
+                      0, 350, fill=wood)
+            _oval(d, (x - 7, y - 6, x + 7, y + 5), leaf)
+    elif name == "bamboo_grove":
+        for x in (6, 19, 31, 207, 222, 234):
+            _panel(d, (x - 3, 0, x + 3, 239), leaf)
+            for y in range(13 + x % 11, 239, 31):
+                d.line((x - 3, y, x + 3, y), fill=light, width=2)
+                _poly(d, [(x, y), (x + (9 if x < 40 else -9), y - 9),
+                          (x + (8 if x < 40 else -8), y - 2)], leaf)
+    elif name == "sakura_courtyard":
+        masonry((0, 218, 239, 239), 24)
+        d.line((0, 28, 60, 8, 120, 19, 188, 5, 239, 25), fill=wood, width=6)
+        for x, y in ((17, 22), (48, 12), (88, 14), (127, 24),
+                     (168, 11), (214, 22), (229, 30)):
+            flower(x, y, 5)
+        for x in (15, 222):
+            arch(x - 9, 20)
+    elif name == "cloud_sanctuary":
+        for x, y in ((15, 15), (61, 9), (114, 16), (172, 10), (222, 20),
+                     (23, 224), (82, 233), (175, 229), (224, 220)):
+            _oval(d, (x - 22, y - 8, x + 22, y + 10), gem)
+            _oval(d, (x - 10, y - 13, x + 13, y + 5), light)
+        for x in (15, 220):
+            _panel(d, (x - 5, 65, x + 5, 179), wood)
+            _panel(d, (x - 10, 61, x + 10, 67), light)
+    else:
+        raise ValueError(f"Unknown appended background: {name}")
+    # Replace the entire keeper area, including any border motif overshoot.
+    d.rectangle((40, 40, 199, 199), fill=ground[1])
+    rng = _rng(0xCA7100 + index * 971)
+    for _ in range(180):
+        x, y = 42 + rng(151), 42 + rng(153)
+        d.line((x, y, x + 3 + rng(4), y), fill=ground[rng(3)])
+        if rng(3) == 0:
+            d.line((x + 1, y + 1, x + 3, y + 1), fill=ground[rng(3)])
+    # Shade perimeter materials without filtering native terrain pixels.
+    shaded = _catalogue_finish(image, _material_family(name))
+    return shaded.resize((240, 240), Image.Resampling.NEAREST)
+
+
+def _border_corner(family):
+    """28x28 L-shaped ornaments; all painted pixels stay inside an 8px band."""
+    strip = Image.new("RGBA", (28, 8))
+    d = ImageDraw.Draw(strip)
+    wood, gem, leaf = (_rgba(r[1]) for r in _CATALOGUE_RAMPS)
+    if family == "woodland":
+        d.line((0, 3, 27, 3), fill=wood, width=2)
+        for x in (4, 12, 21):
+            _poly(d, [(x - 3, 3), (x, 0), (x + 5, 1), (x + 2, 4)], leaf)
+            _poly(d, [(x, 4), (x + 4, 7), (x + 7, 6), (x + 4, 3)], leaf)
+    elif family == "fairy":
+        for x in (5, 19):
+            _panel(d, (x, 3, x + 2, 7), wood)
+            _oval(d, (x - 4, 0, x + 6, 4), gem)
+            d.point((x, 1), fill=leaf)
+            d.point((x + 3, 2), fill=leaf)
+        d.line((0, 6, 11, 6, 15, 3, 27, 6), fill=leaf)
+    elif family == "gothic":
+        _poly(d, [(0, 1), (5, 4), (7, 0), (9, 4), (14, 1),
+                  (11, 6), (7, 7), (3, 6)], wood)
+        d.point((6, 4), fill=gem)
+        d.point((9, 4), fill=gem)
+        for x in (16, 23):
+            _poly(d, [(x, 7), (x, 3), (x + 2, 0), (x + 4, 3),
+                      (x + 4, 7)], wood)
+            d.line((x + 2, 3, x + 2, 6), fill=gem)
+    elif family == "academia":
+        for x, h in ((1, 7), (6, 5), (11, 6), (16, 7)):
+            _panel(d, (x, 7 - h, x + 3, 7), leaf if x % 2 else gem)
+            d.line((x + 1, 6, x + 2, 6), fill=wood)
+        _poly(d, [(20, 7), (20, 1), (24, 2), (27, 0), (27, 6), (24, 7)], wood)
+        d.line((24, 3, 24, 6), fill=gem)
+    elif family == "household":
+        _panel(d, (1, 2, 8, 6), gem)
+        d.line((0, 0, 9, 0), fill=wood, width=2)
+        d.line((0, 7, 9, 7), fill=wood)
+        for x in (14, 23):
+            _oval(d, (x - 3, 0, x + 3, 7), leaf)
+            d.point((x - 1, 3), fill=INK)
+            d.point((x + 1, 4), fill=INK)
+    elif family == "witchy":
+        _panel(d, (3, 0, 6, 2), wood)
+        _poly(d, [(3, 2), (1, 4), (1, 7), (8, 7), (8, 4), (6, 2)], leaf)
+        _panel(d, (3, 5, 6, 6), gem)
+        _oval(d, (13, 0, 20, 7), gem)
+        d.ellipse((17, -1, 23, 5), fill=(0, 0, 0, 0))
+        _poly(d, [(23, 7), (25, 0), (27, 7)], leaf)
+    elif family == "prehistoric":
+        d.line((0, 4, 27, 4), fill=wood, width=2)
+        for x in (3, 9, 15, 21):
+            d.arc((x - 3, 0, x + 3, 7), 45, 315, fill=gem, width=2)
+        _poly(d, [(23, 1), (26, 0), (27, 4), (25, 7), (22, 5)], leaf)
+    elif family == "cyberpunk":
+        for x in (1, 5, 9):
+            _panel(d, (x, 0, x + 1, 7), wood)
+        _oval(d, (1, 0, 10, 7), gem)
+        _oval(d, (4, 2, 7, 5), leaf)
+        d.line((11, 2, 17, 2, 20, 6, 27, 6), fill=leaf, width=2)
+        _panel(d, (22, 0, 27, 3), wood)
+        d.line((23, 1, 26, 1), fill=gem)
+    elif family == "scifi":
+        _poly(d, [(5, 0), (7, 3), (11, 3), (8, 5), (9, 7),
+                  (5, 6), (2, 7), (3, 4), (0, 2), (4, 2)], leaf)
+        _panel(d, (14, 0, 27, 7), wood)
+        for x in (16, 20, 24):
+            _panel(d, (x, 2, x + 1, 5), gem)
+        d.line((15, 4, 26, 4), fill=leaf)
+    elif family == "fantasy":
+        _poly(d, [(0, 7), (0, 0), (3, 0), (3, 3), (6, 3), (6, 0),
+                  (9, 0), (9, 3), (12, 3), (12, 0), (15, 0), (15, 7)], wood)
+        _panel(d, (6, 5, 9, 7), gem)
+        _poly(d, [(18, 7), (18, 1), (22, 3), (24, 0), (27, 2),
+                  (25, 5), (27, 7)], leaf)
+    elif family == "ancient":
+        _poly(d, [(0, 7), (0, 5), (3, 5), (3, 3), (6, 3), (6, 0),
+                  (10, 0), (10, 3), (13, 3), (13, 5), (16, 5), (16, 7)], wood)
+        _panel(d, (7, 4, 9, 7), gem)
+        d.line((20, 7, 20, 0, 26, 2, 21, 4, 26, 7), fill=leaf, width=2)
+    elif family == "zen":
+        d.line((0, 0, 5, 1, 13, 1, 18, 0), fill=gem, width=2)
+        d.line((2, 3, 16, 3), fill=wood)
+        for x in (4, 13):
+            d.line((x, 2, x, 7), fill=wood, width=2)
+        for x in (21, 26):
+            d.line((x, 0, x, 7), fill=leaf, width=2)
+            d.line((x - 1, 3, x + 1, 3), fill=wood)
+    elif family == "water":
+        for x in (5, 19):
+            _poly(d, [(x, 7), (x - 5, 2), (x - 3, 0), (x + 3, 0),
+                      (x + 5, 2)], gem)
+            for dx in (-3, 0, 3):
+                d.line((x, 6, x + dx, 1), fill=wood)
+        d.arc((6, 3, 17, 7), 0, 180, fill=leaf)
+    elif family == "mineral":
+        for x, y in ((4, 1), (11, 0), (20, 2)):
+            _poly(d, [(x - 3, 6), (x - 2, y + 1), (x, y), (x + 3, y + 2),
+                      (x + 2, 7)], gem)
+            d.line((x, y + 2, x, 6), fill=leaf)
+    else:
+        _poly(d, [(0, 7), (4, 3), (9, 1), (15, 4), (20, 2), (27, 7)], wood)
+        d.line((2, 6, 9, 3, 15, 6), fill=gem)
+        _poly(d, [(20, 6), (20, 0), (22, 0), (22, 3), (26, 3),
+                  (26, 5), (22, 5), (22, 7)], leaf)
+    corner = Image.new("RGBA", (28, 28))
+    corner.alpha_composite(strip, (0, 0))
+    corner.alpha_composite(strip.transpose(Image.Transpose.ROTATE_270), (0, 0))
+    return corner
+
+
+def draw_border(name):
+    """A theme-specific 2x pixel frame with a genuinely transparent play opening."""
+    if name not in BACKGROUND_NAMES:
+        raise ValueError(f"Unknown border theme: {name}")
+    index = BACKGROUND_NAMES.index(name)
+    family = _material_family(name)
+    source = draw_background(name).resize((120, 120), Image.Resampling.NEAREST)
+    image = Image.new("RGBA", (120, 120))
+    # Sample the theme's edge materials rather than recoloring one generic frame.
+    # The 10-color shared ramp keeps even the old 64-color terrain crisp here.
+    palette = [INK] + [_rgba(color) for ramp in _THEME_MATERIALS[family] for color in ramp]
+    cache = {}
+    for y in range(120):
+        for x in range(120):
+            if 3 <= x < 117 and 3 <= y < 117:
+                continue
+            pixel = source.getpixel((x, y))
+            if pixel not in cache:
+                cache[pixel] = min(palette, key=lambda p: sum(
+                    (p[channel] - pixel[channel]) ** 2 for channel in range(3)))
+            image.putpixel((x, y), cache[pixel])
+    d = ImageDraw.Draw(image)
+    wood, gem, leaf = (_rgba(r[1]) for r in _CATALOGUE_RAMPS)
+    plants = {
+        "moss", "fern", "orchid", "woodland", "succulent", "willow",
+        "fairy_glade", "moonflower_grove", "witch_garden", "primeval_jungle",
+        "bamboo_grove", "sakura_courtyard",
+    }
+    masonry = {
+        "gothic", "cemetery", "ruins", "cathedral", "rose_courtyard",
+        "moon_altar", "enchanted_court", "lost_city", "sunken_temple",
+    }
+    technology = {
+        "neon_alley", "circuit_garden", "lunar_base", "starship", "observatory",
+    }
+    petals = {"orchid", "fairy_glade", "moonflower_grove", "sakura_courtyard",
+              "rose_courtyard"}
+    # Author one horizontal edge tile, then rotate it exactly onto each side.
+    # Each theme has its own pitch, offsets and motif layout, not just a tint.
+    for side in range(4):
+        edge = Image.new("RGBA", (120, 8))
+        ed = ImageDraw.Draw(edge)
+        pitch = 13 + index % 7
+        offset = 8 + (index * 5 + side * 3) % 9
+        ed.line((0, 1, 119, 1), fill=wood)
+        ed.line((0, 2, 119, 2), fill=INK)
+        for x in range(offset, 113, pitch):
+            if name in plants:
+                ed.line((x - 5, 3, x + 5, 4), fill=wood)
+                _poly(ed, [(x - 4, 3), (x, 7), (x + 1, 3)], leaf)
+                _poly(ed, [(x + 1, 3), (x + 6, 6), (x + 6, 3)], leaf)
+            elif name in masonry:
+                _panel(ed, (x - 5, 2, x + 5, 6), wood)
+                ed.line((x - 4, 3, x + 3, 3), fill=gem)
+                ed.line((x, 4, x, 6), fill=INK)
+            elif name in technology:
+                ed.line((x - 6, 3, x - 2, 3, x + 1, 6, x + 6, 6),
+                        fill=leaf)
+                _panel(ed, (x - 2, 3, x + 2, 7), gem)
+            elif name in ("seashell", "pond", "marsh"):
+                ed.arc((x - 5, 0, x + 5, 7), 0, 180, fill=leaf, width=2)
+                ed.line((x - 2, 3, x, 6, x + 2, 3), fill=gem)
+            elif name in ("crystal", "dark_cave", "amber_basin", "dragon_heath"):
+                _poly(ed, [(x - 5, 3), (x - 2, 7), (x + 1, 4),
+                           (x + 4, 6), (x + 5, 2)], gem)
+                ed.line((x - 2, 3, x - 1, 5), fill=leaf)
+            elif name in ("library", "house", "kitchen", "sewing_room"):
+                _panel(ed, (x - 4, 2, x + 4, 7), wood)
+                _panel(ed, (x - 2, 3, x + 2, 6), gem)
+                ed.line((x, 3, x, 6), fill=leaf)
+            elif name in ("night", "cloud_sanctuary"):
+                _oval(ed, (x - 5, 1, x + 5, 6), gem)
+                _oval(ed, (x - 2, 0, x + 3, 5), leaf)
+            elif name in ("zen_garden", "sand", "desert", "snow", "minimal"):
+                ed.line((x - 5, 4, x - 2, 5, x + 2, 5, x + 5, 4),
+                        fill=leaf, width=2)
+                _oval(ed, (x - 2, 2, x + 2, 4), wood)
+            else:  # Cork, leaf litter, mushrooms and autumn.
+                _oval(ed, (x - 4, 2, x + 4, 6), wood)
+                ed.line((x - 2, 3, x + 2, 5), fill=leaf)
+            if name in petals:
+                _oval(ed, (x - 2, 3, x + 2, 7), gem)
+                ed.point((x, 5), fill=wood)
+        edge = _catalogue_finish(edge, family).resize((120, 8), Image.Resampling.NEAREST)
+        if side == 0:
+            image.alpha_composite(edge, (0, 0))
+        elif side == 1:
+            image.alpha_composite(edge.transpose(Image.Transpose.ROTATE_270), (112, 0))
+        elif side == 2:
+            image.alpha_composite(edge.transpose(Image.Transpose.ROTATE_180), (0, 112))
+        else:
+            image.alpha_composite(edge.transpose(Image.Transpose.ROTATE_90), (0, 0))
+    # Large L-shaped corner ornaments carry family identity, not generic dots.
+    corner = _catalogue_finish(_border_corner(family), family)
+    corner = corner.resize((28, 28), Image.Resampling.NEAREST)
+    for angle, position in ((0, (0, 0)), (270, (92, 0)),
+                            (180, (92, 92)), (90, (0, 92))):
+        image.alpha_composite(corner.rotate(angle), position)
+    # [16,224) is transparent after enlargement; no invisible RGB debris.
+    ImageDraw.Draw(image).rectangle((8, 8, 111, 111), fill=(0, 0, 0, 0))
+    return _enlarge(image)
 
 
 # ---------------------------------------------------------------------------
@@ -2236,6 +3279,9 @@ def main():
     for achievement in ACHIEVEMENT_NAMES:
         save(draw_achievement(achievement), "achievement_%s.png" % achievement)
 
+    for treat in TREAT_NAMES:
+        save(draw_treat(treat), "treat_%s.png" % treat)
+
     for gift in GIFT_NAMES:
         save(draw_gift(gift), "gift_%s.png" % gift)
 
@@ -2247,6 +3293,7 @@ def main():
 
     for background in BACKGROUND_NAMES:
         save(draw_background(background), "background_%s_0.png" % background)
+        save(draw_border(background), "border_%s_0.png" % background)
 
     print("total: %d files" % count)
 

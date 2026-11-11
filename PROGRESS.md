@@ -7492,3 +7492,64 @@ evidence proves delivery and continuity, not that the player likes the sound.
 - Local real-browser reload retained master 75, music 10 and Rainy Canopy.
   File restore produced the visible in-game "Browser progress restored."
   message and retained the v11 preferences.
+
+## Round 76 - Doubled themed catalogues and purchasable enclosure frames
+
+### Decisions made
+
+- Preserve all existing IDs, all 201 earlier PNG bytes and both spider
+  renderers. Append 34 decor, 6 treats, 18 gifts and 24 backgrounds, for
+  totals 68/12/36/48 across all eleven requested theme families.
+  Use themed material palettes, quiet enclosure centers and dedicated treat art.
+- Add 48 transparent theme-matched borders in a root menu before Settings.
+  Buy once independently from floors for 10 + floor(background price / 2)
+  Silk; mix freely, reapply free or select free No Border without losing it.
+  Fifteen corner-silhouette families distinguish frames beyond recoloring.
+- Grow ownership with explicit words/nibbles, never shifting a 32-bit mask
+  by high catalogue IDs. Save v12: 268-byte prefix, 52 compiled fields.
+  Preserve old offsets; byte245 low/high nibbles store gifts32..35/decor64..67,
+  u16 at246 backgrounds32..47, full u32 at248 decor32..63.
+  Border ownership260/264 and selection266 (255=None).
+  Read historical v10/v11 tails at260, current tails at268; old padding grants
+  no new ownership. Reject invalid version-specific inline/tail records.
+- Keep 48px menu thumbnails, not all 96 full scenes/frames. One reusable
+  172,800-byte PSRAM workspace decodes mapped QOI on explicit rebuild/test;
+  frames composite into the existing floor canvas, with no new overlay,
+  per-frame allocation or worker LVGL calls.
+- Exact hardware tests exposed a missing marshalled border action range and
+  the expanded decor diagnostic exceeding its old one-second acknowledgement.
+  Correct the action guard; allow the explicit all-scene diagnostic five
+  seconds. Emit gift/decor terminal results on the console task after real
+  completion, rather than relying on LVGL's separately buffered stdout.
+  Do not add a blocking LVGL flush or weaken watchdogs.
+- Update compiled-schema consumers, browser migration, hardware scripts,
+  release validation, current documentation, website and cache revision together.
+
+### Verification
+
+- Final wrapper build/full flash exit0, zero main-source warnings.
+- Browser158/158, art22/22, packaging13/13. All337 packed MMAP/QOI entries
+  validate dimensions, opcodes and decoded pixels; deterministic regeneration
+  preserves all source bytes. No tracked earlier PNG or spider-renderer diff.
+- Hardware48/48. New real-device catalogue suite purchases/renders all48
+  floors and frames, confirms high-bit ownership, free mix/reapply/remove and
+  reboot persistence; renders all68 decor and buys all12 treats.
+- Compiled schema v12/52 fields captured from COM7.273 placements survive
+  export/restore/reboot, slot271 move/block and all high catalogue ownership;
+  invalid fields and restore overwrite guard rejected. Console stack free5340.
+- render500 and scanloop5 largest-block drift0; internal/DMA largest63,488,
+  above51,200. New full-source memory policy leaves about2.2MB free PSRAM.
+- Real SD v12 roundtrip restores high ownership, floor/frame47 and music35/2.
+  Three distinct numbered BMPs verified by full readback; PSRAM drift20bytes.
+  Original pet restored and card backed up afterward.
+- Five-second RTC timer deep sleep: commit log, disconnect, timer wake4 and
+  preserved habitat. Final40-second soak: VERDICT PASS, zero faults/errors.
+- Real browser: v11 preferences migrate (master75/music10/track2), all last
+  catalogue pages reachable, frame47 survives reload, No Border/reapply free,
+  frame36 mixes with floor47. Original browser pet restored.
+- Local website build copies all337 PNGs and five hash-verified firmware images.
+  v1.1.22 ZIP SHA256:
+  82afa74dfe602c9a8738056a8b60e02c669f9d0b1b48f12bcf0cf45ec5c09c5a.
+- Physical touchscreen/speaker approval, battery current, physical-button wake,
+  hosted HTTPS OTA and RTC backup-battery retention remain separate evidence.
+  Publication/production parity must be verified after uploading the release.

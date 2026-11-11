@@ -27,7 +27,7 @@ static uint8_t s_poop_dirt[MAX_POOP];
 
 static const lv_image_dsc_t *background_asset(int scene)
 {
-    const lv_image_dsc_t *image = assets_image(sprite_background_index(scene));
+    const lv_image_dsc_t *image = assets_background(sprite_background_index(scene));
     if (!image || image->header.cf != LV_COLOR_FORMAT_RGB565 ||
         image->header.w != 240 || image->header.h != 240 ||
         image->data_size != 240 * 240 * 2) {
@@ -47,6 +47,17 @@ void terrarium_rebuild(void)
     for (int y = 0; y < ui.H; y++)
         for (int x = 0; x < ui.W; x++)
             s_pixels[y * ui.W + x] = source[(y / 2) * 240 + x / 2];
+    if (g.border_id != 255) {
+        const lv_image_dsc_t *border = assets_border(sprite_border_index(g.border_id));
+        ESP_ERROR_CHECK(border ? ESP_OK : ESP_ERR_INVALID_STATE);
+        const uint16_t *colors = (const uint16_t *)border->data;
+        const uint8_t *alpha = border->data + 240 * 240 * 2;
+        for (int y = 0; y < ui.H; y++)
+            for (int x = 0; x < ui.W; x++) {
+                int src = y / 2 * 240 + x / 2;
+                if (alpha[src]) s_pixels[y * ui.W + x] = colors[src];
+            }
+    }
     lv_obj_invalidate(s_background);
 }
 
@@ -67,11 +78,29 @@ bool terrarium_test(void)
     if (!image) return false;
     const uint16_t *source = (const uint16_t *)image->data;
     for (int y = 0; ok && y < ui.H; y++)
-        for (int x = 0; x < ui.W; x++)
+        for (int x = 0; x < ui.W; x++) {
+            if (g.border_id != 255 && (x < 32 || x >= 448 || y < 32 || y >= 448)) continue;
             if (s_pixels[y * ui.W + x] !=
                 s_pixels[(y / PIXEL_GRID * PIXEL_GRID) * ui.W + x / PIXEL_GRID * PIXEL_GRID] ||
                 s_pixels[y * ui.W + x] != source[(y / 2) * 240 + x / 2])
                 ok = false;
+        }
+    for (int id = 0; id < THEME_COUNT; id++) {
+        const lv_image_dsc_t *frame = assets_border(sprite_border_index(id));
+        if (!frame) return false;
+        const uint8_t *alpha = frame->data + 240 * 240 * 2;
+        for (int y = 16; y < 224; y++)
+            for (int x = 16; x < 224; x++)
+                ok = ok && alpha[y * 240 + x] == 0;
+        if (g.border_id == id) {
+            const uint16_t *colors = (const uint16_t *)frame->data;
+            for (int y = 0; y < ui.H; y++)
+                for (int x = 0; x < ui.W; x++) {
+                    int src = y / 2 * 240 + x / 2;
+                    if (alpha[src]) ok = ok && s_pixels[y * ui.W + x] == colors[src];
+                }
+        }
+    }
     if (g.gift.used) {
         const lv_image_dsc_t *gift = assets_image(sprite_gift_index(g.gift.kind));
         ok = ok && gift && s_gift_pixels && lv_obj_get_child_count(s_gift_layer) == 1;

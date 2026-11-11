@@ -152,6 +152,27 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(tail=invalid), self.assertRaisesRegex(ValueError, "variable decoration"):
                 validate_save_schema(self.build)
 
+    def test_v12_catalogue_and_border_ownership_are_required(self):
+        path, schema = self.schema_fixture()
+        (self.build / "main" / "game_config.h").write_text("#define SAVE_VERSION 12\n")
+        schema.update(version=12, payloadSizes=[120, 268], maxPayload=20480,
+                      decorTail={"offset": 268, "stride": 6, "countField": "decor_extra_count"})
+        for name, kind, offset, version in (
+            ("decor_extra_count", "u32", 256, 10),
+            ("music_volume", "u8", 254, 11), ("music_track", "u8", 255, 11),
+            ("catalogue_owned_high", "u8", 245, 12), ("backgrounds_owned_extra", "u16", 246, 12),
+            ("borders_owned", "u32", 260, 12), ("borders_owned_extra", "u16", 264, 12),
+            ("border_id", "u8", 266, 12),
+        ):
+            schema["fields"].append({"name": name, "type": kind, "offset": offset,
+                                     "minVersion": version, "length": 0})
+        path.write_text(json.dumps(schema))
+        self.assertEqual(validate_save_schema(self.build), path)
+        schema["fields"][-1]["minVersion"] = 11
+        path.write_text(json.dumps(schema))
+        with self.assertRaisesRegex(ValueError, "expanded catalogue ownership"):
+            validate_save_schema(self.build)
+
 
 if __name__ == "__main__":
     unittest.main()

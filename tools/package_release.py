@@ -99,7 +99,8 @@ def validate_save_schema(root: Path) -> Path:
     if not ends or (max(ends) + alignment - 1) // alignment * alignment != sizes[1]:
         raise ValueError("Save schema does not describe the complete current payload")
     if schema["version"] >= 10:
-        expected_tail = {"offset": 260, "stride": 6, "countField": "decor_extra_count"}
+        expected_tail = {"offset": 268 if schema["version"] >= 12 else 260,
+                         "stride": 6, "countField": "decor_extra_count"}
         if (schema.get("decorTail") != expected_tail or schema.get("maxPayload") != 20480 or
                 not any(field["name"] == "decor_extra_count" and field["offset"] == 256 and
                         field["type"] == "u32" for field in fields)):
@@ -110,6 +111,15 @@ def validate_save_schema(root: Path) -> Path:
                        field["offset"] == offset and field.get("minVersion") == 11
                        for field in fields):
                 raise ValueError("Save schema does not describe music preferences")
+    if schema["version"] >= 12:
+        for name, offset, kind in (("catalogue_owned_high", 245, "u8"),
+                                   ("backgrounds_owned_extra", 246, "u16"),
+                                   ("borders_owned", 260, "u32"), ("borders_owned_extra", 264, "u16"),
+                                   ("border_id", 266, "u8")):
+            if not any(field["name"] == name and field["type"] == kind and
+                       field["offset"] == offset and field.get("minVersion") == 12
+                       for field in fields):
+                raise ValueError("Save schema does not describe expanded catalogue ownership")
     return schema_path
 
 

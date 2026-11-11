@@ -159,6 +159,7 @@ static void state_defaults(void)
     g.brightness = 50;
     g.volume = AUDIO_VOLUME;
     g.backgrounds_owned = 1u;
+    g.border_id = 255;
     g.screen_timeout = 3;
     g.music_enabled = 1;
     g.music_volume = 100;
@@ -206,7 +207,7 @@ static void state_finish_load(void)
     if (g.rtc_wake > 2) g.rtc_wake = 0;
     theme_restore();
     if (g.gift.used && g.gift.kind < GIFT_KINDS)
-        g.gifts_owned |= 1u << g.gift.kind;
+        gift_mark_owned(g.gift.kind);
     if (g.stage > STAGE_ADULT) g.stage = STAGE_SPIDERLING;
     if (g.hunger > 100) g.hunger = 100;
     if (g.mood > 100) g.mood = 100;
@@ -428,6 +429,7 @@ enum {
     MENU_GIFT_ITEM,
     MENU_POWER_CONFIRM,
     MENU_SOUNDTRACK,
+    MENU_BORDERS,
 };
 
 static void menu_open(int which);
@@ -551,6 +553,13 @@ static void on_theme_pick(uint8_t id)
     }
     terrarium_rebuild();
     menu_open(MENU_THEME);   /* stay in the submenu so the choice is visible */
+}
+
+static void on_border_pick(uint8_t id)
+{
+    if (border_set(id)) terrarium_rebuild();
+    else ui_hud_bubble("Border Purchase Failed", 0xf5c86b, 1800);
+    menu_open(MENU_BORDERS);
 }
 
 static void on_sound_pick(uint8_t id)
@@ -923,8 +932,10 @@ static void menu_open(int which)
         /* Settings is always the last row: it is the least-used entry and the
          * one the player reaches for least often, so it belongs at the bottom
          * of the list rather than in the middle. */
-        items[6] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
-        ui_menu_open("Spidarium", items, 7, on_main_pick);
+        items[6] = (ui_menu_item_t){ "Borders", "Mix and Match Frames", true, false, true, MENU_BORDERS };
+        items[7] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
+        ui_menu_open("Spidarium", items, 8, on_main_pick);
+        ui_menu_set_item_icon(6, sprite_border_index(g.border_id == 255 ? g.background_id : g.border_id));
         break;
     }
     case MENU_SETTINGS: {
@@ -1097,6 +1108,23 @@ static void menu_open(int which)
         break;
     }
 
+    case MENU_BORDERS: {
+        static char names[THEME_COUNT][32], details[THEME_COUNT][40];
+        items[0] = (ui_menu_item_t){ "No Border", "Remove Frame / Free", true,
+                                     g.border_id == 255, false, 255 };
+        for (int i = 0; i < THEME_COUNT; i++) {
+            ui_menu_format_name(names[i], sizeof names[i], theme_get(i)->name);
+            if (g.border_id == i) snprintf(details[i], sizeof details[i], "In Use");
+            else if (border_owned(i)) snprintf(details[i], sizeof details[i], "Owned / Apply Free");
+            else snprintf(details[i], sizeof details[i], "%u Silk / Buy Frame", border_cost(i));
+            items[i + 1] = (ui_menu_item_t){ names[i], details[i], true,
+                                            g.border_id == i, false, i };
+        }
+        ui_menu_open("Borders", items, THEME_COUNT + 1, on_border_pick);
+        for (int i = 0; i < THEME_COUNT; i++) ui_menu_set_item_icon(i + 1, sprite_border_index(i));
+        ui_menu_set_back(back_to_main);
+        break;
+    }
     case MENU_SOUND: {
         /* The slider row's readout is derived from its value by refresh_page(),
          * so no detail string is needed here. */
@@ -1236,12 +1264,7 @@ static void menu_open(int which)
         snprintf(shop_title, sizeof shop_title, "Treats / %lu Silk",
                  (unsigned long)g.silk);
         ui_menu_open(shop_title, items, TREAT_COUNT, on_shop_pick);
-        const int treat_icons[TREAT_COUNT] = {
-            sprite_prey_index(0, false, false, 0), sprite_icon_index("treats"),
-            sprite_decor_item_index(0), sprite_prey_index(2, false, false, 0),
-            sprite_icon_index("hygiene"), sprite_decor_item_index(DECOR_SILK_TENT),
-        };
-        for (int i = 0; i < TREAT_COUNT; i++) ui_menu_set_item_icon(i, treat_icons[i]);
+        for (int i = 0; i < TREAT_COUNT; i++) ui_menu_set_item_icon(i, sprite_treat_index(i));
         ui_menu_set_back(back_to_main);
         break;
     }
@@ -1393,6 +1416,7 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "about"))    menu_open(MENU_ABOUT);
     else if (!strcmp(name, "sd"))       on_settings_pick(1);
     else if (!strcmp(name, "theme"))    menu_open(MENU_THEME);
+    else if (!strcmp(name, "borders"))  menu_open(MENU_BORDERS);
     else if (!strcmp(name, "sound"))    menu_open(MENU_SOUND);
     else if (!strcmp(name, "soundtrack")) menu_open(MENU_SOUNDTRACK);
     else if (!strcmp(name, "ach"))      menu_open(MENU_ACHIEVEMENTS);
@@ -1490,7 +1514,7 @@ static bool capture_test(void)
 }
 enum { UI_PREPARING = -1 };
 
-static void test_gifts(void)
+static bool test_gifts(void)
 {
     game_state_t original = g;
     int tested = 0;
@@ -1522,9 +1546,7 @@ static void test_gifts(void)
     gift_compute();
     bool economy = gift_economy_test();
     bool visits = behaviour_gift_test();
-    printf("%s gifts tested=%d removed_neutral=%d economy=%d visits=%d Silk=%lu\n",
-           tested == GIFT_KINDS && removed && economy && visits ? "OK" : "ERR", tested, removed,
-           economy, visits, (unsigned long)g.silk);
+    return tested == GIFT_KINDS && removed && economy && visits;
 }
 
 bool game_ui_call(game_ui_action_t action)
@@ -1534,7 +1556,7 @@ bool game_ui_call(game_ui_action_t action)
 
 bool game_ui_call_value(game_ui_action_t action, int value)
 {
-    if (power_sleep_pending() || action <= GAME_UI_NONE || action > GAME_UI_DEEP_SLEEP ||
+    if (power_sleep_pending() || action <= GAME_UI_NONE || action > GAME_UI_BORDER ||
         (action == GAME_UI_DEEP_SLEEP && (value < 5 || value > 86400)) ||
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
@@ -1544,6 +1566,7 @@ bool game_ui_call_value(game_ui_action_t action, int value)
          (value < 0 || value > 100)) ||
         (action == GAME_UI_SET_MUSIC_TRACK && (value < 0 || value >= AUDIO_MUSIC_TRACK_COUNT)) ||
         (action == GAME_UI_BACKGROUND && (value < 0 || value >= THEME_COUNT)) ||
+        (action == GAME_UI_BORDER && value != 255 && (value < 0 || value >= THEME_COUNT)) ||
         (action == GAME_UI_STATE && (value < 0 || value > SPIDER_SICK)) ||
         (action == GAME_UI_SPAWN && (value < -1 || value >= PREY_SPECIES_COUNT))) {
         ESP_LOGW(TAG, "UI request rejected: invalid action or value");
@@ -1560,7 +1583,7 @@ bool game_ui_call_value(game_ui_action_t action, int value)
 
     /* Wait for the render tick to pick it up. Bounded, so a stalled render
      * timer cannot hang the console forever. */
-    int attempts = action == GAME_UI_TEST_UI ? 500 : 100;
+    int attempts = action == GAME_UI_TEST_UI || action == GAME_UI_DECOR_TEST ? 500 : 100;
     for (int i = 0; i < attempts && s_ui_req != GAME_UI_NONE; i++) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -1802,7 +1825,7 @@ static void ui_service_request(void)
         break;
     case GAME_UI_MENU:  game_on_menu(NULL);  break;
     case GAME_UI_SAVE:  atomic_store(&s_ui_ok, game_save_now()); break;
-    case GAME_UI_TEST_GIFTS: test_gifts();   break;
+    case GAME_UI_TEST_GIFTS: s_ui_ok = test_gifts(); break;
     case GAME_UI_REFRESH:
         spider_refresh_colours();
         terrarium_rebuild();
@@ -1865,6 +1888,10 @@ static void ui_service_request(void)
     case GAME_UI_SET_MUTED:
         audio_set_muted(s_ui_value != 0);
         game_save_now();
+        break;
+    case GAME_UI_BORDER:
+        atomic_store(&s_ui_ok, border_set(s_ui_value));
+        terrarium_rebuild();
         break;
     case GAME_UI_BACKGROUND:
         atomic_store(&s_ui_ok, theme_set(s_ui_value));
@@ -1934,13 +1961,15 @@ static void ui_service_request(void)
         decor_item_t saved[DECOR_SLOTS];
         memcpy(saved, g.decor, sizeof saved);
         uint32_t extra_count = g.decor_extra_count, extra_owned = g.decor_owned_extra;
+        uint8_t high_owned = g.catalogue_owned_high;
         decor_item_t *extra = decor_detach_extra();
         uint32_t owned = g.decor_owned;
         uint32_t silk = g.silk;
         uint32_t level = g.level;
         decor_clear();
         g.decor_owned = 0xFFFFFFFFu;
-        g.decor_owned_extra = 3;
+        g.decor_owned_extra = 0xFFFFFFFFu;
+        g.catalogue_owned_high |= 0xF0;
         g.level = 20;
         g.silk = 100000;
         bool ok = true;
@@ -1951,12 +1980,11 @@ static void ui_service_request(void)
         }
         terrarium_refresh_decor();
         ok = ok && terrarium_test();
-        printf("%s decortest placed=%d slots=%d\n", ok ? "OK" : "ERR",
-               decor_placed_count(), DECOR_SLOTS);
         memcpy(g.decor, saved, sizeof saved);
         decor_restore_extra(extra);
         g.decor_extra_count = extra_count;
         g.decor_owned_extra = extra_owned;
+        g.catalogue_owned_high = high_owned;
         g.decor_owned = owned;
         g.silk = silk;
         g.level = level;

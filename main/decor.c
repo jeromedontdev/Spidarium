@@ -54,6 +54,40 @@ static const decor_def_t k_decor_kinds[DECOR_COUNT] = {
     { "Fossil",       "spider walks over it",   58,  8, 12, 0, "decor_fossil" },
     { "Lantern Cap",  "spider walks over it",   92, 14, 13, 0, "decor_lantern_cap" },
     { "Stone Bridge", "spider walks around it",120, 18, 20, 1, "decor_stone_bridge" },
+    { "Fairy Ring", "woodland fairy / walk over", 44, 4, 17, 0, "decor_fairy_ring" },
+    { "Foxglove Lantern", "woodland fairy / walk around", 58, 6, 12, 1, "decor_foxglove_lantern" },
+    { "Pixie Door", "woodland fairy / walk around", 70, 8, 14, 1, "decor_pixie_door" },
+    { "Gargoyle", "gothic / walk around", 78, 9, 15, 1, "decor_gargoyle" },
+    { "Iron Gate", "gothic / walk around", 84, 10, 19, 1, "decor_iron_gate" },
+    { "Rose Urn", "gothic / walk around", 54, 6, 12, 1, "decor_rose_urn" },
+    { "Book Stack", "academia / walk around", 40, 3, 12, 1, "decor_book_stack" },
+    { "Globe", "academia / walk around", 66, 7, 13, 1, "decor_globe" },
+    { "Quill Desk", "academia / walk around", 90, 11, 19, 1, "decor_quill_desk" },
+    { "Tea Cup", "household / walk around", 32, 2, 13, 1, "decor_tea_cup" },
+    { "Spool", "household / walk around", 26, 2, 10, 1, "decor_spool" },
+    { "Thimble", "household / walk around", 30, 3, 10, 1, "decor_thimble" },
+    { "Cauldron", "witchy / walk around", 74, 8, 17, 1, "decor_cauldron" },
+    { "Broom", "witchy / walk over", 38, 4, 15, 0, "decor_broom" },
+    { "Potion Rack", "witchy / walk around", 86, 10, 17, 1, "decor_potion_rack" },
+    { "Amber Fossil", "prehistoric / walk over", 58, 6, 12, 0, "decor_amber_fossil" },
+    { "Cycad", "prehistoric / walk around", 62, 7, 16, 1, "decor_cycad" },
+    { "Dinosaur Egg", "prehistoric / walk around", 72, 9, 13, 1, "decor_dinosaur_egg" },
+    { "Neon Sign", "cyberpunk / walk around", 80, 9, 14, 1, "decor_neon_sign" },
+    { "Holo Terminal", "cyberpunk / walk around", 96, 12, 15, 1, "decor_holo_terminal" },
+    { "Cable Coil", "cyberpunk / walk over", 42, 4, 12, 0, "decor_cable_coil" },
+    { "Moon Rover", "sci-fi / walk around", 104, 13, 18, 1, "decor_moon_rover" },
+    { "Solar Array", "sci-fi / walk around", 88, 10, 18, 1, "decor_solar_array" },
+    { "Oxygen Pod", "sci-fi / walk around", 92, 11, 14, 1, "decor_oxygen_pod" },
+    { "Wizard Tower", "fantasy / walk around", 112, 14, 17, 1, "decor_wizard_tower" },
+    { "Dragon Statue", "fantasy / walk around", 120, 16, 18, 1, "decor_dragon_statue" },
+    { "Treasure Chest", "fantasy / walk around", 98, 12, 15, 1, "decor_treasure_chest" },
+    { "Sun Obelisk", "lost civilization / walk around", 108, 13, 13, 1, "decor_sun_obelisk" },
+    { "Glyph Tablet", "lost civilization / walk over", 64, 7, 14, 0, "decor_glyph_tablet" },
+    { "Broken Column", "lost civilization / walk around", 76, 8, 15, 1, "decor_broken_column" },
+    { "Stone Lantern", "Japanese zen / walk around", 70, 6, 13, 1, "decor_stone_lantern" },
+    { "Bamboo Fountain", "Japanese zen / walk around", 84, 9, 16, 1, "decor_bamboo_fountain" },
+    { "Bonsai", "Japanese zen / walk around", 94, 11, 16, 1, "decor_bonsai" },
+    { "Fairy Bridge", "woodland fairy / walk around", 102, 12, 20, 1, "decor_fairy_bridge" },
 };
 
 const decor_def_t *decor_def(uint8_t kind)
@@ -71,7 +105,8 @@ bool decor_owned(uint8_t kind)
 {
     if (kind >= DECOR_COUNT) return false;
     if (kind < 32) return (g.decor_owned & (1u << kind)) != 0;
-    return (g.decor_owned_extra & (1u << (kind - 32))) != 0;
+    if (kind < 64) return (g.decor_owned_extra & (1u << (kind - 32))) != 0;
+    return (g.catalogue_owned_high & (1u << (kind - 64 + 4))) != 0;
 }
 
 bool decor_can_buy(uint8_t kind)
@@ -101,7 +136,8 @@ bool decor_buy(uint8_t kind)
     }
     g.silk -= def->cost;
     if (kind < 32) g.decor_owned |= 1u << kind;
-    else g.decor_owned_extra |= 1u << (kind - 32);
+    else if (kind < 64) g.decor_owned_extra |= 1u << (kind - 32);
+    else g.catalogue_owned_high |= 1u << (kind - 64 + 4);
     ESP_LOGI(TAG, "bought %s for %u Silk (%lu left)", def->name, def->cost,
              (unsigned long)g.silk);
     return true;
@@ -299,6 +335,7 @@ bool decor_test(void)
     decor_item_t *extra = decor_detach_extra();
     uint32_t silk = g.silk, owned = g.decor_owned, level = g.level;
     uint32_t owned_extra = g.decor_owned_extra;
+    uint8_t high_owned = g.catalogue_owned_high;
     decor_item_t saved[DECOR_SLOTS];
     memcpy(saved, g.decor, sizeof saved);
     bool ok = true;
@@ -306,6 +343,7 @@ bool decor_test(void)
     decor_clear();
     g.decor_owned = 0;
     g.decor_owned_extra = 0;
+    g.catalogue_owned_high &= 0x0F;
     g.level = 1;
     g.silk = 0;
 
@@ -379,6 +417,11 @@ bool decor_test(void)
     ok = ok && decor_at(slot)->x >= g_play.left;
     ok = ok && decor_at(slot)->y >= g_play.top;
 
+    g.level = 40;
+    g.silk = 100000;
+    for (int i = 32; i < DECOR_COUNT; i++)
+        ok = decor_buy(i) && decor_owned(i) && ok;
+    g.catalogue_owned_high = high_owned;
     g.silk = silk; g.decor_owned = owned; g.level = level;
     g.decor_owned_extra = owned_extra; g.level = level;
     memcpy(g.decor, saved, sizeof saved);

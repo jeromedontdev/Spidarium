@@ -5,12 +5,15 @@ import unittest
 
 from PIL import Image, ImageDraw
 
-from asset_build import validate_pixel_art, write_preview
+from asset_build import (
+    BACKGROUNDS, DECOR_ITEMS, GIFTS, TREATS, expected_dimensions,
+    validate_pixel_art, write_preview,
+)
 from gen_sprites import (
     ACHIEVEMENT_NAMES, BACKGROUND_NAMES, DECOR_ITEM_NAMES, GIFT_NAMES,
     PREY_ANIMS, PREY_SPECIES, UI_ICONS, _blob, _save_png, _shade_materials,
     draw_achievement, draw_background, draw_decor_item, draw_gift, draw_icon, draw_prey,
-    prey_leg_paths,
+    TREAT_NAMES, _border_corner, _THEME_MATERIALS, draw_border, draw_treat, prey_leg_paths,
 )
 
 
@@ -29,15 +32,15 @@ class ArtStyleTests(unittest.TestCase):
             self.assertLess(intersection / union, 0.65, f"{left}/{right} silhouettes too similar")
 
     def test_expanded_catalogue_assets_are_appended_without_reordering(self):
-        self.assertEqual(len(DECOR_ITEM_NAMES), 34)
-        self.assertEqual(DECOR_ITEM_NAMES[16:], [
+        self.assertEqual(len(DECOR_ITEM_NAMES), 68)
+        self.assertEqual(DECOR_ITEM_NAMES[16:34], [
             "fern_pot", "acorn_hide", "driftwood_arch", "web_hammock", "dew_pool",
             "mushroom_pair", "flower_planter", "crystal_cluster", "shell_cove",
             "twig_ladder", "moss_stone", "seed_pod", "silk_tent", "leaf_umbrella",
             "bone_arch", "fossil", "lantern_cap", "stone_bridge",
         ])
-        self.assertEqual(len(BACKGROUND_NAMES), 24)
-        self.assertEqual(BACKGROUND_NAMES[16:], [
+        self.assertEqual(len(BACKGROUND_NAMES), 48)
+        self.assertEqual(BACKGROUND_NAMES[16:24], [
             "house", "dark_cave", "night", "autumn", "snow", "pond", "ruins", "marsh",
         ])
         self.assertEqual(len(UI_ICONS), 30)
@@ -46,6 +49,89 @@ class ArtStyleTests(unittest.TestCase):
             "wifi", "sd", "about", "battery", "display", "sound", "auto_feed",
             "screenshot", "reset", "volume", "music",
         ])
+        self.assertEqual(tuple(DECOR_ITEM_NAMES), DECOR_ITEMS)
+        self.assertEqual(tuple(BACKGROUND_NAMES), BACKGROUNDS)
+        self.assertEqual(tuple(GIFT_NAMES), GIFTS)
+        self.assertEqual(tuple(TREAT_NAMES), TREATS)
+        self.assertEqual(len(GIFT_NAMES), 36)
+        self.assertEqual(len(expected_dimensions()), 337)
+
+    def test_all_theme_frames_have_transparent_openings_and_distinct_art(self):
+        contents = set()
+        for name in BACKGROUND_NAMES:
+            with self.subTest(theme=name):
+                image = draw_border(name)
+                self.assertEqual(image.size, (240, 240))
+                validate_pixel_art(image, f"border_{name}_0.png")
+                self.assertIsNone(image.getchannel("A").crop((16, 16, 224, 224)).getbbox())
+                self.assertNotIn(image.tobytes(), contents)
+                contents.add(image.tobytes())
+
+    def test_border_center_paint_is_rejected(self):
+        image = draw_border("woodland")
+        ImageDraw.Draw(image).rectangle((20, 20, 21, 21), fill=(0, 0, 0, 255))
+        with self.assertRaisesRegex(ValueError, "transparent opening"):
+            validate_pixel_art(image, "border_woodland_0.png")
+
+    def test_theme_families_use_distinct_corner_silhouettes(self):
+        silhouettes = set()
+        for family in _THEME_MATERIALS:
+            with self.subTest(family=family):
+                corner = _border_corner(family)
+                self.assertIsNone(corner.getchannel("A").crop((8, 8, 28, 28)).getbbox())
+                silhouette = corner.getchannel("A").tobytes()
+                self.assertNotIn(silhouette, silhouettes)
+                silhouettes.add(silhouette)
+        self.assertGreaterEqual(len(silhouettes), 11)
+
+    def test_new_theme_materials_are_not_universally_wood_and_purple(self):
+        for family, item in (
+            ("gothic", "gargoyle"), ("academia", "globe"), ("household", "tea_cup"),
+            ("witchy", "cauldron"), ("prehistoric", "amber_fossil"),
+            ("cyberpunk", "neon_sign"), ("scifi", "moon_rover"),
+            ("fantasy", "wizard_tower"), ("ancient", "glyph_tablet"),
+            ("zen", "stone_lantern"), ("fairy", "pixie_door"),
+        ):
+            with self.subTest(family=family, item=item):
+                image = draw_decor_item(item)
+                colors = {color for _, color in image.getcolors()}
+                expected = {
+                    tuple((color >> shift) & 255 for shift in (16, 8, 0)) + (255,)
+                    for ramp in _THEME_MATERIALS[family] for color in ramp
+                }
+                self.assertGreaterEqual(len(colors & expected), 7)
+
+    def test_new_props_and_treats_are_not_recolored_silhouettes(self):
+        contents, silhouettes = set(), set()
+        for prefix, names, renderer in (
+            ("decoritem", DECOR_ITEM_NAMES[34:], draw_decor_item),
+            ("gift", GIFT_NAMES[18:], draw_gift),
+            ("treat", TREAT_NAMES, draw_treat),
+        ):
+            for name in names:
+                with self.subTest(group=prefix, name=name):
+                    image = renderer(name)
+                    validate_pixel_art(image, f"{prefix}_{name}.png")
+                    pixels = (image.size, image.tobytes())
+                    silhouette = (image.size, image.getchannel("A").tobytes())
+                    self.assertNotIn(pixels, contents)
+                    self.assertNotIn(silhouette, silhouettes)
+                    contents.add(pixels)
+                    silhouettes.add(silhouette)
+
+    def test_generated_sources_match_all_published_png_pixels(self):
+        root = Path(__file__).resolve().parents[1]
+        for prefix, names, renderer in (
+            ("decoritem", DECOR_ITEM_NAMES, draw_decor_item),
+            ("gift", GIFT_NAMES, draw_gift),
+            ("treat", TREAT_NAMES, draw_treat),
+            ("background", BACKGROUND_NAMES, draw_background),
+            ("border", BACKGROUND_NAMES, draw_border),
+        ):
+            for name in names:
+                filename = f"{prefix}_{name}" + ("_0" if prefix in ("background", "border") else "") + ".png"
+                with self.subTest(asset=filename), Image.open(root / "assets" / filename) as source:
+                    self.assertEqual(source.tobytes(), renderer(name).tobytes())
 
     def test_insect_leg_roots_are_fixed_and_feet_alternate_tripods(self):
         for species in ("fly", "fruitfly", "cricket", "roach", "beetle", "moth"):
@@ -148,15 +234,15 @@ class ArtStyleTests(unittest.TestCase):
                 validate_pixel_art(image, name)
 
     def test_review_sheet_covers_every_non_spider_source(self):
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as directory:
             output = Path(directory) / "review.png"
             write_preview(Path(__file__).resolve().parents[1] / "assets", output)
             with Image.open(output) as sheet:
-                self.assertEqual(sheet.size, (960, 4780))
+                self.assertEqual(sheet.size, (960, 11000))
 
     def test_equal_pixels_preserve_source_bytes_across_png_encoders(self):
         image = draw_icon("feed")
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as directory:
             path = Path(directory) / "icon.png"
             image.save(path, compress_level=0)
             original = path.read_bytes()

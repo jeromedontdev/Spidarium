@@ -42,7 +42,7 @@ export const CONFIG = Object.freeze({
   DAILY_STREAK_MAX:7, DAILY_XP_BASE:6, DAILY_XP_PER_DAY:2, DAILY_SILK_BASE:4,
   DAILY_SILK_PER_DAY:2, DAILY_TASK_XP:12, DAILY_TASK_SILK:8, DAILY_TASK_COUNT:4,
   DAILY_NEVER:0xFFFFFFFF,
-  TREAT_COUNT:6, TREAT_HUNGER_COST:6, TREAT_MOOD_COST:8, TREAT_ENERGY_COST:10,
+  TREAT_COUNT:12, TREAT_HUNGER_COST:6, TREAT_MOOD_COST:8, TREAT_ENERGY_COST:10,
   TREAT_HUNGER_GAIN:25, TREAT_MOOD_GAIN:30, TREAT_ENERGY_GAIN:35,
 });const C = CONFIG, PI = Math.PI, TAU = PI*2, U32 = 0xffffffff;
 export const STATES = Object.freeze({IDLE:0,WANDER:1,STALK:2,AIM:3,POUNCE:4,EAT:5,SLEEP:6,PLAY:7,MOLT:8,SICK:9});
@@ -74,17 +74,42 @@ export function preySprite(species,dead=false,frame=0) {
 }
 export const BACKGROUNDS = ['cork','moss','leaf_litter','sand','fern','orchid','woodland','minimal',
   'mushroom','gothic','seashell','succulent','willow','desert','crystal','cemetery',
-  'house','dark_cave','night','autumn','snow','pond','ruins','marsh'];
+  'house','dark_cave','night','autumn','snow','pond','ruins','marsh',
+  'fairy_glade','moonflower_grove','cathedral','rose_courtyard','library','observatory',
+  'kitchen','sewing_room','witch_garden','moon_altar','primeval_jungle','amber_basin',
+  'neon_alley','circuit_garden','lunar_base','starship','enchanted_court','dragon_heath',
+  'lost_city','sunken_temple','zen_garden','bamboo_grove','sakura_courtyard','cloud_sanctuary'];
 export const BACKGROUND_COSTS = [0,12,12,16,20,24,28,16,32,40,28,24,32,36,48,48,
-  52,60,60,54,58,64,72,68];
+  52,60,60,54,58,64,72,68,
+  64,72,80,74,62,78,54,58,68,82,72,76,84,88,90,96,86,92,94,98,70,74,78,100];
 export function backgroundOwned(s,id) {
-  return Number.isInteger(id)&&id>=0&&id<BACKGROUNDS.length&&!!(s.backgrounds_owned&(1<<id));
+  return Number.isInteger(id)&&id>=0&&id<BACKGROUNDS.length&&
+    !!((id<32?s.backgrounds_owned:s.backgrounds_owned_extra)&(1<<(id%32)));
 }
 export function buyBackground(s,id) {
   if(!Number.isInteger(id)||!BACKGROUNDS[id])return event(s,'rejected',{reason:'unknown background'});
   const cost=backgroundOwned(s,id)?0:BACKGROUND_COSTS[id];
   if(s.silk<cost)return event(s,'rejected',{reason:'not enough Silk'});
-  s.silk-=cost;s.backgrounds_owned|=1<<id;s.background=BACKGROUNDS[id];return true;
+  s.silk-=cost;
+  const field=id<32?'backgrounds_owned':'backgrounds_owned_extra';
+  s[field]=(s[field]|(1<<(id%32)))>>>0;s.background=BACKGROUNDS[id];return true;
+}
+export function borderOwned(s,id){
+  return Number.isInteger(id)&&id>=0&&id<BACKGROUNDS.length&&
+    !!((id<32?s.borders_owned:s.borders_owned_extra)&(1<<(id%32)));
+}
+export function borderCost(id){return BACKGROUNDS[id]?10+Math.floor(BACKGROUND_COSTS[id]/2):0;}
+export function buyBorder(s,id){
+  if(id!==255&&(!Number.isInteger(id)||!BACKGROUNDS[id]))
+    return event(s,'rejected',{reason:'unknown border'});
+  const cost=id===255||borderOwned(s,id)?0:borderCost(id);
+  if(s.silk<cost)return event(s,'rejected',{reason:'not enough Silk'});
+  s.silk-=cost;s.border_id=id;
+  if(id!==255){
+    const field=id<32?'borders_owned':'borders_owned_extra';
+    s[field]=(s[field]|(1<<(id%32)))>>>0;
+  }
+  return true;
 }
 const bonusKeys = ['energy_regen_mult','hygiene_decay_mult','pounce_range_mult','aim_window_mult','wild_spawn_bonus',
   'pounce_success_mult','movement_efficiency_mult','mood_mult','fear_mult','prey_flee_penalty',
@@ -108,8 +133,28 @@ const giftRows = [
   ['emerald','Emerald Garden',30,'vitality',{energy_regen_mult:1.05,all_stats_decay_mult:.95}],
   ['diamond','Diamond Retreat',35,'perfection',{bonus_synergy_mult:1.5}],
   ['crown','Royal Perch',40,'ruler vivarium',{bonus_synergy_mult:2}],
+  ['fairy_cottage','Fairy Cottage',4,'rests faster',{energy_regen_mult:1.4}],
+  ['moon_bed','Moon Bed',6,'lifts mood',{mood_mult:1.15}],
+  ['reading_nook','Reading Nook',8,'longer aim window',{aim_window_mult:1.2}],
+  ['teapot_hide','Teapot Hide',3,'stays cleaner',{hygiene_decay_mult:.7}],
+  ['witch_hat','Witch Hat',10,'calmer hunting',{fear_mult:.75}],
+  ['fern_nest','Fern Nest',7,'builds energy',{energy_regen_mult:1.35}],
+  ['neon_den','Neon Den',12,'uses less energy',{movement_efficiency_mult:1.15}],
+  ['star_capsule','Star Capsule',14,'stays cleaner',{hygiene_decay_mult:.75}],
+  ['dragon_roost','Dragon Roost',16,'leaps further',{pounce_range_mult:1.2}],
+  ['sun_temple','Sun Temple',18,'watches prey',{prey_detection_range_mult:1.25}],
+  ['zen_pavilion','Zen Pavilion',5,'lifts mood',{mood_mult:1.15}],
+  ['petal_swing','Petal Swing',9,'lifts mood',{mood_mult:1.2}],
+  ['velvet_throne','Velvet Throne',13,'builds energy',{energy_regen_mult:1.3}],
+  ['scholar_perch','Scholar Perch',11,'longer aim window',{aim_window_mult:1.2}],
+  ['potion_hide','Potion Hide',15,'slower fleeing prey',{prey_flee_penalty:.85}],
+  ['fossil_cradle','Fossil Cradle',17,'rests faster',{energy_regen_mult:1.4}],
+  ['holo_garden','Holo Garden',20,'slower needs decay',{all_stats_decay_mult:.95}],
+  ['torii_retreat','Torii Retreat',22,'balanced bonuses',{bonus_synergy_mult:1.15}],
 ];
-const interactions=['Resting','Hiding','Climbing','Hiding','Exploring','Exploring','Watching','Watching','Resting','Grooming','Resting','Exploring','Playing','Climbing','Watching','Exploring','Resting','Climbing'];
+const interactions=['Resting','Hiding','Climbing','Hiding','Exploring','Exploring','Watching','Watching','Resting','Grooming','Resting','Exploring','Playing','Climbing','Watching','Exploring','Resting','Climbing',
+  'Resting','Resting','Watching','Hiding','Hiding','Resting','Exploring','Resting','Climbing','Watching',
+  'Resting','Playing','Resting','Watching','Hiding','Resting','Exploring','Resting'];
 const giftEffects=[
   'Rest here; energy recovers 50% faster',
   'Hide under leaves; grime falls 40% slower',
@@ -129,6 +174,24 @@ const giftEffects=[
   'Explore a garden; all needs decay 5% slower',
   'Rest in a retreat; balanced bonuses +20%',
   'Climb a royal perch; balanced bonuses +30%',
+  'Rest in a cottage; energy recovery +40%',
+  'Rest under the moon; mood gain +15%',
+  'Read in peace; aim time +20%',
+  'Hide in porcelain; grime falls 30% slower',
+  'Hide under a hat; calmer hunting',
+  'Rest in ferns; energy recovery +35%',
+  'Explore neon; movement costs less energy',
+  'Rest in a capsule; grime falls 25% slower',
+  'Practice at a roost; jump range +20%',
+  'Watch from a temple; detection +25%',
+  'Rest in a pavilion; mood gain +15%',
+  'Play on petals; mood gain +20%',
+  'Rest on velvet; energy recovery +30%',
+  'Watch from books; aim time +20%',
+  'Hide with potions; fleeing prey 15% slower',
+  'Rest in a cradle; energy recovery +40%',
+  'Explore a hologram; all needs decay 5% slower',
+  'Rest under torii; balanced bonuses +15%',
 ];
 export const GIFTS = giftRows.map(([key,name,level,effect,bonuses],id)=>Object.freeze({
   id,key,name,level,unlock_level:level,effect:giftEffects[id],cost:12+level*4,asset:`gift_${key}`,interaction:interactions[id],bonuses:Object.freeze(bonuses),
@@ -182,13 +245,15 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:11,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:12,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
     temperament:0,bond:0,name:'',colour:0,pupil_colour:0,leg_colour:2,fang_colour:1,
     silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,last_seen:0,background:'cork',
-    backgrounds_owned:1,power_mode:0,screen_timeout:3,deep_sleep_after:0,rtc_wake:0,
+    backgrounds_owned:1,backgrounds_owned_extra:0,catalogue_owned_high:0,
+    borders_owned:0,borders_owned_extra:0,border_id:255,
+    power_mode:0,screen_timeout:3,deep_sleep_after:0,rtc_wake:0,
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
     daily_override:0xFFFFFFFF,pet_xp_day:0xFFFFFFFF,pet_xp_today:0,
     decor_owned:0,decor_owned_extra:0,music_enabled:1,lights_dimmed:0,music_volume:100,music_track:0,
@@ -233,7 +298,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8,9,10,11].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9,10,11,12].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -250,7 +315,7 @@ export function validateProgress(raw) {
   for(const key of ['xp','silk','age_ticks','days_lived','last_molt_day','meals','pets','cleans','plays','taps','seed',
     'visits','cleanCount','catches','games','bestGame'])number(key,0,U32);
   number('level',1,U32);number('stage',0,2);number('temperament',0,3);number('bond',0,100);
-  number('achievements',0,(1<<11)-1);number('gifts_owned',0,(1<<18)-1);
+  number('achievements',0,(1<<11)-1);number('gifts_owned',0,raw.version>=12?U32:(1<<18)-1);
   number('streak',0,65535);number('best_streak',0,65535);
   for(const key of ['colour','bodyColour'])number(key,0,5);
   for(const key of ['pupil_colour','leg_colour','fang_colour','eyeColour','legColour','fangColour'])number(key,0,8);
@@ -259,26 +324,33 @@ export function validateProgress(raw) {
     if(Object.hasOwn(raw,key)&&typeof raw[key]!=='boolean')fail(`${key} must be boolean`);
   if(Object.hasOwn(raw,'muted')&&![0,1,false,true].includes(raw.muted))fail('muted must be boolean or 0/1');
   for(const key of ['background','theme'])
-    if(Object.hasOwn(raw,key)&&!BACKGROUNDS.includes(raw[key]))fail(`${key} is unknown`);
+    if(Object.hasOwn(raw,key)&&(!BACKGROUNDS.includes(raw[key])||
+        (raw.version<12&&BACKGROUNDS.indexOf(raw[key])>=24)))fail(`${key} is unknown`);
   number('brightness',legacy?0:10,100,!legacy);number('battery',0,100,false);
   number('volume',0,100);
-  number('backgrounds_owned',1,0xffffff);
+  number('backgrounds_owned',1,raw.version>=12?U32:0xffffff);
+  if(raw.version>=12) {
+    number('backgrounds_owned_extra',0,65535);number('catalogue_owned_high',0,255);
+    number('borders_owned',0,U32);number('borders_owned_extra',0,65535);
+    if(raw.border_id!==undefined&&raw.border_id!==255&&!borderOwned(raw,raw.border_id))
+      fail('selected border must be owned');
+  }
   number('music_enabled',0,1);number('lights_dimmed',0,1);
   number('music_volume',0,100);number('music_track',0,2);
   number('power_mode',0,2);number('screen_timeout',0,4);
   number('deep_sleep_after',0,4);number('rtc_wake',0,2);
   if(raw.version>=9&&(!Number.isInteger(raw.backgrounds_owned)||
-      !(raw.backgrounds_owned&(1<<BACKGROUNDS.indexOf(raw.background??raw.theme)))))
+      !backgroundOwned(raw,BACKGROUNDS.indexOf(raw.background??raw.theme))))
     fail('selected background must be owned');
   number('daily_day',0,U32);number('daily_base_day',0,U32);
   number('daily_task_base',0,U32);number('daily_streak',0,255);number('daily_task_done',0,1);
   number('pet_xp_day',0,U32);number('pet_xp_today',0,255);
-  number('decor_owned',0,U32);number('decor_owned_extra',0,3);
+  number('decor_owned',0,U32);number('decor_owned_extra',0,raw.version>=12?U32:3);
   if(Object.hasOwn(raw,'decor')){
     if(!Array.isArray(raw.decor)||raw.decor.length<DECOR_SLOTS)fail('decor must be an array of slots');
     for(const item of raw.decor){
       if(!item||typeof item!=='object')fail('decor slot is invalid');
-      if(!Number.isSafeInteger(item.kind)||(item.kind!==DECOR_EMPTY&&(item.kind<0||item.kind>=DECOR_KINDS.length)))
+      if(!Number.isSafeInteger(item.kind)||(item.kind!==DECOR_EMPTY&&(item.kind<0||item.kind>=(raw.version>=12?DECOR_KINDS.length:34))))
         fail('decor kind is outside its valid range');
       if(![0,1].includes(item.blocking))fail('decor blocking must be 0 or 1');
       if(!Number.isSafeInteger(item.x)||!Number.isSafeInteger(item.y))fail('decor position is invalid');
@@ -292,11 +364,12 @@ export function validateProgress(raw) {
   if(Object.hasOwn(raw,'createdAt')&&
     !((typeof raw.createdAt==='number'&&Number.isFinite(raw.createdAt)&&raw.createdAt>=0)||
       (typeof raw.createdAt==='string'&&Number.isFinite(Date.parse(raw.createdAt)))))fail('createdAt is invalid');
-  if(Object.hasOwn(raw,'owned')&&(!Array.isArray(raw.owned)||raw.owned.some(id=>!Number.isInteger(id)||!GIFTS[id])))fail('owned contains an invalid gift');
+  const validGift=id=>Number.isInteger(id)&&id>=0&&id<(raw.version>=12?GIFTS.length:18);
+  if(Object.hasOwn(raw,'owned')&&(!Array.isArray(raw.owned)||raw.owned.some(id=>!validGift(id))))fail('owned contains an invalid gift');
   if(Object.hasOwn(raw,'gift')){
     const g=raw.gift;
-    if(legacy&&(g===null||(Number.isInteger(g)&&GIFTS[g]))){}
-    else if(!plain(g)||![0,1].includes(g.used)||!Number.isInteger(g.kind)||!GIFTS[g.kind]||
+    if(legacy&&(g===null||validGift(g))){}
+    else if(!plain(g)||![0,1].includes(g.used)||!validGift(g.kind)||
       !Number.isSafeInteger(g.variant)||g.variant<0||g.variant>255||
       !Number.isFinite(g.x)||!Number.isFinite(g.y)||
       (g.used&&(g.x<34||g.x>446||g.y<34||g.y>446)))fail('gift is invalid');
@@ -360,7 +433,13 @@ export function restoreSim(raw,options={}) {
   // fresh-state sentinels rather than inheriting whatever the blob contains --
   // kind 0 is a real item, so a zeroed slot would place twelve small rocks.
   s.decor_owned=integer(raw.decor_owned,0,U32);
-  s.decor_owned_extra=integer(raw.decor_owned_extra,0,3);
+  s.decor_owned_extra=integer(raw.decor_owned_extra,0,raw.version>=12?U32:3);
+  if(raw.version>=12){
+    s.backgrounds_owned_extra=raw.backgrounds_owned_extra??0;
+    s.catalogue_owned_high=raw.catalogue_owned_high??0;
+    s.borders_owned=raw.borders_owned??0;s.borders_owned_extra=raw.borders_owned_extra??0;
+    s.border_id=raw.border_id??255;
+  }
   if(raw.version>=10){
     s.music_enabled=raw.music_enabled??1;
     s.lights_dimmed=raw.lights_dimmed??0;
@@ -388,18 +467,18 @@ export function restoreSim(raw,options={}) {
   if(Number.isFinite(raw.last_seen))s.last_seen=integer(raw.last_seen,0,U32);
   s.auto_feed=raw.version>=3&&(raw.auto_feed===1||raw.autoFeed===true)?1:0;
   s.auto_hunt=raw.version>=3&&(raw.auto_hunt===1||raw.autoHunt===true)?1:0;
-  if(Array.isArray(raw.owned))for(const id of raw.owned)if(Number.isInteger(id)&&GIFTS[id])s.gifts_owned|=1<<id;
+  if(Array.isArray(raw.owned))for(const id of raw.owned)if(Number.isInteger(id)&&GIFTS[id])markGiftOwned(s,id);
   if(raw.gift&&typeof raw.gift==='object'&&raw.gift.used&&GIFTS[raw.gift.kind])
     s.gift={kind:raw.gift.kind,used:1,variant:integer(raw.gift.variant,0,255),
       x:clamp(raw.gift.x??315,34,446),y:clamp(raw.gift.y??330,34,446)};
   else if(Number.isInteger(raw.gift)&&GIFTS[raw.gift])s.gift={kind:raw.gift,used:1,variant:0,x:315,y:330};
-  if(s.gift.used)s.gifts_owned|=1<<s.gift.kind;
+  if(s.gift.used)markGiftOwned(s,s.gift.kind);
   // Restore the tank's mess. Older saves carry no dirt/bug tags, so a dropping
   // defaults to a spider dropping's worth.
   if(!(raw.version<3)&&Array.isArray(raw.poop))
     s.poop=raw.poop.slice(0,C.MAX_POOP).map(p=>({x:round(clamp(p.x,34,446)),y:round(clamp(p.y,34,446)),
       expires:p.expires,dirt:Number.isFinite(p.dirt)?p.dirt:C.POOP_DIRT_SPIDER,bug:p.bug===true}));
-  s.gifts_owned&=(1<<18)-1;s.achievements&=(1<<11)-1;
+  s.gifts_owned>>>=0;s.achievements&=(1<<11)-1;
   s.level=Math.floor(s.xp/50)+1;
   s.days_lived=Math.floor(s.age_ticks/2880);
   s.stage=s.days_lived>=5?2:s.days_lived>=2?1:s.stage;
@@ -551,12 +630,18 @@ export function dailyTaskClaim(s){
   return C.DAILY_TASK_XP;
 }
 export const TREATS=Object.freeze([
-  {name:'Juicy Fly',cost:C.TREAT_HUNGER_COST,field:'hunger',gain:C.TREAT_HUNGER_GAIN},
-  {name:'Silk Ribbon',cost:C.TREAT_MOOD_COST,field:'mood',gain:C.TREAT_MOOD_GAIN},
-  {name:'Warm Pebble',cost:C.TREAT_ENERGY_COST,field:'energy',gain:C.TREAT_ENERGY_GAIN},
-  {name:'Honey Moth',cost:14,field:'hunger',gain:30,secondary:'mood',bonus:12},
-  {name:'Dew Drop',cost:12,field:'hygiene',gain:25,secondary:'energy',bonus:12},
-  {name:'Cozy Nest',cost:18,field:'energy',gain:28,secondary:'mood',bonus:20},
+  {name:'Juicy Fly',asset:'treat_hunger',cost:C.TREAT_HUNGER_COST,field:'hunger',gain:C.TREAT_HUNGER_GAIN},
+  {name:'Silk Ribbon',asset:'treat_mood',cost:C.TREAT_MOOD_COST,field:'mood',gain:C.TREAT_MOOD_GAIN},
+  {name:'Warm Pebble',asset:'treat_energy',cost:C.TREAT_ENERGY_COST,field:'energy',gain:C.TREAT_ENERGY_GAIN},
+  {name:'Honey Moth',asset:'treat_dew',cost:14,field:'hunger',gain:30,secondary:'mood',bonus:12},
+  {name:'Dew Drop',asset:'treat_pollen',cost:12,field:'hygiene',gain:25,secondary:'energy',bonus:12},
+  {name:'Cozy Nest',asset:'treat_silk',cost:18,field:'energy',gain:28,secondary:'mood',bonus:20},
+  {name:'Moon Mousse',asset:'treat_moon',cost:16,field:'mood',gain:28,secondary:'energy',bonus:14},
+  {name:'Amber Drop',asset:'treat_amber',cost:14,field:'hunger',gain:32,secondary:'energy',bonus:8},
+  {name:'Neon Jelly',asset:'treat_neon',cost:18,field:'energy',gain:30,secondary:'mood',bonus:16},
+  {name:'Star Wafer',asset:'treat_star',cost:20,field:'hunger',gain:28,secondary:'energy',bonus:22},
+  {name:'Lotus Nectar',asset:'treat_lotus',cost:16,field:'hygiene',gain:30,secondary:'mood',bonus:12},
+  {name:'Rune Biscuit',asset:'treat_rune',cost:22,field:'hunger',gain:20,secondary:'mood',bonus:24},
 ]);
 /** Buy and apply a treat. Returns false when Silk is short. */
 export function buyTreat(s,kind){
@@ -607,6 +692,40 @@ export const DECOR_KINDS=Object.freeze([
   {key:'fossil',name:'Fossil',cost:58,level:8,radius:12,blocking:0},
   {key:'lantern_cap',name:'Lantern Cap',cost:92,level:14,radius:13,blocking:0},
   {key:'stone_bridge',name:'Stone Bridge',cost:120,level:18,radius:20,blocking:1},
+  {key:'fairy_ring',name:'Fairy Ring',cost:44,level:4,radius:17,blocking:0},
+  {key:'foxglove_lantern',name:'Foxglove Lantern',cost:58,level:6,radius:12,blocking:1},
+  {key:'pixie_door',name:'Pixie Door',cost:70,level:8,radius:14,blocking:1},
+  {key:'gargoyle',name:'Gargoyle',cost:78,level:9,radius:15,blocking:1},
+  {key:'iron_gate',name:'Iron Gate',cost:84,level:10,radius:19,blocking:1},
+  {key:'rose_urn',name:'Rose Urn',cost:54,level:6,radius:12,blocking:1},
+  {key:'book_stack',name:'Book Stack',cost:40,level:3,radius:12,blocking:1},
+  {key:'globe',name:'Globe',cost:66,level:7,radius:13,blocking:1},
+  {key:'quill_desk',name:'Quill Desk',cost:90,level:11,radius:19,blocking:1},
+  {key:'tea_cup',name:'Tea Cup',cost:32,level:2,radius:13,blocking:1},
+  {key:'spool',name:'Spool',cost:26,level:2,radius:10,blocking:1},
+  {key:'thimble',name:'Thimble',cost:30,level:3,radius:10,blocking:1},
+  {key:'cauldron',name:'Cauldron',cost:74,level:8,radius:17,blocking:1},
+  {key:'broom',name:'Broom',cost:38,level:4,radius:15,blocking:0},
+  {key:'potion_rack',name:'Potion Rack',cost:86,level:10,radius:17,blocking:1},
+  {key:'amber_fossil',name:'Amber Fossil',cost:58,level:6,radius:12,blocking:0},
+  {key:'cycad',name:'Cycad',cost:62,level:7,radius:16,blocking:1},
+  {key:'dinosaur_egg',name:'Dinosaur Egg',cost:72,level:9,radius:13,blocking:1},
+  {key:'neon_sign',name:'Neon Sign',cost:80,level:9,radius:14,blocking:1},
+  {key:'holo_terminal',name:'Holo Terminal',cost:96,level:12,radius:15,blocking:1},
+  {key:'cable_coil',name:'Cable Coil',cost:42,level:4,radius:12,blocking:0},
+  {key:'moon_rover',name:'Moon Rover',cost:104,level:13,radius:18,blocking:1},
+  {key:'solar_array',name:'Solar Array',cost:88,level:10,radius:18,blocking:1},
+  {key:'oxygen_pod',name:'Oxygen Pod',cost:92,level:11,radius:14,blocking:1},
+  {key:'wizard_tower',name:'Wizard Tower',cost:112,level:14,radius:17,blocking:1},
+  {key:'dragon_statue',name:'Dragon Statue',cost:120,level:16,radius:18,blocking:1},
+  {key:'treasure_chest',name:'Treasure Chest',cost:98,level:12,radius:15,blocking:1},
+  {key:'sun_obelisk',name:'Sun Obelisk',cost:108,level:13,radius:13,blocking:1},
+  {key:'glyph_tablet',name:'Glyph Tablet',cost:64,level:7,radius:14,blocking:0},
+  {key:'broken_column',name:'Broken Column',cost:76,level:8,radius:15,blocking:1},
+  {key:'stone_lantern',name:'Stone Lantern',cost:70,level:6,radius:13,blocking:1},
+  {key:'bamboo_fountain',name:'Bamboo Fountain',cost:84,level:9,radius:16,blocking:1},
+  {key:'bonsai',name:'Bonsai',cost:94,level:11,radius:16,blocking:1},
+  {key:'fairy_bridge',name:'Fairy Bridge',cost:102,level:12,radius:20,blocking:1},
 ]);
 export const DECOR_SLOTS=12;
 export const DECOR_EMPTY=0xFF;
@@ -620,7 +739,8 @@ export function decorUnlocked(s,kind){
 }
 export function decorOwned(s,kind){
   return kind>=0&&kind<DECOR_KINDS.length&&
-    ((kind<32?s.decor_owned:s.decor_owned_extra)&(1<<(kind%32)))!==0;
+    (kind<64?((kind<32?s.decor_owned:s.decor_owned_extra)&(1<<(kind%32)))!==0:
+      (s.catalogue_owned_high&(1<<(kind-64+4)))!==0);
 }
 /** Buy one decor kind. Returns false and records a rejection when refused. */
 export function buyDecor(s,kind){
@@ -629,8 +749,8 @@ export function buyDecor(s,kind){
   if(!decorUnlocked(s,kind))return event(s,'rejected',{reason:'decor locked'});
   if(s.silk<d.cost)return event(s,'rejected',{reason:'not enough Silk'});
   s.silk-=d.cost;
-  const field=kind<32?'decor_owned':'decor_owned_extra';
-  s[field]=(s[field]|(1<<(kind%32)))>>>0;
+  const field=kind<32?'decor_owned':kind<64?'decor_owned_extra':'catalogue_owned_high';
+  s[field]=(s[field]|(1<<(kind<64?kind%32:kind-64+4)))>>>0;
   return true;
 }
 export function decorPlacedCount(s){
@@ -753,11 +873,19 @@ export function care(s,action) {
   }else throw new Error('Unknown care action');
   syncView(s);return true;
 }
+export function giftOwned(s,id){
+  return Number.isInteger(id)&&id>=0&&id<GIFTS.length&&
+    !!((id<32?s.gifts_owned:s.catalogue_owned_high)&(1<<(id%32)));
+}
+function markGiftOwned(s,id){
+  const field=id<32?'gifts_owned':'catalogue_owned_high';
+  s[field]=(s[field]|(1<<(id%32)))>>>0;
+}
 export function purchaseGift(s,id){
   const d=GIFTS[id];if(!d)return event(s,'rejected',{reason:'unknown gift'});
-  if(s.gifts_owned&(1<<id))return true;
+  if(giftOwned(s,id))return true;
   if(s.level<d.level||s.silk<d.cost)return event(s,'rejected',{reason:s.level<d.level?'gift locked':'not enough Silk'});
-  s.silk-=d.cost;s.gifts_owned|=1<<id;return true;
+  s.silk-=d.cost;markGiftOwned(s,id);return true;
 }
 export function placeGift(s,id,x=315,y=330) {
   if(!purchaseGift(s,id))return false;

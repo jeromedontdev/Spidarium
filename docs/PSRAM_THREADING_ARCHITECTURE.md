@@ -15,7 +15,8 @@ Choose memory by the consumer's capabilities, not just allocation size.
 | Selected 64x64 RGB565A8 gift canvas | Explicit PSRAM, 12,288 bytes; reused for replacements |
 | Battery worker stack | 3,072 bytes explicit PSRAM; no flash writes |
 | Static 480x480 RGB565 habitat canvas | Explicit PSRAM, 460,800 bytes; reused for every background |
-| Twenty-four opaque 240x240 RGB565 enclosure sources | Explicit PSRAM, 2,764,800 bytes total; decoded at boot |
+| Full background/frame decode workspace | One explicit PSRAM 172,800-byte RGB565A8 capacity; reused on explicit rebuild/test, never per frame |
+| Forty-eight background/frame menu thumbnails each | Explicit PSRAM: 48x48 RGB565 floors (221,184 bytes total), RGB565A8 frames (331,776 total) |
 | Additional decor records / renderer object-pointer pool | Explicit PSRAM; grows on placement/restore, never per frame |
 | Save job snapshots and raw/SD transfer buffers | Explicit PSRAM; copied before enqueue, freed after completion/rejection |
 | Audio and serial-worker stacks | `xTaskCreateWithCaps`, SPIRAM + 8BIT |
@@ -73,13 +74,20 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   occurs from the external-stack LVGL task.
   Save acknowledgements propagate queue rejection instead of reporting success.
   Background ownership/selection, power, music and enclosure lighting share
-  the v10 pet snapshot: 260-byte fixed prefix plus six bytes per extra decor
+  the v12 pet snapshot: 268-byte fixed prefix plus six bytes per extra decor
   slot. The original twelve slots/older offsets remain unchanged. The 20 KB
   serialized-payload ceiling is a storage-resource/protocol bound, not a
   twelve-item gameplay limit; storage/allocation/commit failures are explicit.
   Queue entries own their variable PSRAM payloads. SD restore transfers owned
   records to LVGL after worker completion instead of mutating active records.
   Boot reads the old separate background key only for one-time v8 migration.
+  v10/v11 tails are read at their historical 260-byte offset before repacking.
+  v12 extends ownership without moving old fields: byte245's low/high nibbles
+  cover gifts32..35/decor64..67, u16 at246 backgrounds32..47; border ownership
+  at260/264 and selection266 (255=None). Old padding never grants ownership.
+  Floors/frames retain independent 48px thumbnails; a single mapped-QOI decode
+  workspace feeds the existing 480px floor canvas. Transparent frames composite
+  around its edge without creating a full-screen overlay or redrawing each tick.
   Deep-sleep requests copy the live snapshot on LVGL; only this internal-stack
   worker enters sleep after an actual successful save, bounded audio/power drain
   and display pause acknowledgement. New saves/radio jobs are rejected while

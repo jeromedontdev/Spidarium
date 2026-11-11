@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import * as E from '../lib/device-engine.js';
 import { DeviceGame } from '../lib/device-ui.js';
 
-test('expanded catalogue has six treats, thirty-four decor kinds and twenty-four scenes',()=>{
-  assert.equal(E.TREATS.length,6);
-  assert.equal(E.DECOR_KINDS.length,34);
-  assert.equal(E.BACKGROUNDS.length,24);
-  assert.equal(new Set(E.DECOR_KINDS.map(item=>item.key)).size,34);
-  assert.equal(new Set(E.BACKGROUNDS).size,24);
+test('expanded catalogue doubles treats, decor, gifts and backgrounds',()=>{
+  assert.equal(E.TREATS.length,12);
+  assert.equal(E.DECOR_KINDS.length,68);
+  assert.equal(E.GIFTS.length,36);
+  assert.equal(E.BACKGROUNDS.length,48);
+  assert.equal(new Set(E.DECOR_KINDS.map(item=>item.key)).size,68);
+  assert.equal(new Set(E.BACKGROUNDS).size,48);
 });
 
 test('decor grows past twelve, preserves high ownership bits, moves and restores all records',()=>{
@@ -17,17 +18,18 @@ test('decor grows past twelve, preserves high ownership bits, moves and restores
     assert.equal(E.buyDecor(state,kind),true);
     assert.equal(E.decorOwned(state,kind),true,`owned ${kind}`);
   }
-  for(let i=0;i<80;i++)assert.equal(E.placeDecor(state,i%34,100+i,150+i),i);
+  for(let i=0;i<80;i++)assert.equal(E.placeDecor(state,i%68,100+i,150+i),i);
   assert.equal(E.decorPlacedCount(state),80);
   assert.equal(state.decor_owned,0xffffffff);
-  assert.equal(state.decor_owned_extra,3);
+  assert.equal(state.decor_owned_extra,0xffffffff);
+  assert.equal(state.catalogue_owned_high,0xf0);
   assert.equal(E.moveDecor(state,79,340,350),true);
   assert.equal(E.decorHitTest(state,340,350),79);
   assert.equal(E.toggleDecorBlocking(state,79),true);
   const restored=E.restoreSim(JSON.parse(JSON.stringify(state)));
   assert.deepEqual(restored.decor,state.decor);
   assert.equal(restored.decor_owned,0xffffffff);
-  assert.equal(restored.decor_owned_extra,3);
+  assert.equal(restored.decor_owned_extra,0xffffffff);
   assert.equal(E.removeDecor(restored,79),true);
   assert.equal(E.placeDecor(restored,33,360,360),79);
   assert.equal(E.decorPlacedCount(restored),80);
@@ -113,11 +115,11 @@ test('root and species icons are distinct and redundant movement entries are abs
       list:items=>{rows=items;},
     });
     ui.open('Menu');
-    assert.equal(rows.length,7);
-    assert.equal(new Set(rows.map(row=>row.icon)).size,7);
+    assert.equal(rows.length,8);
+    assert.equal(new Set(rows.map(row=>row.icon)).size,8);
     assert.equal(rows.some(row=>['Arrange Decor','Placed Gift','Placed Items'].includes(row.label)),false);
     ui.open('Prey Species');
     assert.deepEqual(rows.map(row=>row.icon),E.SPECIES.map(item=>`prey_${item.key}_walk_0`));
     ui.open('Treats');
-    assert.equal(rows.length,6);assert.equal(new Set(rows.map(row=>row.icon)).size,6);
+    assert.equal(rows.length,12);assert.equal(new Set(rows.map(row=>row.icon)).size,12);
   });

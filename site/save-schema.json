@@ -1,14 +1,14 @@
 {
   "magic": 1397770564,
-  "version": 11,
+  "version": 12,
   "headerSize": 12,
   "payloadSizes": [
     120,
-    260
+    268
   ],
   "maxPayload": 20480,
   "decorTail": {
-    "offset": 260,
+    "offset": 268,
     "stride": 6,
     "countField": "decor_extra_count"
   },
@@ -299,6 +299,41 @@
       "type": "u8",
       "length": 0,
       "minVersion": 9
+    },
+    {
+      "name": "catalogue_owned_high",
+      "offset": 245,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 12
+    },
+    {
+      "name": "backgrounds_owned_extra",
+      "offset": 246,
+      "type": "u16",
+      "length": 0,
+      "minVersion": 12
+    },
+    {
+      "name": "borders_owned",
+      "offset": 260,
+      "type": "u32",
+      "length": 0,
+      "minVersion": 12
+    },
+    {
+      "name": "borders_owned_extra",
+      "offset": 264,
+      "type": "u16",
+      "length": 0,
+      "minVersion": 12
+    },
+    {
+      "name": "border_id",
+      "offset": 266,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 12
     },
     {
       "name": "decor_owned_extra",

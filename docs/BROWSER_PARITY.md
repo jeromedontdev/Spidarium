@@ -2,10 +2,12 @@
 
 ## Expanded habitat and ambient music
 
-The current catalogue is six treats, thirty-four decor kinds and twenty-four
-backgrounds. Native and browser IDs, costs, unlocks and footprints match. Decor
-grows past twelve placements; ownership kinds 32/33 use the extra ownership
-word instead of aliasing low bits. v11 local/raw saves preserve all records.
+The current catalogue is twelve treats, sixty-eight decor kinds, thirty-six
+gifts and forty-eight backgrounds. Native/browser IDs, costs, unlocks and
+footprints match. Forty-eight theme-matched borders buy once independently
+from their floors, reapply free, and have a free No Border option. Decor
+grows past twelve placements; ownership uses explicit words/nibbles instead
+of shifting a 32-bit mask by high IDs. v12 local/raw saves preserve all records.
 Raw saves keep the legacy twelve-slot prefix and append a counted six-byte tail.
 Browser serial framing/restore pacing and SD transfers support the full tail.
 
@@ -20,7 +22,8 @@ The older ambience policy below is historical and superseded.
 Sound page 2 adds an independent Music Volume slider and three selectable
 original scores: Silk Garden, Moonlit Hollow and Rainy Canopy. Gain is relative
 to master volume; setting music to zero does not mute effects. Save v11 uses
-old padding for volume/track, retaining the 260-byte prefix and decor-tail ABI.
+old padding for volume/track. v12 keeps those offsets and extends the prefix to
+268 for border ownership; historical v10/v11 tails still decode at 260.
 Browser progress migrates old saves to music volume 100 and track 0.
 
 SD Card means real hardware storage only on the device. Its third row shows

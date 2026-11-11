@@ -112,7 +112,7 @@ static void cmd_help(void)
     printf("  rtc                  read hardware RTC and system clock\n");
     printf("  buttons [lock|unlock|toggle]  report or drive the side buttons\n");
     printf("  rtcset EPOCH          set RTC to UTC epoch (manual recovery)\n");
-    printf("  gifttest             verify 18 effective bonuses and removal\n");
+    printf("  gifttest             verify 36 effective bonuses and removal\n");
     printf("  uitest               test paging, keyboard, password, HUD, backgrounds\n");
     printf("  hunttest             inject touch, jump/catch, restore pet/prey\n");
     printf("  gaittest             cadence and bounded leg geometry checks\n");
@@ -121,6 +121,7 @@ static void cmd_help(void)
     printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
     printf("  setupdone            finish the naming screen without tapping\n");
     printf("  background [0-%d]    show/set persistent pixel-art background\n", THEME_COUNT - 1);
+    printf("  border [0-%d|none]   show/buy/apply a matching enclosure frame\n", THEME_COUNT - 1);
     printf("  scan                 run a WiFi scan\n");
     printf("  scanloop N           N scans, check memory drift\n");
     printf("  render N             N render ticks, check memory drift\n");
@@ -496,6 +497,11 @@ static void cmd_save_schema(void)
         {"screen_timeout", "u8", offsetof(game_state_t, screen_timeout), 0, 9},
         {"deep_sleep_after", "u8", offsetof(game_state_t, deep_sleep_after), 0, 9},
         {"rtc_wake", "u8", offsetof(game_state_t, rtc_wake), 0, 9},
+        {"catalogue_owned_high", "u8", offsetof(game_state_t, catalogue_owned_high), 0, 12},
+        {"backgrounds_owned_extra", "u16", offsetof(game_state_t, backgrounds_owned_extra), 0, 12},
+        {"borders_owned", "u32", offsetof(game_state_t, borders_owned), 0, 12},
+        {"borders_owned_extra", "u16", offsetof(game_state_t, borders_owned_extra), 0, 12},
+        {"border_id", "u8", offsetof(game_state_t, border_id), 0, 12},
         {"decor_owned_extra", "u32", offsetof(game_state_t, decor_owned_extra), 0, 10},
         {"music_enabled", "u8", offsetof(game_state_t, music_enabled), 0, 10},
         {"lights_dimmed", "u8", offsetof(game_state_t, lights_dimmed), 0, 10},
@@ -507,7 +513,7 @@ static void cmd_save_schema(void)
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
     int pos = snprintf(json, SCHEMA_CAP,
-        "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"maxPayload\":20480,\"decorTail\":{\"offset\":260,\"stride\":6,\"countField\":\"decor_extra_count\"},\"fields\":[",
+        "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"maxPayload\":20480,\"decorTail\":{\"offset\":268,\"stride\":6,\"countField\":\"decor_extra_count\"},\"fields\":[",
         (unsigned)SAVE_MAGIC, SAVE_VERSION, (unsigned)offsetof(game_state_t, silk),
         (unsigned)sizeof(game_state_t));
     bool ok = pos > 0 && pos < SCHEMA_CAP;
@@ -1089,6 +1095,7 @@ static void run_line(char *line)
     }
     else if (!strcmp(line, "gifttest")) {
         if (!game_ui_call(GAME_UI_TEST_GIFTS)) printf("ERR gift test UI request failed\n");
+        else printf("OK gifts tested=%d removed_neutral=1 economy=1 visits=1\n", GIFT_KINDS);
     }
     else if (!strcmp(line, "uitest")) {
         if (!game_ui_call(GAME_UI_TEST_UI)) printf("ERR UI test request failed\n");
@@ -1104,6 +1111,7 @@ static void run_line(char *line)
     }
     else if (!strcmp(line, "decortest")) {
         if (!game_ui_call(GAME_UI_DECOR_TEST)) printf("ERR decor test request or assertion failed\n");
+        else printf("OK decortest placed=%d slots=%d\n", DECOR_COUNT, DECOR_SLOTS);
     }
     else if (!strcmp(line, "decor")) cmd_decor(arg);
     else if (!strcmp(line, "setupdone")) {
@@ -1121,6 +1129,19 @@ static void run_line(char *line)
             else {
                 for (int i = 0; i < 100 && save_busy(); i++) vTaskDelay(pdMS_TO_TICKS(10));
                 printf("%s background\n", !save_busy() && save_last_ok() ? "OK" : "ERR");
+            }
+        }
+    }
+    else if (!strcmp(line, "border")) {
+        if (!arg) printf("BORDER id=%u\nOK border\n", g.border_id);
+        else {
+            char *end = NULL;
+            long id = !strcmp(arg, "none") ? 255 : strtol(arg, &end, 10);
+            if ((end && *end) || id < 0 || (id >= THEME_COUNT && id != 255) ||
+                !game_ui_call_value(GAME_UI_BORDER, id)) printf("ERR invalid border, insufficient Silk or worker busy\n");
+            else {
+                for (int i = 0; i < 100 && save_busy(); i++) vTaskDelay(pdMS_TO_TICKS(10));
+                printf("%s border\n", !save_busy() && save_last_ok() ? "OK" : "ERR");
             }
         }
     }

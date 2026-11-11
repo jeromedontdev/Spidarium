@@ -1,13 +1,13 @@
 # Gifts: implemented catalogue
 
-There are **18** habitat gifts. Stable IDs still match `main/species.c` and the
+There are **36** habitat gifts. Stable IDs still match `main/species.c` and the
 asset filenames, but presentation names, prices and progression live in
 `main/gift.c`. Only one is placed at a time. Each has clearer furniture art,
 drawn at 64x64 on the tank using one reused 12,288-byte PSRAM buffer.
 
 ## Shared SNES art direction
 
-All eighteen gifts are decorative furnishings and share the background/decor
+All thirty-six gifts are decorative furnishings and share the background/decor
 style, not a separate flat icon style. Their deterministic 16x16 logical art
 uses 8-12 visible tones, ink rims, top-left lighting and discrete shaded planes.
 Wood has grain and cut edges, shelters have dark openings, stone has chips,
@@ -56,6 +56,24 @@ as owned, even if their new unlock level is higher.
 | 15 | Emerald Garden | 30 | 132 | Sleeping recovery x1.05; need decay x0.95 |
 | 16 | Diamond Retreat | 35 | 152 | Balanced synergy factor x1.20 |
 | 17 | Royal Perch | 40 | 172 | Balanced synergy factor x1.30 |
+| 18 | Fairy Cottage | 4 | 28 | Sleeping recovery x1.40 |
+| 19 | Moon Bed | 6 | 36 | Mood target x1.15 |
+| 20 | Reading Nook | 8 | 44 | Aim window x1.20 |
+| 21 | Teapot Hide | 3 | 24 | Hygiene decay x0.70 |
+| 22 | Witch Hat | 10 | 52 | Prey flee radius x0.75 |
+| 23 | Fern Nest | 7 | 40 | Sleeping recovery x1.35 |
+| 24 | Neon Den | 12 | 60 | Movement energy efficiency x1.15 |
+| 25 | Star Capsule | 14 | 68 | Hygiene decay x0.75 |
+| 26 | Dragon Roost | 16 | 76 | Pounce distance x1.20 |
+| 27 | Sun Temple | 18 | 84 | Detection radius x1.25 |
+| 28 | Zen Pavilion | 5 | 32 | Mood target x1.15 |
+| 29 | Petal Swing | 9 | 48 | Mood target x1.20 |
+| 30 | Velvet Throne | 13 | 64 | Sleeping recovery x1.30 |
+| 31 | Scholar Perch | 11 | 56 | Aim window x1.20 |
+| 32 | Potion Hide | 15 | 72 | Prey flee speed x0.85 |
+| 33 | Fossil Cradle | 17 | 80 | Sleeping recovery x1.40 |
+| 34 | Holo Garden | 20 | 92 | All needs decay x0.95 |
+| 35 | Torii Retreat | 22 | 100 | Balanced synergy factor x1.15 |
 
 Synergy boosts beneficial multipliers and divides harmful decay/flee
 multipliers. Catch uses both catch multipliers; their combined value is x1.44

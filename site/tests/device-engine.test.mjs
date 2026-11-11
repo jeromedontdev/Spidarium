@@ -11,20 +11,20 @@ const keys=['energy_regen_mult','hygiene_decay_mult','pounce_range_mult','aim_wi
   'catch_success_mult','prey_detection_range_mult','all_stats_decay_mult','bonus_synergy_mult'];
 const close=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,`${a} != ${b}`);
 
-test('every multiplier in all18 native gift definitions is faithfully ported',async()=>{
+test('every multiplier in all36 native gift definitions is faithfully ported',async()=>{
   const text=(await native('species.c')).split('const gift_def_t k_gifts')[1];
   const effectSource=(await native('gift.c')).split('static const char *const effects[GIFT_KINDS] = {')[1].split('};')[0];
   const effects=[...effectSource.matchAll(/"([^"]+)"/g)].map(row=>row[1]);
-  assert.equal(effects.length,18);
+  assert.equal(effects.length,36);
   const rows=[...text.matchAll(/\{\s*"([^"]+)",\s*"([^"]+)",\s*(\d+),\s*0x[\da-f]+,\s*([^}]+)\}/g)];
-  assert.equal(rows.length,18);
+  assert.equal(rows.length,36);
   rows.forEach((row,id)=>{
     assert.equal(GIFTS[id].key,row[1]);assert.equal(GIFTS[id].effect,effects[id]);
     const values=row[4].split(',').map(v=>Number(v.trim().replace(/f$/,'')));
     assert.equal(values.length,keys.length);
     keys.forEach((key,n)=>assert.equal(GIFTS[id].bonuses[key]??(key==='wild_spawn_bonus'?0:1),values[n],`${id}:${key}`));
     const s=neutral();s.level=40;s.silk=10000;assert.equal(placeGift(s,id),true);
-    const b=giftBonus(s),synergy=id===16?1.2:id===17?1.3:1;
+    const b=giftBonus(s),synergy=id===16?1.2:id===17?1.3:(GIFTS[id].bonuses.bonus_synergy_mult??1);
     keys.forEach((key,n)=>{
       if(key==='bonus_synergy_mult'||key==='wild_spawn_bonus')close(b[key],values[n]);
       else close(b[key],values[n]*(['hygiene_decay_mult','fear_mult','prey_flee_penalty','all_stats_decay_mult'].includes(key)?1/synergy:synergy));
@@ -81,7 +81,7 @@ test('browser object-score callback is compatible and preserves setup/theme/colo
 });
 test('native automation has padding-stable ABI, v2 migration, and gated entries',async()=>{
   const [header,config,save,behaviour,prey]=await Promise.all(['game.h','game_config.h','save.c','behaviour.c','prey.c'].map(native));
-  assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 260/);
+  assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 268/);
   assert.match(header,/offsetof\(game_state_t, auto_feed\) == 129/);
   assert.match(header,/offsetof\(game_state_t, auto_hunt\) == 130/);
   assert.match(header,/offsetof\(game_state_t, volume\) == 131/);
@@ -89,7 +89,7 @@ test('native automation has padding-stable ABI, v2 migration, and gated entries'
   assert.match(header,/offsetof\(game_state_t, daily_day\) == 136/);
   assert.match(header,/offsetof\(game_state_t, decor_owned\) == 160/);
   assert.match(header,/offsetof\(game_state_t, decor\) == 164/);
-  assert.match(config,/#define SAVE_VERSION\s+11/);
+  assert.match(config,/#define SAVE_VERSION\s+12/);
   assert.match(save,/version == 2\)[\s\S]*?state->auto_feed = 0;[\s\S]*?state->auto_hunt = 0;/);
   assert.match(save,/migrate_automation\(&state, header\.version\)/);
   assert.match(save,/state\.auto_feed = 0xA5;[\s\S]*?state\.auto_hunt = 0x5A;[\s\S]*?migrate_automation\(&state, header\.version\)/);

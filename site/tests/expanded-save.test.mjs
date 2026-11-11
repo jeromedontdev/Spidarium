@@ -5,9 +5,9 @@ import { decodeSave } from '../lib/save.js';
 
 const schema=JSON.parse(await readFile(new URL('../save-schema.json',import.meta.url)));
 
-test('compiled v11 variable save preserves eighty extra placements and high catalogue ownership',()=>{
-  assert.equal(schema.version,11);
-  assert.deepEqual(schema.payloadSizes,[120,260]);
+test('compiled v12 schema still reads v10 variable save with eighty extra placements',()=>{
+  assert.equal(schema.version,12);
+  assert.deepEqual(schema.payloadSizes,[120,268]);
   const count=80,bytes=new Uint8Array(272+count*6),view=new DataView(bytes.buffer);
   view.setUint32(0,schema.magic,true);view.setUint16(4,10,true);view.setUint32(8,bytes.length-12,true);
   view.setUint32(12+236,1|(1<<23),true);view.setUint8(12+240,23);

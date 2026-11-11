@@ -9,6 +9,7 @@
 #include "net.h"
 #include "power.h"
 #include "sd.h"
+#include "theme.h"
 
 #include "esp_log.h"
 #include "nvs.h"
@@ -120,6 +121,13 @@ static void migrate_automation(game_state_t *state, uint16_t version)
     if (version < 11) {
         state->music_volume = 100;
         state->music_track = 0;
+    }
+    if (version < 12) {
+        state->catalogue_owned_high = 0;
+        state->backgrounds_owned_extra = 0;
+        state->borders_owned = 0;
+        state->borders_owned_extra = 0;
+        state->border_id = 255;
     }
 }
 
@@ -370,8 +378,8 @@ bool save_load_snapshot(void *dst, size_t size, decor_item_t **extra)
         save_header_t header;
         memcpy(&header, buf, sizeof header);
         game_state_t state = {0};
-        memcpy(&state, buf + sizeof header,
-               header.size < sizeof state ? header.size : sizeof state);
+        size_t prefix = header.version >= 12 ? sizeof state : 260;
+        memcpy(&state, buf + sizeof header, header.size < prefix ? header.size : prefix);
         migrate_automation(&state, header.version);
         if (header.size == offsetof(game_state_t, silk)) {
             state.silk = 20;
@@ -382,7 +390,7 @@ bool save_load_snapshot(void *dst, size_t size, decor_item_t **extra)
         size_t extra_bytes = state.decor_extra_count * sizeof(decor_item_t);
         *extra = extra_bytes ? heap_caps_malloc(extra_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL;
         bool loaded = !extra_bytes || *extra;
-        if (loaded && extra_bytes) memcpy(*extra, buf + sizeof header + sizeof state, extra_bytes);
+        if (loaded && extra_bytes) memcpy(*extra, buf + sizeof header + prefix, extra_bytes);
         if (!loaded) ESP_LOGE(TAG, "save extra records: PSRAM exhausted");
         if (loaded) memcpy(dst, &state, size);
         heap_caps_free(buf);
@@ -501,12 +509,13 @@ bool save_raw_valid(const void *src, size_t len)
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
         hdr.version != 3 && hdr.version != 4 &&
         hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9 &&
-        hdr.version != 10) {
+        hdr.version != 10 && hdr.version != 11) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
-    if (!(hdr.version >= 10 && hdr.size >= sizeof(game_state_t)) &&
+    size_t prefix = hdr.version >= 12 ? sizeof(game_state_t) : 260;
+    if (!(hdr.version >= 10 && hdr.size >= prefix) &&
         hdr.size != sizeof(game_state_t) && hdr.size != 132 && hdr.size != 248 &&
         hdr.size != offsetof(game_state_t, silk) &&
         hdr.size != SAVE_V5_PAYLOAD && hdr.size != SAVE_V6_PAYLOAD &&
@@ -527,11 +536,23 @@ bool save_raw_valid(const void *src, size_t len)
     }
     game_state_t state = {0};
     memcpy(&state, (const uint8_t *)src + sizeof hdr,
-           hdr.size < sizeof state ? hdr.size : sizeof state);
+           hdr.size < prefix ? hdr.size : prefix);
+    if (hdr.version >= 8) {
+        int kinds = hdr.version >= 12 ? DECOR_COUNT : hdr.version >= 10 ? 34 : 16;
+        for (int i = 0; i < DECOR_SLOTS; i++) {
+            const decor_item_t *item = &state.decor[i];
+            if ((item->kind != 255 && item->kind >= kinds) || item->blocking > 1 ||
+                item->x < 0 || item->x > 480 || item->y < 0 || item->y > 480) {
+                ESP_LOGW(TAG, "raw save rejected: invalid inline decor record %d", i);
+                return false;
+            }
+        }
+    }
     if (hdr.version >= 10) {
-        if (state.decor_extra_count > (SAVE_MAX_PAYLOAD - sizeof state) / sizeof(decor_item_t) ||
-            hdr.size != sizeof state + state.decor_extra_count * sizeof(decor_item_t) ||
-            state.music_enabled > 1 || state.lights_dimmed > 1 || state.decor_owned_extra > 3) {
+        if (state.decor_extra_count > (SAVE_MAX_PAYLOAD - prefix) / sizeof(decor_item_t) ||
+            hdr.size != prefix + state.decor_extra_count * sizeof(decor_item_t) ||
+            state.music_enabled > 1 || state.lights_dimmed > 1 ||
+            (hdr.version < 12 && state.decor_owned_extra > 3)) {
             ESP_LOGW(TAG, "raw save rejected: invalid extended habitat");
             return false;
         }
@@ -539,26 +560,36 @@ bool save_raw_valid(const void *src, size_t len)
             ESP_LOGW(TAG, "raw save rejected: invalid music preferences");
             return false;
         }
-        const decor_item_t *extra = (const decor_item_t *)((const uint8_t *)src + sizeof hdr + sizeof state);
+        const decor_item_t *extra = (const decor_item_t *)((const uint8_t *)src + sizeof hdr + prefix);
         for (uint32_t i = 0; i < state.decor_extra_count; i++)
-            if ((extra[i].kind != 255 && extra[i].kind >= DECOR_COUNT) || extra[i].blocking > 1 ||
+            if ((extra[i].kind != 255 && extra[i].kind >= (hdr.version >= 12 ? DECOR_COUNT : 34)) || extra[i].blocking > 1 ||
                 extra[i].x < 0 || extra[i].x > 480 || extra[i].y < 0 || extra[i].y > 480) {
                 ESP_LOGW(TAG, "raw save rejected: invalid extended decor record %lu", (unsigned long)i);
                 return false;
             }
+        if (hdr.version >= 12 && state.border_id != 255 &&
+            (state.border_id >= THEME_COUNT ||
+             !(state.border_id < 32 ? state.borders_owned & (1u << state.border_id) :
+                 state.borders_owned_extra & (1u << (state.border_id - 32))))) {
+            ESP_LOGW(TAG, "raw save rejected: invalid border ownership");
+            return false;
+        }
     }
     if (state.hunger > 100 || state.mood > 100 || state.energy > 100 ||
         state.hygiene > 100 || state.stage > STAGE_ADULT || state.sick > 1 ||
         state.muted > 1 || state.gift.used > 1 ||
-        (state.gift.used && state.gift.kind >= GIFT_KINDS) ||
+        (state.gift.used && state.gift.kind >= (hdr.version >= 12 ? GIFT_KINDS : 18)) ||
         state.bond > 100 || !memchr(state.name, 0, sizeof state.name) ||
         !isfinite(state.spider_heading) || state.state > SPIDER_SICK ||
         (hdr.version >= 3 && (state.auto_feed > 1 || state.auto_hunt > 1)) ||
         (hdr.version >= 4 && state.volume > 100) ||
         (hdr.size >= SAVE_V5_PAYLOAD && (state.brightness < 10 || state.brightness > 100)) ||
-        (hdr.version >= 9 && (state.background_id >= 24 || state.backgrounds_owned > 0xffffff ||
+        (hdr.version < 12 && state.gifts_owned > 0x3ffffu) ||
+        (hdr.version >= 9 && (state.background_id >= (hdr.version >= 12 ? THEME_COUNT : 24) ||
+         (hdr.version < 12 && state.backgrounds_owned > 0xffffff) ||
          !(state.backgrounds_owned & 1u) ||
-         !(state.backgrounds_owned & (1u << state.background_id)) ||
+         !(state.background_id < 32 ? state.backgrounds_owned & (1u << state.background_id) :
+             state.backgrounds_owned_extra & (1u << (state.background_id - 32))) ||
          state.power_mode > 2 || state.screen_timeout > 4 ||
          state.deep_sleep_after > 4 || state.rtc_wake > 2))) {
         ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
@@ -591,6 +622,12 @@ bool save_format_test(void)
 {
     game_state_t base = g;
     base.decor_extra_count = 0;
+    base.gift.used = 0;
+    base.gifts_owned = 0;
+    base.background_id = 0;
+    base.backgrounds_owned = 1;
+    base.decor_owned_extra = 0;
+    base.border_id = 255;
     uint8_t blob[sizeof(save_header_t) + sizeof(game_state_t)];
     save_header_t header = { .magic = SAVE_MAGIC, .version = SAVE_VERSION, .size = sizeof g };
     memcpy(blob, &header, sizeof header);
@@ -605,13 +642,15 @@ bool save_format_test(void)
     memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
     ok = !save_raw_valid(blob, sizeof blob) && ok;
     header.version = 10;
+    header.size = 260;
     memcpy(blob, &header, sizeof header);
     invalid_music.music_volume = 255;
     memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
-    ok = save_raw_valid(blob, sizeof blob) && ok;
+    ok = save_raw_valid(blob, sizeof header + 260) && ok;
     migrate_automation(&invalid_music, 10);
     ok = invalid_music.music_volume == 100 && invalid_music.music_track == 0 && ok;
     header.version = SAVE_VERSION;
+    header.size = sizeof g;
     memcpy(blob, &header, sizeof header);
     game_state_t state = base;
     state.auto_feed = 2;
