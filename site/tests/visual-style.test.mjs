@@ -70,6 +70,22 @@ test('selection, destructive, disabled and keyboard focus have separate indicato
   assert.equal(declarations(device, '.game-screen:focus-visible')['outline-offset'], '-4px');
 });
 
+test('slider rows reserve separate areas for icon, label, value and track', () => {
+  const label = declarations(device, '.d-row.has-slider .row-label');
+  const detail = declarations(device, '.d-row.has-slider .row-detail');
+  const track = declarations(device, '.d-row.has-slider input[type=range].d-slider');
+  const iconTrack = declarations(device, '.d-row.has-slider.has-icon input[type=range].d-slider');
+  assert.equal(label.top, '10px');
+  assert.equal(label.right, '84px');
+  assert.equal(detail.top, '10px');
+  assert.equal(detail.left, 'auto');
+  assert.equal(detail.width, '60px');
+  assert.equal(track.bottom, '12px');
+  assert.equal(track.margin, '0');
+  assert.equal(iconTrack.left, '72px');
+  assert.equal(iconTrack.width, 'calc(100% - 86px)');
+});
+
 test('landing chrome shares local Montserrat and palette without filtering artwork', () => {
   const root = declarations(landing, ':root');
   for (const [name, value] of Object.entries({

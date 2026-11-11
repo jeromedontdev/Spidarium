@@ -897,30 +897,20 @@ def draw_icon(name):
         d.polygon([(5, 3), (10, 4), (7, 8)], fill=shade)
         d.line([(9, 12), (12, 15), (16, 10)], fill=CREAM, width=2)
     elif name == "volume":
-        # A horizontal level track and draggable-looking control knob.
-        d.rounded_rectangle((3, 10, 21, 14), radius=2, fill=INK)
-        d.rectangle((5, 11, 12, 13), fill=shade)
-        d.rectangle((5, 11, 10, 13), fill=accent)
-        _octagon(d, (9, 5, 17, 19), INK, 3)
-        _octagon(d, (10, 6, 16, 18), accent, 3)
-        d.line([(12, 8), (14, 8)], fill=CREAM)
-        d.line([(12, 16), (14, 16)], fill=shade)
-        d.rectangle((4, 16, 6, 18), fill=shade)
-        d.rectangle((19, 16, 21, 18), fill=shade)
+        for x, y in ((5, 8), (12, 15), (19, 6)):
+            d.rectangle((x - 1, 3, x + 1, 21), fill=INK)
+            d.line([(x, 4), (x, 20)], fill=accent)
+            d.rectangle((x - 3, y - 2, x + 3, y + 2), fill=INK)
+            d.rectangle((x - 2, y - 1, x + 2, y + 1), fill=shade)
+            d.line([(x - 2, y - 1), (x + 2, y - 1)], fill=CREAM)
     elif name == "music":
-        # Paired eighth notes with separate stems and a joined beam.
-        d.ellipse((4, 16, 10, 20), fill=INK)
-        d.ellipse((5, 16, 9, 19), fill=accent)
-        d.ellipse((14, 13, 20, 17), fill=INK)
-        d.ellipse((15, 13, 19, 16), fill=accent)
-        d.rectangle((9, 4, 11, 17), fill=INK)
-        d.rectangle((10, 5, 11, 16), fill=CREAM)
-        d.rectangle((19, 2, 21, 14), fill=INK)
-        d.rectangle((20, 3, 21, 13), fill=CREAM)
-        d.polygon([(10, 4), (10, 2), (21, 1), (21, 4)], fill=INK)
-        d.polygon([(11, 3), (20, 2), (20, 3)], fill=shade)
-        d.point((7, 17), fill=CREAM)
-        d.point((17, 14), fill=CREAM)
+        d.polygon([(7, 4), (21, 1), (21, 7), (7, 10)], fill=INK)
+        d.polygon([(9, 5), (19, 3), (19, 5), (9, 7)], fill=shade)
+        for x, y in ((8, 18), (20, 15)):
+            d.rectangle((x - 1, 6, x + 1, y), fill=INK)
+            d.line([(x, 7), (x, y - 1)], fill=CREAM)
+            _octagon(d, (x - 7, y - 2, x + 1, y + 4), accent, 2)
+            d.line([(x - 5, y - 1), (x - 2, y - 1)], fill=CREAM)
     else:  # lock
         _octagon(d, (7, 3, 17, 14), shade, 3)
         d.rectangle((10, 6, 14, 12), fill=(0, 0, 0, 0))

@@ -7386,3 +7386,37 @@ evidence proves delivery and continuity, not that the player likes the sound.
   false/true toggle, music still enabled, and three distinct volume/speaker/
   music-note icons. All 158 previous PNGs, native spider logic/direct renderer
   and browser spider renderer remain byte-identical to v1.1.18.
+
+## Round 74 - unmistakable audio icons and separated browser volume control
+
+### Decisions made
+
+- Respond to the player's repeated icon-confusion report with visibly different
+  silhouettes, not another asset-name-only assertion: Volume now has three
+  mixer faders, Sound retains a speaker, Background Music has bold beamed notes
+  and Play retains its ball. Only the two requested icon PNGs change.
+- Reproduced actual production overlap: the slider crossed both the framed
+  thumbnail and percentage. Mark slider rows explicitly, reserve the icon
+  column, place label/value above the track and remove the native input margin.
+  Keep the existing 76-pixel row and one master Sound checkbox.
+- Add generated/source-pixel equality and silhouette Jaccard checks below 0.65
+  for Volume/Sound and Music/Play; add slider-layout regressions. Different
+  filenames alone do not prove visually different icons.
+- No gameplay, audio synthesis, save-layout, spider or allocation-policy changes.
+  Browser Brightness remains an honest disabled hardware-only setting.
+
+### Exact verification evidence
+
+- Browser **139/139**, art **16/16**; deterministic regeneration preserves all
+  **201** resulting PNGs. Packed validation checks every QOI opcode and pixel.
+- Real browser Volume bounding rectangles at viewport widths **400, 800,
+  1280** prove the slider intersects neither icon, label nor percentage.
+  Keyboard ArrowRight changes **70 to 75**, with matching displayed percentage.
+  Reviewed actual Sound-panel screenshot: three distinct visual metaphors and
+  separate slider/value/icon areas.
+- Wrapper build/full flash exit **0**, zero main-source warnings; native
+  **uitest sound=1** and pointer tests pass. **render500 largest_drift=0**;
+  internal/DMA largest **63,488 >= 51,200**, console stack free **5,776**.
+  Forty-second hardware soak: **VERDICT: PASS**, **0 faults/errors**.
+- Build/artwork tests establish native data delivery, not physical-screen
+  aesthetic approval. No new battery, association, SD or OTA-install claim.

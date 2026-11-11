@@ -387,6 +387,7 @@ export class DeviceGame {
         const check = element('input', ''); check.type = 'checkbox'; check.checked = item.selected; check.tabIndex = -1; check.setAttribute('aria-hidden', 'true');
         button.setAttribute('role', 'checkbox'); button.setAttribute('aria-checked', String(item.selected)); button.append(check);
       } else if (item.slider) {
+        button.classList.add('has-slider');
         const { value, min, max, step, change } = item.slider;
         const input = element('input', 'd-slider'); input.type = 'range';
         input.min = String(min); input.max = String(max); input.step = String(step); input.value = String(value);

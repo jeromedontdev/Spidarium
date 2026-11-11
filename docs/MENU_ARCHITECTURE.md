@@ -293,3 +293,9 @@ viewing/tapping the board; diagnostic passes are not user acceptance.
 
 No per-frame menu creation: rebuild only for explicit navigation or completion.
 Art assets and icons follow [the art guide](ART_STYLE.md).
+
+Sound rows use different visual metaphors, not just different asset keys:
+Volume is a three-fader mixer, Sound is a speaker, Background Music is beamed
+notes, and Play remains a ball. Icon tests compare alpha silhouettes and
+source PNG pixels. Browser slider rows reserve the left thumbnail column,
+put the label/value above the track, and keep percentage text out of its hit area.

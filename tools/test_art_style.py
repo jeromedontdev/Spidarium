@@ -15,6 +15,19 @@ from gen_sprites import (
 
 
 class ArtStyleTests(unittest.TestCase):
+    def test_audio_icons_have_distinct_silhouettes_and_match_published_sources(self):
+        root = Path(__file__).resolve().parents[1]
+        for left, right in (("volume", "sound"), ("music", "play")):
+            masks = []
+            for name in (left, right):
+                image = draw_icon(name)
+                with Image.open(root / "assets" / f"ui_{name}.png") as source:
+                    self.assertEqual(source.convert("RGBA").tobytes(), image.tobytes())
+                masks.append({i for i, alpha in enumerate(image.getchannel("A").tobytes()) if alpha})
+            intersection = len(masks[0] & masks[1])
+            union = len(masks[0] | masks[1])
+            self.assertLess(intersection / union, 0.65, f"{left}/{right} silhouettes too similar")
+
     def test_expanded_catalogue_assets_are_appended_without_reordering(self):
         self.assertEqual(len(DECOR_ITEM_NAMES), 34)
         self.assertEqual(DECOR_ITEM_NAMES[16:], [

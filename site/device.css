@@ -59,6 +59,10 @@
 .d-row .row-marker { position:absolute; right:14px; top:27px; }
 .d-row input[type=checkbox] { position:absolute; right:14px; top:25px; width:24px; height:24px; accent-color:#76d6b1; pointer-events:none; }
 .d-row input[type=range].d-slider { position:absolute; left:14px; right:14px; bottom:8px; width:calc(100% - 28px); height:20px; accent-color:#76d6b1; pointer-events:auto; }
+.d-row.has-slider .row-label { top:10px; right:84px; }
+.d-row.has-slider .row-detail { top:10px; left:auto; right:14px; width:60px; text-align:right; }
+.d-row.has-slider input[type=range].d-slider { bottom:12px; margin:0; }
+.d-row.has-slider.has-icon input[type=range].d-slider { left:72px; width:calc(100% - 86px); }
 .d-pages { position:absolute; left:148px; top:348px; width:104px; text-align:center; font-size:14px; }
 .d-copy { position:absolute; left:12px; right:12px; top:84px; font-size:14px; line-height:22px; white-space:pre-line; }
 .d-game-prompt { position:absolute; left:12px; top:84px; right:12px; white-space:pre-line; font-size:14px; line-height:18px; height:40px; }
