@@ -7,9 +7,13 @@ illustration, and not a filtered photo.
 The distinction matters because it is easy to drift into the wrong one. An
 8-bit look is a handful of flat colours, one-pixel outlines and no shading. A
 16-bit look keeps the crisp pixel grid but spends far more of its budget on
-volume and material: crescent shading, three or four tones per material, ink
+volume and material: crescent shading, three to five tones per material, a hard
+terminator between lit and shadowed faces, bounce light on the shadow side, ink
 rims that separate a prop from the floor, and enough colour depth that a rock
 reads as stone rather than as a grey blob.
+
+The current art does not yet meet this contract. See
+[ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md) for the measured gap and the plan.
 
 ## The 16-bit contract
 
@@ -18,8 +22,11 @@ reads as stone rather than as a grey blob.
 | Integer geometry only, drawn on a half-resolution canvas, then enlarged exactly 2× with nearest-neighbour | Keeps every pixel a crisp 2×2 block. No antialiasing, no filtered resizes. |
 | Binary alpha (0 or 255) on every sprite | LVGL blends RGB565A8; a soft alpha edge would smear the pixel grid. |
 | Ink rim on every prop silhouette | A prop must separate from the substrate. Without the rim, dark decor on a dark floor disappears. |
-| Three tones per material: shadow, body, highlight | This is the whole difference between 8-bit and 16-bit. Two tones read flat. |
+| Three-to-five tone ramp per material: ink rim, shadow, body, highlight, specular | This is the whole difference between 8-bit and 16-bit. Two tones read flat; three is the floor, not the target. |
+| A hard terminator between the lit and shadowed faces | A visible band, not a smooth falloff. This is what separates 16-bit from airbrushed. |
+| A bounce-light sliver on the shadow side | A one-pixel sliver of the material's own hue, lightened. The single most "16-bit" trick there is. |
 | Crescent shading, not concentric rings | Offset the highlight ellipse up-left and re-stamp the body over its lower-right. Concentric rings read as a flat disc with a border. |
+| Light always from the top-left | Every prop, every theme, every frame. |
 | No gradients, no translucent shadows, no blur | The grid is the style. A gradient is a filtered resize in disguise. |
 | Backgrounds are exempt from the 12-colour cap and the 2×2 uniformity rule | They are authored at native 240×240 and are illustrations, not sprites. |
 
@@ -63,10 +70,20 @@ Each ground texture is built from:
   distinct from both the floor and any foliage;
 - gentle tonal drift that never goes darker than the base, plus fine grit.
 
+**This is the current implementation, and it is not yet the target.** Value
+noise has no edges, so the result reads as mud, fog or wallpaper rather than as
+a material. The target is a scatter of **discrete, rimmed elements** — bark
+chips, moss cushions, gravel stones, shell fragments, flagstones, per theme —
+each with an ink rim, a shadow tone, a body tone, a highlight tone and a
+bounce-light sliver. A 16-bit floor is legible because each element on it is a
+shape with a rim and its own tone ramp. See
+[ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md).
+
 Palettes are generated from HLS specs rather than hand-picked, so every theme
 keeps the same contrast structure: the floor sits in a narrow lightness band,
 and the trail always separates from it. Hand-picked greens kept collapsing into
-the substrate.
+the substrate. Every theme must measure **mean luminance 0.34–0.58** and **mean
+saturation ≥ 0.35** so the mid-grey spider always separates from its floor.
 
 Do not reintroduce canopies, pebble scatter, flower clusters, fronds or any
 other prop primitive into the background path. If a scene needs a prop, it is a
@@ -92,6 +109,12 @@ The catalogue order is load-bearing: `decor_kind_t` in `main/decor.h`,
 A fern is drawn as a rosette of arcing fronds — a curved rachis with paired
 pinnae stamped along it, shrinking toward the tip. Drawing a fern as one pointed
 blade is what makes it read as grass.
+
+The current props use only three to seven colours each against a cap of twelve,
+which is the 8-bit look the contract above rejects. The target is **8–10 tones
+per prop**: ink rim, shadow, body, terminator band, highlight, specular, plus
+material detail (grain, facets, speckles). See
+[ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md).
 
 ## Generate and validate
 

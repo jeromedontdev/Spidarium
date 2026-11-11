@@ -102,11 +102,14 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   Power/network display ownership is serialized. Charger settings are untouched;
   USB telemetry is not proof of unplugged discharge/runtime.
 - [Artwork](ART_STYLE.md): deterministic non-spider assets in a **16-bit
-  SNES-era** direction — crescent shading, three tones per material, an ink rim
-  on every silhouette, no gradients. Eight prey species, eighteen gifts,
-  sixteen placeable decor sprites and thirteen HUD icons.
-  [Inventory](ASSETS_INVENTORY.md) and [asset commands](../assets/README.md)
-  define the maintenance contract. All thirty-nine spider PNGs were preserved.
+  SNES-era** direction — crescent shading, three-to-five tones per material, a
+  hard terminator, bounce light, an ink rim on every silhouette, no gradients.
+  Eight prey species, eighteen gifts, sixteen placeable decor sprites and
+  thirteen HUD icons. [Inventory](ASSETS_INVENTORY.md) and
+  [asset commands](../assets/README.md) define the maintenance contract. All
+  thirty-nine spider PNGs were preserved. The current art does not yet meet the
+  contract; [ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md) is the measured gap and
+  the refinement brief.
 - Sixteen selectable habitats use one reusable 460,800-byte PSRAM canvas, not a
   web/prop object tree. Backgrounds are **ground texture only** — substrate,
   trail, grain, tonal drift — with no painted props, so the spider always has a

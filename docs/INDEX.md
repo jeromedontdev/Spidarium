@@ -22,6 +22,7 @@
 - [Eighteen implemented gifts](GIFTS_CATALOG.md).
 - [Battery and idle display management](BATTERY_MANAGEMENT.md).
 - [Art style and generator](ART_STYLE.md).
+- [Art refinement handoff (16-bit SNES era)](ART_HANDOFF_SNES.md).
 - [Asset inventory](ASSETS_INVENTORY.md).
 - [Asset maintenance](../assets/README.md).
 
