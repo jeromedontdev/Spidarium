@@ -19,15 +19,15 @@ percentage. Values over 100 are labelled Gauge Unknown, not clamped into a
 fabricated percentage. No battery and I2C failures have explicit UI status.
 The percentage is the PMIC estimate, not an independently calibrated fuel gauge.
 
-This is display power saving, **not** ESP32 deep sleep or a new battery cutoff/
-charger implementation. The hardware's own battery protections remain in
-charge. Real unplugged discharge/runtime and charging-transition testing need
-physical access and a suitable battery; do not claim those from USB testing.
+v1.1.18 adds explicit ESP32 deep sleep, not a new battery cutoff/charger
+implementation. The hardware's own protections remain in charge. Real
+unplugged current, discharge/runtime, rail shutdown, charging transitions and
+right-button wake require physical evidence; do not infer them from USB tests.
 
 ## User behavior
 
 Settings -> Battery shows battery/USB/charging status, a runtime estimate and the
-automatic power-saving policy. Settings -> Display holds a 10..100% brightness
+configurable power-saving policy. Settings -> Display holds a 10..100% brightness
 slider and the Screen Rotation control. The
 brightness preference is saved with the pet; new and migrated saves default to
 50%. The runtime estimate is a stated heuristic (nominal 300 minutes at 50%
@@ -41,18 +41,32 @@ square, so taps still map to the same coordinates. A persistent top-right batter
 charging bolt; USB/unknown readings remain explicit. Tapping opens voltage,
 power source and brightness details. Care shows only Silk as wallet text.
 
-- After 60 seconds without touch, dim to at most 15%.
-- After 300 seconds, set brightness to 0 and show a black full-screen overlay.
-  Tank logic/rendering stop; service polling remains alive. Queue a pet save.
+- Profiles: Balanced; Battery Saver caps battery brightness at 35%; RTC Sleep
+  caps it at 20% and permits the separately configured idle deep-sleep delay.
+  USB does not apply the saver caps.
+- Screen timeout: 30 seconds, 1, 2 or 5 minutes, or Never. Default 5 minutes.
+  Dim to at most 15% after 60 seconds or half the selected timeout, whichever
+  is earlier. Never disables blanking, not idle dimming.
+- At timeout, set brightness to 0 and reuse the black touch-wake overlay.
+  Tank motion/rendering stop; needs/aging and service polling continue. Queue
+  a pet save. Ordinary screen blanking is not deep sleep.
 - A touch on the overlay resets inactivity and restores selected brightness,
   without propagating that first touch into a hunt or menu selection.
 - At <=10% with a battery present and no USB, cap brightness at 5% and request
   one save per low-battery episode. USB power removes that cap. The five-minute
-  screen-off policy still wins.
+  configured screen-off policy still wins.
 
-Screen sleep does not age/decay the spider while hidden. No automatic power-off
-or flash erase occurs. A completed game reward or gift purchase follows the
-existing copied-save queue; screen sleep also requests a snapshot.
+Deep-sleep idle delay: Never (default), 5, 15 or 30 minutes, or 1 hour.
+Automatic entry requires RTC Sleep mode, a nonzero delay, valid battery power
+without USB, the main tank, and idle persistence/radio workers. RTC wake:
+15 minutes (default), 1 hour or 6 hours. Deep Sleep Now is a separate explicit
+confirmation and can run on USB. Wake by the right/user button (GPIO18,
+active low) or ESP RTC timer, **not touch**. A held wake button rejects entry.
+The PCF85063/system clock and saved `last_seen` drive normal offline catch-up
+after waking; normal gameplay/timers are not running during deep sleep.
+The MCU RTC timer wakes it even without an external RTC backup battery;
+retention of external RTC time after losing main power needs its own test.
+No flash erase or battery cutoff occurs.
 
 ## Thread and memory ownership
 
@@ -72,6 +86,14 @@ The black overlay is built once on LVGL and reused. Touch wake and all object
 mutations stay on LVGL. The console's `wake` requests that same LVGL action;
 it never directly calls LVGL from the serial task.
 
+Deep-sleep requests run on LVGL, freeze input and copy the pet into a save job.
+The internal-stack save worker commits it, drains active audio/power work with
+a three-second bound, configures timer/GPIO18 wake and pauses the display with
+acknowledgement before blanking and entering sleep. Pending sleep rejects
+new persistence/radio jobs. Errors log explicitly, clear pending state and
+restore input on LVGL; workers never call `lv_*`. Failed pause/setup does not
+silently proceed to sleep. These preferences are appended in save v9.
+
 ## Verification
 
 `battery` prints real PMIC telemetry and the screen-sleep flag. `uitest`
@@ -84,3 +106,8 @@ connection may reset the board and restart the idle clock. Capture brightness
 15 after a minute, brightness 0 and `screen_sleep=1` after five minutes, then
 send `wake` and confirm `screen_sleep=0` and restored normal brightness.
 See the latest [progress round](../PROGRESS.md) for recorded hardware results.
+`tools/test_deep_sleep.py COM7` requests a five-second diagnostic nap, observes
+USB disappearance/reconnection and verifies `wake_cause=4` (ESP RTC timer),
+plus saved habitat preferences. It does not prove physical-button wake or
+measure battery current. `nap SECONDS` is queue acceptance only until actual
+entry/wake evidence is collected.

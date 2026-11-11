@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.17](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.17)**
+| **[Download v1.1.18](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.18)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -18,11 +18,13 @@ give it gifts. It remembers all of it across reboots.
 
 ## What makes it interesting
 
-**A quieter habitat.** Soft air and leaf textures fade in and out behind the
-action, without automatic chirps or falling pitch sweeps. Pounce is a short
-noise whoosh. Browser and device share the same seeded ambience PCM, with
-working volume/mute and prompt foreground interruption.
-See [v1.1.17 release notes](docs/RELEASE_v1.1.17.md).
+**A quieter, customizable habitat.** Automatic ambience is off; foreground
+effects still respect Sound settings. Buy backgrounds with Silk, arrange decor
+and move placed gifts for free. Framed pixel icons and gold menu ornaments
+leave Back clear. Prey have thorax-attached legs, alternating tripod steps,
+travel-driven ground animation and heading-aware sprites; the spider is unchanged.
+Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
+See [v1.1.18 release notes](docs/RELEASE_v1.1.18.md).
 
 **The spider is one canvas, not a scene graph.** It is drawn from scratch into a
 single 96×96 RGB565A8 buffer every frame — legs, body, fuzz, eyes, fangs, gait,

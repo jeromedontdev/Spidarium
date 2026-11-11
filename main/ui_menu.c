@@ -64,6 +64,27 @@ static uint32_t s_play_input_guard;
 static const char *const k_play_colors[] = {"Coral", "Mint", "Gold", "Blue"};
 static const uint32_t k_play_rgb[] = {0xb94646, 0x296e55, 0x846421, 0x315c94};
 
+static int menu_icon(const char *text)
+{
+    if (!text) return sprite_icon_index("status");
+    static const struct { const char *label, *icon; } icons[] = {
+        {"Daily","xp"}, {"Check In","xp"}, {"Treats","feed"}, {"Backgrounds","decor"},
+        {"Achievements","xp"}, {"Prey Species","feed"}, {"Decor","decor"},
+        {"Arrange Decor","decor"}, {"Placed Gift","decor"}, {"Placed Items","decor"},
+        {"Catch 3 Prey","feed"}, {"Clean 2 Times","clean"}, {"Play 3 Times","play"},
+        {"Pet 4 Times","mood"}, {"Battery","energy"}, {"Runtime","energy"},
+        {"Power Mode","energy"}, {"Screen Timeout","sleep"}, {"Deep Sleep After","sleep"},
+        {"RTC Wake Interval","energy"}, {"Deep Sleep Now","sleep"}, {"Save and Sleep","sleep"},
+        {"Volume","mood"}, {"Sound","mood"}, {"Sound On","mood"}, {"Sound Off","sleep"},
+        {"Brightness","energy"}, {"Auto Feed","feed"}, {"Move","decor"}, {"Move Gift","decor"},
+        {"Blocking","lock"}, {"Put Away","back"}, {"Put Gift Away","back"},
+        {"Wipe Spider","lock"}, {"Save Screenshot","decor"},
+    };
+    for (size_t i = 0; i < sizeof icons / sizeof icons[0]; i++)
+        if (!strcmp(text, icons[i].label)) return sprite_icon_index(icons[i].icon);
+    return sprite_icon_index("status");
+}
+
 static const char *const k_lower[] = {
     "q","w","e","r","t","y","u","i","o","p","\n",
     "a","s","d","f","g","h","j","k","l","\n",
@@ -142,7 +163,10 @@ void ui_menu_close(void)
     s_play_timer = NULL;
     s_play_reward = NULL;
     if (s_menu) lv_obj_delete(s_menu);
-    if (s_backdrop) lv_obj_delete_async(s_backdrop);
+    if (s_backdrop) {
+        lv_obj_set_hidden(s_backdrop, true);
+        lv_obj_delete_async(s_backdrop);
+    }
     s_menu = s_backdrop = s_page_label = s_prev = s_next = NULL;
     s_input = s_input_error = s_keyboard = s_visibility_label = NULL;
     s_visibility_button = NULL;
@@ -196,11 +220,21 @@ static void open_panel(const char *title)
 
     lv_obj_t *rule = lv_obj_create(s_menu);
     lv_obj_remove_style_all(rule);
-    lv_obj_set_pos(rule, 12, 68);
-    lv_obj_set_size(rule, MENU_WIDTH - 24, 2);
-    lv_obj_set_style_bg_color(rule, lv_color_hex(COL_RULE), 0);
+    lv_obj_set_pos(rule, 120, 60);
+    lv_obj_set_size(rule, MENU_WIDTH - 136, 4);
+    lv_obj_set_style_bg_color(rule, lv_color_hex(COL_GOLD), 0);
     lv_obj_set_style_bg_opa(rule, LV_OPA_COVER, 0);
     lv_obj_set_clickable(rule, false);
+    for (int i = 0; i < 4; i++) {
+        lv_obj_t *rivet = lv_obj_create(s_menu);
+        lv_obj_remove_style_all(rivet);
+        lv_obj_set_pos(rivet, i & 1 ? MENU_WIDTH - 8 : 4,
+                      i & 2 ? MENU_HEIGHT - 8 : 4);
+        lv_obj_set_size(rivet, 4, 4);
+        lv_obj_set_style_bg_color(rivet, lv_color_hex(COL_GOLD), 0);
+        lv_obj_set_style_bg_opa(rivet, LV_OPA_COVER, 0);
+        lv_obj_set_clickable(rivet, false);
+    }
 }
 
 static void refresh_page(void);
@@ -224,7 +258,12 @@ static void refresh_page(void)
         const lv_image_dsc_t *icon = s_icon_indices[index] >= 0 ?
             assets_image(s_icon_indices[index]) : NULL;
         lv_obj_set_hidden(s_icons[i], !icon);
-        if (icon) lv_image_set_src(s_icons[i], icon);
+        if (icon) {
+            lv_image_set_src(s_icons[i], icon);
+            lv_obj_set_size(s_icons[i], 48, 48);
+            lv_image_set_inner_align(s_icons[i], LV_IMAGE_ALIGN_CONTAIN);
+            lv_image_set_antialias(s_icons[i], false);
+        }
         int text_x = icon ? 72 : 14;
         lv_obj_set_width(s_label[i], MENU_WIDTH - text_x - 68);
         lv_obj_set_width(s_detail[i], MENU_WIDTH - text_x - 68);
@@ -284,6 +323,7 @@ void ui_menu_set_item_icon(uint8_t item, int asset_index)
 {
     if (!s_items || item >= s_count || item >= 20) {
         ESP_LOGE("spidarium.menu", "item icon rejected: invalid row %u", item);
+        return;
     }
 
     s_icon_indices[item] = asset_index;
@@ -646,7 +686,7 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
     s_items = items;
     s_count = count;
     for (int i = 0; i < 20; i++) {
-        s_icon_indices[i] = -1;
+        s_icon_indices[i] = i < count ? menu_icon(items[i].label) : -1;
         s_check_items[i] = false;
         s_slider_cb[i] = NULL;
     }
@@ -957,6 +997,8 @@ bool ui_menu_test(void)
         lv_obj_get_width(lv_obj_get_child(s_menu, 0)) >= 96 &&
         lv_obj_get_height(s_next) >= 56;
     targets_ok = targets_ok &&
+        lv_obj_get_x(lv_obj_get_child(s_menu, 2)) >= 120 &&
+        !lv_obj_is_hidden(s_icons[0]) &&
         lv_obj_get_style_radius(s_menu, 0) == UI_PIXEL_RADIUS &&
         lv_obj_get_style_radius(s_row[0], 0) == UI_PIXEL_RADIUS &&
         lv_obj_get_style_shadow_width(s_menu, 0) == 0 &&

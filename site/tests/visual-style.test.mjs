@@ -31,7 +31,9 @@ test('flat native panel, row and selection palette has hard two-pixel chrome', (
   assert.equal(panel.border, '2px solid #b99b67');
   assert.equal(panel['border-radius'], '2px');
   assert.equal(panel['box-shadow'], 'inset 2px 2px 0 #395873,inset -2px -2px 0 #0a1220');
-  assert.equal(declarations(device, '.d-panel::before').background, '#76d6b1');
+  const rule = declarations(device, '.d-panel::before');
+  assert.equal(rule.background, '#b99b67');
+  assert.ok(parseInt(rule.left) >= 120, 'ornament stays beyond the 96px Back button at x12');
   assert.doesNotMatch(device, /gradient\(|blur\(/i);
   assert.doesNotMatch(device, /(?:background|border):[^;}]*(?:#[\da-f]{8}\b|rgba\()/i);
 });

@@ -98,11 +98,11 @@ bool terrarium_test(void)
         lv_obj_t *obj = s_decor_obj[i];
         if (!obj) { ok = false; continue; }
         if (!item) {
-            ok = ok && lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            ok = ok && lv_obj_is_hidden(obj);
             continue;
         }
         const decor_def_t *def = decor_def(item->kind);
-        bool visible = def && !lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN);
+        bool visible = def && !lv_obj_is_hidden(obj);
         bool placed = lv_obj_get_x(obj) == item->x - 32 &&
                       lv_obj_get_y(obj) == item->y - 32;
         bool sourced = lv_image_get_src(obj) ==

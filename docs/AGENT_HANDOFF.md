@@ -13,6 +13,24 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.18: [habitat controls, prey gait and RTC sleep](RELEASE_v1.1.18.md).
+  Automatic ambience is disabled, superseding v1.1.17 scheduling. Keep foreground
+  effects and manual sound diagnostics. Decor/gifts have explicit movement
+  menus plus long press; closed backdrops hide before deferred deletion so they
+  cannot intercept the next pointer event. Menus use framed icons and a short
+  gold ornament at x120, clear of Back. Background purchases/ownership and power
+  preferences share save v9 (248-byte payload, 260-byte raw, 41 compiled fields);
+  v8 migrates the equipped old NVS background plus free cork without charging.
+  Update the compiled schema, browser decoder and raw console capacity together.
+  RTC sleep snapshots on LVGL, commits on the internal save worker, drains
+  workers and pauses the display before sleeping; no worker calls LVGL.
+  Timer/right GPIO18 wake only, not touch. Automatic sleep is opt-in and battery
+  only. See [battery policy](BATTERY_MANAGEMENT.md) for unmeasured boundaries.
+  Living prey now have fixed thoracic leg roots, alternating tripod feet and
+  direction-aware image rotation, with ground gait driven by travel rather
+  than a clock while stopped. Image rotation works without LV_USE_MATRIX;
+  do not change the approved spider or enable that unrelated option.
+
 - v1.1.17: [quiet environmental audio](BROWSER_PARITY.md#v1117-quiet-environmental-audio).
   Replace intermittent pitch sweeps with slow air/leaf textures, not louder
   melodic effects. Native/browser seeded PCM matches `audiotest`; the short pet

@@ -17,6 +17,7 @@
 #include "freertos/task.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
@@ -35,6 +36,8 @@ static const char *TAG = "spidarium";
 
 void app_main(void)
 {
+    ESP_LOGI(TAG, "wake cause=%d (timer=%d right-button=%d)",
+             esp_sleep_get_wakeup_cause(), ESP_SLEEP_WAKEUP_TIMER, ESP_SLEEP_WAKEUP_EXT1);
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(save_init() ? ESP_OK : ESP_FAIL);
     theme_init();

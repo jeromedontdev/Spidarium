@@ -7204,3 +7204,81 @@ association/SNTP, hosted OTA installation, SD media or RTC backup retention.
   v1.1.17 manifest is unchanged. Real production Web Audio confirms one gain
   automation call across 3,600 unchanged frames, one additional mute call,
   **zero remaining sources after mute** and **zero reported errors**.
+
+## Round 72 - Habitat controls, prey anatomy and RTC sleep (v1.1.18)
+
+### Decisions made
+
+- Disable automatic ambience after the user's rejection rather than substitute
+  another unapproved texture. Foreground audio, volume/mute and manual sound
+  diagnostics remain; no listening approval is claimed.
+- Fix browser hold cancellation from tiny finger jitter (12px tolerance), add
+  Arrange Decor / Placed Gift entry points and make gift movement free,
+  preserving variant, ownership, effective bonus and Silk. Native tests exposed
+  a modal backdrop still intercepting input while awaiting deferred deletion:
+  hide it immediately, retain safe asynchronous destruction.
+- Replace the overlapping green menu rule with a short gold ornament at
+  x120/y60/w264/h4. Add pixel rivets, framed meaningful default icons, Daily
+  task glyphs and contained background/decor/gift thumbnails.
+- Sell backgrounds for Silk once, with free cork and free reapplication.
+  Append ownership, selection and power preferences to save v9 without moving
+  old offsets: 248-byte payload / 260-byte raw / 41 compiled fields.
+  v8 migration retains its old equipped background plus cork. Keep credentials
+  separate; never erase NVS. Grow console RX/line/schema capacities together.
+- Battery offers Balanced, Saver and RTC Sleep profiles, screen timeout,
+  idle deep-sleep delay, RTC interval and confirmed immediate sleep. Automatic
+  entry defaults off and requires real battery power without USB. Snapshot on
+  LVGL, commit on the internal save worker, drain workers and pause display
+  before entry. Freeze input; reject conflicting jobs; log failures explicitly.
+  Timer/right GPIO18 wake only, not touch. Browser labels device preferences
+  instead of pretending it has MCU/PMIC hardware.
+- Redraw all 32 living bug frames, not the approved spider: fixed thoracic leg
+  roots, six alternating tripod legs, jointed cricket hind legs, short larval
+  legs near the head and a restrained body wave. Ground gait follows travel
+  and plants feet at rest; wing beats remain timed. Native image rotation
+  works without LV_USE_MATRIX; both runtimes use eight headings and full
+  48x48 prey. Fix browser caught-prey selection to use the splatter.
+- Package validation must account for native struct tail alignment, not demand
+  an artificial field at the last padding byte. Test v9's 245-byte last field
+  rounded to 248 while rejecting missing decor bytes and excessive padding.
+  Use `save stored` for byte-exact committed-NVS rejection checks: ordinary
+  export intentionally snapshots advancing needs/mood/clock state.
+
+### Exact local evidence
+
+- Wrapper build/full flash exit **0**, zero main compiler warnings.
+- Browser **124 passed / 0 failed**; art **14/14**, packaging **10/10**.
+  All **158** packed QOI entries decoded and matched to source pixels;
+  deterministic generation and unchanged 39 spider exports verified.
+- Final COM7 suite **48 passed / 0 failed**. Actual native pointer test:
+  **hold=1 decor_move=1 gift_move=1**; all uitest assertions pass.
+  Prey progression test also checks real image rotation and stationary/travel
+  gait transitions. Real browser pointer input survives 3px/2px hold jitter,
+  moves decor to **330,350** and gift to **350,180**, preserving variant **2**
+  and **pets=0**. Daily/background icons load; header begins at120 while
+  Back ends at110 including panel border, leaving10 logical pixels clear.
+  Browser draw calls verify prey rotations **PI/2, PI, 0** and48x48 output,
+  including the mealworm splatter.
+- Final 40-second soak **VERDICT: PASS**, **0 faults/errors**.
+  Internal/DMA largest **63,488** exceeds51,200. **render500 drift=0**;
+  **scanloop5 ok=5 failed=0 largest_drift=0**.
+- Real hardware v9 schema/export, invalid fields, exact committed restore,
+  overwrite guard and reboot pass. Background ownership and power preferences
+  persist across reboot; original snapshot restored. Console minimum-ever
+  stack free **3,284 bytes** after valid/invalid restore testing.
+- Actual five-second `nap`: **commit_log=1**, **disconnected=1**,
+  **wake_cause=4** (ESP RTC timer), saved habitat preserved. The first client
+  attempt lost its chunked read when USB disappeared; the corrected diagnostic
+  observes disconnection and reconnects without forcing a reset. Acceptance is
+  actual timer wake, not a queued reply or an ordinary reboot.
+- Website build succeeds using the matching five-image v1.1.18 package.
+  ZIP **1,756,189 bytes**, SHA-256
+  `8f7595332679a72223310d69e6fab55e3f2f8033f02904ec7c2d2cf2a48b01e7`.
+  Publication/production verification follows.
+
+### Verification boundaries
+
+No claim of physical-button wake, unplugged current/runtime, complete peripheral
+rail shutdown, physical touchscreen appearance or subjective sound approval.
+No new claim of authorized association/SNTP, hosted HTTPS OTA installation,
+SD media or external RTC backup-battery retention.

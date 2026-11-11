@@ -33,6 +33,7 @@ bool save_last_ok(void);
 bool save_request_sd(uint8_t operation);
 bool save_request_screenshot(const sd_screenshot_t *image);
 bool save_request_background(uint8_t id);
+bool save_request_sleep(uint32_t seconds);
 bool save_background_load(uint8_t *id);
 bool save_request_raw(const void *src, size_t len);
 bool save_raw_valid(const void *src, size_t len);

@@ -6,6 +6,7 @@
 
 #include "game_config.h"
 #include "net.h"
+#include "power.h"
 
 #include "bsp/esp-bsp.h"
 #include "esp_codec_dev.h"
@@ -63,7 +64,7 @@ static void audio_worker(void *arg)
         xQueueReceive(s_queue, &sfx, portMAX_DELAY);
         for (;;) {
             atomic_store(&s_playing, true);
-            if (!net_busy()) break;
+            if (!net_busy() && !power_sleep_pending()) break;
             atomic_store(&s_playing, false);
             vTaskDelay(pdMS_TO_TICKS(20));
         }
@@ -155,7 +156,7 @@ static void play_ambience(bool leafy)
     uint32_t written = 0;
     const char *reason = "complete";
     while (sound.position < sound.length) {
-        bool stopping = atomic_load(&s_muted) || net_busy() ||
+        bool stopping = atomic_load(&s_muted) || net_busy() || power_sleep_pending() ||
                         uxQueueMessagesWaiting(s_queue) != 0;
         int samples = stopping ? AMBIENCE_FADE : AMBIENCE_CHUNK;
         if ((uint32_t)samples > sound.length - sound.position)
@@ -308,14 +309,7 @@ bool audio_test(void)
 
 void audio_tick(uint32_t now_ms)
 {
-    static uint32_t next;
-    if (!s_ready || audio_muted() || net_busy()) return;
-    if (!next) next = now_ms + 12000;
-    if ((int32_t)(now_ms - next) < 0) return;
-    next = now_ms + 14000 + esp_random() % 6000;
-    if (!audio_playing() && uxQueueMessagesWaiting(s_queue) == 0 &&
-        g.state != SPIDER_AIM && g.state != SPIDER_POUNCE && g.state != SPIDER_EAT)
-        audio_play(esp_random() % 2 ? SFX_RUSTLE : SFX_DROP);
+    (void)now_ms;
 }
 
 static void play_sfx(sfx_t sfx)

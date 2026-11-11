@@ -37,6 +37,9 @@ bool theme_set(uint8_t id);
 
 /* True if the theme is unlocked at the current level. */
 bool theme_unlocked(uint8_t id);
+bool theme_owned(uint8_t id);
+uint16_t theme_cost(uint8_t id);
+void theme_restore(void);
 
 /* Cycle to the next unlocked theme. Returns the new id. */
 uint8_t theme_next(void);

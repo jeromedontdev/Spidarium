@@ -88,11 +88,15 @@ def validate_save_schema(root: Path) -> Path:
     for field in fields:
         width = {"u8": 1, "u16": 2, "u32": 4}.get(field["type"], field["length"])
         if (field["name"] in names or width <= 0 or field["offset"] < 0 or
+                (field["type"] == "decor[12]" and width != 72) or
                 field["offset"] + width > sizes[1]):
             raise ValueError("Invalid save schema field bounds or duplicate name")
         names.add(field["name"])
         ends.append(field["offset"] + width)
-    if not ends or max(ends) != sizes[1]:
+    alignment = max((4 if field["type"] == "u32" else
+                     2 if field["type"] in ("u16", "decor[12]") else 1
+                     for field in fields), default=1)
+    if not ends or (max(ends) + alignment - 1) // alignment * alignment != sizes[1]:
         raise ValueError("Save schema does not describe the complete current payload")
     return schema_path
 

@@ -27,7 +27,12 @@ same shaded wood, stone, foliage, facets and ink rims. This includes every
 shelter, perch, hammock, garden and toy, not only the separate decor catalogue.
 All forty prey frames, thirteen UI glyphs and eleven achievement badges now
 share discrete material lighting, without changing their recognizable motifs,
-species IDs or animation silhouettes. Living prey require 9-12 visible tones,
+species IDs. Living insects have six fixed thoracic leg attachments with
+alternating tripod feet; cricket hind legs have enlarged jointed femurs.
+Larvae have short true legs near the head, not long legs along the abdomen;
+waxworm prolegs remain short. Bodies/heads stay anchored between frames.
+Both runtimes orient the right-facing art to travel and stop ground gait while
+resting; wings can keep beating. Living prey require 9-12 visible tones,
 splatters 6-12, icons 5-12 and badges 8-12. Simple arrows are deliberately
 less elaborate than furnishings. Sprites use uniform aligned
 2x2 blocks and binary alpha. Prey/icons are 48x48;

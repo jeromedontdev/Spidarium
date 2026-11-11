@@ -10,11 +10,13 @@ menu-stack/slider architecture; use the implemented API.
 Menu
   Daily                  check-in and the rotating task
   Treats                 consumables bought with Silk
-  Backgrounds            sixteen unlocked ground textures
+  Backgrounds            sixteen ground textures, buy once with Silk
   Achievements           read-only, paged
   Prey species           read-only unlock list
   Decor                  sixteen kinds; buy, then tap the tank to place
     Placed Items         tap a row to flip blocking / walk-over
+  Arrange Decor          placed items: move, blocking / walk-over, put away
+  Placed Gift            move for free / put away without losing ownership
   Settings
     WiFi
       Scan networks      explicit on-demand action
@@ -25,7 +27,7 @@ Menu
       Scanned networks   choose -> password editor if secured
     SD card              backup / restore (optional)
     About                firmware and hardware information
-    Battery              status, runtime estimate, automatic power saving
+    Battery              status, profiles, timeout, RTC sleep delay/wake
     Display              brightness slider, screen rotation
     Sound                volume slider, sound on/off
     Auto Feed            one switch: wild prey and unattended hunting together
@@ -58,6 +60,13 @@ Achievements use ten distinct authored 48px badges, including Perfect Hunt;
 the retired First Pet badge remains mapped for legacy data but is not earnable.
 `ui_menu_set_item_icon(item, asset_index)` attaches an icon without changing
 static item definitions. Backgrounds has no root-card subtext.
+Every row has a default meaningful glyph, with real thumbnails overriding it
+for backgrounds, decor, gifts and species. Daily tasks choose their care glyph.
+Icon images use 48x48 contain alignment, not cropped 240px backgrounds.
+Gold corner rivets and framed icon tiles reinforce the pixel-art treatment.
+The header ornament is x120/y60/w264/h4, clear of Back's x12..108/y12..68.
+Closing hides the backdrop before deferred deletion, removing it from hit
+testing immediately without deleting objects inside their own input callback.
 Shared `ui_style_card()` supplies two-pixel corner steps, opaque two-pixel
 borders, flat fills and hard ink/pressed outlines. No gradient fills, blurred
 shadows, filters or per-frame object creation. The native palette is navy

@@ -66,13 +66,18 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   Restored state is loaded on that worker and copied back to LVGL; no NVS read
   occurs from the external-stack LVGL task.
   Save acknowledgements propagate queue rejection instead of reporting success.
-  Background preference writes share this worker; boot reads the separate NVS
-  key before LVGL. Changing a habitat never changes the pet-save payload format.
+  Background ownership/selection and power settings share the v9 pet snapshot.
+  Boot reads the old separate background key only for one-time v8 migration.
+  Deep-sleep requests copy the live snapshot on LVGL; only this internal-stack
+  worker enters sleep after an actual successful save, bounded audio/power drain
+  and display pause acknowledgement. New saves/radio jobs are rejected while
+  sleep is pending. Workers never call LVGL; LVGL disables/re-enables input.
 - **Console worker:** one USB Serial/JTAG driver. UI commands request an action
   and wait on this worker, never on LVGL. Its explicit PSRAM stack is 8 KB;
   the old 4 KB stack overflowed during raw restore validation. Final real
-  restore testing leaves 4,060 bytes free. Driver RX is 512 bytes to hold the
-  complete 301-byte restore command; there is still only one driver.
+  v9 restore testing leaves at least 3,284 bytes free. Driver RX is 1,024 bytes
+  and line capacity 640 to hold the complete 534-byte v9 restore command;
+  there is still only one driver.
   Schema/export/screenshots use bounded 128-byte direct-driver writes and
   TX-drain acknowledgements. Large ordinary VFS printf writes proved lossy.
   Screenshots use indexed parts, yield between parts and retain warning/error
@@ -82,9 +87,9 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   codec writes use a reusable PSRAM PCM buffer and a 4 KB PSRAM stack. Muting is
   atomically published. Active playback drains before radio startup; pending
   effects wait until the network job finishes.
-  Quiet filtered air (8 seconds) / leaves (10 seconds) are considered every
-  14-20 seconds after the first 12 seconds, only when audio is idle. No automatic
-  chirps, pitched drops or sweeps. Two-second attacks and three-second releases
+  Automatic ambience is disabled in v1.1.18. Manual filtered air (8 seconds) /
+  leaves (10 seconds) remain diagnostic effects. No automatic chirps, pitched
+  drops or sweeps. Two-second attacks and three-second releases
   prevent abrupt entrances/exits. Stream 100 ms chunks in the existing PCM
   buffer; pending foreground effects, mute or radio work interrupt with a
   20 ms fade instead of holding the network drain for the whole texture.

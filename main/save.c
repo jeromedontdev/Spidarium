@@ -6,6 +6,7 @@
 #include "decor.h"
 #include "game_config.h"
 #include "net.h"
+#include "power.h"
 #include "sd.h"
 
 #include "esp_log.h"
@@ -20,6 +21,7 @@
 #include <string.h>
 #include <stdatomic.h>
 #include <math.h>
+#include <time.h>
 
 static const char *TAG = "spidarium.save";
 
@@ -51,6 +53,7 @@ typedef struct {
     uint8_t sd_operation;
     bool background;
     uint8_t background_id;
+    uint32_t sleep_seconds;
     sd_screenshot_t screenshot;
     uint8_t payload[SAVE_MAX_PAYLOAD];
 } save_job_t;
@@ -101,6 +104,14 @@ static void migrate_automation(game_state_t *state, uint16_t version)
         decor_clear_slots(state->decor, DECOR_SLOTS);
         state->decor_owned = 0;
     }
+    if (version < 9) {
+        state->backgrounds_owned = 1u;
+        state->background_id = 255;
+        state->power_mode = 0;
+        state->screen_timeout = 3;
+        state->deep_sleep_after = 0;
+        state->rtc_wake = 0;
+    }
 }
 
 static void save_worker(void *arg)
@@ -130,6 +141,11 @@ static void save_worker(void *arg)
                       job.sd_operation == SD_JOB_SCREENSHOT ? &job.screenshot : NULL) :
                   job.erase ? save_erase() : save_save(job.payload, job.size);
         atomic_store(&s_last_ok, ok);
+        if (job.sleep_seconds) {
+            if (ok) ok = power_enter_deep_sleep(job.sleep_seconds);
+            atomic_store(&s_last_ok, ok);
+            power_sleep_failed();
+        }
         if (job.sd_operation == SD_JOB_SCREENSHOT) heap_caps_free(job.screenshot.pixels);
         if (job.raw && !ok) atomic_store(&s_restore_pending, false);
         atomic_store(&s_writing, false);
@@ -156,6 +172,10 @@ bool save_init(void)
 
 static bool queue_save(const save_job_t *job)
 {
+    if (power_sleep_pending() && !job->sleep_seconds) {
+        ESP_LOGW(TAG, "save request rejected: deep sleep pending");
+        return false;
+    }
     if (!job->raw && atomic_load(&s_restore_pending)) {
         ESP_LOGW(TAG, "save request rejected: restored save awaiting reboot");
         return false;
@@ -187,6 +207,15 @@ bool save_request(const void *src, size_t size)
     }
     save_job_t job = { .size = size };
     memcpy(job.payload, src, size);
+    return queue_save(&job);
+}
+bool save_request_sleep(uint32_t seconds)
+{
+    save_job_t job = { .size = sizeof g, .sleep_seconds = seconds };
+    game_state_t snapshot = g;
+    time_t now = time(NULL);
+    if (now >= 946684800) snapshot.last_seen = (uint32_t)now;
+    memcpy(job.payload, &snapshot, sizeof snapshot);
     return queue_save(&job);
 }
 bool save_request_erase(void) { return queue_save(&(save_job_t){ .erase = true }); }
@@ -308,7 +337,7 @@ bool save_load(void *dst, size_t size)
         return false;
     }
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
-        hdr.version != 6 && hdr.version != 7) {
+        hdr.version != 6 && hdr.version != 7 && hdr.version != 8) {
         ESP_LOGW(TAG, "save version %u != %u; rejecting",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
@@ -322,12 +351,14 @@ bool save_load(void *dst, size_t size)
     bool v5 = size == sizeof(game_state_t) && hdr.size == SAVE_V5_PAYLOAD;
     bool v6 = size == sizeof(game_state_t) && hdr.size == SAVE_V6_PAYLOAD;
     bool v7 = size == sizeof(game_state_t) && hdr.size == SAVE_V7_PAYLOAD;
-    if (hdr.size != size && !legacy && !v5 && !v6 && !v7) {
+    bool v8 = size == sizeof(game_state_t) && hdr.size == SAVE_V8_PAYLOAD;
+    if (hdr.size != size && !legacy && !v5 && !v6 && !v7 && !v8) {
         ESP_LOGW(TAG, "save size %u != %u; rejecting",
                  (unsigned)hdr.size, (unsigned)size);
         return false;
     }
-    if (len != sizeof(save_header_t) + hdr.size) {
+    if (len != sizeof(save_header_t) + hdr.size ||
+        (hdr.version >= 9 && hdr.size != sizeof(game_state_t))) {
         ESP_LOGW(TAG, "save blob length %u != %u; rejecting",
                  (unsigned)len, (unsigned)(sizeof(save_header_t) + hdr.size));
         return false;
@@ -457,14 +488,14 @@ bool save_raw_valid(const void *src, size_t len)
         return false;
     }
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
-        hdr.version != 6 && hdr.version != 7) {
+        hdr.version != 6 && hdr.version != 7 && hdr.version != 8) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
     if (hdr.size != sizeof(game_state_t) && hdr.size != offsetof(game_state_t, silk) &&
         hdr.size != SAVE_V5_PAYLOAD && hdr.size != SAVE_V6_PAYLOAD &&
-        hdr.size != SAVE_V7_PAYLOAD) {
+        hdr.size != SAVE_V7_PAYLOAD && hdr.size != SAVE_V8_PAYLOAD) {
         ESP_LOGW(TAG, "raw write: game-state size %u != %u",
                  (unsigned)hdr.size, (unsigned)sizeof(game_state_t));
         return false;
@@ -482,9 +513,14 @@ bool save_raw_valid(const void *src, size_t len)
         (state.gift.used && state.gift.kind >= GIFT_KINDS) ||
         state.bond > 100 || !memchr(state.name, 0, sizeof state.name) ||
         !isfinite(state.spider_heading) || state.state > SPIDER_SICK ||
-        (hdr.version == SAVE_VERSION && (state.auto_feed > 1 || state.auto_hunt > 1)) ||
+        (hdr.version >= 3 && (state.auto_feed > 1 || state.auto_hunt > 1)) ||
         (hdr.version >= 4 && state.volume > 100) ||
-        (hdr.size == sizeof state && (state.brightness < 10 || state.brightness > 100))) {
+        (hdr.size >= SAVE_V5_PAYLOAD && (state.brightness < 10 || state.brightness > 100)) ||
+        (hdr.version >= 9 && (state.background_id >= 16 || state.backgrounds_owned > 65535 ||
+         !(state.backgrounds_owned & 1u) ||
+         !(state.backgrounds_owned & (1u << state.background_id)) ||
+         state.power_mode > 2 || state.screen_timeout > 4 ||
+         state.deep_sleep_after > 4 || state.rtc_wake > 2))) {
         ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
         return false;
     }
@@ -545,6 +581,7 @@ bool save_format_test(void)
     memcpy(blob + sizeof header, &state, sizeof state);
     ok = save_raw_valid(blob, sizeof blob) && ok;
     memcpy(blob + sizeof header, &g, sizeof g);
+    header.version = 2;
     header.size = offsetof(game_state_t, silk);
     memcpy(blob, &header, sizeof header);
     ok = save_raw_valid(blob, sizeof header + header.size) && ok;
@@ -611,5 +648,15 @@ bool save_format_test(void)
     for (int i = 0; i < DECOR_SLOTS; i++)
         decor_empty = decor_empty && migrated.decor[i].kind == 0xFF;
     ok = decor_empty && ok;
+    header.version = 8;
+    header.size = SAVE_V8_PAYLOAD;
+    memcpy(blob, &header, sizeof header);
+    memcpy(blob + sizeof header, &g, SAVE_V8_PAYLOAD);
+    ok = save_raw_valid(blob, sizeof header + SAVE_V8_PAYLOAD) && ok;
+    migrated = g;
+    migrate_automation(&migrated, 8);
+    ok = migrated.backgrounds_owned == 1 && migrated.background_id == 255 &&
+         migrated.screen_timeout == 3 && migrated.deep_sleep_after == 0 &&
+         migrated.power_mode == 0 && migrated.rtc_wake == 0 && ok;
     return ok;
 }

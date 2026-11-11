@@ -41,7 +41,8 @@
 .d-stat-bar span { display:block; height:100%; }
 .d-overlay { position:absolute; inset:0; background:#0a1220; pointer-events:auto; }
 .d-panel { position:absolute; left:40px; top:40px; width:400px; height:400px; background:#16283c; border:2px solid #b99b67; border-radius:2px; box-shadow:inset 2px 2px 0 #395873,inset -2px -2px 0 #0a1220; }
-.d-panel::before { content:''; position:absolute; left:12px; top:68px; width:376px; height:2px; background:#76d6b1; }
+.d-panel::before { content:''; position:absolute; left:120px; top:60px; width:264px; height:4px; background:#b99b67; box-shadow:0 2px 0 #0a1220; pointer-events:none; }
+.d-panel::after { content:''; position:absolute; left:4px; top:4px; width:4px; height:4px; background:#b99b67; box-shadow:384px 0 #b99b67,0 384px #b99b67,384px 384px #b99b67; pointer-events:none; }
 .d-heading { position:absolute; left:120px; top:30px; right:10px; font-size:18px; margin:0; line-height:22px; white-space:pre-line; }
 .game-screen .d-row { left:12px; width:376px; height:76px; align-items:stretch; text-align:left; background:#24405a; }
 .game-screen .d-row.selected { background:#2b6a5f; border-color:#76d6b1; box-shadow:inset 4px 0 0 #76d6b1,inset -2px -2px 0 #0a1220; }
@@ -51,7 +52,10 @@
 .d-row.multi .row-label { top:2px; }
 .d-row.multi .row-detail { top:26px; }
 .d-row.has-icon .row-label, .d-row.has-icon .row-detail { left:72px; }
-.game-screen .d-row img { position:absolute; left:12px; top:12px; width:48px; height:48px; }
+.game-screen .d-row img { position:absolute; left:12px; top:12px; width:48px; height:48px; object-fit:contain; background:#101f30; border:2px solid #b99b67; padding:2px; box-shadow:2px 2px 0 #0a1220; }
+.d-row .row-label { text-shadow:1px 2px #0a1220; }
+.d-panel > .d-button:not(.d-row) { border-color:#b99b67; }
+.d-heading { color:#e4c990; text-shadow:2px 2px #0a1220; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .d-row .row-marker { position:absolute; right:14px; top:27px; }
 .d-row input[type=checkbox] { position:absolute; right:14px; top:25px; width:24px; height:24px; accent-color:#76d6b1; pointer-events:none; }
 .d-row input[type=range].d-slider { position:absolute; left:14px; right:14px; bottom:8px; width:calc(100% - 28px); height:20px; accent-color:#76d6b1; pointer-events:auto; }

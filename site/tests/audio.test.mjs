@@ -98,15 +98,14 @@ test('mute and volume apply during menus and to already playing sources', () => 
   assert.equal(sound.sources.size, count, 'mute prevents new playback');
 });
 
-test('automatic ambience never schedules pet chirps or foreground jump sounds', () => {
+test('automatic ambience stays silent after the rejected noise textures', () => {
   const sound = audio(), effects = [];
   sound.play = effect => effects.push(effect);
   for (let i = 1; i <= 20; i++) sound.tick('idle', i * 21000, true);
-  assert.equal(effects.length, 20);
-  assert.ok(effects.every(effect => ['rustle', 'drop'].includes(effect)));
+  assert.equal(effects.length, 0);
   sound.tick('pounce', 500000, true);
   assert.equal(effects.at(-1), 'pounce');
-  assert.equal(effects.length, 21, 'no ambient trigger during a pounce');
+  assert.equal(effects.length, 1, 'foreground effects still work without automatic ambience');
 });
 
 test('unchanged per-frame settings do not accumulate gain automation events', () => {

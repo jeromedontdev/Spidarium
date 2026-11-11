@@ -107,9 +107,5 @@ export class DeviceAudio {
     this.settings(enabled, volume);
     if (enabled && active && state !== this.previous && ['eat', 'pounce', 'molt', 'aim'].includes(state)) this.play(state);
     this.previous = state;
-    if (!active || now < this.nextAmbient) return;
-    this.nextAmbient = now + 14000 + Math.floor(Math.random() * 6000);
-    if (enabled && now >= this.until && !['aim', 'pounce', 'eat'].includes(state))
-      this.play(Math.random() < .5 ? 'rustle' : 'drop');
   }
 }

@@ -1,6 +1,6 @@
 const widths = { u8: 1, u16: 2, u32: 4, i16: 2, i32: 4, f32: 4 };
 const getters = { u8: 'getUint8', u16: 'getUint16', u32: 'getUint32', i16: 'getInt16', i32: 'getInt32', f32: 'getFloat32' };
-const payloadByVersion = { 2: 132, 3: 132, 4: 132, 5: 136, 6: 152, 7: 160, 8: 236 };
+const payloadByVersion = { 2: 132, 3: 132, 4: 132, 5: 136, 6: 152, 7: 160, 8: 236, 9: 248 };
 const fieldWidth = field => field.type === 'string' ? field.length :
   field.type === 'decor[12]' && field.length === 72 ? 72 : widths[field.type];
 
@@ -12,8 +12,8 @@ export const toHex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, 
 
 export function validateSchema(schema) {
   if (!schema || !Number.isInteger(schema.magic) || schema.magic < 0 || schema.magic > 0xffffffff ||
-      ![0, 1, 2, 3, 4, 5, 6, 7, 8].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
-      !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 236) ||
+      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
+      !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 248) ||
       !Array.isArray(schema.fields)) throw new Error('Unsupported save schema');
   const names = new Set();
   for (const field of schema.fields) {
@@ -62,7 +62,14 @@ export function decodeSave(bytes, schema) {
     if (typeof fields[field.name] === 'number' && !Number.isFinite(fields[field.name])) throw new Error(`Invalid number in ${field.name}`);
     if (['auto_feed', 'auto_hunt'].includes(field.name) && fields[field.name] > 1) throw new Error(`Invalid checkbox in ${field.name}`);
     if (field.name === 'volume' && fields.volume > 100) throw new Error('Invalid volume in save');
+    const powerLimits = { power_mode: 2, screen_timeout: 4, deep_sleep_after: 4, rtc_wake: 2 };
+    if (field.name in powerLimits && fields[field.name] > powerLimits[field.name])
+      throw new Error(`Invalid ${field.name} in save`);
   }
+  if (header.version >= 9 &&
+      (fields.background_id > 15 || !(fields.backgrounds_owned & 1) ||
+       fields.backgrounds_owned > 0xffff || !(fields.backgrounds_owned & (1 << fields.background_id))))
+    throw new Error('Invalid background ownership in save');
   return { header, fields };
 }
 

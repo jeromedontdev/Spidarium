@@ -462,139 +462,91 @@ def _shade_materials(image, materials):
     return image
 
 
-def _draw_added_prey(species, anim, frame):
-    """Small fly, antenna-led roach, and two contrasting segmented larvae."""
+def _draw_larva(species, anim, frame):
+    """Fixed head/thorax with a small abdominal wave, not a zigzagging body."""
     img, d = _pixel_canvas(24, 24)
     body, dark, highlight = map(_rgba, PREY_COLORS[species])
-    gait = 1 if frame == 0 else -1
-    stride = gait * (2 if anim == "flee" else 1)
-    if species == "roach":
+    plump = species == "waxworm"
+    radius = 3 if plump else 2
+    phase = 1 if frame else -1
+    for x in (14, 16, 18):
         for side in (-1, 1):
-            for x in (7, 11, 15):
-                tip_y = 12 + side * 7
-                d.line([(x, 12 + side * 2), (x - 2, 12 + side * 4),
-                        (x - stride - 2, tip_y)], fill=INK)
-            d.line([(17, 12 + side), (20, 12 + side * (3 + gait)),
-                    (23, 12 + side * (7 + gait))], fill=dark)
-        _shape(d, [(3, 11), (5, 8), (10, 7), (15, 8), (18, 10),
-                   (18, 14), (15, 16), (10, 17), (5, 16), (3, 13)], body)
-        d.line([(5, 12), (15, 12)], fill=dark)
-        d.line([(6, 9), (11, 9)], fill=highlight)
-        d.line([(6, 15), (11, 15)], fill=dark)
-        _octagon(d, (14, 9, 18, 15), dark, 1)
-        d.line([(15, 10), (16, 10)], fill=highlight)
-        eye = (17, 11)
-    elif species == "fruitfly":
-        spread = 1 if anim == "flee" and frame == 0 else 0
-        for side in (-1, 1):
-            wing_y = 12 + side * (4 + spread)
-            _shape(d, [(10, 12), (8, wing_y), (9, wing_y + side),
-                       (12, wing_y + side), (14, 12)], highlight)
-            d.point((10, wing_y), fill=CREAM)
-            for x in (11, 13):
-                d.line([(x, 12 + side), (x - stride, 12 + side * 4)],
-                       fill=INK)
-        _octagon(d, (9, 10, 13, 14), body, 1)
-        d.line([(10, 12), (12, 12)], fill=dark)
-        _octagon(d, (13, 10, 16, 14), dark, 1)
-        d.point((15, 10), fill=_rgba(0xDB534A))
-        d.point((15, 14), fill=_rgba(0xDB534A))
-        eye = (16, 12)
-    else:
-        plump = species == "waxworm"
-        radius = 3 if plump else 2
-        start = 4 if plump else 3
-        centers = [(x, 12 + (stride if x < 9 else -stride if x > 14 else 0))
-                   for x in range(start, 18, 3)]
-        for index, (x, y) in enumerate(centers):
-            if plump or index >= len(centers) - 3:
-                for side in (-1, 1):
-                    d.line([(x, y + side * radius),
-                            (x - gait, y + side * (radius + 1))], fill=dark)
-        for x, y in centers:
-            _octagon(d, (x - 2, y - radius, x + 2, y + radius), body, 1)
-            d.line([(x + 1, y - radius + 1), (x + 1, y + radius - 1)], fill=dark)
-            d.line([(x - 1, y - radius + 1), (x, y - radius + 1)], fill=highlight)
-        head_y = centers[-1][1]
-        _octagon(d, (17, head_y - 2, 20, head_y + 2), dark, 1)
-        d.point((18, head_y - 1), fill=body)
-        eye = (19, head_y)
-    d.point(eye, fill=CREAM)
+            d.line([(x, 12 + side * radius),
+                    (x + phase, 12 + side * (radius + 2))], fill=INK)
+    if plump:
+        for x in (5, 8, 11):
+            for side in (-1, 1):
+                d.rectangle((x, 12 + side * 4, x + 1, 12 + side * 4), fill=dark)
+    for x in range(4, 18, 2):
+        y = 12 + (phase if x < 10 else 0)
+        segment_radius = 2 if x < 8 else radius
+        _octagon(d, (x - 1, y - segment_radius, x + 2, y + segment_radius), body, 1)
+        d.line([(x + 1, y - segment_radius + 1), (x + 1, y + segment_radius - 1)], fill=dark)
+        d.point((x, y - segment_radius + 1), fill=highlight)
+    _octagon(d, (17, 10, 20, 14), dark, 1)
+    d.point((18, 10), fill=body)
+    d.point((19, 11), fill=CREAM)
     return _enlarge(_shade_materials(img, (body, dark, highlight)))
 
 
+def prey_leg_paths(species, frame):
+    """Six thoracic legs; alternating left/right tripod feet, fixed roots."""
+    paths = []
+    phase = 1 if frame else -1
+    for side in (-1, 1):
+        for pair, root in enumerate((12, 14, 16)):
+            stride = phase * (1 if (pair + (side > 0)) % 2 else -1)
+            knee_x = root + (-3, -1, 2)[pair]
+            foot_x = root + (-5, -1, 4)[pair] + stride
+            if species == "cricket" and pair == 0:
+                knee_x, foot_x = 6, 4 + stride
+            paths.append([(root, 12 + side),
+                          (knee_x, 12 + side * (6 if species == "cricket" and pair == 0 else 4)),
+                          (foot_x, 12 + side * 7)])
+    return paths
+
+
 def draw_prey(species, anim, frame):
-    """Eight readable top-down prey with crisp shaded body and wing materials."""
+    """Thorax-attached legs, stable bodies and species-specific wing poses."""
     if anim == "dead":
         return draw_splatter(species)
-    if species in ("roach", "mealworm", "fruitfly", "waxworm"):
-        return _draw_added_prey(species, anim, frame)
+    if species in ("mealworm", "waxworm"):
+        return _draw_larva(species, anim, frame)
     img, d = _pixel_canvas(24, 24)
     body, dark, wing = map(_rgba, PREY_COLORS[species])
-    gait = 1 if frame == 0 else -1
-    spread = 2 if anim == "flee" and frame == 0 else 0
-
-    if species == "fly":
+    for index, path in enumerate(prey_leg_paths(species, frame)):
+        d.line(path, fill=INK)
+        if species == "cricket" and index % 3 == 0:
+            d.line(path[:2], fill=dark, width=2)
+    if species in ("fly", "fruitfly", "moth"):
+        spread = (1 if frame else 0) + (1 if anim == "flee" else 0)
         for side in (-1, 1):
-            y = 12 + side * (4 + spread)
-            _shape(d, [(8, 12), (5, y), (6, y + side * 2),
-                       (10, y + side * 2), (14, 12)], wing)
-            d.line([(7, y), (11, y)], fill=CREAM)
-    elif species == "moth":
-        for side in (-1, 1):
-            y = 12 + side * (7 + spread)
-            _shape(d, [(12, 11), (5, y), (3, y + side), (3, 12 + side * 3),
-                       (6, 12 + side), (5, 12), (10, 11)], wing)
-            d.line([(4, 12 + side * 4), (8, 12 + side * 4)], fill=dark, width=2)
-            d.point((6, 12 + side * 5), fill=CREAM)
-
-    for side in (-1, 1):
-        for x in (8, 11, 14):
-            tip = 12 + side * 7
-            d.line([(x, 12 + side * 2), (x - 1, 12 + side * 4),
-                    (x - gait, tip)], fill=INK)
-
-    if species == "cricket":
-        for side in (-1, 1):
-            y = 12 + side * (8 + gait)
-            d.line([(8, 12 + side), (3, 12 + side * 4), (5, y),
-                    (1, y)], fill=INK, width=2)
-            d.line([(15, 11), (19, 7 if side < 0 else 17),
-                    (22, 6 if side < 0 else 18)], fill=dark)
-        _shape(d, [(5, 10), (13, 9), (17, 11), (17, 13), (13, 15),
-                   (5, 14), (3, 12)], body)
-        d.line([(6, 11), (13, 11)], fill=wing)
-        d.line([(6, 13), (12, 13)], fill=dark)
-        _octagon(d, (14, 10, 18, 14), dark, 1)
-        eye = (16, 11)
-    elif species == "beetle":
-        _octagon(d, (5, 6, 15, 18), body, 3)
-        d.line([(10, 7), (10, 17)], fill=dark)
-        d.line([(7, 8), (7, 11)], fill=wing)
-        d.line([(13, 14), (13, 16)], fill=dark)
-        _octagon(d, (14, 9, 18, 15), dark, 1)
-        for side in (-1, 1):
-            d.line([(17, 11 if side < 0 else 13),
-                    (20, 8 if side < 0 else 16)], fill=INK)
-        eye = (16, 10)
-    elif species == "moth":
-        _octagon(d, (7, 10, 18, 14), body, 1)
-        d.rectangle((9, 11, 14, 13), fill=dark)
-        for x in (9, 11, 13):
-            d.point((x, 12), fill=wing)
-        for side in (-1, 1):
-            d.line([(17, 12), (20, 9 if side < 0 else 15),
-                    (21, 8 if side < 0 else 16)], fill=INK)
-        eye = (17, 11)
+            extent = (7 if species == "moth" else 4) + spread
+            y = 12 + side * extent
+            _shape(d, [(14, 12), (9, y), (5 if species == "moth" else 8, y),
+                       (6, 12 + side * 3), (11, 12 + side)], wing)
+            d.line([(9, y), (12, 12 + side * 2)], fill=dark)
+            d.point((9, y - side), fill=CREAM)
+    if species in ("beetle", "roach"):
+        _octagon(d, (4, 8, 14, 16), body, 2)
+        d.line([(5, 12), (13, 12)], fill=dark)
+        d.line([(6, 9), (11, 9)], fill=wing)
+        d.line([(6, 15), (11, 15)], fill=dark)
     else:
-        _octagon(d, (7, 9, 15, 15), dark, 2)
-        d.rectangle((9, 10, 12, 14), fill=body)
-        d.line([(9, 12), (12, 12)], fill=dark)
-        _octagon(d, (14, 9, 18, 15), body, 1)
-        d.rectangle((16, 10, 17, 11), fill=_rgba(0xD5634D))
-        d.rectangle((16, 13, 17, 14), fill=_rgba(0xD5634D))
-        eye = (16, 10)
-    d.point(eye, fill=CREAM)
+        _octagon(d, (6, 10, 13, 14), body, 1)
+        d.line([(7, 11), (12, 11)], fill=wing)
+        d.line([(8, 13), (12, 13)], fill=dark)
+    _octagon(d, (12, 10, 16, 14), dark, 1)
+    d.line([(13, 10), (15, 10)], fill=wing)
+    _octagon(d, (16, 10, 19, 14), body, 1)
+    d.point((18, 11), fill=CREAM)
+    if species in ("fly", "fruitfly"):
+        d.point((18, 10), fill=_rgba(0xD5634D))
+        d.point((18, 14), fill=_rgba(0xD5634D))
+    for side in (-1, 1):
+        reach = 4 if species in ("roach", "cricket") else 2
+        d.line([(18, 12 + side), (21, 12 + side * reach),
+                (22, 12 + side * (reach + 1))], fill=INK)
     return _enlarge(_shade_materials(img, (body, dark, wing)))
 
 

@@ -54,6 +54,27 @@ const theme_def_t *theme_current(void)
     return theme_get(s_current);
 }
 
+static const uint16_t k_costs[THEME_COUNT] = {
+    0, 12, 12, 16, 20, 24, 28, 16, 32, 40, 28, 24, 32, 36, 48, 48
+};
+
+uint16_t theme_cost(uint8_t id) { return id < THEME_COUNT ? k_costs[id] : 0; }
+bool theme_owned(uint8_t id)
+{
+    return id < THEME_COUNT && (g.backgrounds_owned & (1u << id));
+}
+
+void theme_restore(void)
+{
+    /* Honour the former separate preference once, without charging for the
+     * player's currently equipped habitat during v8 migration. */
+    if (g.background_id == 255 && s_current < THEME_COUNT)
+        g.background_id = s_current;
+    if (g.background_id >= THEME_COUNT) g.background_id = 0;
+    g.backgrounds_owned = (g.backgrounds_owned & 65535u) | 1u | (1u << g.background_id);
+    s_current = g.background_id;
+}
+
 bool theme_unlocked(uint8_t id)
 {
     return g.level >= theme_get(id)->unlock_level;
@@ -65,8 +86,16 @@ bool theme_set(uint8_t id)
         ESP_LOGW("spidarium.theme", "background rejected: invalid or locked");
         return false;
     }
-    if (id == s_current) return true;
-    if (!save_request_background(id)) return false;
+    uint16_t cost = theme_owned(id) ? 0 : theme_cost(id);
+    if (g.silk < cost) {
+        ESP_LOGW("spidarium.theme", "background rejected: need %u Silk", cost);
+        return false;
+    }
+    game_state_t snapshot = g;
+    g.silk -= cost;
+    g.backgrounds_owned |= 1u << id;
+    g.background_id = id;
+    if (!save_request(&g, sizeof g)) { g = snapshot; return false; }
     s_current = id;
     return true;
 }
@@ -77,7 +106,7 @@ uint8_t theme_next(void)
      * current one, wrap to the first unlocked. */
     for (int i = 1; i <= THEME_COUNT; i++) {
         uint8_t cand = (uint8_t)((s_current + i) % THEME_COUNT);
-        if (theme_unlocked(cand)) {
+        if (theme_unlocked(cand) && theme_owned(cand)) {
             if (theme_set(cand)) return s_current;
             break;
         }

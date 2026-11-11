@@ -1,5 +1,32 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.18: habitat controls and prey movement
+
+Automatic ambience is disabled on both platforms, superseding the scheduling
+below; manual diagnostic textures and foreground effects remain available.
+Decor long press tolerates up to 12 pixels of finger jitter; a real drag cancels
+the hold. Arrange Decor and Placed Gift provide discoverable alternatives.
+Gift movement keeps variant, ownership, effective bonus and Silk unchanged.
+Placement release cannot also pet or pounce.
+
+Menus share framed icons, pixel rivets and a gold header ornament clear of Back.
+Daily rows have task icons and Backgrounds uses real habitat thumbnails.
+Sixteen backgrounds cost 0-48 Silk, bought once; re-equipping owned themes is
+free. v8 migration retains the old equipped background plus cork.
+Save v9 appends ownership/selection and power preferences without changing
+older offsets. The actual compiled schema has 41 fields and a 248-byte payload.
+
+Ground bug frames follow distance traveled, with planted feet during cricket
+rests and flee recovery. Winged prey retain timed wing beats. Both renderers
+turn the right-facing art in eight headings without antialiasing and display
+the full 48x48 asset. Caught prey resolve the splatter, not a living pose.
+Six thoracic legs alternate tripods; larvae keep short true legs near the head.
+Spider geometry, exports and renderer remain unchanged.
+
+The browser stores the same Battery preferences, but labels them Device
+Preference. It does not emulate ESP32 deep sleep, PMIC data or physical wake.
+See [battery management](BATTERY_MANAGEMENT.md).
+
 ## v1.1.17: quiet environmental audio
 
 Native/browser synthesis now shares eight-second filtered air and ten-second

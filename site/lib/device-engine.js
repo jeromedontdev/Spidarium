@@ -74,6 +74,16 @@ export function preySprite(species,dead=false,frame=0) {
 }
 export const BACKGROUNDS = ['cork','moss','leaf_litter','sand','fern','orchid','woodland','minimal',
   'mushroom','gothic','seashell','succulent','willow','desert','crystal','cemetery'];
+export const BACKGROUND_COSTS = [0,12,12,16,20,24,28,16,32,40,28,24,32,36,48,48];
+export function backgroundOwned(s,id) {
+  return Number.isInteger(id)&&id>=0&&id<BACKGROUNDS.length&&!!(s.backgrounds_owned&(1<<id));
+}
+export function buyBackground(s,id) {
+  if(!Number.isInteger(id)||!BACKGROUNDS[id])return event(s,'rejected',{reason:'unknown background'});
+  const cost=backgroundOwned(s,id)?0:BACKGROUND_COSTS[id];
+  if(s.silk<cost)return event(s,'rejected',{reason:'not enough Silk'});
+  s.silk-=cost;s.backgrounds_owned|=1<<id;s.background=BACKGROUNDS[id];return true;
+}
 const bonusKeys = ['energy_regen_mult','hygiene_decay_mult','pounce_range_mult','aim_window_mult','wild_spawn_bonus',
   'pounce_success_mult','movement_efficiency_mult','mood_mult','fear_mult','prey_flee_penalty',
   'catch_success_mult','prey_detection_range_mult','all_stats_decay_mult','bonus_synergy_mult'];
@@ -170,12 +180,13 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:8,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:9,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
     temperament:0,bond:0,name:'',colour:0,pupil_colour:0,leg_colour:2,fang_colour:1,
-    silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,last_seen:0,background:'moss',
+    silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,last_seen:0,background:'cork',
+    backgrounds_owned:1,power_mode:0,screen_timeout:3,deep_sleep_after:0,rtc_wake:0,
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
     daily_override:0xFFFFFFFF,pet_xp_day:0xFFFFFFFF,pet_xp_today:0,
     decor_owned:0,decor:Array.from({length:DECOR_SLOTS},()=>({kind:DECOR_EMPTY,blocking:0,x:0,y:0})),
@@ -219,7 +230,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -248,6 +259,12 @@ export function validateProgress(raw) {
     if(Object.hasOwn(raw,key)&&!BACKGROUNDS.includes(raw[key]))fail(`${key} is unknown`);
   number('brightness',legacy?0:10,100,!legacy);number('battery',0,100,false);
   number('volume',0,100);
+  number('backgrounds_owned',1,65535);
+  number('power_mode',0,2);number('screen_timeout',0,4);
+  number('deep_sleep_after',0,4);number('rtc_wake',0,2);
+  if(raw.version>=9&&(!Number.isInteger(raw.backgrounds_owned)||
+      !(raw.backgrounds_owned&(1<<BACKGROUNDS.indexOf(raw.background??raw.theme)))))
+    fail('selected background must be owned');
   number('daily_day',0,U32);number('daily_base_day',0,U32);
   number('daily_task_base',0,U32);number('daily_streak',0,255);number('daily_task_done',0,1);
   number('pet_xp_day',0,U32);number('pet_xp_today',0,255);
@@ -348,6 +365,9 @@ export function restoreSim(raw,options={}) {
     });
   s.sick=raw.sick===1?1:0;s.muted=raw.muted===true||raw.muted===1?1:0;
   if(BACKGROUNDS.includes(raw.background??raw.theme))s.background=raw.background??raw.theme;
+  s.backgrounds_owned=raw.version>=9?raw.backgrounds_owned:1|(1<<BACKGROUNDS.indexOf(s.background));
+  for(const key of ['power_mode','screen_timeout','deep_sleep_after','rtc_wake'])
+    if(Number.isInteger(raw[key]))s[key]=raw[key];
   if(typeof raw.sound==='boolean')s.muted=raw.sound?0:1;
   if(Number.isFinite(raw.brightness))s.brightness=clamp(Math.trunc(raw.brightness),10,100);
   if(Number.isFinite(raw.volume))s.volume=clamp(Math.trunc(raw.volume),0,100);
@@ -401,7 +421,7 @@ export function spawnPrey(s,id=chooseSpecies(s),wild=false) {
   if(slot<0){if(s.prey.length>=3)return event(s,'rejected',{reason:'maximum 3 prey'});slot=s.prey.length;}
   const direction=random(s)*TAU-PI;
   const p={alive:true,dead:false,fleeing:false,wild,species:id,key:PREY[id],frame:0,
-    frame_at:runtime(s).now_ms,retarget_at:0,dead_at:0,poop_at:runtime(s).now_ms+C.BUG_POOP_MS,
+    frame_at:runtime(s).now_ms,gait_distance:0,retarget_at:0,dead_at:0,poop_at:runtime(s).now_ms+C.BUG_POOP_MS,
     wander_dir:direction,heading:direction,x:0,y:0};
   for(let n=0;n<12;n++){p.x=34+roll(s,412);p.y=34+roll(s,412);if(Math.hypot(p.x-s.spider_x,p.y-s.spider_y)>90)break;}
   s.prey[slot]=p;return true;
@@ -619,7 +639,8 @@ export function decorHitTest(s,x,y){
     const d=DECOR_KINDS[item.kind];
     if(!d)continue;
     const dx=x-item.x,dy=y-item.y;
-    if(dx*dx+dy*dy<=d.radius*d.radius)return i;
+    const hit=Math.max(28,d.radius);
+    if(dx*dx+dy*dy<=hit*hit)return i;
   }
   return -1;
 }
@@ -703,6 +724,14 @@ export function purchaseGift(s,id){
 export function placeGift(s,id,x=315,y=330) {
   if(!purchaseGift(s,id))return false;
   s.gift={kind:id,variant:0,used:1,x:round(clamp(x,34,446)),y:round(clamp(y,34,446))};return true;
+}
+export function moveGift(s,x,y) {
+  if(!s.gift.used)return event(s,'rejected',{reason:'no placed gift'});
+  s.gift.x=round(clamp(x,34,446));s.gift.y=round(clamp(y,34,446));
+  runtime(s).gift_visiting=false;return true;
+}
+export function giftHitTest(s,x,y) {
+  return !!s.gift.used&&Math.abs(x-s.gift.x)<=32&&Math.abs(y-s.gift.y)<=32;
 }
 export function removeGift(s){s.gift.used=0;runtime(s).gift_visiting=false;return true;}
 export function visitGift(s){
@@ -1016,7 +1045,7 @@ function preyTick(s,dt){
       addBugPoop(s,p.x+roll(s,13)-6,p.y+roll(s,13)-6);
     }
     if(runtime(s).drag&&aimAvailable(s))continue;
-    const sp=SPECIES[p.species],dx=p.x-s.spider_x,dy=p.y-s.spider_y,d=Math.hypot(dx,dy);
+    const oldX=p.x,oldY=p.y,sp=SPECIES[p.species],dx=p.x-s.spider_x,dy=p.y-s.spider_y,d=Math.hypot(dx,dy);
     const fleeR=Math.min(102,70*alert*sp.flee_radius_mult*(p.wild?1.25:1)*b.fear_mult);
     if(d<fleeR&&!s.sick)p.fleeing=true;else if(d>fleeR*1.25)p.fleeing=false;
     let step;
@@ -1035,7 +1064,13 @@ function preyTick(s,dt){
     if(p.x<=34||p.x>=446){p.heading=wrap(PI-p.heading);p.wander_dir=p.heading;}
     if(p.y<=34||p.y>=446){p.heading=wrap(-p.heading);p.wander_dir=p.heading;}
     p.x=clamp(p.x,34,446);p.y=clamp(p.y,34,446);
-    if(now-p.frame_at>=(p.fleeing?70:140)){p.frame_at=now;p.frame=(p.frame+1)&1;}
+    if(['fly','moth','fruitfly'].includes(sp.key)){
+      if(now-p.frame_at>=(p.fleeing?70:140)){p.frame_at=now;p.frame=(p.frame+1)&1;}
+    }else{
+      const distance=Math.hypot(p.x-oldX,p.y-oldY);
+      p.gait_distance=distance>.01?((p.gait_distance??0)+distance)%12:0;
+      p.frame=p.gait_distance>=6?1:0;
+    }
   }
 }
 function syncView(s) {

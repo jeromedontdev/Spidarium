@@ -2,8 +2,8 @@
  * Spidarium — prey.
  *
  * The body and animation are supplied by transparent, top-down sprite assets.
- * The artwork is deliberately orientation-neutral because LVGL matrix support
- * is disabled; movement and heading remain part of the prey simulation.
+ * The authored head faces right. Image rotation (unlike object transforms)
+ * works without LV_USE_MATRIX and follows the simulation heading.
  */
 #include "prey.h"
 
@@ -39,6 +39,7 @@ typedef struct {
     uint32_t       retarget_at;
     float          wander_dir;
     uint32_t       frame_at;
+    float          gait_distance;
     int            frame;
     uint32_t       dead_at;
     uint32_t       poop_at;     /* next time this bug leaves a speckle */
@@ -70,6 +71,23 @@ static void clamp_prey(prey_t *p)
     if (p->x > (float)g_play.right)  p->x = (float)g_play.right;
     if (p->y < (float)g_play.top)    p->y = (float)g_play.top;
     if (p->y > (float)g_play.bottom) p->y = (float)g_play.bottom;
+}
+
+static void advance_pose(prey_t *p, uint32_t now_ms, float distance)
+{
+    bool winged = p->species == PREY_FLY || p->species == PREY_MOTH ||
+                  p->species == PREY_FRUITFLY;
+    if (winged) {
+        if ((now_ms - p->frame_at) >=
+            (p->fleeing ? PREY_FLEE_FRAME_MS : PREY_WALK_FRAME_MS)) {
+            p->frame_at = now_ms;
+            p->frame = (p->frame + 1) & 1;
+        }
+    } else {
+        p->gait_distance = distance > 0.01f
+                         ? fmodf(p->gait_distance + distance, 12.0f) : 0.0f;
+        p->frame = p->gait_distance >= 6.0f;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -114,6 +132,7 @@ static void build_body(prey_t *p)
         lv_obj_set_style_radius(p->root, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_scrollable(p->root, false);
         lv_obj_set_clickable(p->root, false);
+        lv_obj_set_overflow_visible(p->root, true);
     }
 
     if (!p->sprite || !lv_obj_is_valid(p->sprite)) {
@@ -121,6 +140,8 @@ static void build_body(prey_t *p)
         lv_obj_center(p->sprite);
         lv_obj_set_clickable(p->sprite, false);
         lv_obj_set_scrollable(p->sprite, false);
+        lv_image_set_antialias(p->sprite, false);
+        lv_image_set_pivot(p->sprite, PREY_PIVOT_X, PREY_PIVOT_Y);
         p->sprite_index = -1;
     }
     update_sprite(p);
@@ -176,6 +197,7 @@ bool prey_spawn_species_ex(prey_species_t species, bool wild)
     p->frame       = 0;
     p->sprite_index = -1;
     p->frame_at    = lv_tick_get();
+    p->gait_distance = 0;
     p->retarget_at = 0;
     p->dead_at     = 0;
     p->poop_at     = lv_tick_get() + BUG_POOP_MS;
@@ -228,6 +250,15 @@ bool prey_progression_test(void)
         g.level = levels[stage];
         ok = prey_spawn_species(stage) && ok;
         ok = ok && prey_count() == 1 && s_prey[0].species == stage;
+        s_prey[0].heading = PI_F / 2.0f;
+        prey_render(lv_tick_get());
+        ok = ok && lv_image_get_rotation(s_prey[0].sprite) == 900;
+        prey_t pose = { .species = stage };
+        advance_pose(&pose, PREY_WALK_FRAME_MS, 7.0f);
+        ok = ok && pose.frame == 1;
+        advance_pose(&pose, PREY_WALK_FRAME_MS + 1, 0.0f);
+        bool winged = stage == PREY_FLY || stage == PREY_MOTH || stage == PREY_FRUITFLY;
+        ok = ok && pose.frame == (winged ? 1 : 0);
         ok = ok && prey_unlocked_species() == stage + 1;
         ok = ok && prey_next_locked_species() ==
             (stage + 1 == PREY_SPECIES_COUNT ? -1 : stage + 1);
@@ -608,6 +639,7 @@ void prey_tick(uint32_t now_ms, float dt_s)
             ESP_LOGI(TAG, "bug %d left a speckle; tank dirt=%d", i, terrarium_dirt());
         }
 
+        float old_x = p->x, old_y = p->y;
         float dx = p->x - (float)g.spider_x;
         float dy = p->y - (float)g.spider_y;
         float d = sqrtf(dx * dx + dy * dy);
@@ -749,12 +781,7 @@ void prey_tick(uint32_t now_ms, float dt_s)
         }
         clamp_prey(p);
 
-        /* Alternate the authored sprite frames so the bug reads as moving. */
-        if ((now_ms - p->frame_at) >=
-            (p->fleeing ? PREY_FLEE_FRAME_MS : PREY_WALK_FRAME_MS)) {
-            p->frame_at = now_ms;
-            p->frame = (p->frame + 1) & 1;
-        }
+        advance_pose(p, now_ms, hypotf(p->x - old_x, p->y - old_y));
     }
 }
 
@@ -767,6 +794,8 @@ void prey_render(uint32_t now_ms)
         if (!p->alive || !p->root) continue;
 
         update_sprite(p);
+        int heading = p->dead ? 0 : (int)lroundf(p->heading * 4.0f / PI_F);
+        lv_image_set_rotation(p->sprite, ((heading + 8) % 8) * 450);
         lv_obj_set_pos(p->root, (int32_t)p->x - PREY_PIVOT_X,
                        (int32_t)p->y - PREY_PIVOT_Y);
     }

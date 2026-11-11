@@ -13,6 +13,8 @@ ink `#0a1220`. Opaque two-pixel borders, square/two-pixel corners and hard inset
 highlights replace gradients, blur and soft shadows. The physical viewport
 shell remains rounded; spider and terrain pixels have no CSS filter effects.
 The existing local Montserrat font is shared with the landing page.
+v1.1.18 adds framed row icons, pixel rivets and a gold header ornament clear
+of Back. Daily actions use care glyphs; backgrounds use real thumbnails.
 
 Disabled controls have dim text and dashed borders; destructive actions use
 red, selection uses mint with an inset marker, and keyboard focus uses a light
@@ -103,6 +105,12 @@ Keyboard: M toggles care, arrows aim, Space releases a pounce. Auto Feed is one
 Settings switch, off by default, that drives both wild prey and unattended
 hunting. Manual feeding and
 aim/release are otherwise required. Gifts cost Silk and unlock by level.
+Hold decor/a gift to move it, or use Arrange Decor / Placed Gift in Menu.
+Gift movement is free and preserves variant/bonus/ownership. Backgrounds cost
+Silk once; cork and reapplying owned themes are free. Save v9 migrates old
+equipment without charging. Automatic ambience is disabled; foreground sound
+and volume/mute remain. Ground prey gait follows travel and plants feet at
+rest; eight-heading sprites use 48x48 native size. The spider is unchanged.
 Achievement rows use the unique native icons; unavailable pages are disabled.
 Promotional spiders are rendered from the same `lib/spider-renderer.js` the game
 uses, so they match the device; each player's chosen colors are preserved.
@@ -116,6 +124,9 @@ WiFi/RTC/OTA, SD-card access and battery/charging telemetry require actual
 hardware. The corresponding browser menus say so: WiFi opens real USB tools,
 SD Card offers browser JSON backup/restore, and Battery and Display does not
 invent voltage or charge readings. Device binary saves remain separate.
+Battery stores profile, screen timeout, idle sleep delay and RTC wake preferences,
+explicitly labeled Device Preference. Deep Sleep Now remains device-only;
+the browser does not emulate MCU power or physical wake.
 
 Progress uses `spidarium.browser-habitat.v1` in localStorage, including names,
 colors, progression and automation preferences. Existing browser saves migrate
@@ -211,8 +222,8 @@ The corrected production page was also verified to render the native 96×96
 canvas, request no obsolete spider-sheet PNGs, default to “SPIDER” with an
 empty name input, and offer Play rather than Pet. Renderer tests compare all
 eight angular leg poses to the exact native C regression fixtures.
-The bundled hardware-compiled 22-field schema is exercised against both
-120-byte legacy and 132-byte current payloads in the save-codec tests.
+The current bundled hardware-compiled v9 schema has 41 fields. Save-codec tests
+exercise the 120-byte legacy and 248-byte current payloads plus v2-v8 prefixes.
 
 Captured screenshots are in `site/screenshots/`: `desktop.png` (whole website),
 `simulator.png` (interactive section), and `mobile.png` (390-CSS-pixel layout).

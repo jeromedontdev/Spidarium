@@ -103,6 +103,22 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing license directory"):
             copy_licenses(source / "missing", destination)
 
+    def test_v9_tail_padding_matches_native_struct_alignment(self):
+        path, schema = self.schema_fixture()
+        (self.build / "main" / "game_config.h").write_text("#define SAVE_VERSION 9\n")
+        schema.update(version=9, payloadSizes=[120, 248])
+        schema["fields"].extend([
+            {"name": "backgrounds_owned", "type": "u32", "length": 0, "offset": 236},
+            {"name": "rtc_wake", "type": "u8", "length": 0, "offset": 244},
+        ])
+        path.write_text(json.dumps(schema))
+        self.assertEqual(validate_save_schema(self.build), path)
+        for size in (245, 246, 252):
+            schema["payloadSizes"][1] = size
+            path.write_text(json.dumps(schema))
+            with self.subTest(size=size), self.assertRaisesRegex(ValueError, "complete current payload"):
+                validate_save_schema(self.build)
+
 
 if __name__ == "__main__":
     unittest.main()

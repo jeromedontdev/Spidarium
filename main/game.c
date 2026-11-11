@@ -54,6 +54,8 @@ playfield_t  g_play;
 uint8_t      g_decor_mode;
 uint8_t      g_decor_selected;
 uint8_t      g_decor_move_slot = 0xFF;
+static bool s_gift_moving;
+static bool s_testing_placement;
 
 static uint32_t s_last_logic;
 static uint32_t s_last_save;
@@ -130,6 +132,7 @@ void game_award(uint32_t achievement)
 
 bool game_save_now(void)
 {
+    if (s_testing_placement) return true;
     bool accepted = save_request(&g, sizeof g);
     if (!accepted) ESP_LOGE(TAG, "game save not queued");
     return accepted;
@@ -153,6 +156,8 @@ static void state_defaults(void)
     g.silk = 20;
     g.brightness = 50;
     g.volume = AUDIO_VOLUME;
+    g.backgrounds_owned = 1u;
+    g.screen_timeout = 3;
 
     /* Sentinel: rolled in game_init() AFTER srand(). Rolling here would give
      * every fresh boot the same temperament, because this runs before the RNG
@@ -191,6 +196,11 @@ static void state_finish_load(void)
     if (g.level == 0) g.level = 1;
     if (g.brightness < 10 || g.brightness > 100) g.brightness = 50;
     if (g.volume > 100) g.volume = AUDIO_VOLUME;
+    if (g.power_mode > 2) g.power_mode = 0;
+    if (g.screen_timeout > 4) g.screen_timeout = 3;
+    if (g.deep_sleep_after > 4) g.deep_sleep_after = 0;
+    if (g.rtc_wake > 2) g.rtc_wake = 0;
+    theme_restore();
     if (g.gift.used && g.gift.kind < GIFT_KINDS)
         g.gifts_owned |= 1u << g.gift.kind;
     if (g.stage > STAGE_ADULT) g.stage = STAGE_SPIDERLING;
@@ -365,6 +375,7 @@ void game_cancel_decor_placement(void)
 /* Called by the HUD when the player taps a kind in the picker. */
 void game_gift_chosen(uint8_t kind)
 {
+    s_gift_moving = false;
     if (kind >= GIFT_KINDS) return;
 
     if (!gift_can_place(kind)) {
@@ -411,6 +422,8 @@ enum {
     MENU_DECOR,
     MENU_DECOR_PLACED,
     MENU_DECOR_ITEM,
+    MENU_GIFT_ITEM,
+    MENU_POWER_CONFIRM,
 };
 
 static void menu_open(int which);
@@ -493,7 +506,11 @@ static void do_factory_reset(void)
 
 static void on_theme_pick(uint8_t id)
 {
-    if (!theme_set(id)) return;
+    if (!theme_set(id)) {
+        ui_hud_bubble("Not Enough Silk", 0xf5c86b, 1800);
+        menu_open(MENU_THEME);
+        return;
+    }
     terrarium_rebuild();
     menu_open(MENU_THEME);   /* stay in the submenu so the choice is visible */
 }
@@ -544,6 +561,8 @@ static void on_main_pick(uint8_t id)
     case MENU_SETTINGS:     menu_open(MENU_SETTINGS);     break;
     case MENU_SPECIES:      menu_open(MENU_SPECIES);      break;
     case MENU_DECOR:        menu_open(MENU_DECOR);        break;
+    case MENU_DECOR_PLACED: menu_open(MENU_DECOR_PLACED); break;
+    case MENU_GIFT_ITEM:    menu_open(MENU_GIFT_ITEM);    break;
     default: break;
     }
 }
@@ -674,6 +693,23 @@ static void on_decor_item_pick(uint8_t id)
     }
 }
 
+static void on_gift_item_pick(uint8_t id)
+{
+    if (!g.gift.used) { menu_open(MENU_MAIN); return; }
+    if (id == 0) {
+        s_gift_moving = true;
+        g.gift_mode = 1;
+        ui_menu_close();
+        ui_hud_set_chrome(false);
+        ui_hud_set_place_mode(true, "Tap to move gift; X cancels");
+    } else {
+        g.gift.used = 0;
+        terrarium_refresh_gift();
+        game_save_now();
+        menu_open(MENU_MAIN);
+    }
+}
+
 /* Settings submenu: connectivity and storage. Both are infrastructure for OTA
  * and backups rather than gameplay, so they live behind their own entry rather
  * than cluttering the main list. */
@@ -767,8 +803,22 @@ static void on_reset_pick(uint8_t id)
 
 static void on_power_pick(uint8_t id)
 {
-    (void)id;
+    switch (id) {
+    case 2: g.power_mode = (g.power_mode + 1) % 3; break;
+    case 3: g.screen_timeout = (g.screen_timeout + 1) % 5; break;
+    case 4: g.deep_sleep_after = (g.deep_sleep_after + 1) % 5; break;
+    case 5: g.rtc_wake = (g.rtc_wake + 1) % 3; break;
+    case 6: menu_open(MENU_POWER_CONFIRM); return;
+    case 7:
+        if (!power_request_deep_sleep(g.rtc_wake == 0 ? 900 : g.rtc_wake == 1 ? 3600 : 21600))
+            ui_hud_bubble("Sleep Rejected; Worker Busy", 0xf5c86b, 2200);
+        else ui_menu_close();
+        return;
+    default: break;
+    }
+    game_save_now();
     menu_open(MENU_POWER);
+    if (id >= 3) ui_menu_set_page(1);
 }
 
 static void on_display_pick(uint8_t id)
@@ -828,8 +878,10 @@ static void menu_open(int which)
         /* Settings is always the last row: it is the least-used entry and the
          * one the player reaches for least often, so it belongs at the bottom
          * of the list rather than in the middle. */
-        items[6] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
-        ui_menu_open("Spidarium", items, 7, on_main_pick);
+        items[6] = (ui_menu_item_t){ "Arrange Decor", "Move or Put Away", true, false, true, MENU_DECOR_PLACED };
+        items[7] = (ui_menu_item_t){ "Placed Gift", "Move Free / Keep Its Bonus", g.gift.used, false, true, MENU_GIFT_ITEM };
+        items[8] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
+        ui_menu_open("Spidarium", items, 9, on_main_pick);
         break;
     }
     case MENU_SETTINGS: {
@@ -857,11 +909,23 @@ static void menu_open(int which)
         power_runtime_text(runtime, sizeof runtime);
         items[0] = (ui_menu_item_t){ "Battery", status, false, false, false, 0 };
         items[1] = (ui_menu_item_t){ "Runtime", runtime, false, false, false, 0 };
-        items[2] = (ui_menu_item_t){ "Automatic Power Saving", "Dim After 1 Minute; Screen Off After 5", false, false, false, 0 };
-        ui_menu_open("Battery", items, 3, on_power_pick);
+        items[2] = (ui_menu_item_t){ "Power Mode", power_mode_name(g.power_mode), true, false, false, 2 };
+        items[3] = (ui_menu_item_t){ "Screen Timeout", power_timeout_name(g.screen_timeout), true, false, false, 3 };
+        items[4] = (ui_menu_item_t){ "Deep Sleep After", power_delay_name(g.deep_sleep_after), true, false, false, 4 };
+        items[5] = (ui_menu_item_t){ "RTC Wake Interval", power_wake_name(g.rtc_wake), true, false, false, 5 };
+        items[6] = (ui_menu_item_t){ "Deep Sleep Now", "Save Then Sleep / Right Button Wakes", !net_busy(), false, true, 6 };
+        items[7] = (ui_menu_item_t){ "Automatic Sleep", "RTC Mode Only / Battery, Not USB", false, false, false, 8 };
+        ui_menu_open("Battery", items, 8, on_power_pick);
         ui_menu_set_back(back_to_settings);
         break;
     }
+    case MENU_POWER_CONFIRM:
+        items[0] = (ui_menu_item_t){ "Save and Sleep", power_wake_name(g.rtc_wake), true, false, false, 7 };
+        items[1] = (ui_menu_item_t){ "Wake With Right Button", "Touch Is Off / Timer Also Wakes", false, false, false, 8 };
+        items[2] = (ui_menu_item_t){ "Pet Ages While Asleep", "RTC Catch-Up on Wake / No Radio", false, false, false, 9 };
+        ui_menu_open("Deep Sleep?", items, 3, on_power_pick);
+        ui_menu_set_back(back_to_settings);
+        break;
     case MENU_DISPLAY: {
         /* The slider row's readout is derived from its value by refresh_page(). */
         items[0] = (ui_menu_item_t){ "Brightness", NULL, true, false, false, 0 };
@@ -969,8 +1033,10 @@ static void menu_open(int which)
                          (unsigned long)t->unlock_level);
             } else if (theme_current() == t) {
                 snprintf(theme_sub[i], sizeof theme_sub[i], "In Use");
+            } else if (theme_owned(i)) {
+                snprintf(theme_sub[i], sizeof theme_sub[i], "Owned / Apply Free");
             } else {
-                snprintf(theme_sub[i], sizeof theme_sub[i], "Tap to Apply");
+                snprintf(theme_sub[i], sizeof theme_sub[i], "%u Silk / Buy", theme_cost(i));
             }
             items[i].label     = names[i];
             items[i].detail    = theme_sub[i];
@@ -980,6 +1046,8 @@ static void menu_open(int which)
             items[i].id        = (uint8_t)i;
         }
         ui_menu_open("Backgrounds", items, THEME_COUNT, on_theme_pick);
+        for (int i = 0; i < THEME_COUNT; i++)
+            ui_menu_set_item_icon(i, sprite_background_index(i));
         ui_menu_set_back(back_to_main);
         break;
     }
@@ -1198,6 +1266,14 @@ static void menu_open(int which)
         ui_menu_set_back(back_to_placed);
         break;
     }
+    case MENU_GIFT_ITEM:
+        items[0] = (ui_menu_item_t){ "Move Gift", "No Silk Cost / Bonus Stays", g.gift.used, false, true, 0 };
+        items[1] = (ui_menu_item_t){ "Put Gift Away", "Keep Ownership", g.gift.used, false, false, 1 };
+        ui_menu_open("Placed Gift", items, 2, on_gift_item_pick);
+        if (g.gift.used) ui_menu_set_item_icon(0, sprite_gift_index(g.gift.kind));
+        ui_menu_set_destructive(1);
+        ui_menu_set_back(back_to_main);
+        break;
     case MENU_ABOUT:
         items[0] = (ui_menu_item_t){ "Spidarium", esp_app_get_description()->version,
                                      false, false, false, 0 };
@@ -1247,7 +1323,7 @@ void game_resume(void)
 
 bool game_paused(void)
 {
-    return s_paused || save_restore_pending() || net_busy();
+    return s_paused || save_restore_pending() || net_busy() || power_sleep_pending();
 }
 
 void game_on_menu(lv_event_t *e)
@@ -1425,7 +1501,8 @@ bool game_ui_call(game_ui_action_t action)
 
 bool game_ui_call_value(game_ui_action_t action, int value)
 {
-    if (action <= GAME_UI_NONE || action > GAME_UI_SETUP_DONE ||
+    if (power_sleep_pending() || action <= GAME_UI_NONE || action > GAME_UI_DEEP_SLEEP ||
+        (action == GAME_UI_DEEP_SLEEP && (value < 5 || value > 86400)) ||
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
         ((action == GAME_UI_SET_AUTO_FEED || action == GAME_UI_SET_AUTO_HUNT) && (value < 0 || value > 1)) ||
@@ -1472,6 +1549,60 @@ static void test_pointer_send(lv_indev_t *indev, test_pointer_t *pointer,
     pointer->point = (lv_point_t){x, y};
     pointer->state = state;
     lv_indev_read(indev);
+}
+
+static bool test_furniture_pointer(void)
+{
+    game_state_t original = g;
+    s_testing_placement = true;
+    ui_menu_close();
+    ui_hud_set_chrome(false);
+    decor_clear();
+    g.decor_owned = 1u;
+    int slot = decor_place(0, 110, 150);
+    g.gift = (gift_t){0};
+    terrarium_refresh_decor();
+    lv_indev_t *indev = lv_indev_create();
+    if (!indev) {
+        ESP_LOGE(TAG, "placement test: pointer allocation failed");
+        g = original;
+        s_testing_placement = false;
+        return false;
+    }
+    test_pointer_t pointer = {0};
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(indev, test_pointer_read);
+    lv_indev_set_user_data(indev, &pointer);
+    lv_indev_set_mode(indev, LV_INDEV_MODE_EVENT);
+    lv_indev_set_long_press_time(indev, 0);
+    lv_obj_update_layout(ui.screen);
+    test_pointer_send(indev, &pointer, 110, 150, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 110, 150, LV_INDEV_STATE_PRESSED);
+    bool held = ui_menu_visible() && s_open_menu == MENU_DECOR_ITEM;
+    test_pointer_send(indev, &pointer, 110, 150, LV_INDEV_STATE_RELEASED);
+    s_decor_item_slot = slot;
+    on_decor_item_pick(1);
+    test_pointer_send(indev, &pointer, 330, 350, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 330, 350, LV_INDEV_STATE_RELEASED);
+    bool moved = slot >= 0 && g.decor[slot].x == 330 && g.decor[slot].y == 350 &&
+                 !g_decor_mode && g.decor_owned == 1;
+    g.gift.kind = 0; g.gift.variant = 2; g.gift.used = 1; g.gift.x = 200; g.gift.y = 200;
+    terrarium_refresh_gift();
+    uint32_t silk = g.silk, owned = g.gifts_owned;
+    on_gift_item_pick(0);
+    test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_RELEASED);
+    bool gift_moved = !g.gift_mode && g.gift.x == 350 && g.gift.y == 180 &&
+                      g.gift.variant == 2 && g.silk == silk && g.gifts_owned == owned;
+    lv_indev_delete(indev);
+    g = original;
+    g_decor_mode = 0; g_decor_move_slot = 0xFF; s_gift_moving = false;
+    s_testing_placement = false;
+    ui_hud_set_place_mode(false, NULL);
+    terrarium_refresh_gift();
+    terrarium_refresh_decor();
+    ESP_LOGI(TAG, "furniture pointer: hold=%d decor_move=%d gift_move=%d", held, moved, gift_moved);
+    return held && moved && gift_moved;
 }
 
 static bool test_hunt_pointer(int32_t target_x, int32_t target_y)
@@ -1602,6 +1733,9 @@ static void ui_service_request(void)
     case GAME_UI_PLAY:  game_on_play(NULL);  break;
     case GAME_UI_WAKE: power_wake(); break;
     case GAME_UI_SLEEP: game_on_sleep(NULL); break;
+    case GAME_UI_DEEP_SLEEP:
+        atomic_store(&s_ui_ok, power_request_deep_sleep((uint32_t)s_ui_value));
+        break;
     case GAME_UI_MENU:  game_on_menu(NULL);  break;
     case GAME_UI_SAVE:  atomic_store(&s_ui_ok, game_save_now()); break;
     case GAME_UI_TEST_GIFTS: test_gifts();   break;
@@ -1725,9 +1859,10 @@ static void ui_service_request(void)
         bool hud_ok = ui_hud_test();
         bool backgrounds_ok = terrarium_test();
         bool hunger_ok = needs_hunger_test();
-        hunger_ok = power_ui_test() && hunger_ok;
-        hunger_ok = save_format_test() && hunger_ok;
-        hunger_ok = decor_test() && hunger_ok;
+        bool power_ok = power_ui_test();
+        bool save_ok = save_format_test();
+        bool decor_ok = decor_test();
+        bool pointer_ok = test_furniture_pointer();
         gift_t original_gift = g.gift;
         g.gift.used = 1;
         g.gift.x = 0;
@@ -1735,9 +1870,11 @@ static void ui_service_request(void)
         keep_gift_in_playfield();
         bool gift_bounds = g.gift.x == g_play.left && g.gift.y == g_play.bottom;
         g.gift = original_gift;
-        printf("%s uitest pages=%d keyboard=%d password=%d hud=%d backgrounds=%d\n",
-               menu_ok && hud_ok && backgrounds_ok && gift_bounds && hunger_ok ? "OK" : "ERR",
-               menu_ok, menu_ok, menu_ok, hud_ok, backgrounds_ok);
+        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d\n",
+               menu_ok && hud_ok && backgrounds_ok && gift_bounds && hunger_ok &&
+               power_ok && save_ok && decor_ok && pointer_ok ? "OK" : "ERR",
+               menu_ok, menu_ok, menu_ok, hud_ok, backgrounds_ok, hunger_ok,
+               power_ok, save_ok, decor_ok, pointer_ok, gift_bounds);
         break;
     }
     default: break;
@@ -1876,6 +2013,11 @@ void game_on_terrarium_long_press(lv_event_t *e)
     lv_point_t p = {0, 0};
     lv_indev_get_point(indev, &p);
 
+    if (g.gift.used && abs(p.x - g.gift.x) <= 32 && abs(p.y - g.gift.y) <= 32) {
+        behaviour_aim_cancel();
+        menu_open(MENU_GIFT_ITEM);
+        return;
+    }
     int slot = decor_hit_test((int16_t)p.x, (int16_t)p.y);
     if (slot < 0) return;
 
@@ -1887,6 +2029,7 @@ void game_on_terrarium_long_press(lv_event_t *e)
 
 void game_on_terrarium_tap(lv_event_t *e)
 {
+    if (ui_menu_visible()) return;
     lv_indev_t *indev = lv_indev_active();
     lv_point_t p = {0, 0};
     if (indev) lv_indev_get_point(indev, &p);
@@ -1928,12 +2071,14 @@ void game_on_terrarium_tap(lv_event_t *e)
 
     if (g.gift_mode) {
         if (indev) {
-            if (!gift_purchase(g.gift_selected)) {
+            if (!s_gift_moving && !gift_purchase(g.gift_selected)) {
                 ui_hud_bubble("Not Enough Silk", 0xf5c86b, 1800);
                 return;
             }
-            g.gift.kind    = g.gift_selected;
-            g.gift.variant = (uint8_t)(rand() % 3);
+            if (!s_gift_moving) {
+                g.gift.kind = g.gift_selected;
+                g.gift.variant = (uint8_t)(rand() % 3);
+            }
             g.gift.used    = 1;
             g.gift.x       = (int16_t)p.x;
             g.gift.y       = (int16_t)p.y;
@@ -1943,6 +2088,7 @@ void game_on_terrarium_tap(lv_event_t *e)
             game_save_now();
 
             g.gift_mode = 0;
+            s_gift_moving = false;
             ui_hud_set_gift_mode(false);
 
         }
@@ -1998,7 +2144,7 @@ void game_tick_logic(lv_timer_t *timer)
      * hunger and hygiene whenever the player left the device on a menu, with
      * the screen off, or before naming the spider. Needs must keep advancing;
      * only the parts that need a visible, interactive tank are skipped below. */
-    if (s_paused || save_restore_pending() || net_busy()) {
+    if (s_paused || save_restore_pending() || net_busy() || power_sleep_pending()) {
         s_last_logic = lv_tick_get();
         return;
     }
@@ -2149,7 +2295,7 @@ void game_tick_render(lv_timer_t *timer)
         }
     }
 
-    if (s_paused || save_restore_pending() || power_sleeping() || net_busy() || ui_menu_visible() || ui_hud_chrome_visible() ||
+    if (s_paused || save_restore_pending() || power_sleep_pending() || power_sleeping() || net_busy() || ui_menu_visible() || ui_hud_chrome_visible() ||
         lv_screen_active() != ui.screen) {
         if (!s_paused && !net_busy() && !ui_menu_visible() &&
             lv_screen_active() == ui.screen) ui_hud_tick(now);

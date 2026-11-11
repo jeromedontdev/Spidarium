@@ -366,9 +366,9 @@ Muted output explicitly says `OK sound muted`; unavailable/full queues return
 foreground sample counts and `ambience ... complete/interrupted/codec error`
 with actual written/total samples.
 
-Automatic ambience considers only air/leaves every 14-20 seconds after the
-first 12 seconds, skips busy audio, and is suppressed during active hunting
-and network work. The existing worker streams 100 ms chunks with slow
+Automatic ambience is disabled in v1.1.18 after listening feedback. Manual
+air/leaves remain diagnostic effects, not automatically scheduled habitat
+sound. The existing worker streams manual textures in 100 ms chunks with slow
 attack/release envelopes, fading over 20 ms for foreground sound, mute or
 radio work. Long ambience must not block the radio's three-second drain.
 
@@ -478,14 +478,31 @@ without the default suite's care/save/spawn/state changes. The default full
 suite deliberately modifies and saves the pet; do not use it casually on a
 user's existing pet.
 
-### `background [0-7]`
+### `background [0-15]`
 
 Without an argument, reports the active habitat. With an ID, uses the same
-selection path as Menu > Backgrounds and waits off-LVGL for preference saving.
+purchase/selection path as Menu > Backgrounds and waits off-LVGL for saving.
 IDs: 0 cork, 1 moss, 2 leaf litter, 3 sand, 4 fern, 5 orchid, 6 woodland, 7 minimal.
-IDs remain stable, so older stored landscape selections migrate without reset.
-All are available from level 1. The separate NVS preference survives reboot
-without changing or invalidating the pet save; SD pet backups do not include it.
+8 mushroom, 9 gothic, 10 seashell, 11 succulent, 12 willow, 13 desert,
+14 crystal, 15 cemetery. Prices in ID order are
+0, 12, 12, 16, 20, 24, 28, 16, 32, 40, 28, 24, 32, 36, 48, 48 Silk.
+All are available from level 1; owned selections are free. Failed purchases
+do not change the active theme or ownership. Save v9 includes ownership and
+selection in pet backups. Older saves inherit their equipped old separate NVS
+preference and cork free once, not the whole catalogue.
+
+### `nap SECONDS`
+
+Save and request ESP deep sleep for 5..86400 seconds, marshalled onto LVGL.
+`OK nap queued=...` is acceptance, not proof of sleep. The internal save worker
+must commit, drain workers, acknowledge display pause and log
+`deep sleep committed` before entry. USB disconnects; wake is by ESP RTC timer
+or the right/user GPIO18 button, not touch. `battery` reports `wake_cause=4`
+for a real timer wake (3 for EXT1). `tools/test_deep_sleep.py COM7` verifies a
+five-second timer wake plus saved habitat preservation. Do not reconnect with
+a resetting serial client and call the resulting reset proof of RTC wake.
+Battery profiles/timeouts/automatic delay are described in
+[battery management](BATTERY_MANAGEMENT.md); auto deep sleep defaults off.
 
 ---
 
@@ -840,19 +857,22 @@ using Web Serial. Browser credentials go only to the selected USB device.
 |---|---|
 | `save schema` | `SAVE SCHEMA {JSON}` followed by `OK save schema` |
 | `save export` | `SAVE HEX <hex>` followed by `OK save export` |
+| `save stored` | Same framing, reads committed NVS without saving live state |
 | `save restore <hex>` | `OK save restore; reboot required`, or `ERR ...` |
 
 The schema is generated from compiled `offsetof(game_state_t, ...)` values,
 not guessed browser offsets. It includes the header magic/version, 12-byte
-header size, accepted 120/132-byte payload sizes and 24 named fields with
+header size, legacy 120/current 248-byte payload sizes and 41 named fields with
 little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
 Export snapshots on LVGL, waits for the existing internal-stack persistence
-worker on the console task, then reads the raw NVS blob. A new backup is 144
-bytes; legacy raw backups are 132 bytes. It contains no network credentials.
-Background choice and saved WiFi credentials are separate NVS keys, not pet
-backup fields.
+worker on the console task, then reads the raw NVS blob. A new v9 backup is
+260 bytes; older supported v2-v8 payloads remain readable. It contains no
+network credentials. Background ownership/selection and power preferences are
+now included; saved WiFi credentials remain separate NVS keys.
+Use `save stored` to compare committed bytes without normal live needs/mood/
+clock advancement producing a new snapshot.
 
 Restore rejects malformed hex, wrong magic/version/size, incomplete blobs and
 invalid pet fields before replacing NVS. Valid data is copied into a worker
@@ -862,8 +882,9 @@ A failed restore clears the pending guard. Export while pending reads the
 restored bytes directly instead of saving the old live state. Nothing resets
 or erases WiFi. Back up first: a valid restore deliberately replaces the pet.
 
-The single USB-JTAG driver's RX buffer is 512 bytes to hold a complete 301-byte
-restore command. No second driver is installed. Console stack is now 8KB in
+The single USB-JTAG driver's RX buffer is 1,024 bytes and line buffer 640,
+holding the complete 534-byte v9 restore line. No second driver is installed.
+Console stack is 8KB in
 PSRAM; `mem` reports `STACK console_free=N` (minimum-ever free bytes). Real
 valid/invalid restore tests check at least 2KB headroom and byte-exact
 restoration, including after reboot:

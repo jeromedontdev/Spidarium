@@ -182,7 +182,8 @@ int decor_hit_test(int16_t x, int16_t y)
         if (!def) continue;
         float dx = (float)(x - g.decor[i].x);
         float dy = (float)(y - g.decor[i].y);
-        if (dx * dx + dy * dy <= (float)def->radius * def->radius) return i;
+        float hit = def->radius < 28 ? 28 : def->radius;
+        if (dx * dx + dy * dy <= hit * hit) return i;
     }
     return -1;
 }
@@ -286,7 +287,8 @@ bool decor_test(void)
 
     /* Hit testing finds the item, and removal frees the slot. */
     ok = ok && decor_hit_test(100, 100) == slot;
-    ok = ok && decor_hit_test(100 + k_decor_kinds[DECOR_ROCK_SMALL].radius + 6, 100) < 0;
+    ok = ok && decor_hit_test(127, 100) == slot;
+    ok = ok && decor_hit_test(129, 100) < 0;
 
     /* Moving keeps the slot, the kind and the blocking flag, and clamps. */
     ok = ok && decor_move(slot, 200, 150);

@@ -56,6 +56,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_sleep.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -67,7 +68,7 @@
 
 static const char *TAG = "spidarium.cmd";
 
-#define LINE_MAX_LEN 384
+#define LINE_MAX_LEN 640
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -145,6 +146,7 @@ static void cmd_help(void)
     printf("  sd backup|status     verified SD backup or card probe\n");
     printf("  sound N              effect 0..9 (7=air, 8=pet chirp, 9=leaves)\n");
     printf("  audiotest            check environmental PCM hashes/envelopes\n");
+    printf("  nap SECONDS          save and deep sleep (5..86400); right button wakes\n");
     printf("  battery              report PMIC charge and power policy\n");
     printf("  wake                 wake idle display without a gameplay tap\n");
     printf("  reset                erase the save\n");
@@ -488,8 +490,14 @@ static void cmd_save_schema(void)
         {"pet_xp_today", "u8", offsetof(game_state_t, pet_xp_today), 0, 7},
         {"decor_owned", "u32", offsetof(game_state_t, decor_owned), 0, 8},
         {"decor", "decor[12]", offsetof(game_state_t, decor), sizeof g.decor, 8},
+        {"backgrounds_owned", "u32", offsetof(game_state_t, backgrounds_owned), 0, 9},
+        {"background_id", "u8", offsetof(game_state_t, background_id), 0, 9},
+        {"power_mode", "u8", offsetof(game_state_t, power_mode), 0, 9},
+        {"screen_timeout", "u8", offsetof(game_state_t, screen_timeout), 0, 9},
+        {"deep_sleep_after", "u8", offsetof(game_state_t, deep_sleep_after), 0, 9},
+        {"rtc_wake", "u8", offsetof(game_state_t, rtc_wake), 0, 9},
 #undef SAVE_FIELD
-    };    enum { SCHEMA_CAP = 3584 };
+    };    enum { SCHEMA_CAP = 4608 };
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
     int pos = snprintf(json, SCHEMA_CAP,
@@ -529,8 +537,8 @@ static void cmd_save_tool(const char *arg)
 {
     if (!arg || !arg[0]) { cmd_save(); return; }
     if (!strcmp(arg, "schema")) { cmd_save_schema(); return; }
-    if (!strcmp(arg, "export")) {
-        if (!save_restore_pending() && !game_ui_call(GAME_UI_SAVE)) {
+    if (!strcmp(arg, "export") || !strcmp(arg, "stored")) {
+        if (strcmp(arg, "stored") && !save_restore_pending() && !game_ui_call(GAME_UI_SAVE)) {
             printf("ERR save export snapshot not queued\n"); return;
         }
         if (!wait_save()) { printf("ERR save export persistence failed\n"); return; }
@@ -1035,11 +1043,20 @@ static void run_line(char *line)
     else if (!strcmp(line, "battery")) {
         char status[80];
         power_status(status, sizeof status);
-        printf("%s battery %s policy=%d screen_sleep=%d\n",
-               power_test() ? "OK" : "ERR", status, power_test(), power_sleeping());
+        printf("%s battery %s policy=%d screen_sleep=%d wake_cause=%d\n",
+               power_test() ? "OK" : "ERR", status, power_test(), power_sleeping(),
+               esp_sleep_get_wakeup_cause());
     }
     else if (!strcmp(line, "wake")) {
         printf("%s wake\n", game_ui_call(GAME_UI_WAKE) ? "OK" : "ERR");
+    }
+    else if (!strcmp(line, "nap")) {
+        char *end = NULL;
+        long seconds = arg ? strtol(arg, &end, 10) : 0;
+        if (!arg || *end || seconds < 5 || seconds > 86400)
+            printf("ERR nap requires 5..86400 seconds; right button also wakes\n");
+        else printf("%s nap queued=%ld; disconnects USB; timer/right button wake\n",
+                    game_ui_call_value(GAME_UI_DEEP_SLEEP, (int)seconds) ? "OK" : "ERR", seconds);
     }
     else if (!strcmp(line, "screenshot")) cmd_screenshot(arg);
     else if (!strcmp(line, "capturetest")) {
@@ -1228,7 +1245,7 @@ void test_console_init(void)
      * uart_vfs_dev_use_driver() is deliberately not called: it would route
      * stdin through the same buffer this task reads, and the two compete. */
     usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
-    cfg.rx_buffer_size = 512; /* One complete 301-byte browser restore command. */
+    cfg.rx_buffer_size = 1024; /* Holds the complete v9 raw-restore command. */
     esp_err_t err = usb_serial_jtag_driver_install(&cfg);
     ESP_LOGI(TAG, "usb-jtag driver: %s", esp_err_to_name(err));
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {

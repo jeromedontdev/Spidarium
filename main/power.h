@@ -45,3 +45,13 @@ lv_obj_t *power_rotation_layer(lv_obj_t *screen);
 bool power_test(void);
 bool power_ui_test(void);
 void power_wake(void);
+const char *power_mode_name(uint8_t value);
+const char *power_timeout_name(uint8_t value);
+const char *power_delay_name(uint8_t value);
+const char *power_wake_name(uint8_t value);
+/* LVGL task only: snapshot live state and freeze input until reboot/failure. */
+bool power_request_deep_sleep(uint32_t seconds);
+bool power_sleep_pending(void);
+/* Internal-stack save worker only, after the snapshot is committed. */
+bool power_enter_deep_sleep(uint32_t seconds);
+void power_sleep_failed(void);

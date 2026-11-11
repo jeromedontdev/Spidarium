@@ -3,6 +3,9 @@
 #include "game.h"
 #include "net.h"
 #include "save.h"
+#include "audio.h"
+#include "esp_sleep.h"
+#include "driver/gpio.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
 #include "driver/i2c_master.h"
@@ -19,6 +22,7 @@ static i2c_master_dev_handle_t s_pmic;
 static atomic_uint s_sample;
 static atomic_int s_requested = 50, s_applied = -1;
 static atomic_bool s_writing;
+static atomic_bool s_sleep_pending;
 static lv_obj_t *s_sleep_screen;
 static bool s_sleeping, s_low_saved;
 /* Set by power_sleep() (the middle button), cleared by power_wake(). The idle
@@ -36,7 +40,7 @@ static void power_worker(void *arg)
     (void)arg;
     unsigned errors = 0;
     for (;;) {
-        if (!net_busy()) {
+        if (!net_busy() && !power_sleep_pending()) {
             uint8_t status[2], voltage[2], percent;
             esp_err_t err = read_reg(0, status, sizeof status);
             if (err == ESP_OK) err = read_reg(0x34, voltage, sizeof voltage);
@@ -109,14 +113,93 @@ bool power_init(void)
     return true;
 }
 
-static int desired_brightness(unsigned sample, uint32_t idle, int normal)
+static const uint32_t k_timeouts[] = {30000, 60000, 120000, 300000, 0};
+static const uint32_t k_delays[] = {0, 300000, 900000, 1800000, 3600000};
+static const uint32_t k_wakes[] = {900, 3600, 21600};
+static const char *const k_modes[] = {"Balanced", "Battery Saver", "RTC Sleep"};
+static const char *const k_timeout_names[] = {"30 Seconds", "1 Minute", "2 Minutes", "5 Minutes", "Never"};
+static const char *const k_delay_names[] = {"Never", "5 Minutes Idle", "15 Minutes Idle", "30 Minutes Idle", "1 Hour Idle"};
+static const char *const k_wake_names[] = {"15 Minutes", "1 Hour", "6 Hours"};
+const char *power_mode_name(uint8_t value) { return k_modes[value < 3 ? value : 0]; }
+const char *power_timeout_name(uint8_t value) { return k_timeout_names[value < 5 ? value : 3]; }
+const char *power_delay_name(uint8_t value) { return k_delay_names[value < 5 ? value : 0]; }
+const char *power_wake_name(uint8_t value) { return k_wake_names[value < 3 ? value : 0]; }
+bool power_sleep_pending(void) { return atomic_load(&s_sleep_pending); }
+static bool s_sleep_input_held;
+
+bool power_request_deep_sleep(uint32_t seconds)
+{
+    if (seconds < 5 || seconds > 86400 || net_busy() || save_busy() || save_restore_pending() ||
+        power_sleep_pending()) {
+        ESP_LOGW("spidarium.power", "deep sleep rejected: invalid duration or worker busy");
+        return false;
+    }
+    atomic_store(&s_sleep_pending, true);
+    if (!save_request_sleep(seconds)) {
+        atomic_store(&s_sleep_pending, false);
+        return false;
+    }
+    lv_indev_enable(NULL, false);
+    s_sleep_input_held = true;
+    return true;
+}
+
+void power_sleep_failed(void)
+{
+    ESP_LOGE("spidarium.power", "deep sleep failed; device remains awake");
+    atomic_store(&s_sleep_pending, false);
+}
+
+bool power_enter_deep_sleep(uint32_t seconds)
+{
+    uint32_t start = xTaskGetTickCount();
+    while (audio_playing() || power_writing()) {
+        if (net_busy() || (xTaskGetTickCount() - start) > pdMS_TO_TICKS(3000)) {
+            ESP_LOGE("spidarium.power", "deep sleep drain rejected: busy or timeout");
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    if (net_busy() || gpio_get_level(GPIO_NUM_18) == 0) {
+        ESP_LOGW("spidarium.power", "deep sleep rejected: radio busy or wake button held");
+        return false;
+    }
+    esp_err_t err = esp_sleep_enable_timer_wakeup((uint64_t)seconds * 1000000u);
+    if (err == ESP_OK)
+        err = esp_sleep_enable_ext1_wakeup_io(1ULL << GPIO_NUM_18, ESP_EXT1_WAKEUP_ANY_LOW);
+    if (err == ESP_OK) err = esp_lv_adapter_pause(1500);
+    if (err != ESP_OK) {
+        ESP_LOGE("spidarium.power", "deep sleep setup failed: %s", esp_err_to_name(err));
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+        return false;
+    }
+    err = bsp_display_backlight_off();
+    if (err != ESP_OK) {
+        ESP_LOGE("spidarium.power", "deep sleep display off failed: %s", esp_err_to_name(err));
+        esp_lv_adapter_resume();
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+        return false;
+    }
+    ESP_LOGI("spidarium.power", "deep sleep committed; RTC timer=%lu s; right button GPIO18 wakes",
+             (unsigned long)seconds);
+    vTaskDelay(pdMS_TO_TICKS(80));
+    esp_deep_sleep_start();
+    return false;
+}
+
+static int brightness_policy(unsigned sample, uint32_t idle, int normal,
+                             uint8_t mode, uint8_t timeout_id)
 {
     bool valid = sample & (1u << 23), present = sample & (1u << 20);
     bool usb = sample & (1u << 21);
     unsigned percent = (sample >> 13) & 127;
-    if (idle >= 300000) return 0;
+    uint32_t timeout = k_timeouts[timeout_id < 5 ? timeout_id : 3];
+    if (timeout && idle >= timeout) return 0;
     if (valid && present && !usb && percent <= 10) return 5;
-    if (idle >= 60000) return normal < 15 ? normal : 15;
+    if (mode && !usb && normal > (mode == 1 ? 35 : 20))
+        normal = mode == 1 ? 35 : 20;
+    uint32_t dim = timeout && timeout / 2 < 60000 ? timeout / 2 : 60000;
+    if (idle >= dim) return normal < 15 ? normal : 15;
     return normal;
 }
 
@@ -153,6 +236,11 @@ void power_sleep(void)
 
 void power_tick(void)
 {
+    if (power_sleep_pending()) return;
+    if (s_sleep_input_held) {
+        lv_indev_enable(NULL, true);
+        s_sleep_input_held = false;
+    }
     if (!s_sleep_screen) {
         s_sleep_screen = lv_obj_create(power_rotation_layer(ui.screen));
         lv_obj_remove_style_all(s_sleep_screen);
@@ -165,7 +253,7 @@ void power_tick(void)
     }
     unsigned sample = atomic_load(&s_sample);
     uint32_t idle = lv_display_get_inactive_time(NULL);
-    int target = desired_brightness(sample, idle, g.brightness);
+    int target = brightness_policy(sample, idle, g.brightness, g.power_mode, g.screen_timeout);
     /* A manual lock (the middle button) must blank the panel too. Without this
      * the overlay was shown but the next tick recomputed the idle-based target
      * and immediately restored the backlight, so the screen only looked black
@@ -174,7 +262,8 @@ void power_tick(void)
     atomic_store(&s_requested, target);
     /* A manual lock (the middle button) is sticky: the idle timer must not
      * clear it on the next tick. Only a touch or power_wake() releases it. */
-    bool asleep = s_locked || (idle >= 300000 && !net_busy() && lv_screen_active() == ui.screen);
+    uint32_t timeout = k_timeouts[g.screen_timeout < 5 ? g.screen_timeout : 3];
+    bool asleep = s_locked || (timeout && idle >= timeout && !net_busy() && lv_screen_active() == ui.screen);
     if (asleep != s_sleeping) {
         s_sleeping = asleep;
         lv_obj_set_hidden(s_sleep_screen, !asleep);
@@ -188,6 +277,11 @@ void power_tick(void)
         if (game_save_now()) s_low_saved = true;
         ESP_LOGW("spidarium.power", "low battery: dimming; save requested");
     } else if (!low) s_low_saved = false;
+    uint32_t delay = k_delays[g.deep_sleep_after < 5 ? g.deep_sleep_after : 0];
+    if (g.power_mode == 2 && delay && idle >= delay && (sample & (1u << 23)) &&
+        (sample & (1u << 20)) && !(sample & (1u << 21)) &&
+        lv_screen_active() == ui.screen && !save_busy() && !net_busy())
+        power_request_deep_sleep(k_wakes[g.rtc_wake < 3 ? g.rtc_wake : 0]);
 }
 
 bool power_sleeping(void) { return s_sleeping; }
@@ -226,12 +320,16 @@ void power_status(char *text, unsigned size)
 bool power_test(void)
 {
     unsigned battery = (1u << 23) | (1u << 20) | (9u << 13) | 3700;
-    return desired_brightness(battery, 0, 50) == 5 &&
-        desired_brightness(battery | (1u << 21), 0, 50) == 50 &&
-        desired_brightness(0, 60000, 50) == 15 &&
-        desired_brightness(0, 300000, 50) == 0 &&
-        desired_brightness(battery, 300000, 50) == 0 &&
-        desired_brightness(0, 0, 50) == 50;
+    return brightness_policy(battery, 0, 50, 0, 3) == 5 &&
+        brightness_policy(battery | (1u << 21), 0, 50, 0, 3) == 50 &&
+        brightness_policy(0, 60000, 50, 0, 3) == 15 &&
+        brightness_policy(0, 300000, 50, 0, 3) == 0 &&
+        brightness_policy(battery, 300000, 50, 0, 3) == 0 &&
+        brightness_policy(0, 0, 50, 0, 3) == 50 &&
+        brightness_policy(0, 0, 50, 1, 0) == 35 &&
+        brightness_policy(0, 0, 50, 2, 0) == 20 &&
+        brightness_policy(0, 30000, 50, 0, 0) == 0 &&
+        brightness_policy(0, 300000, 50, 0, 4) == 15;
 }
 
 /* ------------------------------------------------------------------ */

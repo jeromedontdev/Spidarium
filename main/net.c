@@ -421,6 +421,10 @@ static void worker(void *arg)
 
 static bool queue(const job_t *job)
 {
+    if (power_sleep_pending()) {
+        ESP_LOGW(TAG, "network job rejected: deep sleep pending");
+        return false;
+    }
     if (!s_task) {
         ESP_LOGE(TAG, "network worker unavailable");
         return false;

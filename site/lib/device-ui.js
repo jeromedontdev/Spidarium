@@ -9,6 +9,22 @@ const asset = name => new URL(`../../assets/${name}.png`, import.meta.url).href;
 const SPLAT_COLOURS = ['#8a6a3a', '#4f6b2f', '#8a7a5a', '#3f3a2a', '#5a3a2a', '#a08a5a', '#6a5a3a', '#8a5a4a'];
 const title = name => name.split(/[ _]+/).map(word => word[0].toUpperCase() + word.slice(1)).join(' ');
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const MENU_ICONS = {
+  Daily:'xp', 'Check In':'xp', Treats:'feed', Backgrounds:'decor', Achievements:'xp',
+  'Prey Species':'feed', Decor:'decor', 'Arrange Decor':'decor', 'Placed Items':'decor',
+  'Placed Gift':'decor', Settings:'status', WiFi:'status', 'SD Card':'status', About:'status',
+  Battery:'energy', Runtime:'energy', Display:'status', Brightness:'energy',
+  Sound:'mood', Volume:'mood', 'Sound On':'mood', 'Sound Off':'sleep',
+  'Auto Feed':'feed', 'Save Screenshot':'decor', 'Wipe Spider':'lock',
+  'Catch 3 Prey':'feed', 'Clean 2 Times':'clean', 'Play 3 Times':'play', 'Pet 4 Times':'mood',
+  Move:'decor', 'Move Gift':'decor', 'Put Away':'back', 'Put Gift Away':'back', Blocking:'lock',
+  'Power Mode':'energy', 'Screen Timeout':'sleep', 'Deep Sleep After':'sleep', 'RTC Wake Interval':'energy',
+  'Deep Sleep Now':'sleep',
+};
+const POWER_MODES = ['Balanced','Battery Saver','RTC Sleep'];
+const SCREEN_TIMEOUTS = ['30 Seconds','1 Minute','2 Minutes','5 Minutes','Never'];
+const SLEEP_DELAYS = ['Never','5 Minutes Idle','15 Minutes Idle','30 Minutes Idle','1 Hour Idle'];
+const RTC_WAKES = ['15 Minutes','1 Hour','6 Hours'];
 function element(tag, className, text) {
   const obj = document.createElement(tag); obj.className = className;
   if (text !== undefined) obj.textContent = text;
@@ -113,7 +129,7 @@ export class DeviceGame {
     this.ear.onclick = () => {
       if (this.decorMoveSlot !== null) { this.decorMoveSlot = null; this.report('Decor Move Cancelled.'); }
       else if (this.decorKind !== null) { this.decorKind = null; this.report('Decor Placement Cancelled.'); }
-      else if (this.giftKind !== null) { this.giftKind = null; this.report('Gift Placement Cancelled.'); }
+      else if (this.giftKind !== null) { this.giftKind = null; this.giftMoving = false; this.report('Gift Placement Cancelled.'); }
       else { E.cancelAim(this.state); this.hud = !this.hud; }
       this.refreshHUD();
     };
@@ -177,7 +193,8 @@ export class DeviceGame {
       if (field === 'autoFeed') this.state.autoHunt = this.state.autoFeed;
       this.persist(); this.open(name, page);
     };
-    const row = (label, click, detail = '', extra = {}) => ({ label, click, detail, ...extra });
+    const row = (label, click, detail = '', extra = {}) => ({
+      label, click, detail, icon:`ui_${MENU_ICONS[label] ?? 'status'}`, ...extra });
     let rows;
     switch (name) {
       case 'Menu': rows = [
@@ -188,6 +205,8 @@ export class DeviceGame {
         row('Prey Species', () => this.open('Prey Species'), this.speciesDetail(), { submenu: true }),
         row('Decor', () => this.open('Decor'), `${E.decorPlacedCount(this.state)} of ${E.DECOR_SLOTS} Placed`,
           { submenu: true }),
+        row('Arrange Decor', () => this.open('Placed Decor'), 'Move or Put Away', { submenu: true }),
+        row('Placed Gift', () => this.open('Gift Item'), 'Move Free / Keep Its Bonus', { submenu: true, enabled: !!this.state.gift.used }),
         /* Settings is always the last row: it is the least-used entry. */
         row('Settings', () => this.open('Settings'), 'Sound, Display, WiFi', { submenu: true }),
       ]; break;
@@ -290,9 +309,11 @@ export class DeviceGame {
         row('Sound On', () => { this.state.sound = true; void this.audio.unlock(true); this.persist(); this.open(name); }, 'Play Effects', { selected: this.state.sound }),
         row('Sound Off', () => { this.state.sound = false; void this.audio.unlock(false); this.persist(); this.open(name); }, 'Silence Effects', { selected: !this.state.sound }),
       ]; break;
-      case 'Backgrounds': rows = E.BACKGROUNDS.map(key => row(title(key), () => {
-        this.state.theme = key; this.persist(); this.open(name, page);
-      }, this.state.theme === key ? 'In Use' : 'Tap to Apply', { selected: this.state.theme === key })); break;
+      case 'Backgrounds': rows = E.BACKGROUNDS.map((key,id) => row(title(key), () => {
+        if (!E.buyBackground(this.state,id)) { this.report('Not enough Silk for that background.',true); return; }
+        this.persist(); this.open(name, page);
+      }, this.state.theme === key ? 'In Use' : E.backgroundOwned(this.state,id) ? 'Owned / Apply Free' : `${E.BACKGROUND_COSTS[id]} Silk / Buy`,
+      { selected: this.state.theme === key, icon: `background_${key}_0` })); break;
       case 'Achievements': rows = E.ACHIEVEMENTS.filter(item => item.id !== 'first_pet').map(item => row(item.name, null,
         this.state.achievements & item.bit ? 'Earned' : 'Not Yet', { selected: Boolean(this.state.achievements & item.bit), icon: item.asset })); break;
       case 'Prey Species': rows = E.SPECIES.map(item => row(title(item.name), null,
@@ -305,14 +326,27 @@ export class DeviceGame {
         const status = this.state.level < item.level ? `Level ${item.level} / ${item.cost} Silk`
           : current ? 'In Tank / Move Free' : owned ? 'Owned / Place Free'
             : `${item.cost} Silk / ${this.state.silk >= item.cost ? 'Buy' : 'Earn More Silk'}`;
-        return row(item.name, () => this.chooseGift(item.id), `${status}\n${item.effect}`, { enabled: available, selected: current });
+        return row(item.name, () => this.chooseGift(item.id), `${status}\n${item.effect}`, { enabled: available, selected: current, icon: item.asset });
       }); break;
+      case 'Gift Item': rows = [
+        row('Move Gift', () => this.beginGiftMove(), 'No Silk Cost / Bonus Stays', { icon: E.GIFTS[this.state.gift.kind].asset, enabled: !!this.state.gift.used }),
+        row('Put Gift Away', () => { E.removeGift(this.state); this.persist(); this.open('Menu'); }, 'Keep Ownership', { destructive:true, enabled:!!this.state.gift.used }),
+      ]; break;
       case 'WiFi': this.copy('WiFi, time sync and OTA use the board’s radio.\n\nThis browser has no ESP32 radio. Use Your Device → WiFi Setup below to set real credentials over local USB. The game never sends WiFi credentials or makes a simulated connection.', () => { this.close(); document.querySelector('[data-hardware="wifi"]').click(); document.querySelector('#device').scrollIntoView(); }, 'Open Device Tools'); return;
       case 'SD Card': rows = [row('Back Up Save', () => this.download()), row('Restore Save', () => this.root.querySelector('#browser-save-file').click())]; break;
       case 'Battery': rows = [
         row('Battery', null, 'Hardware Telemetry Unavailable'),
         row('Runtime', null, this.runtimeText()),
-        row('Automatic Power Saving', null, 'Device Only'),
+        ...[
+          ['Power Mode','power_mode',POWER_MODES],
+          ['Screen Timeout','screen_timeout',SCREEN_TIMEOUTS],
+          ['Deep Sleep After','deep_sleep_after',SLEEP_DELAYS],
+          ['RTC Wake Interval','rtc_wake',RTC_WAKES],
+        ].map(([label,key,values]) => row(label, () => {
+          this.state[key]=(this.state[key]+1)%values.length;this.persist();this.open('Battery',page);
+        }, `${values[this.state[key]]} / Device Preference`)),
+        row('Deep Sleep Now', null, 'Device Only / Right Button Wakes'),
+        row('Automatic Sleep', null, 'RTC Mode / Battery Only; Browser Stays Awake'),
       ]; break;
       case 'Display': rows = [
         row('Brightness', null, 'Controlled by Your Screen'),
@@ -447,8 +481,13 @@ export class DeviceGame {
   chooseGift(id) {
     const result = E.purchaseGift(this.state, id);
     if (!result) { this.report('Gift purchase is unavailable: check its level and Silk cost.', true); return; }
-    this.close(); this.giftKind = id; this.hud = false; this.refreshHUD();
+    this.close(); this.giftMoving = false; this.giftKind = id; this.hud = false; this.refreshHUD();
     this.report('Tap the tank to place the gift. X cancels placement.'); this.persist();
+  }
+  beginGiftMove() {
+    if (!this.state.gift.used) { this.report('No gift is placed.',true); return; }
+    this.close(); this.giftKind = this.state.gift.kind; this.giftMoving = true;
+    this.hud = false; this.refreshHUD(); this.report('Tap to move your gift. X cancels; no Silk cost.');
   }
   beginDecorPlacement(id) {
     this.close(); this.decorKind = id; this.decorMoveSlot = null; this.hud = false; this.refreshHUD();
@@ -519,33 +558,40 @@ export class DeviceGame {
     this.screen.focus({ preventScroll: true });
     if (!this.started || this.modal || this.game || this.hud) return;
     const p = this.point(event);
+    this.pointerOrigin = p; this.pointerConsumed = false;
     void this.audio.unlock(this.state.sound);
     /* Hold on a placed decor item to open its move/blocking menu. A tap on the
      * tank is already the pounce gesture, so this has to be a long press. */
     if (this.decorKind === null && this.decorMoveSlot === null && this.giftKind === null) {
       const slot = E.decorHitTest(this.state, p.x, p.y);
-      if (slot >= 0) {
+      const gift = E.giftHitTest(this.state,p.x,p.y);
+      if (slot >= 0 || gift) {
         this.longPress = setTimeout(() => {
           this.longPress = null; this.aiming = false; E.cancelAim(this.state);
-          this.open('Decor Item', 0, slot);
+          this.pointerConsumed = true;
+          this.open(gift ? 'Gift Item' : 'Decor Item', 0, gift ? null : slot);
         }, 550);
       }
     }
     if (this.decorMoveSlot !== null) {
+      this.pointerConsumed = true;
       if (!E.moveDecor(this.state, this.decorMoveSlot, p.x, p.y)) {
         this.report('That decor cannot be moved.', true); return;
       }
       this.decorMoveSlot = null; this.refreshHUD(); this.persist(); this.report('Decor Moved.'); return;
     }
     if (this.decorKind !== null) {
+      this.pointerConsumed = true;
       const slot = E.placeDecor(this.state, this.decorKind, p.x, p.y);
       if (slot < 0) { this.report('No room left for decor.', true); return; }
       this.decorKind = null; this.refreshHUD(); this.persist(); this.report('Decor Placed.'); return;
     }
     if (this.giftKind !== null) {
-      const result = E.placeGift(this.state, this.giftKind, p.x, p.y);
+      this.pointerConsumed = true;
+      const moving = this.giftMoving;
+      const result = moving ? E.moveGift(this.state,p.x,p.y) : E.placeGift(this.state, this.giftKind, p.x, p.y);
       if (!result) { this.report('Gift cannot be placed here.', true); return; }
-      this.giftKind = null; this.refreshHUD(); this.persist(); this.report('Gift Placed.'); return;
+      this.giftKind = null; this.giftMoving = false; this.refreshHUD(); this.persist(); this.report(moving ? 'Gift Moved.' : 'Gift Placed.'); return;
     }
     this.aiming = E.beginAim(this.state, p.x, p.y) !== false;
     if (this.aiming) this.canvas.setPointerCapture(event.pointerId);
@@ -554,12 +600,14 @@ export class DeviceGame {
     if (this.longPress) { clearTimeout(this.longPress); this.longPress = null; }
   }
   pointerMove(event) {
-    /* A drag is an aim, not a hold, so it cancels the pending long press. */
-    this.cancelLongPress();
+    const p = this.point(event);
+    if (this.pointerOrigin && Math.hypot(p.x-this.pointerOrigin.x,p.y-this.pointerOrigin.y) > 12)
+      this.cancelLongPress();
     if (this.aiming) { const p = this.point(event); E.moveAim(this.state, p.x, p.y); }
   }
   pointerUp(event) {
     this.cancelLongPress();
+    if (this.pointerConsumed || this.modal || this.game || this.hud) return;
     if (!this.aiming) {
       /* A tap that did not start an aim is a pet if it landed on the spider.
        * The engine enforces the hit radius and the cooldown. */
@@ -647,8 +695,14 @@ export class DeviceGame {
     for (const prey of s.prey) {
       if (!prey.alive && !prey.dead) continue;
       const species = E.SPECIES[prey.species], frame = prey.frame ?? Math.floor(performance.now() / 200) % 2;
-      const image = this.image(`prey_${species.key}_${prey.alive ? (prey.fleeing ? 'flee_' : 'walk_') + frame : 'dead_0'}`);
-      if (image.complete && image.naturalWidth) ctx.drawImage(image, prey.x - 12, prey.y - 12, 24, 24);
+      const image = this.image(`prey_${species.key}_${prey.dead ? 'dead_0' : (prey.fleeing ? 'flee_' : 'walk_') + frame}`);
+      if (image.complete && image.naturalWidth) {
+        ctx.save();
+        ctx.translate(prey.x, prey.y);
+        ctx.rotate(prey.dead ? 0 : Math.round((prey.heading ?? 0) * 4 / Math.PI) * Math.PI / 4);
+        ctx.drawImage(image, -24, -24, 48, 48);
+        ctx.restore();
+      }
       // Splat: a short burst of the species colour where the bug was caught.
       if (prey.dead && prey.dead_at) {
         const age = 2200 - Math.max(0, prey.dead_at - performance.now());

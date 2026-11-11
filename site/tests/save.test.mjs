@@ -51,30 +51,32 @@ test('WiFi validation enforces byte lengths, open networks and protocol injectio
 });
 test('bundled hardware-compiled schema decodes both actual ABI payload sizes', async () => {
   const actual = validateSchema(JSON.parse(await readFile(new URL('../save-schema.json', import.meta.url), 'utf8')));
-  assert.equal(actual.version, 8);
-  assert.equal(actual.fields.length, 35);
+  assert.equal(actual.version, 9);
+  assert.equal(actual.fields.length, 41);
   for (const size of actual.payloadSizes) {
     const bytes = new Uint8Array(12 + size), view = new DataView(bytes.buffer);
     view.setUint32(0, actual.magic, true); view.setUint16(4, size === 120 ? 2 : actual.version, true); view.setUint32(8, size, true);
     bytes[12] = 83;
+    if (size === 248) bytes[12 + 236] = 1;
     const name = actual.fields.find(field => field.name === 'name');
     bytes.set(new TextEncoder().encode('Schema Test'), 12 + name.offset);
     const silk = actual.fields.find(field => field.name === 'silk');
     if (silk.offset + 4 <= size) view.setUint32(12 + silk.offset, 12345, true);
     const parsed = decodeSave(fromHex(toHex(bytes)), actual);
     assert.equal(parsed.fields.name, 'Schema Test'); assert.equal(parsed.fields.hunger, 83);
-    if (size === 236) assert.equal(parsed.fields.silk, 12345);
+    if (size === 248) assert.equal(parsed.fields.silk, 12345);
     else assert.match(parsed.fields.silk, /older save/);
-    assert.equal(parsed.fields.volume, size === 236 ? 0 : 70);
-    if (size === 236) assert.equal(parsed.fields.decor.length, 12);
+    assert.equal(parsed.fields.volume, size === 248 ? 0 : 70);
+    if (size === 248) assert.equal(parsed.fields.decor.length, 12);
   }
 });
-test('current compiled schema reads v5-v8 prefixes and all twelve little-endian decor slots', async () => {
+test('current compiled schema reads v5-v9 prefixes and all twelve little-endian decor slots', async () => {
   const actual = validateSchema(JSON.parse(await readFile(new URL('../save-schema.json', import.meta.url), 'utf8')));
-  for (const [version, size] of [[2, 132], [5, 136], [6, 152], [7, 160], [8, 236]]) {
+  for (const [version, size] of [[2, 132], [5, 136], [6, 152], [7, 160], [8, 236], [9, 248]]) {
     const bytes = new Uint8Array(12 + size), view = new DataView(bytes.buffer);
     view.setUint32(0, actual.magic, true); view.setUint16(4, version, true); view.setUint32(8, size, true);
-    if (version === 8) {
+    if (version >= 8) {
+      if (version === 9) bytes[12 + 236] = 1;
       const start = 12 + actual.fields.find(field => field.name === 'decor').offset;
       for (let slot = 0; slot < 12; slot++) {
         bytes[start + slot * 6] = slot;

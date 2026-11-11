@@ -194,9 +194,17 @@ typedef struct {
     /* --- placeable decor (appended; saves are disposable) --- */
     uint32_t decor_owned;     /* bitmask of decor_kind_t ever bought */
     decor_item_t decor[DECOR_SLOTS];  /* kind 0xFF = empty slot */
+    uint32_t backgrounds_owned;
+    uint8_t background_id;
+    uint8_t power_mode;       /* balanced, saver, RTC sleep */
+    uint8_t screen_timeout;   /* 30s, 1m, 2m, 5m, never */
+    uint8_t deep_sleep_after; /* never, 5m, 15m, 30m, 1h */
+    uint8_t rtc_wake;         /* 15m, 1h, 6h */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 236, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 248, "save payload ABI changed");
+_Static_assert(offsetof(game_state_t, backgrounds_owned) == 236, "background ownership ABI changed");
+_Static_assert(offsetof(game_state_t, background_id) == 240, "background selection ABI changed");
 _Static_assert(offsetof(game_state_t, brightness) == 128, "brightness ABI changed");
 _Static_assert(offsetof(game_state_t, auto_feed) == 129, "auto_feed ABI changed");
 _Static_assert(offsetof(game_state_t, auto_hunt) == 130, "auto_hunt ABI changed");
@@ -330,6 +338,7 @@ typedef enum {
     GAME_UI_SCREEN_RELEASE,
     GAME_UI_DECOR_TEST,
     GAME_UI_SETUP_DONE,
+    GAME_UI_DEEP_SLEEP,
 } game_ui_action_t;
 const lv_draw_buf_t *game_screen_capture(void);
 

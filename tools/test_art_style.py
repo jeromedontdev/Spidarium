@@ -10,10 +10,25 @@ from gen_sprites import (
     ACHIEVEMENT_NAMES, BACKGROUND_NAMES, DECOR_ITEM_NAMES, GIFT_NAMES,
     PREY_ANIMS, PREY_SPECIES, UI_ICONS, _blob, _save_png, _shade_materials,
     draw_achievement, draw_background, draw_decor_item, draw_gift, draw_icon, draw_prey,
+    prey_leg_paths,
 )
 
 
 class ArtStyleTests(unittest.TestCase):
+    def test_insect_leg_roots_are_fixed_and_feet_alternate_tripods(self):
+        for species in ("fly", "fruitfly", "cricket", "roach", "beetle", "moth"):
+            first, second = (prey_leg_paths(species, frame) for frame in (0, 1))
+            self.assertEqual(len(first), 6)
+            for a, b in zip(first, second):
+                self.assertEqual(a[:2], b[:2])
+                self.assertIn(a[0][0], (12, 14, 16))
+                self.assertIn(a[0][1], (11, 13))
+                self.assertEqual(abs(a[-1][0] - b[-1][0]), 2)
+            shifts = [b[-1][0] - a[-1][0] for a, b in zip(first, second)]
+            self.assertEqual(shifts[:3], [-v for v in shifts[3:]])
+            self.assertEqual(shifts[0], shifts[2])
+            self.assertEqual(shifts[0], -shifts[1])
+
     def test_all_backgrounds_are_distinct_and_quiet(self):
         contents = set()
         for name in BACKGROUND_NAMES:
