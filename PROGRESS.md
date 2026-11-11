@@ -7439,3 +7439,42 @@ evidence proves delivery and continuity, not that the player likes the sound.
   now loads versioned UI/icon URLs. Bounding rectangles prove no overlap;
   ArrowRight changes 70 to 75. Actual production screenshot shows mixer faders,
   speaker, beamed notes and a clear slider with a separate percentage.
+
+## Round 75 - SD feedback, single-buffer capture and selectable scores
+
+### Decisions made
+
+- Keep native SD progress/results in a dedicated third row instead of replacing
+  completion text with generic action labels. Browser file actions report
+  inside the game and explicitly distinguish downloads from device SD access.
+- The reproducible screenshot failure was a second 460,800-byte allocation.
+  Keep one immutable LVGL snapshot until the worker finishes, then release on
+  LVGL. Workers never call LVGL or free its snapshot pixels.
+- Provide three original scores (Silk Garden, Moonlit Hollow, Rainy Canopy)
+  and independent music gain, still subordinate to master volume/mute.
+  Save v11 occupies old padding 254/255; keep the 260-byte prefix and decor tail.
+  Migrate earlier saves to music volume 100/track 0; schema now has 47 fields.
+- Update slider labels in place so repeated keyboard adjustment retains focus.
+  Keep all 201 artwork PNGs and approved spider geometry unchanged.
+- Expanded diagnostic synthesis initially starved IDLE0 with music active.
+  Yield every 1,024 diagnostic samples; do not weaken watchdogs. Rebuild/full
+  flash and the exact formerly failing audio diagnostic now pass without faults.
+
+### Verification
+
+- Final wrapper build and full flash exit 0; zero main warnings.
+- Browser 151/151, art 16/16, packaging 12/12. Deterministic generation verifies
+  all 201 packed QOI pixel entries and preserves every source PNG byte.
+- Native full suite 48/48; compiled v11 save/273-placement transfer stress passes.
+  render500 and scanloop5 largest drift 0; internal/DMA largest 63,488.
+- Real card: complete save/preferences backup/restore, three unique 460,866-byte
+  screenshot BMPs verified by full readback; repeated capture PSRAM drift 88.
+  uitest music=1 and sd_feedback=1. Original pet restored and backed up afterward.
+- Final audio_check VERDICT PASS: three live tracks, independent gain, native
+  PCM parity, full codec writes, mute/resume and foreground/radio interruption.
+  Final 40-second soak VERDICT PASS, zero faults/errors.
+- Real browser keyboard changes music gain without changing master, selects
+  Rainy Canopy and persists v11. Generated backup JSON and 480x480 PNG payloads
+  verified; UI says download requested, not proof of filesystem completion.
+- Hardware logs do not establish subjective speaker/touch approval, battery
+  current, hosted OTA installation or RTC backup-battery retention.

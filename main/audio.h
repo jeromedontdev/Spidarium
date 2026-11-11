@@ -30,6 +30,17 @@ bool audio_test(void);
 void audio_set_music(bool enabled);
 bool audio_music(void);
 
+#define AUDIO_MUSIC_TRACK_COUNT 3
+/* Stable track IDs: 0 Silk Garden, 1 Moonlit Hollow, 2 Rainy Canopy.
+ * Atomic requests only; caller persists both settings. Invalid values are
+ * logged and rejected, leaving the previous setting unchanged. Music volume
+ * is relative to master volume and never changes foreground effects. */
+void audio_set_music_track(uint8_t track);
+uint8_t audio_music_track(void);
+const char *audio_music_track_name(uint8_t track);
+void audio_set_music_volume(uint8_t volume);
+uint8_t audio_music_volume(void);
+
 /* Mute state, persisted in game_state_t. */
 void audio_set_muted(bool muted);
 bool audio_muted(void);

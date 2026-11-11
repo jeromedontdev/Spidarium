@@ -61,6 +61,8 @@ static uint32_t s_last_logic;
 static uint32_t s_last_save;
 static bool game_save_screenshot(void);
 static bool s_screenshot_failed;
+static lv_draw_buf_t *s_sd_capture;
+static const char *s_sd_message;
 
 /* The two game timers, kept so they can be paused.
  *
@@ -159,6 +161,7 @@ static void state_defaults(void)
     g.backgrounds_owned = 1u;
     g.screen_timeout = 3;
     g.music_enabled = 1;
+    g.music_volume = 100;
 
     /* Sentinel: rolled in game_init() AFTER srand(). Rolling here would give
      * every fresh boot the same temperament, because this runs before the RNG
@@ -424,6 +427,7 @@ enum {
     MENU_DECOR_ITEM,
     MENU_GIFT_ITEM,
     MENU_POWER_CONFIRM,
+    MENU_SOUNDTRACK,
 };
 
 static void menu_open(int which);
@@ -478,6 +482,7 @@ static char s_wifi_message[80];
 static void back_to_wifi(void) { menu_open(MENU_WIFI); }
 static void back_to_settings(void) { menu_open(MENU_SETTINGS); }
 static void back_to_decor(void) { menu_open(MENU_DECOR); }
+static void back_to_sound(void) { menu_open(MENU_SOUND); ui_menu_set_page(1); }
 
 static bool on_password(const char *password)
 {
@@ -550,6 +555,7 @@ static void on_theme_pick(uint8_t id)
 
 static void on_sound_pick(uint8_t id)
 {
+    if (id == 4) { menu_open(MENU_SOUNDTRACK); return; }
     if (id == 1) audio_set_muted(!audio_muted());
     if (id == 2) {
         g.music_enabled = !g.music_enabled;
@@ -559,12 +565,26 @@ static void on_sound_pick(uint8_t id)
     menu_open(MENU_SOUND);
 }
 
+static void on_soundtrack_pick(uint8_t id)
+{
+    if (id >= AUDIO_MUSIC_TRACK_COUNT) {
+        ESP_LOGW(TAG, "soundtrack rejected: invalid track %u", id);
+        return;
+    }
+    g.music_track = id;
+    audio_set_music_track(id);
+    game_save_now();
+    menu_open(MENU_SOUNDTRACK);
+}
+
 /* Slider rows report live while the menu stays open, so the value is applied
  * and persisted without rebuilding the panel under the player's finger. */
 static void on_volume_slider(uint8_t id, uint8_t value)
 {
-    (void)id;
-    audio_set_volume(value);
+    if (id == 3) {
+        g.music_volume = value;
+        audio_set_music_volume(value);
+    } else audio_set_volume(value);
     game_save_now();
 }
 
@@ -750,7 +770,8 @@ static void on_settings_pick(uint8_t id)
         menu_open(MENU_WIFI);
         break;
     case 1:
-        if (!sd_request(SD_JOB_MOUNT)) ESP_LOGW(TAG, "SD probe not queued");
+        s_sd_message = sd_request(SD_JOB_MOUNT) ? NULL : "Card Check Rejected; Try Again";
+        if (s_sd_message) ESP_LOGW(TAG, "SD probe not queued");
         menu_open(MENU_SD);
         break;
     case 2: menu_open(MENU_ABOUT); break;
@@ -808,11 +829,14 @@ static void on_wifi_pick(uint8_t id)
 /* SD actions: backup and restore the save. */
 static void on_sd_pick(uint8_t id)
 {
+    bool accepted = false;
     if (id == 0) {
-        if (!sd_request(SD_JOB_BACKUP)) ESP_LOGW(TAG, "SD backup not queued");
+        accepted = sd_request(SD_JOB_BACKUP);
     } else if (id == 1) {
-        if (!sd_request(SD_JOB_RESTORE)) ESP_LOGW(TAG, "SD restore not queued");
+        accepted = sd_request(SD_JOB_RESTORE);
     }
+    s_sd_message = accepted ? NULL : "Request Rejected; Try Again";
+    if (!accepted) ESP_LOGW(TAG, "SD menu action %u not queued", id);
     menu_open(MENU_SD);
 }
 
@@ -1027,7 +1051,9 @@ static void menu_open(int which)
         items[1] = (ui_menu_item_t){ "Restore Save",
                                      !have ? sd_status_text() : sd_backup_exists() ? "Read From Card" : "No Backup",
                                      have && sd_backup_exists(), false, false, 1 };
-        ui_menu_open("SD Card", items, 2, on_sd_pick);
+        items[2] = (ui_menu_item_t){ "SD Status", s_sd_message ? s_sd_message : sd_status_text(),
+                                     false, false, false, 2 };
+        ui_menu_open("SD Card", items, 3, on_sd_pick);
         ui_menu_set_back(back_to_settings);
         break;
     }
@@ -1078,13 +1104,29 @@ static void menu_open(int which)
         items[1] = (ui_menu_item_t){ "Sound", audio_muted() ? "Off / All Audio Muted" : "On / Effects and Music",
                                     true, !audio_muted(), false, 1 };
         items[2] = (ui_menu_item_t){ "Background Music", "Gentle Ambient Score", true, g.music_enabled, false, 2 };
-        ui_menu_open("Sound", items, 3, on_sound_pick);
+        items[3] = (ui_menu_item_t){ "Music Volume", NULL, true, false, false, 3 };
+        items[4] = (ui_menu_item_t){ "Soundtrack", audio_music_track_name(g.music_track),
+                                    true, false, true, 4 };
+        ui_menu_open("Sound", items, 5, on_sound_pick);
         ui_menu_set_item_checkbox(1);
         ui_menu_set_item_checkbox(2);
         ui_menu_set_item_slider(0, audio_volume(), on_volume_slider);
+        ui_menu_set_item_slider(3, g.music_volume, on_volume_slider);
+        ui_menu_set_item_icon(3, sprite_icon_index("volume"));
+        ui_menu_set_item_icon(4, sprite_background_index(g.music_track == 0 ? 2 : g.music_track == 1 ? 18 : 6));
         ui_menu_set_back(back_to_settings);
         break;
     }
+    case MENU_SOUNDTRACK:
+        for (int i = 0; i < AUDIO_MUSIC_TRACK_COUNT; i++)
+            items[i] = (ui_menu_item_t){ audio_music_track_name(i),
+                i == g.music_track ? "Selected / Original Ambient Score" : "Choose This Score",
+                true, i == g.music_track, false, i };
+        ui_menu_open("Soundtrack", items, AUDIO_MUSIC_TRACK_COUNT, on_soundtrack_pick);
+        for (int i = 0; i < AUDIO_MUSIC_TRACK_COUNT; i++)
+            ui_menu_set_item_icon(i, sprite_background_index(i == 0 ? 2 : i == 1 ? 18 : 6));
+        ui_menu_set_back(back_to_sound);
+        break;
 
     case MENU_ACHIEVEMENTS: {
         /* Read-only list: the achievements are shown, not toggled. */
@@ -1352,6 +1394,7 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "sd"))       on_settings_pick(1);
     else if (!strcmp(name, "theme"))    menu_open(MENU_THEME);
     else if (!strcmp(name, "sound"))    menu_open(MENU_SOUND);
+    else if (!strcmp(name, "soundtrack")) menu_open(MENU_SOUNDTRACK);
     else if (!strcmp(name, "ach"))      menu_open(MENU_ACHIEVEMENTS);
     else if (!strcmp(name, "reset"))    menu_open(MENU_RESET);
     else if (!strcmp(name, "close"))    { ui_menu_close(); ui_hud_gift_menu_hide(); }
@@ -1398,7 +1441,7 @@ static lv_draw_buf_t *capture_target(int target)
 
 static bool game_save_screenshot(void)
 {
-    if (sd_busy() || save_restore_pending()) {
+    if (sd_busy() || s_sd_capture || save_restore_pending()) {
         ESP_LOGW(TAG, "screenshot rejected: SD busy or restore awaiting reboot");
         return false;
     }
@@ -1406,14 +1449,12 @@ static bool game_save_screenshot(void)
     if (!capture) { ESP_LOGE(TAG, "playfield snapshot allocation failed"); return false; }
     sd_screenshot_t image = { .width = capture->header.w, .height = capture->header.h,
                              .stride = capture->header.stride };
-    image.pixels = heap_caps_malloc(image.stride * image.height, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (image.pixels) memcpy(image.pixels, capture->data, image.stride * image.height);
-    lv_draw_buf_destroy(capture);
-    if (!image.pixels) { ESP_LOGE(TAG, "screenshot PSRAM allocation failed"); return false; }
+    image.pixels = capture->data;
     if (!sd_request_screenshot(&image)) {
-        heap_caps_free(image.pixels);
+        lv_draw_buf_destroy(capture);
         return false;
     }
+    s_sd_capture = capture;
     return true;
 }
 
@@ -1499,7 +1540,9 @@ bool game_ui_call_value(game_ui_action_t action, int value)
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
         ((action == GAME_UI_SET_AUTO_FEED || action == GAME_UI_SET_AUTO_HUNT ||
           action == GAME_UI_SET_MUSIC || action == GAME_UI_SET_MUTED) && (value < 0 || value > 1)) ||
-        (action == GAME_UI_SET_VOLUME && (value < 0 || value > 100)) ||
+        ((action == GAME_UI_SET_VOLUME || action == GAME_UI_SET_MUSIC_VOLUME) &&
+         (value < 0 || value > 100)) ||
+        (action == GAME_UI_SET_MUSIC_TRACK && (value < 0 || value >= AUDIO_MUSIC_TRACK_COUNT)) ||
         (action == GAME_UI_BACKGROUND && (value < 0 || value >= THEME_COUNT)) ||
         (action == GAME_UI_STATE && (value < 0 || value > SPIDER_SICK)) ||
         (action == GAME_UI_SPAWN && (value < -1 || value >= PREY_SPECIES_COUNT))) {
@@ -1517,7 +1560,8 @@ bool game_ui_call_value(game_ui_action_t action, int value)
 
     /* Wait for the render tick to pick it up. Bounded, so a stalled render
      * timer cannot hang the console forever. */
-    for (int i = 0; i < 100 && s_ui_req != GAME_UI_NONE; i++) {
+    int attempts = action == GAME_UI_TEST_UI ? 500 : 100;
+    for (int i = 0; i < attempts && s_ui_req != GAME_UI_NONE; i++) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     if (s_ui_req != GAME_UI_NONE) {
@@ -1767,6 +1811,9 @@ static void ui_service_request(void)
     case GAME_UI_SD_BACKUP:
         atomic_store(&s_ui_ok, sd_request(SD_JOB_BACKUP));
         break;
+    case GAME_UI_SD_RESTORE:
+        atomic_store(&s_ui_ok, sd_request(SD_JOB_RESTORE));
+        break;
     case GAME_UI_SPAWN:
         atomic_store(&s_ui_ok, s_ui_value < 0 ? prey_spawn() :
                      prey_spawn_species((prey_species_t)s_ui_value));
@@ -1803,6 +1850,16 @@ static void ui_service_request(void)
     case GAME_UI_SET_MUSIC:
         g.music_enabled = s_ui_value != 0;
         audio_set_music(g.music_enabled);
+        game_save_now();
+        break;
+    case GAME_UI_SET_MUSIC_VOLUME:
+        g.music_volume = (uint8_t)s_ui_value;
+        audio_set_music_volume(g.music_volume);
+        game_save_now();
+        break;
+    case GAME_UI_SET_MUSIC_TRACK:
+        g.music_track = (uint8_t)s_ui_value;
+        audio_set_music_track(g.music_track);
         game_save_now();
         break;
     case GAME_UI_SET_MUTED:
@@ -1940,6 +1997,21 @@ static void ui_service_request(void)
         on_sound_pick(1);
         sound_ok = sound_ok && audio_muted() == original_muted &&
                    g.music_enabled == original_music;
+        uint8_t original_music_volume = g.music_volume;
+        uint8_t original_track = g.music_track;
+        uint8_t original_volume = audio_volume();
+        on_volume_slider(3, 35);
+        on_soundtrack_pick(2);
+        bool music_ok = g.music_volume == 35 && audio_music_volume() == 35 &&
+                        g.music_track == 2 && audio_music_track() == 2 &&
+                        audio_volume() == original_volume;
+        g.music_volume = original_music_volume;
+        g.music_track = original_track;
+        audio_set_music_volume(original_music_volume);
+        audio_set_music_track(original_track);
+        menu_open(MENU_SD);
+        bool sd_feedback = !strcmp(s_menu_items[2].label, "SD Status") &&
+                           !strcmp(s_menu_items[2].detail, s_sd_message ? s_sd_message : sd_status_text());
         s_testing_placement = false;
         ui_menu_close();
         gift_t original_gift = g.gift;
@@ -1949,11 +2021,11 @@ static void ui_service_request(void)
         keep_gift_in_playfield();
         bool gift_bounds = g.gift.x == g_play.left && g.gift.y == g_play.bottom;
         g.gift = original_gift;
-        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d sound=%d\n",
+        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d sound=%d music=%d sd_feedback=%d\n",
                menu_ok && hud_ok && backgrounds_ok && gift_bounds && hunger_ok &&
-               power_ok && save_ok && decor_ok && pointer_ok && sound_ok ? "OK" : "ERR",
+               power_ok && save_ok && decor_ok && pointer_ok && sound_ok && music_ok && sd_feedback ? "OK" : "ERR",
                menu_ok, menu_ok, menu_ok, hud_ok, backgrounds_ok, hunger_ok,
-               power_ok, save_ok, decor_ok, pointer_ok, gift_bounds, sound_ok);
+               power_ok, save_ok, decor_ok, pointer_ok, gift_bounds, sound_ok, music_ok, sd_feedback);
         break;
     }
     default: break;
@@ -2366,7 +2438,14 @@ void game_tick_render(lv_timer_t *timer)
     uint32_t sd_gen = sd_generation();
     if (sd_gen != seen_sd_gen) {
         seen_sd_gen = sd_gen;
+        if (s_sd_capture && !sd_busy()) {
+            lv_draw_buf_destroy(s_sd_capture);
+            s_sd_capture = NULL;
+        }
         if (sd_take_restored(&g)) {
+            audio_set_volume(g.volume);
+            audio_set_music_volume(g.music_volume);
+            audio_set_music_track(g.music_track);
             audio_set_music(g.music_enabled);
             apply_enclosure_lights();
             state_finish_load();
@@ -2536,6 +2615,8 @@ void game_init(void)
 
     /* --- audio -------------------------------------------------------- */
     audio_init();
+    audio_set_music_volume(g.music_volume);
+    audio_set_music_track(g.music_track);
     audio_set_music(g.music_enabled);
 
     /* Network worker and RTC were initialized before display startup. */

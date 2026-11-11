@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.20](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.20)**
+| **[Download v1.1.21](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.21)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -26,7 +26,7 @@ Distinct pixel icons and gold menu ornaments
 leave Back clear. Prey have thorax-attached legs, alternating tripod steps,
 travel-driven ground animation and heading-aware sprites; the spider is unchanged.
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
-See [v1.1.20 release notes](docs/RELEASE_v1.1.20.md).
+See [v1.1.21 release notes](docs/RELEASE_v1.1.21.md).
 
 **The spider is one canvas, not a scene graph.** It is drawn from scratch into a
 single 96×96 RGB565A8 buffer every frame — legs, body, fuzz, eyes, fangs, gait,

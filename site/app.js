@@ -1,7 +1,7 @@
 import { SerialConsole } from './lib/protocol.js';
-import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js';
+import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.21';
 import { loadFirmware, flashFirmware } from './lib/flasher.js';
-import { DeviceGame } from './lib/device-ui.js?v=1.1.20';
+import { DeviceGame } from './lib/device-ui.js?v=1.1.21';
 import { renderSpider } from './lib/spider-renderer.js';
 
 const $ = selector => document.querySelector(selector);
@@ -48,7 +48,7 @@ async function operation(work, status = $('#save-summary')) {
 }
 async function bundledSchema() {
   if (schema) return schema;
-  const response = await fetch(new URL('./save-schema.json', import.meta.url));
+  const response = await fetch(new URL('./save-schema.json', import.meta.url), {cache:'no-store'});
   if (!response.ok) throw new Error('Bundled compiled save schema is missing');
   schema = validateSchema(await response.json()); return schema;
 }

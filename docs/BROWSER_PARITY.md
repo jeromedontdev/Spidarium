@@ -5,7 +5,7 @@
 The current catalogue is six treats, thirty-four decor kinds and twenty-four
 backgrounds. Native and browser IDs, costs, unlocks and footprints match. Decor
 grows past twelve placements; ownership kinds 32/33 use the extra ownership
-word instead of aliasing low bits. v10 local/raw saves preserve all records.
+word instead of aliasing low bits. v11 local/raw saves preserve all records.
 Raw saves keep the legacy twelve-slot prefix and append a counted six-byte tail.
 Browser serial framing/restore pacing and SD transfers support the full tail.
 
@@ -16,6 +16,19 @@ by default and separately switchable in Sound. Master mute and hidden-page
 silence still win. The pet sound is a soft bell/purr, not a falling chirp.
 Speaker listening approval is not inferred from deterministic PCM tests.
 The older ambience policy below is historical and superseded.
+
+Sound page 2 adds an independent Music Volume slider and three selectable
+original scores: Silk Garden, Moonlit Hollow and Rainy Canopy. Gain is relative
+to master volume; setting music to zero does not mute effects. Save v11 uses
+old padding for volume/track, retaining the 260-byte prefix and decor-tail ABI.
+Browser progress migrates old saves to music volume 100 and track 0.
+
+SD Card means real hardware storage only on the device. Its third row shows
+actual pending/result/error status, including verified backup and restore.
+The browser labels these actions as JSON download/file restore and reports
+outcomes inside the game (including fullscreen), not just below its viewport.
+Browser screenshot encoding produces a clean 480x480 PNG; its notification
+says download requested because a web page cannot confirm a file reached disk.
 
 ## v1.1.18: habitat controls and prey movement
 

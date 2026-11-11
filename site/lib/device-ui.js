@@ -1,8 +1,8 @@
-import * as E from './sim.js';
+import * as E from './sim.js?v=1.1.21';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio } from './device-audio.js';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.21';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -27,6 +27,8 @@ const POWER_MODES = ['Balanced','Battery Saver','RTC Sleep'];
 const SCREEN_TIMEOUTS = ['30 Seconds','1 Minute','2 Minutes','5 Minutes','Never'];
 const SLEEP_DELAYS = ['Never','5 Minutes Idle','15 Minutes Idle','30 Minutes Idle','1 Hour Idle'];
 const RTC_WAKES = ['15 Minutes','1 Hour','6 Hours'];
+const SOUNDTRACKS = MUSIC_TRACKS;
+const TRACK_ART = ['background_leaf_litter_0', 'background_night_0', 'background_woodland_0'];
 function element(tag, className, text) {
   const obj = document.createElement(tag); obj.className = className;
   if (text !== undefined) obj.textContent = text;
@@ -68,6 +70,8 @@ export class DeviceGame {
     this.canvas.addEventListener('pointerleave', () => this.cancelLongPress());
     this.screen.addEventListener('keydown', event => this.key(event));
     root.querySelector('#browser-save-file').onchange = () => this.importProgress();
+    root.querySelector('#browser-save-file').oncancel = () =>
+      this.report('Browser restore cancelled. Progress unchanged.');
     window.addEventListener('pagehide', () => this.persist());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.persist();
@@ -81,6 +85,16 @@ export class DeviceGame {
     if (this.progress?.blocked && !error) return;
     this.error = error; const status = this.root.querySelector('#sim-message');
     status.textContent = message; status.classList.toggle('error', error);
+    if (!this.notice) {
+      this.notice = element('div', 'd-notice');
+      this.notice.setAttribute('role', 'status');
+      this.screen.append(this.notice);
+    }
+    this.notice.textContent = message;
+    this.notice.classList.toggle('error', error);
+    this.notice.hidden = false;
+    clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => { this.notice.hidden = true; }, error ? 10000 : 6000);
   }
   persist() { if (this.started) this.progress.save(this.state); }
   async fullscreen() {
@@ -299,7 +313,17 @@ export class DeviceGame {
           { checkbox:true, selected:this.state.sound }),
         row('Background Music', () => { this.state.music_enabled = this.state.music_enabled ? 0 : 1; this.persist(); this.open(name); },
           'Gentle Ambient Score', { checkbox:true, selected:!!this.state.music_enabled }),
+        row('Music Volume', null, `${this.state.music_volume}%`, { icon:'ui_volume',
+          slider:{value:this.state.music_volume,min:0,max:100,step:5,change:value=>{
+            this.state.music_volume=value;this.persist();
+          }} }),
+        row('Soundtrack', () => this.open('Soundtrack'), SOUNDTRACKS[this.state.music_track],
+          {submenu:true,icon:TRACK_ART[this.state.music_track]}),
       ]; break;
+      case 'Soundtrack': rows = SOUNDTRACKS.map((label,id)=>row(label,()=>{
+        this.state.music_track=id;this.persist();this.open(name);
+      },id===this.state.music_track?'Selected / Original Ambient Score':'Choose This Score',
+      {selected:id===this.state.music_track,icon:TRACK_ART[id]})); break;
       case 'Backgrounds': rows = E.BACKGROUNDS.map((key,id) => row(title(key), () => {
         if (!E.buyBackground(this.state,id)) { this.report('Not enough Silk for that background.',true); return; }
         this.persist(); this.open(name, page);
@@ -324,7 +348,14 @@ export class DeviceGame {
         row('Put Gift Away', () => { E.removeGift(this.state); this.persist(); this.open('Menu'); }, 'Keep Ownership', { destructive:true, enabled:!!this.state.gift.used }),
       ]; break;
       case 'WiFi': this.copy('WiFi, time sync and OTA use the board’s radio.\n\nThis browser has no ESP32 radio. Use Your Device → WiFi Setup below to set real credentials over local USB. The game never sends WiFi credentials or makes a simulated connection.', () => { this.close(); document.querySelector('[data-hardware="wifi"]').click(); document.querySelector('#device').scrollIntoView(); }, 'Open Device Tools'); return;
-      case 'SD Card': rows = [row('Back Up Save', () => this.download()), row('Restore Save', () => this.root.querySelector('#browser-save-file').click())]; break;
+      case 'SD Card': rows = [
+        row('Back Up Save', () => this.download(), 'Download Browser JSON / Not Device SD'),
+        row('Restore Save', () => {
+          this.report('Choose a browser JSON backup. Your device SD card is not accessed.');
+          this.root.querySelector('#browser-save-file').click();
+        }, 'Choose Browser JSON / Not Device SD'),
+        row('Storage', null, 'Browser Files / Device SD Requires Hardware'),
+      ]; break;
       case 'Battery': rows = [
         row('Battery', null, 'Hardware Telemetry Unavailable'),
         row('Runtime', null, this.runtimeText()),
@@ -349,6 +380,7 @@ export class DeviceGame {
   }
   back(name) {
     if (name === 'Menu' || name === 'Gifts') this.close();
+    else if (name === 'Soundtrack') this.open('Sound', 1);
     else if (name === 'Daily' || name === 'Treats') this.open('Menu');
     else if (name === 'Decor Item') this.open('Decor');
     else this.open(['Backgrounds', 'Achievements', 'Prey Species', 'Decor', 'Settings'].includes(name) ? 'Menu' : 'Settings');
@@ -394,8 +426,11 @@ export class DeviceGame {
         const input = element('input', 'd-slider'); input.type = 'range';
         input.min = String(min); input.max = String(max); input.step = String(step); input.value = String(value);
         input.setAttribute('aria-label', item.label);
-        input.addEventListener('input', () => { change(Number(input.value)); });
-        input.addEventListener('change', () => { this.open(this.modal.name, page); });
+        input.addEventListener('input', () => {
+          change(Number(input.value));
+          const detail = button.querySelector('.row-detail');
+          if (detail) detail.textContent = `${input.value}%`;
+        });
         button.append(input);
         button.disabled = false;
       } else if (item.selected || item.submenu) button.append(element('span', 'row-marker', item.selected ? '✓' : '›'));
@@ -746,15 +781,21 @@ export class DeviceGame {
     } else this.accumulator = 0;
     if (this.game) this.gameFrame(now);
     if (this.started) this.audio.tick(E.STATE_NAMES[this.state.state], now, this.state.sound && !document.hidden,
-      this.state.volume, !this.hud && !this.modal && !this.game, !!this.state.music_enabled);
+      this.state.volume, !this.hud && !this.modal && !this.game, !!this.state.music_enabled,
+      this.state.music_volume, this.state.music_track);
     this.draw(); this.refreshHUD();
     if (now - this.lastSave >= 5000) { this.persist(); this.lastSave = now; }
     requestAnimationFrame(time => this.frame(time));
   }
   download() {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(this.state, null, 2)], { type: 'application/json' }));
-    const link = element('a', ''); link.href = url; link.download = 'spidarium-browser-save.json'; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000); this.report('Browser save downloaded. Device binary backups use the USB tools below.');
+    try {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(this.state, null, 2)], { type: 'application/json' }));
+      const link = element('a', ''); link.href = url; link.download = 'spidarium-browser-save.json';
+      this.root.append(link);
+      try { link.click(); }
+      finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      this.report('Browser backup download requested. Check Downloads; this does not write the device SD card.');
+    } catch (error) { this.report(`Browser backup failed: ${error.message}`, true); }
   }
   async screenshot() {
     try {
@@ -766,18 +807,20 @@ export class DeviceGame {
       link.href = url;
       link.download = `spidarium-${Date.now()}.png`;
       this.root.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      this.report('Playfield screenshot downloaded. Menus and HUD are excluded.');
+      try { link.click(); }
+      finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      this.report('Playfield PNG download requested. Check Downloads. Menus and HUD are excluded.');
     } catch (error) { this.report(`Screenshot failed: ${error.message}`, true); }
   }
   async importProgress() {
     try {
-      const file = this.root.querySelector('#browser-save-file').files[0]; if (!file) return;
+      const file = this.root.querySelector('#browser-save-file').files[0];
+      if (!file) { this.report('Browser restore cancelled. Progress unchanged.'); return; }
       if (file.size > 100000) throw new Error('Browser backup is too large');
       const state = E.restoreSim(JSON.parse(await file.text()));
-      if (!confirm('Replace browser progress with this backup? Your physical spider is not touched.')) return;
+      if (!confirm('Replace browser progress with this backup? Your physical spider is not touched.')) {
+        this.report('Browser restore cancelled. Progress unchanged.'); return;
+      }
       if (!this.progress.reset(state)) return;
       this.state = state; this.started = state.setup_complete; this.close();
       if (!this.started) this.setup(); this.report('Browser progress restored.');

@@ -65,6 +65,10 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   the card file and verifies readback before publishing completion. FATFS uses
   heap-backed long-filename workspace, not stack-backed workspace, for
   `spidarium-save.bin`.
+  Screenshot jobs borrow immutable pixels from one retained LVGL snapshot.
+  LVGL destroys that snapshot after worker completion/generation acknowledgement;
+  workers neither free its pixels nor call LVGL. A second full-screen copy
+  would exceed the expanded habitat's available PSRAM.
   Restored state is loaded on that worker and copied back to LVGL; no NVS read
   occurs from the external-stack LVGL task.
   Save acknowledgements propagate queue rejection instead of reporting success.
@@ -99,7 +103,11 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   Original 32-second D-Bm-G-A ambient music streams in 50 ms chunks through the
   same buffer, fades in over 1.5 seconds and yields with a 20 ms fade to effects,
   mute, its independent toggle, radio or sleep. It continues in menus. No new
-  PCM buffer or LVGL codec calls. Manual filtered air (8 seconds) /
+  PCM buffer or LVGL codec calls. Three original selectable tracks share that
+  buffer; worker-applied music gain is multiplied by master volume and never
+  reduces foreground effects. Track changes fade out/reset/fade in.
+  Save v11 uses old padding bytes 254/255 without moving the decor tail.
+  Manual filtered air (8 seconds) /
   leaves (10 seconds) remain diagnostic effects. No automatic chirps, pitched
   drops or sweeps. Two-second attacks and three-second releases
   prevent abrupt entrances/exits. Stream 100 ms chunks in the existing PCM

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { soundSamples, DeviceAudio, musicSamples, musicSample, petSample, MUSIC_LOOP, MUSIC_SINE,
   MUSIC_PAD, MUSIC_MELODY, PET_NOTES, PET_SAMPLES } from '../lib/device-audio.js';
+import { MUSIC_TRACKS, MUSIC_EXTRA_TRACKS, MUSIC_MOON_PAD, MUSIC_MOON_MELODY,
+  MUSIC_RAIN_PAD, MUSIC_RAIN_MELODY, musicTrackLoop, musicGain } from '../lib/device-audio.js';
 
 function rms(samples, start = 0, end = samples.length) {
   let power = 0;
@@ -64,8 +66,8 @@ function audio() {
   sound.context = {
     state: 'running', currentTime: 3, buffers: 0,
     createBuffer() { this.buffers++; return { copyToChannel() {} }; },
-    createGain: () => ({ gain: new Gain(), connect() {}, disconnect() {} }),
-    createBufferSource: () => ({ connect() {}, disconnect() {}, start() { this.started = true; },
+    createGain: () => ({ gain: new Gain(), connect(target) { this.output = target; }, disconnect() {} }),
+    createBufferSource: () => ({ connect(target) { this.output = target; }, disconnect() {}, start() { this.started = true; },
       stop(time) { this.stoppedAt = time; } }),
   };
   sound.master = sound.context.createGain();
@@ -195,10 +197,21 @@ test('native header tables and self-test hashes match the browser synthesis', ()
   assert.deepEqual(table('MUSIC_SINE'), [...MUSIC_SINE]);
   assert.deepEqual(table('MUSIC_PAD'), [...MUSIC_PAD]);
   assert.deepEqual(table('MUSIC_MELODY'), [...MUSIC_MELODY]);
+  assert.deepEqual(table('MUSIC_MOON_PAD'), [...MUSIC_MOON_PAD]);
+  assert.deepEqual(table('MUSIC_MOON_MELODY'), [...MUSIC_MOON_MELODY]);
+  assert.deepEqual(table('MUSIC_RAIN_PAD'), [...MUSIC_RAIN_PAD]);
+  assert.deepEqual(table('MUSIC_RAIN_MELODY'), [...MUSIC_RAIN_MELODY]);
   assert.deepEqual(table('PET_NOTES'), [...PET_NOTES]);
   const define = name => Number(header.match(new RegExp(`#define ${name} (0x[0-9a-f]+)u`))[1]);
   assert.equal(fnv(MUSIC_LOOP, musicSample), define('MUSIC_TEST_HASH'));
+  assert.equal(fnv(musicTrackLoop(1), i => musicSample(i, 1)), define('MUSIC_MOON_TEST_HASH'));
+  assert.equal(fnv(musicTrackLoop(2), i => musicSample(i, 2)), define('MUSIC_RAIN_TEST_HASH'));
   assert.equal(fnv(PET_SAMPLES, petSample), define('PET_TEST_HASH'));
+  const descriptors = [...header.matchAll(/\{MUSIC_(?:MOON|RAIN)_PAD, MUSIC_(?:MOON|RAIN)_MELODY, ([^}]+)\}/g)]
+    .map(match => match[1].split(',').map(value => Number(value.trim().replace(/u$/, ''))));
+  assert.deepEqual(descriptors, MUSIC_EXTRA_TRACKS.map(track => [
+    track.chord, track.overlap, track.note, track.attack, track.padGain, track.melodyGain,
+  ]), 'native and browser tempo, envelope and voice levels match');
 });
 
 test('music starts after enable with a fade in, loops, and keeps playing in menus', () => {
@@ -253,4 +266,134 @@ test('effects fade the music out, then music fades back in after the effect', ()
   assert.deepEqual(events[4], ['ramp', 1, 3 + .02 + PET_SAMPLES / 16000 + 1.5]);
   assert.equal(sound.music, music, 'the stream is ducked, not restarted');
   assert.ok(sound.sources.size === 2);
+});
+
+test('three original tracks have distinct PCM, tempo and voices with continuous quiet loops', () => {
+  assert.deepEqual(MUSIC_TRACKS, ['Silk Garden', 'Moonlit Hollow', 'Rainy Canopy']);
+  const hashes = new Set(), lengths = new Set();
+  for (let track = 0; track < MUSIC_TRACKS.length; track++) {
+    const samples = musicSamples(track), length = musicTrackLoop(track);
+    lengths.add(length);
+    assert.equal(samples.length, length);
+    assert.equal(musicSamples(track), samples, 'reuse the current deterministic loop');
+    let peak = 0, step = 0;
+    for (let i = 0; i < length; i++) {
+      assert.equal(samples[i] * 32768, musicSample(i, track), `exact streamed PCM track=${track} sample=${i}`);
+      peak = Math.max(peak, Math.abs(samples[i]));
+      step = Math.max(step, Math.abs(samples[i] - samples[(i + length - 1) % length]));
+    }
+    assert.ok(peak < .12 && rms(samples) > .012 && rms(samples) < .035, `gentle track ${track}`);
+    assert.ok(step < .025, `continuous across every chunk/chord/note/loop boundary: ${step}`);
+    assert.equal(musicSample(length + 1234, track), musicSample(1234, track), 'periodic');
+    for (let second = 0; second < length / 16000; second++)
+      assert.ok(rms(samples, second * 16000, (second + 1) * 16000) > .004, 'no dead seconds');
+    hashes.add(fnv(length, i => musicSample(i, track)));
+  }
+  assert.equal(hashes.size, 3, 'all tracks are genuinely different recordings');
+  assert.equal(lengths.size, 3, 'different harmonic tempos');
+});
+
+test('music-only gain has exact silence/full scale and symmetric integer scaling', () => {
+  for (let track = 0; track < MUSIC_TRACKS.length; track++) {
+    for (let i = 0; i < musicTrackLoop(track); i += 17) {
+      const sample = musicSample(i, track);
+      assert.equal(musicGain(sample, 100), sample);
+      assert.equal(musicGain(sample, 0), 0);
+      assert.equal(musicGain(sample, 50), Math.trunc(sample / 2) || 0);
+      assert.equal(musicGain(sample, 25), Math.trunc(sample / 4) || 0);
+    }
+  }
+});
+
+test('music volume controls only the music bus; master volume and mute still win', () => {
+  const sound = audio();
+  sound.tick('idle', 0, true, 80, true, true, 25, 1);
+  const music = sound.music;
+  assert.equal(music.level.output, sound.musicGain);
+  assert.equal(sound.musicGain.output, sound.master);
+  assert.equal(sound.musicGain.gain.value, .25);
+  sound.play('pet');
+  const effect = [...sound.sources].find(source => source !== music);
+  assert.equal(effect.level.output, sound.master, 'foreground bypasses music volume');
+  const masterEvents = sound.master.gain.events.length;
+  sound.tick('idle', 16, true, 80, true, true, 50, 1);
+  assert.equal(sound.music, music, 'music gain does not restart playback');
+  assert.deepEqual(sound.musicGain.gain.events.at(-1), ['target', .5, 3, .01]);
+  assert.equal(sound.master.gain.events.length, masterEvents, 'master unaffected');
+  assert.equal(effect.stoppedAt, undefined, 'foreground unaffected');
+  sound.tick('idle', 32, true, 80, true, true, 0, 1);
+  assert.equal(sound.music, null);
+  assert.equal(music.stoppedAt, 3.02, 'music-only silence fades within 20 ms');
+  assert.equal(effect.stoppedAt, undefined, 'music mute does not mute effects');
+  sound.tick('idle', 48, true, 80, true, true, 50, 1);
+  assert.ok(sound.music);
+  const resumed = sound.music;
+  sound.tick('idle', 64, true, 0, true, true, 100, 1);
+  assert.deepEqual(sound.master.gain.events.at(-1), ['target', 0, 3, .01], 'zero master always wins');
+  sound.tick('idle', 80, false, 80, true, true, 100, 1);
+  assert.equal(resumed.stoppedAt, 3.02);
+  assert.equal(effect.stoppedAt, 3.02, 'master mute also stops foreground');
+});
+
+test('track changes fade old music and restart the selected loop without touching effects', () => {
+  const sound = audio();
+  sound.tick('idle', 0, true, 70, true, true);
+  const old = sound.music, oldBuffer = old.buffer;
+  sound.play('pet');
+  const effect = [...sound.sources].find(source => source !== old);
+  sound.tick('idle', 16, true, 70, false, true, 35, 2);
+  const selected = sound.music;
+  assert.equal(old.stoppedAt, 3.02);
+  assert.notEqual(selected, old);
+  assert.notEqual(selected.buffer, oldBuffer);
+  assert.equal(sound.musicBufferTrack, 2);
+  assert.equal(selected.loop, true);
+  assert.equal(selected.level.gain.value, 0, 'new track fades in from silence');
+  assert.equal(effect.stoppedAt, undefined);
+  old.onended();
+  assert.equal(sound.music, selected, 'old completion cannot clear the new track');
+  const events = sound.musicGain.gain.events.length, buffers = sound.context.buffers;
+  for (let i = 0; i < 120; i++) sound.tick('idle', i * 16, true, 70, false, true, 35, 2);
+  assert.equal(sound.music, selected);
+  assert.equal(sound.context.buffers, buffers, 'no per-frame PCM allocation');
+  assert.equal(sound.musicGain.gain.events.length, events, 'no redundant gain automation');
+});
+
+test('invalid music inputs report rejection and retain the prior valid settings', () => {
+  const sound = audio(), errors = [];
+  sound.report = (...args) => errors.push(args);
+  sound.tick('idle', 0, true, 70, true, true, 40, 1);
+  const source = sound.music;
+  for (const [volume, track] of [[101, 3], [-1, -1], [NaN, NaN], [1.5, 1.5]]) {
+    sound.tick('idle', 16, true, 70, true, true, volume, track);
+    assert.equal(sound.musicVolume, .4);
+    assert.equal(sound.musicTrack, 1);
+    assert.equal(sound.music, source);
+  }
+  assert.equal(errors.length, 8);
+  assert.ok(errors.every(([message, error]) => /^Invalid music (volume|track):/.test(message) && error));
+  assert.throws(() => musicSamples(3), RangeError);
+  assert.throws(() => musicSample(0, -1), RangeError);
+  assert.throws(() => musicTrackLoop(NaN), RangeError);
+});
+
+test('native music requests publish atomics only and the worker owns fade/restart and PCM reuse', () => {
+  const source = readFileSync(new URL('../../main/audio.c', import.meta.url), 'utf8');
+  const header = readFileSync(new URL('../../main/audio.h', import.meta.url), 'utf8');
+  assert.match(header, /#define AUDIO_MUSIC_TRACK_COUNT 3/);
+  assert.match(source, /_Static_assert\(AUDIO_MUSIC_TRACK_COUNT == MUSIC_TRACK_COUNT/);
+  for (const [name, maximum] of [['track', 'AUDIO_MUSIC_TRACK_COUNT'], ['volume', '100']]) {
+    const setter = source.match(new RegExp(`void audio_set_music_${name}\\(uint8_t ${name}\\)\\s*\\{([\\s\\S]*?)\\n\\}`))[1];
+    assert.ok(setter.includes(maximum));
+    assert.match(setter, /ESP_LOGW/);
+    assert.match(setter, /return;/);
+    assert.ok(setter.includes(`atomic_store(&s_music_${name}, ${name})`));
+    assert.doesNotMatch(setter, /lv_|esp_codec|write_pcm|vTaskDelay|heap_caps|music_stop/);
+  }
+  assert.match(source, /music_stop\("track change"\);\s*s_music_active_track = track;\s*s_music_pos = 0;\s*s_music_fade = 0;/);
+  assert.match(source, /s_buf\[i\] = music_gain\(value,/);
+  assert.equal((source.match(/heap_caps_malloc\(/g) ?? []).length, 1, 'existing 12,800-byte PSRAM PCM reused');
+  assert.match(source, /MALLOC_CAP_SPIRAM \| MALLOC_CAP_8BIT/);
+  const effects = source.slice(source.indexOf('static void play_sfx(sfx_t sfx)\n{'));
+  assert.doesNotMatch(effects, /s_music_volume|music_gain/, 'foreground is not attenuated by music volume');
 });

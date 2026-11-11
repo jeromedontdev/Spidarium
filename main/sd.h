@@ -53,7 +53,8 @@ typedef struct {
     uint8_t *pixels;
     uint32_t width, height, stride;
 } sd_screenshot_t;
-/* Ownership of PSRAM pixels transfers only when the request succeeds. */
+/* Caller keeps immutable pixels alive until !sd_busy() after completion,
+ * then releases its snapshot on LVGL. The worker never frees/calls LVGL. */
 bool sd_request_screenshot(const sd_screenshot_t *image);
 bool sd_request(uint8_t operation);
 bool sd_busy(void);

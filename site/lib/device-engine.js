@@ -182,7 +182,7 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:10,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:11,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
@@ -191,7 +191,7 @@ export function freshState(options={}) {
     backgrounds_owned:1,power_mode:0,screen_timeout:3,deep_sleep_after:0,rtc_wake:0,
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
     daily_override:0xFFFFFFFF,pet_xp_day:0xFFFFFFFF,pet_xp_today:0,
-    decor_owned:0,decor_owned_extra:0,music_enabled:1,lights_dimmed:0,
+    decor_owned:0,decor_owned_extra:0,music_enabled:1,lights_dimmed:0,music_volume:100,music_track:0,
     decor:Array.from({length:DECOR_SLOTS},()=>({kind:DECOR_EMPTY,blocking:0,x:0,y:0})),
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
@@ -233,7 +233,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8,9,10].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9,10,11].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -264,6 +264,7 @@ export function validateProgress(raw) {
   number('volume',0,100);
   number('backgrounds_owned',1,0xffffff);
   number('music_enabled',0,1);number('lights_dimmed',0,1);
+  number('music_volume',0,100);number('music_track',0,2);
   number('power_mode',0,2);number('screen_timeout',0,4);
   number('deep_sleep_after',0,4);number('rtc_wake',0,2);
   if(raw.version>=9&&(!Number.isInteger(raw.backgrounds_owned)||
@@ -363,6 +364,10 @@ export function restoreSim(raw,options={}) {
   if(raw.version>=10){
     s.music_enabled=raw.music_enabled??1;
     s.lights_dimmed=raw.lights_dimmed??0;
+  }
+  if(raw.version>=11){
+    s.music_volume=raw.music_volume??100;
+    s.music_track=raw.music_track??0;
   }
   if(raw.version>=8&&Array.isArray(raw.decor))
     s.decor=Array.from({length:raw.decor.length},(_,i)=>{

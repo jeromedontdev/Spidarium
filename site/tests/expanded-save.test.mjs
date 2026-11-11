@@ -5,8 +5,8 @@ import { decodeSave } from '../lib/save.js';
 
 const schema=JSON.parse(await readFile(new URL('../save-schema.json',import.meta.url)));
 
-test('compiled v10 variable save preserves eighty extra placements and high catalogue ownership',()=>{
-  assert.equal(schema.version,10);
+test('compiled v11 variable save preserves eighty extra placements and high catalogue ownership',()=>{
+  assert.equal(schema.version,11);
   assert.deepEqual(schema.payloadSizes,[120,260]);
   const count=80,bytes=new Uint8Array(272+count*6),view=new DataView(bytes.buffer);
   view.setUint32(0,schema.magic,true);view.setUint16(4,10,true);view.setUint32(8,bytes.length-12,true);
@@ -31,4 +31,17 @@ test('compiled v10 variable save preserves eighty extra placements and high cata
   assert.throws(()=>decodeSave(bytes,schema),/Invalid extended decor/);
   view.setUint8(272,0);view.setUint8(12+252,2);
   assert.throws(()=>decodeSave(bytes,schema),/music_enabled/);
+});
+
+test('music preferences occupy old padding without moving the variable decor tail',()=>{
+  const bytes=new Uint8Array(272),view=new DataView(bytes.buffer);
+  view.setUint32(0,schema.magic,true);view.setUint16(4,11,true);view.setUint32(8,260,true);
+  bytes[248]=1;bytes[266]=35;bytes[267]=2;
+  const saved=decodeSave(bytes,schema);
+  assert.equal(saved.fields.music_volume,35);assert.equal(saved.fields.music_track,2);
+  bytes[266]=101;assert.throws(()=>decodeSave(bytes,schema),/music preference/);
+  bytes[266]=35;bytes[267]=3;assert.throws(()=>decodeSave(bytes,schema),/music preference/);
+  view.setUint16(4,10,true);bytes[266]=255;bytes[267]=255;
+  const migrated=decodeSave(bytes,schema);
+  assert.equal(migrated.fields.music_volume,100);assert.equal(migrated.fields.music_track,0);
 });

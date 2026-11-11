@@ -31,6 +31,7 @@ static const char *TAG = "spidarium.audio";
 #define MAX_SAMPLES (AUDIO_SAMPLE_RATE * 400 / 1000)
 _Static_assert(AUDIO_SAMPLE_RATE == AMBIENCE_RATE, "ambience sample rate mismatch");
 _Static_assert(AUDIO_SAMPLE_RATE == MUSIC_RATE, "music sample rate mismatch");
+_Static_assert(AUDIO_MUSIC_TRACK_COUNT == MUSIC_TRACK_COUNT, "music track count mismatch");
 _Static_assert(PET_SAMPLES <= MAX_SAMPLES, "pet bell exceeds PCM buffer");
 
 /* 50 ms music chunks keep fades prompt; idle polling lets music start. */
@@ -49,11 +50,15 @@ static atomic_bool s_muted;
 static atomic_int  s_volume = AUDIO_VOLUME;
 static atomic_int  s_volume_applied = -1;
 static atomic_bool s_music;
+static atomic_int  s_music_volume = 100;
+static atomic_int  s_music_track;
 /* Worker-only music stream state. */
 static bool     s_music_on;
+static uint8_t  s_music_active_track;
 static uint32_t s_music_pos;
 static uint32_t s_music_fade;
 static uint32_t s_music_written;
+static uint8_t  s_music_gain = 100;
 
 static void play_sfx(sfx_t sfx);
 static bool write_pcm(int samples);
@@ -74,13 +79,14 @@ static bool apply_volume(void)
 static bool music_wanted(void)
 {
     return atomic_load(&s_music) && !atomic_load(&s_muted) && !net_busy() &&
-           !power_sleep_pending();
+           !power_sleep_pending() && atomic_load(&s_music_volume) > 0;
 }
 
 static const char *music_stop_reason(void)
 {
     if (!atomic_load(&s_music)) return "disabled";
     if (atomic_load(&s_muted)) return "muted";
+    if (!atomic_load(&s_music_volume)) return "music volume zero";
     if (net_busy()) return "network";
     return "sleep";
 }
@@ -89,16 +95,20 @@ static const char *music_stop_reason(void)
  * stopping chunk additionally ramps linearly to silence. */
 static void music_render(int samples, bool stopping)
 {
+    uint8_t volume = (uint8_t)atomic_load(&s_music_volume);
     for (int i = 0; i < samples; i++) {
-        int32_t value = music_sample(s_music_pos);
-        s_music_pos = (s_music_pos + 1u) % MUSIC_LOOP;
+        int32_t value = music_track_sample(s_music_active_track, s_music_pos);
+        s_music_pos = (s_music_pos + 1u) % music_track_loop(s_music_active_track);
         if (s_music_fade < MUSIC_FADE_IN) {
             value = (value * music_smooth((int32_t)(s_music_fade * 32768u / MUSIC_FADE_IN))) >> 15;
             s_music_fade++;
         }
         if (stopping) value = value * (samples - 1 - i) / samples;
-        s_buf[i] = (int16_t)value;
+        int gain = stopping ? s_music_gain :
+                   s_music_gain + ((int)volume - s_music_gain) * (i + 1) / samples;
+        s_buf[i] = music_gain(value, (uint8_t)gain);
     }
+    if (!stopping) s_music_gain = volume;
 }
 
 static void music_stop(const char *reason)
@@ -118,7 +128,10 @@ static void music_chunk(void)
     if (!s_music_on) {
         s_music_on = true;
         s_music_written = 0;
-        ESP_LOGI(TAG, "music started: position=%lu", (unsigned long)s_music_pos);
+        s_music_gain = (uint8_t)atomic_load(&s_music_volume);
+        ESP_LOGI(TAG, "music started: position=%lu track=%u (%s)",
+                 (unsigned long)s_music_pos, (unsigned)s_music_active_track,
+                 audio_music_track_name(s_music_active_track));
     }
     music_render(MUSIC_CHUNK, false);
     if (!apply_volume() || !write_pcm(MUSIC_CHUNK)) {
@@ -140,6 +153,13 @@ static void audio_worker(void *arg)
         /* Publish activity before checking the radio/sleep flags, matching
          * their drains: they never observe idle while a chunk is starting. */
         atomic_store(&s_playing, true);
+        uint8_t track = (uint8_t)atomic_load(&s_music_track);
+        if (track != s_music_active_track) {
+            music_stop("track change");
+            s_music_active_track = track;
+            s_music_pos = 0;
+            s_music_fade = 0;
+        }
         bool music = music_wanted();
         if (!music) {
             if (s_music_on) music_stop(music_stop_reason());
@@ -342,6 +362,46 @@ bool audio_music(void)
     return atomic_load(&s_music);
 }
 
+void audio_set_music_track(uint8_t track)
+{
+    if (track >= AUDIO_MUSIC_TRACK_COUNT) {
+        ESP_LOGW(TAG, "music track rejected: invalid track %u", (unsigned)track);
+        return;
+    }
+    atomic_store(&s_music_track, track);
+}
+
+uint8_t audio_music_track(void)
+{
+    return (uint8_t)atomic_load(&s_music_track);
+}
+
+const char *audio_music_track_name(uint8_t track)
+{
+    static const char *const names[AUDIO_MUSIC_TRACK_COUNT] = {
+        "Silk Garden", "Moonlit Hollow", "Rainy Canopy",
+    };
+    if (track >= AUDIO_MUSIC_TRACK_COUNT) {
+        ESP_LOGW(TAG, "music name rejected: invalid track %u", (unsigned)track);
+        return NULL;
+    }
+    return names[track];
+}
+
+void audio_set_music_volume(uint8_t volume)
+{
+    if (volume > 100) {
+        ESP_LOGW(TAG, "music volume rejected: invalid volume %u", (unsigned)volume);
+        return;
+    }
+    atomic_store(&s_music_volume, volume);
+}
+
+uint8_t audio_music_volume(void)
+{
+    return (uint8_t)atomic_load(&s_music_volume);
+}
+
 bool audio_muted(void)
 {
     return g.muted != 0;
@@ -381,6 +441,9 @@ bool audio_playing(void) { return atomic_load(&s_playing); }
 
 bool audio_test(void)
 {
+    /* Console-only diagnostics must block periodically so IDLE can run even
+     * while the audio worker is synthesizing a live music stream. */
+    const uint32_t yield_samples = 1024u;
     bool ok = true;
     const uint32_t expected[] = {0x02c0ba3fu, 0x096a6969u};
     for (int leafy = 0; leafy < 2; leafy++) {
@@ -397,6 +460,7 @@ bool audio_test(void)
             uint16_t bits = (uint16_t)sample;
             hash = (hash ^ (bits & 255u)) * 16777619u;
             hash = (hash ^ (bits >> 8)) * 16777619u;
+            if (sound.position % yield_samples == 0) vTaskDelay(1);
         }
         bool valid = hash == expected[leafy] && first == 0 && last == 0 && peak < 2000;
         ok = valid && ok;
@@ -405,31 +469,41 @@ bool audio_test(void)
                  (unsigned long)hash, peak, first, last, valid ? "PASS" : "FAIL");
     }
 
-    uint32_t hash = 2166136261u;
-    int peak = 0, step = 0, previous = music_sample(MUSIC_LOOP - 1u);
-    int64_t power = 0;
-    for (uint32_t i = 0; i < MUSIC_LOOP; i++) {
-        int sample = music_sample(i);
-        int magnitude = sample < 0 ? -sample : sample;
-        int change = sample > previous ? sample - previous : previous - sample;
-        if (magnitude > peak) peak = magnitude;
-        if (change > step) step = change;
-        power += (int64_t)sample * sample;
-        previous = sample;
-        uint16_t bits = (uint16_t)sample;
-        hash = (hash ^ (bits & 255u)) * 16777619u;
-        hash = (hash ^ (bits >> 8)) * 16777619u;
+    const uint32_t music_hashes[MUSIC_TRACK_COUNT] = {
+        MUSIC_TEST_HASH, MUSIC_MOON_TEST_HASH, MUSIC_RAIN_TEST_HASH,
+    };
+    for (uint8_t track = 0; track < MUSIC_TRACK_COUNT; track++) {
+        uint32_t length = music_track_loop(track), hash = 2166136261u;
+        int peak = 0, step = 0, previous = music_track_sample(track, length - 1u);
+        int64_t power = 0;
+        bool gain_ok = true;
+        for (uint32_t i = 0; i < length; i++) {
+            int sample = music_track_sample(track, i);
+            int magnitude = sample < 0 ? -sample : sample;
+            int change = sample > previous ? sample - previous : previous - sample;
+            if (magnitude > peak) peak = magnitude;
+            if (change > step) step = change;
+            power += (int64_t)sample * sample;
+            previous = sample;
+            gain_ok = gain_ok && music_gain(sample, 100) == sample &&
+                      music_gain(sample, 0) == 0 && music_gain(sample, 50) == sample / 2;
+            uint16_t bits = (uint16_t)sample;
+            hash = (hash ^ (bits & 255u)) * 16777619u;
+            hash = (hash ^ (bits >> 8)) * 16777619u;
+            if ((i + 1u) % yield_samples == 0) vTaskDelay(1);
+        }
+        int rms = (int)sqrt((double)power / length);
+        /* step includes the loop seam (last sample -> first sample). */
+        bool valid = hash == music_hashes[track] && peak < 4000 && step < 1000 &&
+                     rms > 300 && rms < 1300 && gain_ok;
+        ok = valid && ok;
+        ESP_LOGI(TAG, "PCM music samples=%lu hash=%08lx peak=%d maxstep=%d rms=%d track=%u gain=%s %s",
+                 (unsigned long)length, (unsigned long)hash, peak, step, rms,
+                 (unsigned)track, gain_ok ? "PASS" : "FAIL", valid ? "PASS" : "FAIL");
     }
-    int rms = (int)sqrt((double)power / MUSIC_LOOP);
-    /* step includes the loop seam (last sample -> first sample). */
-    bool valid = hash == MUSIC_TEST_HASH && peak < 4000 && step < 1000 && rms > 300 && rms < 1300;
-    ok = valid && ok;
-    ESP_LOGI(TAG, "PCM music samples=%lu hash=%08lx peak=%d maxstep=%d rms=%d %s",
-             (unsigned long)MUSIC_LOOP, (unsigned long)hash, peak, step, rms,
-             valid ? "PASS" : "FAIL");
 
-    hash = 2166136261u;
-    peak = 0;
+    uint32_t hash = 2166136261u;
+    int peak = 0;
     int first = pet_sample(0), last = pet_sample(PET_SAMPLES - 1);
     for (uint32_t i = 0; i < PET_SAMPLES; i++) {
         int sample = pet_sample(i);
@@ -438,8 +512,9 @@ bool audio_test(void)
         uint16_t bits = (uint16_t)sample;
         hash = (hash ^ (bits & 255u)) * 16777619u;
         hash = (hash ^ (bits >> 8)) * 16777619u;
+        if ((i + 1u) % yield_samples == 0) vTaskDelay(1);
     }
-    valid = hash == PET_TEST_HASH && first == 0 && last == 0 && peak < 2400;
+    bool valid = hash == PET_TEST_HASH && first == 0 && last == 0 && peak < 2400;
     ok = valid && ok;
     ESP_LOGI(TAG, "PCM pet samples=%d hash=%08lx peak=%d endpoints=%d/%d %s", PET_SAMPLES,
              (unsigned long)hash, peak, first, last, valid ? "PASS" : "FAIL");

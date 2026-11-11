@@ -22,13 +22,14 @@ Menu
         Selected network -> sync RTC / forget
       Firmware update    HTTPS URL editor
       Scanned networks   choose -> password editor if secured
-    SD card              backup / restore (optional)
+    SD card              backup / restore / persistent status
     About                firmware and hardware information
     Battery              status, profiles, timeout, RTC sleep delay/wake
     Display              brightness slider, screen rotation
-    Sound                volume, single Sound checkbox, independent music switch
+    Sound                volume, Sound checkbox, Background Music switch
+                         page 2: Music Volume, Soundtrack (three choices)
     Auto Feed            one switch: wild prey and unattended hunting together
-    Save Screenshot      playfield PNG to SD
+    Save Screenshot      verified playfield BMP to SD (PNG in browser)
     Wipe Spider          red text; confirmation before reset; always last
 ```
 
@@ -40,6 +41,11 @@ Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Back from sav
 returns to WiFi. Other submenus return to the root; root Back closes.
 Only the explicit Back control navigates back. Blank panel/backdrop taps are
 absorbed without navigating; disabled cards do not dismiss the menu.
+Soundtrack offers Silk Garden, Moonlit Hollow and Rainy Canopy, with distinct
+habitat thumbnails; Back returns to Sound page 2. Music gain is relative to
+master, never an effects gain. Browser slider input updates text in place to
+retain keyboard focus. Browser storage progress/results also appear as a
+pixel-style in-screen notice, including over the modal/fullscreen playfield.
 
 Hold the actual decor/gift in the enclosure to move or put it away. Decor also
 offers blocking/walk-over in that contextual menu; neither movement action has

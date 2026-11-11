@@ -4,6 +4,7 @@
 #include "save.h"
 
 #include "decor.h"
+#include "audio.h"
 #include "game_config.h"
 #include "net.h"
 #include "power.h"
@@ -116,6 +117,10 @@ static void migrate_automation(game_state_t *state, uint16_t version)
         state->music_enabled = 1;
         state->lights_dimmed = 0;
     }
+    if (version < 11) {
+        state->music_volume = 100;
+        state->music_track = 0;
+    }
 }
 
 static void save_worker(void *arg)
@@ -148,7 +153,6 @@ static void save_worker(void *arg)
             atomic_store(&s_last_ok, ok);
             power_sleep_failed();
         }
-        if (job.sd_operation == SD_JOB_SCREENSHOT) heap_caps_free(job.screenshot.pixels);
         heap_caps_free(job.payload);
         if (job.raw && !ok) atomic_store(&s_restore_pending, false);
         atomic_store(&s_writing, false);
@@ -496,12 +500,13 @@ bool save_raw_valid(const void *src, size_t len)
     }
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
         hdr.version != 3 && hdr.version != 4 &&
-        hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9) {
+        hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9 &&
+        hdr.version != 10) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
-    if (!(hdr.version == 10 && hdr.size >= sizeof(game_state_t)) &&
+    if (!(hdr.version >= 10 && hdr.size >= sizeof(game_state_t)) &&
         hdr.size != sizeof(game_state_t) && hdr.size != 132 && hdr.size != 248 &&
         hdr.size != offsetof(game_state_t, silk) &&
         hdr.size != SAVE_V5_PAYLOAD && hdr.size != SAVE_V6_PAYLOAD &&
@@ -523,11 +528,15 @@ bool save_raw_valid(const void *src, size_t len)
     game_state_t state = {0};
     memcpy(&state, (const uint8_t *)src + sizeof hdr,
            hdr.size < sizeof state ? hdr.size : sizeof state);
-    if (hdr.version == 10) {
+    if (hdr.version >= 10) {
         if (state.decor_extra_count > (SAVE_MAX_PAYLOAD - sizeof state) / sizeof(decor_item_t) ||
             hdr.size != sizeof state + state.decor_extra_count * sizeof(decor_item_t) ||
             state.music_enabled > 1 || state.lights_dimmed > 1 || state.decor_owned_extra > 3) {
             ESP_LOGW(TAG, "raw save rejected: invalid extended habitat");
+            return false;
+        }
+        if (hdr.version >= 11 && (state.music_volume > 100 || state.music_track >= AUDIO_MUSIC_TRACK_COUNT)) {
+            ESP_LOGW(TAG, "raw save rejected: invalid music preferences");
             return false;
         }
         const decor_item_t *extra = (const decor_item_t *)((const uint8_t *)src + sizeof hdr + sizeof state);
@@ -587,6 +596,23 @@ bool save_format_test(void)
     memcpy(blob, &header, sizeof header);
     memcpy(blob + sizeof header, &base, sizeof base);
     bool ok = save_raw_valid(blob, sizeof blob);
+    game_state_t invalid_music = base;
+    invalid_music.music_volume = 101;
+    memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
+    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    invalid_music = base;
+    invalid_music.music_track = AUDIO_MUSIC_TRACK_COUNT;
+    memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
+    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    header.version = 10;
+    memcpy(blob, &header, sizeof header);
+    invalid_music.music_volume = 255;
+    memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
+    ok = save_raw_valid(blob, sizeof blob) && ok;
+    migrate_automation(&invalid_music, 10);
+    ok = invalid_music.music_volume == 100 && invalid_music.music_track == 0 && ok;
+    header.version = SAVE_VERSION;
+    memcpy(blob, &header, sizeof header);
     game_state_t state = base;
     state.auto_feed = 2;
     memcpy(blob + sizeof header, &state, sizeof state);

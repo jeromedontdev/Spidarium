@@ -1,6 +1,6 @@
 {
   "magic": 1397770564,
-  "version": 10,
+  "version": 11,
   "headerSize": 12,
   "payloadSizes": [
     120,
@@ -320,6 +320,20 @@
       "type": "u8",
       "length": 0,
       "minVersion": 10
+    },
+    {
+      "name": "music_volume",
+      "offset": 254,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 11
+    },
+    {
+      "name": "music_track",
+      "offset": 255,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 11
     },
     {
       "name": "decor_extra_count",

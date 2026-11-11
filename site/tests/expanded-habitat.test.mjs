@@ -87,8 +87,8 @@ test('Sound is one reversible master checkbox beside independent music and volum
       audio:{unlock:enabled=>unlocked.push(enabled)},list:items=>{rows=items;},
     });
     ui.open('Sound');
-    assert.deepEqual(rows.map(row=>row.label),['Volume','Sound','Background Music']);
-    assert.equal(new Set(rows.map(row=>row.icon)).size,3);
+    assert.deepEqual(rows.map(row=>row.label),['Volume','Sound','Background Music','Music Volume','Soundtrack']);
+    assert.equal(new Set(rows.slice(0,3).map(row=>row.icon)).size,3);
     assert.equal(rows[1].checkbox,true);assert.equal(rows[1].selected,true);
     rows[1].click();
     assert.equal(state.sound,false);assert.equal(state.music_enabled,1);
@@ -98,6 +98,12 @@ test('Sound is one reversible master checkbox beside independent music and volum
     assert.deepEqual(unlocked,[false,true]);
     rows[2].click();
     assert.equal(state.music_enabled,0);assert.equal(state.sound,true);
+    rows[3].slider.change(35);
+    assert.equal(state.music_volume,35);assert.equal(state.volume,70);
+    rows[4].click();
+    assert.deepEqual(rows.map(row=>row.label),['Silk Garden','Moonlit Hollow','Rainy Canopy']);
+    rows[2].click();
+    assert.equal(state.music_track,2);assert.equal(state.music_volume,35);
   });
 
 test('root and species icons are distinct and redundant movement entries are absent',()=>{

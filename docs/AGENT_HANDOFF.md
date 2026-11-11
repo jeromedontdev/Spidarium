@@ -13,6 +13,17 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.21 adds three selectable original scores and independent music gain.
+  Sound page 2 holds Music Volume and Soundtrack. Master volume/mute still win;
+  effect volume is not reduced by music gain. Save v11 uses former padding
+  bytes 254/255 for music volume/track; fixed prefix 260 and decor tail unchanged.
+  Older saves migrate to volume 100/track 0, with 47 compiled schema fields.
+  SD menus retain a third result/status row. Screenshot capture keeps one LVGL
+  snapshot alive while the persistence worker reads it, then destroys it on
+  LVGL after SD completion; never allocate a second 460,800-byte copy.
+  Browser feedback appears inside the game/fullscreen, with honest download
+  request wording and browser-file/device-card distinctions.
+
 - v1.1.19 [expanded habitat and music](RELEASE_v1.1.19.md): six treats,
   thirty-four decor kinds and twenty-four
   backgrounds, including a house, dark cave and night scene. Preserve old IDs

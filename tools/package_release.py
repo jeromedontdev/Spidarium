@@ -104,6 +104,12 @@ def validate_save_schema(root: Path) -> Path:
                 not any(field["name"] == "decor_extra_count" and field["offset"] == 256 and
                         field["type"] == "u32" for field in fields)):
             raise ValueError("Save schema does not describe variable decoration records")
+    if schema["version"] >= 11:
+        for name, offset in (("music_volume", 254), ("music_track", 255)):
+            if not any(field["name"] == name and field["type"] == "u8" and
+                       field["offset"] == offset and field.get("minVersion") == 11
+                       for field in fields):
+                raise ValueError("Save schema does not describe music preferences")
     return schema_path
 
 

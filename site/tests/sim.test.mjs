@@ -407,7 +407,7 @@ test('restore migrates old progress/ownership and resets runtime, no offline dec
   assert.equal(BACKGROUNDS.length,24);
 });
 test('null restore creates fresh state but corrupt saves throw descriptive errors',()=>{
-  assert.equal(restoreSim(null,{random:()=>.5}).version,10);
+  assert.equal(restoreSim(null,{random:()=>.5}).version,11);
   const good=()=>JSON.parse(JSON.stringify(state()));
   for(const value of [[],new Date(),42,'{}',{}, {version:99}, {version:4}]){
     assert.throws(()=>restoreSim(value),/Invalid browser progress:/);
@@ -433,7 +433,7 @@ test('both valid legacy versions retain earned progress and clamp legacy need ra
     const raw={version,hunger:-5,mood:102,energy:999,hygiene:70.5,xp:80,silk:24,
       name:'Legacy spider',owned:[0,1],gift:1,background:'fern',autoFeed:true,autoHunt:true};
     const s=restoreSim(raw,{random:()=>.5});
-    assert.equal(s.version,10);assert.equal(s.level,3);assert.equal(s.xp,100);
+    assert.equal(s.version,11);assert.equal(s.level,3);assert.equal(s.xp,100);
     assert.deepEqual([s.hunger,s.mood,s.energy,s.hygiene],[0,100,100,70]);
     assert.equal(s.silk,24);assert.equal(s.gifts_owned,3);assert.equal(s.gift.kind,1);
     assert.equal(s.name,'Legacy spider');assert.equal(s.auto_feed,0);assert.equal(s.auto_hunt,0);
@@ -553,7 +553,7 @@ test('a v5 save restores with fresh daily fields and a baseline on first tick',(
   for(const key of ['daily_day','daily_base_day','daily_task_base','daily_streak','daily_task_done'])
     delete raw[key];
   const s=restoreSim(raw,{random:()=>.5});
-  assert.equal(s.version,10);
+  assert.equal(s.version,11);
   assert.equal(s.daily_day,CONFIG.DAILY_NEVER);
   assert.equal(s.daily_streak,0);
   assert.equal(dailyAvailable(s),true);

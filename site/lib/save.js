@@ -12,7 +12,7 @@ export const toHex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, 
 
 export function validateSchema(schema) {
   if (!schema || !Number.isInteger(schema.magic) || schema.magic < 0 || schema.magic > 0xffffffff ||
-      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
+      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
       !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 260) ||
       !Array.isArray(schema.fields)) throw new Error('Unsupported save schema');
   const names = new Set();
@@ -40,7 +40,7 @@ export function decodeSave(bytes, schema) {
   if (header.magic !== schema.magic) throw new Error('Save magic does not match Spidarium');
   if (!(header.version === schema.version || header.version >= 2 && header.version < schema.version) || header.reserved !== 0) throw new Error('Unsupported save version or reserved header');
   if (header.version >= 3 && header.version < 10 && header.size !== payloadByVersion[header.version]) throw new Error('Version 3+ requires its full save payload');
-  if (header.version===10 && (header.size<260 || header.size>schema.maxPayload ||
+  if (header.version>=10 && (header.size<260 || header.size>schema.maxPayload ||
       header.size!==260+view.getUint32(268,true)*6))throw new Error('Variable decoration payload length mismatch');
   if ((header.version<10 && !schema.payloadSizes.includes(header.size) && header.size !== payloadByVersion[header.version]) ||
       bytes.length !== header.size + 12) throw new Error('Save payload length mismatch');
@@ -52,6 +52,8 @@ export function decodeSave(bytes, schema) {
       fields[field.name] = 0; continue;
     }
     if (field.name === 'volume' && header.version < 4) { fields.volume = 70; continue; }
+    if (field.name === 'music_volume' && header.version < 11) { fields.music_volume = 100; continue; }
+    if (field.name === 'music_track' && header.version < 11) { fields.music_track = 0; continue; }
     if (field.name === 'last_seen' && header.version < 5) { fields.last_seen = 0; continue; }
     if (field.offset + width > header.size || header.version < (field.minVersion ?? 0)) {
       fields[field.name] = '(not present in older save)'; continue;
@@ -68,6 +70,8 @@ export function decodeSave(bytes, schema) {
     if (typeof fields[field.name] === 'number' && !Number.isFinite(fields[field.name])) throw new Error(`Invalid number in ${field.name}`);
     if (['auto_feed', 'auto_hunt'].includes(field.name) && fields[field.name] > 1) throw new Error(`Invalid checkbox in ${field.name}`);
     if (field.name === 'volume' && fields.volume > 100) throw new Error('Invalid volume in save');
+    if ((field.name === 'music_volume' && fields.music_volume > 100) ||
+        (field.name === 'music_track' && fields.music_track > 2)) throw new Error('Invalid music preference in save');
     if(['music_enabled','lights_dimmed'].includes(field.name)&&fields[field.name]>1)
       throw new Error(`Invalid ${field.name} in save`);
     const powerLimits = { power_mode: 2, screen_timeout: 4, deep_sleep_after: 4, rtc_wake: 2 };

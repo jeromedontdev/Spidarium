@@ -4,7 +4,9 @@
  * Pure integer synthesis, mirrored sample for sample by site/lib/device-audio.js
  * (site/tests/audio.test.mjs parses these tables). A 32-second D-Bm-G-A loop of
  * slowly crossfaded, gently detuned sine triads with a sparse bell melody. The
- * function is periodic, so streaming it chunk by chunk is seamless.
+ * function is periodic, so streaming it chunk by chunk is seamless. Track 0
+ * remains byte-identical; two distinct-tempo/voiced original arrangements
+ * below share the same small oscillator table, never another PCM allocation.
  */
 #pragma once
 
@@ -21,7 +23,10 @@
 #define PET_SAMPLES 2560
 #define PET_SECOND 640
 #define MUSIC_TEST_HASH 0x6a09516au
+#define MUSIC_MOON_TEST_HASH 0x5cac77ffu
+#define MUSIC_RAIN_TEST_HASH 0x23a46ff3u
 #define PET_TEST_HASH 0x3e6c27c9u
+#define MUSIC_TRACK_COUNT 3
 
 static const int16_t MUSIC_SINE[256] = {
     0, 804, 1608, 2410, 3212, 4011, 4808, 5602, 6393, 7179, 7962, 8739,
@@ -62,6 +67,54 @@ static const uint32_t MUSIC_MELODY[16] = {
 static const uint32_t PET_NOTES[2] = {
     0x0645a1cbu, 0x0965b424u,
 };
+/* Moonlit Hollow: low Am-F-C-G, ten-second chords and a soft sub-octave.
+ * Rainy Canopy: F-C/E-Dm-Bb/D, six-second chords and an airy octave partial. */
+static const uint32_t MUSIC_MOON_PAD[24] = {
+    0x0384cad5u, 0x0385729bu, 0x042f4f0eu, 0x042ff6d3u, 0x0545d639u, 0x05467dfeu,
+    0x02cadff8u, 0x02cb87beu, 0x0384cad5u, 0x0385729bu, 0x042f4f0eu, 0x042ff6d3u,
+    0x02177857u, 0x0218201du, 0x02a2bbedu, 0x02a363b2u, 0x03227d03u, 0x032324c8u,
+    0x03227d03u, 0x032324c8u, 0x03f32379u, 0x03f3cb3eu, 0x04b280f1u, 0x04b328b7u,
+};
+static const uint32_t MUSIC_MOON_MELODY[16] = {
+    0x070a3d71u, 0x00000000u, 0x0645a1cbu, 0x05462a1bu,
+    0x05967232u, 0x00000000u, 0x070a3d71u, 0x00000000u,
+    0x05462a1bu, 0x04b2d4d4u, 0x00000000u, 0x042fa2f0u,
+    0x04b2d4d4u, 0x00000000u, 0x0645a1cbu, 0x00000000u,
+};
+static const uint32_t MUSIC_RAIN_PAD[24] = {
+    0x02ca8c15u, 0x02cbdba1u, 0x038476f3u, 0x0385c67eu, 0x042efb2bu, 0x04304ab6u,
+    0x02a2680au, 0x02a3b795u, 0x03222920u, 0x032378abu, 0x042efb2bu, 0x04304ab6u,
+    0x0258c2a4u, 0x025a1230u, 0x02ca8c15u, 0x02cbdba1u, 0x038476f3u, 0x0385c67eu,
+    0x0258c2a4u, 0x025a1230u, 0x02ca8c15u, 0x02cbdba1u, 0x03ba0a52u, 0x03bb59deu,
+};
+static const uint32_t MUSIC_RAIN_MELODY[16] = {
+    0x085f3b64u, 0x00000000u, 0x070a3d71u, 0x00000000u,
+    0x0645a1cbu, 0x00000000u, 0x05462a1bu, 0x0645a1cbu,
+    0x05967232u, 0x00000000u, 0x070a3d71u, 0x00000000u,
+    0x07756430u, 0x05967232u, 0x00000000u, 0x04b2d4d4u,
+};
+
+typedef struct {
+    const uint32_t *pad;
+    const uint32_t *melody;
+    uint32_t chord, overlap, note, attack;
+    int32_t pad_gain, melody_gain;
+} music_track_t;
+
+static const music_track_t MUSIC_EXTRA_TRACKS[2] = {
+    {MUSIC_MOON_PAD, MUSIC_MOON_MELODY, 160000u, 40000u, 40000u, 3200u, 360, 850},
+    {MUSIC_RAIN_PAD, MUSIC_RAIN_MELODY, 96000u, 24000u, 24000u, 2400u, 380, 950},
+};
+
+static inline uint32_t music_track_loop(uint8_t track)
+{
+    return track == 0 ? MUSIC_LOOP : 4u * MUSIC_EXTRA_TRACKS[track - 1u].chord;
+}
+
+static inline int16_t music_gain(int32_t sample, uint8_t volume)
+{
+    return (int16_t)(sample * volume / 100);
+}
 
 static inline int32_t music_sine(uint32_t phase)
 {
@@ -114,6 +167,40 @@ static inline int16_t music_sample(uint32_t position)
     uint32_t note = p / MUSIC_NOTE;
     value += music_bell(MUSIC_MELODY[note], p - note * MUSIC_NOTE, MUSIC_NOTE, 1280u,
                         MUSIC_MELODY_GAIN);
+    return (int16_t)value;
+}
+
+static inline int32_t music_extra_pad(const music_track_t *track, uint8_t id,
+                                      uint32_t chord, uint32_t local)
+{
+    int32_t sum = 0;
+    for (uint32_t voice = 0; voice < 6; voice++) {
+        uint32_t inc = track->pad[chord * 6u + voice];
+        sum += music_sine(inc * local);
+        /* Divide the increment, not a wrapped phase: the low voice must
+         * remain continuous when the fundamental completes a cycle. */
+        sum += music_sine(id == 1 ? (inc >> 1) * local : (inc * local) << 1) >> 3;
+    }
+    int32_t env = 32768;
+    if (local < track->overlap)
+        env = music_smooth((int32_t)(local * 32768u / track->overlap));
+    else if (local >= track->chord)
+        env = 32768 - music_smooth((int32_t)((local - track->chord) * 32768u / track->overlap));
+    return (((sum * track->pad_gain) >> 15) * env) >> 15;
+}
+
+static inline int16_t music_track_sample(uint8_t id, uint32_t position)
+{
+    if (id == 0) return music_sample(position);
+    const music_track_t *track = &MUSIC_EXTRA_TRACKS[id - 1u];
+    uint32_t p = position % (4u * track->chord), chord = p / track->chord;
+    uint32_t local = p - chord * track->chord;
+    int32_t value = music_extra_pad(track, id, chord, local);
+    if (local < track->overlap)
+        value += music_extra_pad(track, id, (chord + 3u) & 3u, local + track->chord);
+    uint32_t note = p / track->note;
+    value += music_bell(track->melody[note], p - note * track->note,
+                        track->note, track->attack, track->melody_gain);
     return (int16_t)value;
 }
 

@@ -63,11 +63,13 @@ def main() -> None:
         start = command("save export")
         original = bytes.fromhex(next(text.removeprefix("SAVE HEX ")
                                       for _, text in events[start:] if text.startswith("SAVE HEX ")))
-        original_music, original_muted, original_volume = (
-            original[offsets[key]] for key in ("music_enabled", "muted", "volume"))
+        original_music, original_muted, original_volume, original_music_volume, original_track = (
+            original[offsets[key]] for key in ("music_enabled", "muted", "volume", "music_volume", "music_track"))
         try:
             command("set muted 0")
             command("set volume 70")
+            command("set music_volume 100")
+            command("set music_track 0")
             command("set music_enabled 0")
             settle(0.3)
             start = command("set music_enabled 1")
@@ -86,6 +88,19 @@ def main() -> None:
             start = command("audiotest")
             for name in ("air", "leaves", "music", "pet"):
                 wait(fr"PCM {name} .*PASS", start)
+            for track in range(3):
+                wait(fr"PCM music .*track={track} gain=PASS PASS", start)
+            for track in (1, 2):
+                start = command(f"set music_track {track}")
+                wait(fr"music started: .*track={track}", start)
+            command("set music_volume 35")
+            start = command("save export")
+            preferences = bytes.fromhex(next(text.removeprefix("SAVE HEX ")
+                for _, text in events[start:] if text.startswith("SAVE HEX ")))
+            if preferences[offsets["music_volume"]] != 35 or preferences[offsets["volume"]] != 70:
+                raise RuntimeError("Music gain changed master volume or was not saved")
+            command("set music_volume 100")
+            print("PASS three live tracks, independent gain and per-track native PCM parity", flush=True)
             start = command("sound 8")
             wait(r"effect 8: written samples=2560", start)
             print("PASS pet bell full codec write", flush=True)
@@ -120,11 +135,13 @@ def main() -> None:
                        if (match := re.search(r"largest=(\d+)", text))):
                 raise RuntimeError("largest internal block below 51200")
         finally:
+            command(f"set music_track {original_track}")
+            command(f"set music_volume {original_music_volume}")
             command(f"set music_enabled {original_music}")
             command(f"set muted {original_muted}")
             command(f"set volume {original_volume}")
             command("open close")
-    print("VERDICT: PASS - music toggles/mute/resume, PCM parity, full writes, foreground/radio interruption")
+    print("VERDICT: PASS - three tracks, independent music gain, toggles/mute/resume, PCM parity, full writes, foreground/radio interruption")
 
 
 if __name__ == "__main__":

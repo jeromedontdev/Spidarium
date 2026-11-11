@@ -119,6 +119,23 @@ class ManifestTests(unittest.TestCase):
             with self.subTest(size=size), self.assertRaisesRegex(ValueError, "complete current payload"):
                 validate_save_schema(self.build)
 
+    def test_v11_music_preferences_are_required(self):
+        path, schema = self.schema_fixture()
+        (self.build / "main" / "game_config.h").write_text("#define SAVE_VERSION 11\n")
+        schema.update(version=11, payloadSizes=[120, 260], maxPayload=20480,
+                      decorTail={"offset": 260, "stride": 6, "countField": "decor_extra_count"})
+        schema["fields"].extend([
+            {"name": "decor_extra_count", "type": "u32", "length": 0, "offset": 256},
+            {"name": "music_volume", "type": "u8", "length": 0, "offset": 254, "minVersion": 11},
+            {"name": "music_track", "type": "u8", "length": 0, "offset": 255, "minVersion": 11},
+        ])
+        path.write_text(json.dumps(schema))
+        self.assertEqual(validate_save_schema(self.build), path)
+        schema["fields"].pop()
+        path.write_text(json.dumps(schema))
+        with self.assertRaisesRegex(ValueError, "music preferences"):
+            validate_save_schema(self.build)
+
     def test_v10_variable_tail_metadata_is_required(self):
         path, schema = self.schema_fixture()
         (self.build / "main" / "game_config.h").write_text("#define SAVE_VERSION 10\n")

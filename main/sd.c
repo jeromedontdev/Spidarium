@@ -35,6 +35,7 @@ static bool         s_mounted;
 static const char  *s_status = "Not Checked";
 static sdmmc_card_t *s_card;
 static atomic_bool s_busy;
+static uint8_t s_operation;
 static atomic_uint s_generation;
 static bool s_backup_exists;
 static bool s_restored;
@@ -70,6 +71,7 @@ bool sd_request(uint8_t operation)
         atomic_store(&s_busy, false);
         return false;
     }
+    s_operation = operation;
     return true;
 }
 bool sd_request_screenshot(const sd_screenshot_t *image)
@@ -88,6 +90,7 @@ bool sd_request_screenshot(const sd_screenshot_t *image)
         atomic_store(&s_busy, false);
         return false;
     }
+    s_operation = SD_JOB_SCREENSHOT;
     return true;
 }
 
@@ -97,6 +100,7 @@ bool sd_run_job(uint8_t operation, const game_state_t *snapshot, const sd_screen
         ESP_LOGE(TAG, "SD job rejected: restored enclosure awaits UI adoption");
         s_status = "Restore Pending / Try Again";
         atomic_store(&s_busy, false);
+        atomic_fetch_add(&s_generation, 1);
         return false;
     }
     s_restored = false;
@@ -259,7 +263,13 @@ bool sd_present(void)
 
 const char *sd_status_text(void)
 {
-    return sd_busy() ? "Working; Please Wait" : s_status;
+    if (!sd_busy()) return s_status;
+    switch (s_operation) {
+    case SD_JOB_BACKUP: return "Backing Up; Please Wait";
+    case SD_JOB_RESTORE: return "Restoring; Please Wait";
+    case SD_JOB_SCREENSHOT: return "Saving Screenshot; Please Wait";
+    default: return "Checking Card; Please Wait";
+    }
 }
 
 uint64_t sd_free_bytes(void)

@@ -203,12 +203,16 @@ typedef struct {
     uint32_t decor_owned_extra;
     uint8_t music_enabled;
     uint8_t lights_dimmed;
+    uint8_t music_volume;
+    uint8_t music_track;
     uint32_t decor_extra_count;
 } game_state_t;
 
 _Static_assert(sizeof(game_state_t) == 260, "save payload ABI changed");
 _Static_assert(offsetof(game_state_t, decor_owned_extra) == 248, "extra ownership ABI changed");
 _Static_assert(offsetof(game_state_t, decor_extra_count) == 256, "extra decor ABI changed");
+_Static_assert(offsetof(game_state_t, music_volume) == 254, "music volume ABI changed");
+_Static_assert(offsetof(game_state_t, music_track) == 255, "music track ABI changed");
 _Static_assert(offsetof(game_state_t, backgrounds_owned) == 236, "background ownership ABI changed");
 _Static_assert(offsetof(game_state_t, background_id) == 240, "background selection ABI changed");
 _Static_assert(offsetof(game_state_t, brightness) == 128, "brightness ABI changed");
@@ -330,6 +334,8 @@ typedef enum {
     GAME_UI_SET_AUTO_HUNT,
     GAME_UI_SET_VOLUME,
     GAME_UI_SET_MUSIC,
+    GAME_UI_SET_MUSIC_VOLUME,
+    GAME_UI_SET_MUSIC_TRACK,
     GAME_UI_SET_MUTED,
     GAME_UI_TEST_UI,
     GAME_UI_BACKGROUND,
@@ -337,6 +343,7 @@ typedef enum {
     GAME_UI_TEST_GAIT,
     GAME_UI_TEST_PREY,
     GAME_UI_SD_BACKUP,
+    GAME_UI_SD_RESTORE,
     GAME_UI_WAKE,
     GAME_UI_SCANLOOP_BEGIN,
     GAME_UI_SCANLOOP_END,

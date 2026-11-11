@@ -64,6 +64,9 @@
 .d-row.has-slider input[type=range].d-slider { bottom:12px; margin:0; }
 .d-row.has-slider.has-icon input[type=range].d-slider { left:72px; width:calc(100% - 86px); }
 .d-pages { position:absolute; left:148px; top:348px; width:104px; text-align:center; font-size:14px; }
+.d-notice { position:absolute; left:44px; right:44px; bottom:44px; z-index:20; padding:10px; border:2px solid #76d6b1; background:#16283c; color:#e8efda; font-size:13px; line-height:18px; pointer-events:none; box-shadow:2px 2px 0 #0a1220; }
+.d-notice.error { border-color:#dc8178; color:#ffb5ab; }
+.d-notice[hidden] { display:none; }
 .d-copy { position:absolute; left:12px; right:12px; top:84px; font-size:14px; line-height:22px; white-space:pre-line; }
 .d-game-prompt { position:absolute; left:12px; top:84px; right:12px; white-space:pre-line; font-size:14px; line-height:18px; height:40px; }
 .d-time { position:absolute; left:12px; top:132px; width:376px; height:8px; background:#24405a; border-radius:0; overflow:hidden; }

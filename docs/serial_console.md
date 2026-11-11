@@ -342,13 +342,17 @@ OK uitest pages=1 keyboard=1 password=1 hud=1 backgrounds=1
 
 This is not proof of physical typing comfort or aesthetic quality.
 
-### `sd backup`, `sd status`
+### `sd backup`, `sd restore`, `sd status`
 
 `sd backup` uses the same copied-snapshot persistence job as the UI: mount,
 commit the live snapshot to NVS, write `/sdcard/spidarium-save.bin`, flush/sync/
 close, reopen and compare every byte. Reports `OK SD backup: Backup Saved and
 Verified` only after completion, or `ERR` with logged failure details.
 It writes a real backup; it is not a synthetic non-mutating diagnostic.
+
+`sd restore` validates the complete card blob, commits it on the internal
+persistence worker and adopts the restored state on LVGL. It replaces the
+live pet. The SD menu's third row retains progress/completion/failure status.
 
 `sd status` probes on the worker and reports card/backup presence. Use it after
 reboot to check the backup persisted without restoring or replacing the pet.
@@ -872,18 +876,22 @@ using Web Serial. Browser credentials go only to the selected USB device.
 
 The schema is generated from compiled `offsetof(game_state_t, ...)` values,
 not guessed browser offsets. It includes the header magic/version, 12-byte
-header size, legacy 120/current 260-byte fixed payload sizes and 45 named fields with
+header size, legacy 120/current 260-byte fixed payload sizes and 47 named fields with
 little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
 Export snapshots on LVGL, waits for the existing internal-stack persistence
-worker on the console task, then reads the raw NVS blob. A new v10 backup is
-272 bytes plus six bytes per extra decor slot; supported v2-v9 payloads remain
+worker on the console task, then reads the raw NVS blob. A new v11 backup is
+272 bytes plus six bytes per extra decor slot; supported v2-v10 payloads remain
 readable. `decorTail` identifies offset 260, stride 6 and the count field;
 `maxPayload` is the 20 KB NVS/protocol storage bound. It contains no
 network credentials. Background ownership/selection and power preferences are
 included, along with extended decor ownership, music and enclosure lighting;
 saved WiFi credentials remain separate NVS keys.
+Music volume and track occupy former padding at offsets 254/255. Older saves
+default to 100 and track 0. `set music_volume 0..100` and `set music_track 0..2`
+use copied LVGL requests; invalid values are rejected. Tracks are Silk Garden,
+Moonlit Hollow and Rainy Canopy. Master mute and master volume still win.
 Use `save stored` to compare committed bytes without normal live needs/mood/
 clock advancement producing a new snapshot.
 
@@ -933,8 +941,9 @@ existing files, and are RGB565 bitfield BMPs with top-down rows (460,866 bytes a
 480x480). The existing persistence worker mounts on demand without formatting,
 writes/flushes/fsyncs, then compares every header/pixel/padding byte on readback.
 The UI polls Saving/filename/error status and never waits for card I/O.
-Copied PSRAM pixels transfer to the worker only after a successful queue request;
-the LVGL-owned snapshot is destroyed on LVGL, and the worker frees plain pixels.
+One LVGL snapshot remains immutable while the worker writes/verifies its pixels.
+After completion, LVGL destroys the snapshot; no duplicate full-screen copy is
+allocated, and the worker never frees LVGL-owned pixels.
 Capture allocation, queue, card, write and verification failures are explicit.
 All capture targets reject while WiFi is busy: snapshots must not draw the tank
 while the radio owns internal DMA RAM. Settings disables capture until it finishes.

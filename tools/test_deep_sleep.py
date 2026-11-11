@@ -64,7 +64,7 @@ def main():
         stable = {"name", "colour", "silk", "gifts_owned", "decor_owned", "decor",
                   "backgrounds_owned", "background_id", "power_mode", "screen_timeout",
                   "deep_sleep_after", "rtc_wake", "decor_owned_extra",
-                  "decor_extra_count", "music_enabled", "lights_dimmed"}
+                  "decor_extra_count", "music_enabled", "lights_dimmed", "music_volume", "music_track"}
         for field in schema["fields"]:
             if field["name"] not in stable:
                 continue

@@ -50,8 +50,8 @@ def main():
             raise RuntimeError("Incorrect current raw save size")
         flags = [field for field in schema["fields"]
                  if field["name"] in {"auto_feed", "auto_hunt"}]
-        if schema["version"] != 10 or len(schema["fields"]) != 45 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
-            raise RuntimeError("Fields missing from compiled version 10 schema")
+        if schema["version"] != 11 or len(schema["fields"]) != 47 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
+            raise RuntimeError("Fields missing from compiled version 11 schema")
         for field in flags:
             command(connection, f"set {field['name']} 1")
         command(connection, "reboot")
@@ -66,7 +66,7 @@ def main():
             invalid = bytearray(enabled)
             invalid[12 + field["offset"]] = 2
             command(connection, "save restore " + invalid.hex(), "ERR")
-        for offset, value in ((236, 0), (240, 24), (241, 3), (242, 5), (243, 5), (244, 3), (248, 4), (252, 2), (253, 2)):
+        for offset, value in ((236, 0), (240, 24), (241, 3), (242, 5), (243, 5), (244, 3), (248, 4), (252, 2), (253, 2), (254, 101), (255, 3)):
             invalid = bytearray(enabled)
             invalid[12 + offset] = value
             command(connection, "save restore " + invalid.hex(), "ERR")
@@ -75,6 +75,7 @@ def main():
         preferences[12 + 240:12 + 245] = bytes((23, 1, 1, 0, 2))
         preferences[12 + 248:12 + 252] = (3).to_bytes(4, "little")
         preferences[12 + 252:12 + 254] = bytes((0, 1))
+        preferences[12 + 254:12 + 256] = bytes((35, 2))
         preferences = preferences[:272]
         extra_count = 260
         for i in range(12):
@@ -161,7 +162,7 @@ def main():
             if original[offset:offset + length] != restored[offset:offset + length]:
                 raise RuntimeError("Reboot changed restored field: " + field["name"])
         command(connection, "open close")
-    print("WEB DEVICE: PASS - v10/45-field schema, variable decor persistence, music/lights, invalid fields, exact restore, overwrite guard, reboot")
+    print("WEB DEVICE: PASS - v11/47-field schema, variable decor persistence, music/lights/volume/track, invalid fields, exact restore, overwrite guard, reboot")
 
 
 if __name__ == "__main__":

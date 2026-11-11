@@ -143,7 +143,7 @@ static void cmd_help(void)
     printf("  save restore HEX    validated pet restore; reboot required\n");
     printf("  screenshot [menu|playfield|spider|sd] capture screen or save playfield to SD\n");
     printf("  capturetest          pixel-compare capture restoration (open a menu first)\n");
-    printf("  sd backup|status     verified SD backup or card probe\n");
+    printf("  sd backup|restore|status verified SD backup/restore or card probe\n");
     printf("  sound N              effect 0..9 (7=air, 8=pet chirp, 9=leaves)\n");
     printf("  audiotest            check environmental PCM hashes/envelopes\n");
     printf("  nap SECONDS          save and deep sleep (5..86400); right button wakes\n");
@@ -499,6 +499,8 @@ static void cmd_save_schema(void)
         {"decor_owned_extra", "u32", offsetof(game_state_t, decor_owned_extra), 0, 10},
         {"music_enabled", "u8", offsetof(game_state_t, music_enabled), 0, 10},
         {"lights_dimmed", "u8", offsetof(game_state_t, lights_dimmed), 0, 10},
+        {"music_volume", "u8", offsetof(game_state_t, music_volume), 0, 11},
+        {"music_track", "u8", offsetof(game_state_t, music_track), 0, 11},
         {"decor_extra_count", "u32", offsetof(game_state_t, decor_extra_count), 0, 10},
 #undef SAVE_FIELD
     };    enum { SCHEMA_CAP = 5120 };
@@ -927,6 +929,11 @@ static void cmd_set(const char *field, int value)
         printf("ERR automation checkboxes require 0 or 1\n");
         return;
     }
+    if ((!strcmp(field, "music_volume") && (value < 0 || value > 100)) ||
+        (!strcmp(field, "music_track") && (value < 0 || value >= AUDIO_MUSIC_TRACK_COUNT))) {
+        printf("ERR music volume requires 0..100; track requires 0..%d\n", AUDIO_MUSIC_TRACK_COUNT - 1);
+        return;
+    }
     if (value < 0) value = 0;
     if (value > 100) value = 100;
 
@@ -941,9 +948,11 @@ static void cmd_set(const char *field, int value)
     else if (!strcmp(field, "auto_hunt")) action = GAME_UI_SET_AUTO_HUNT;
     else if (!strcmp(field, "volume"))  action = GAME_UI_SET_VOLUME;
     else if (!strcmp(field, "music_enabled")) action = GAME_UI_SET_MUSIC;
+    else if (!strcmp(field, "music_volume")) action = GAME_UI_SET_MUSIC_VOLUME;
+    else if (!strcmp(field, "music_track")) action = GAME_UI_SET_MUSIC_TRACK;
     else if (!strcmp(field, "muted")) action = GAME_UI_SET_MUTED;
     else {
-        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt volume music_enabled muted)\n",
+        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt volume music_enabled music_volume music_track muted)\n",
                field);
         return;
     }
@@ -1062,18 +1071,21 @@ static void run_line(char *line)
         else printf("%s sound queued=%ld\n", audio_play((sfx_t)effect) ? "OK" : "ERR", effect);
     }
     else if (!strcmp(line, "sd")) {
-        if (arg && !strcmp(arg, "backup")) {
-            if (!game_ui_call(GAME_UI_SD_BACKUP)) { printf("ERR SD backup not queued\n"); return; }
+        if (arg && (!strcmp(arg, "backup") || !strcmp(arg, "restore"))) {
+            bool restore = !strcmp(arg, "restore");
+            if (!game_ui_call(restore ? GAME_UI_SD_RESTORE : GAME_UI_SD_BACKUP)) {
+                printf("ERR SD %s not queued\n", arg); return;
+            }
             for (int i = 0; i < 500 && save_busy(); i++) vTaskDelay(pdMS_TO_TICKS(20));
-            printf("%s SD backup: %s\n", !save_busy() && save_last_ok() ? "OK" : "ERR",
-                   sd_status_text());
+            printf("%s SD %s: %s\n", !save_busy() && save_last_ok() ? "OK" : "ERR",
+                   arg, sd_status_text());
         } else if (arg && !strcmp(arg, "status")) {
             if (!game_ui_open_menu("sd")) { printf("ERR SD probe not queued\n"); return; }
             for (int i = 0; i < 500 && save_busy(); i++) vTaskDelay(pdMS_TO_TICKS(20));
             printf("%s SD present=%d backup=%d status=%s\n",
                 !save_busy() && save_last_ok() ? "OK" : "ERR",
                 sd_present(), sd_backup_exists(), sd_status_text());
-        } else printf("ERR use sd backup or sd status\n");
+        } else printf("ERR use sd backup, sd restore or sd status\n");
     }
     else if (!strcmp(line, "gifttest")) {
         if (!game_ui_call(GAME_UI_TEST_GIFTS)) printf("ERR gift test UI request failed\n");
