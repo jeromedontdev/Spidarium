@@ -16,6 +16,7 @@ export const CONFIG = Object.freeze({
   BUG_POOP_MS:150000, POOP_DIRT_SPIDER:12, POOP_DIRT_BUG:6,
   PLAY_MOOD_GAIN:10, PLAY_ENERGY_COST:5,
   PLAY_XP:4, PET_MOOD_GAIN:6, PET_XP:2, EAT_MS:800, SLEEP_MIN_MS:6000,
+  PET_RADIUS_PX:56, PET_COOLDOWN_MS:1200,
   MOVE_SPEED:55, TURN_RATE_DEG:540, WANDER_RETARGET_MS:2000, ARRIVE_RADIUS:12,
   PREY_SPEED:30, PREY_FLEE_SPEED:70, PREY_AGGRO_RADIUS:70, PREY_AGGRO_HYSTERESIS:1.25,
   WILD_SPAWN_MS:1200000, WILD_HUNGER_GAIN:8, WILD_MOOD_GAIN:4,
@@ -153,7 +154,7 @@ function engineDefaults(now=0) {
     aim_start:0,aim_active:false,aim_power:0,aim_ideal:0,pounce:null,next_pounce_at:0,
     sleep_forced:false,sleep_start:0,oneshot_until:0,gift_visit_at:0,gift_hold_until:0,
     gift_visit_end:0,gift_visiting:false,wild_seeded:false,last_wild:now,last_visitor_day:U32,
-    next_bond_gift:0,stuck_x:0,stuck_y:0,stuck_at:0,gait_x:240,gait_y:240,gait_valid:false,gait_moved_at:0,
+    next_bond_gift:0,last_pet:0,petted_once:false,stuck_x:0,stuck_y:0,stuck_at:0,gait_x:240,gait_y:240,gait_valid:false,gait_moved_at:0,
     tap_heading:null};
 }
 export function freshState(options={}) {
@@ -165,6 +166,7 @@ export function freshState(options={}) {
     temperament:0,bond:0,name:'',colour:0,pupil_colour:0,leg_colour:2,fang_colour:1,
     silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,last_seen:0,background:'moss',
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
+    daily_override:0xFFFFFFFF,
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
   services.set(s,options);
@@ -406,8 +408,18 @@ export function cleanReward(s) {
   const xp=Math.ceil(score*C.CLEAN_XP_MAX/C.CLEAN_SCORE_FULL);
   return Math.min(C.CLEAN_XP_MAX,xp);
 }
-/** The in-game day the daily loop is on. */
-export function dailyToday(s){return Math.floor(s.age_ticks/C.TICKS_PER_DAY);}
+/** The in-game day the daily loop is on.
+ *
+ * The device prefers the RTC and falls back to the in-game counter. The browser
+ * has a real clock, so it uses the calendar day directly: the check-in should
+ * reset at midnight, not after 24 hours of play. `daily_override` wins over
+ * both, which is how tests and the console drive the loop without waiting. */
+export function dailyToday(s){
+  if(s.daily_override!==undefined&&s.daily_override!==C.DAILY_NEVER)return s.daily_override;
+  const now=Date.now();
+  if(Number.isFinite(now)&&now>0)return Math.floor(now/86400000);
+  return Math.floor(s.age_ticks/C.TICKS_PER_DAY);
+}
 /** The rotating task for a day. Deterministic, so a reload cannot reroll it. */
 export function dailyTaskForDay(day){return day%C.DAILY_TASK_COUNT;}
 export function dailyTask(s){return dailyTaskForDay(dailyToday(s));}
@@ -476,6 +488,28 @@ export function buyTreat(s,kind){
   if(s.silk<t.cost)return event(s,'rejected',{reason:'not enough Silk'});
   s.silk-=t.cost;
   s[t.field]=clamp(s[t.field]+t.gain);
+  return true;
+}
+/** Petting: a tap that lands on the spider's body. Returns true when the tap was
+ * consumed as a pet. The cooldown exists because a tap is a cheap gesture:
+ * without it a player could hold a finger on the spider and farm mood, XP and
+ * the daily task. */
+export function pet(s,x,y){
+  const dx=x-s.spider_x,dy=y-s.spider_y;
+  if(dx*dx+dy*dy>C.PET_RADIUS_PX*C.PET_RADIUS_PX)return false;
+  const r=runtime(s),now=r.now_ms;
+  // A separate "has petted" flag, not `last_pet !== 0`: the clock can
+  // legitimately read 0 early in a session, and then the guard would never
+  // engage and a held finger could farm mood.
+  if(r.petted_once&&now-r.last_pet<C.PET_COOLDOWN_MS)return false;
+  r.petted_once=true;
+  r.last_pet=now;
+  s.mood=clamp(s.mood+C.PET_MOOD_GAIN);
+  s.pets++;
+  if(s.bond<100)s.bond++;
+  setState(s,7);r.oneshot_until=now+180;
+  addXP(s,C.PET_XP);awardAchievement(s,'first_pet');
+  syncView(s);
   return true;
 }
 export function care(s,action) {

@@ -482,6 +482,29 @@ clean would pay as `clean_xp=`.
 OK feed
 ```
 
+### `pet`
+
+Pets the spider at its current position, exercising the same `needs_pet()` path
+a tap on the body takes. Reports the resulting mood, bond, pet count and XP.
+
+```
+>>> pet
+OK pet mood=48 bond=1 pets=1 xp=167
+```
+
+A tap only counts as a pet when it lands within `PET_RADIUS_PX` (56 px) of the
+spider, and a `PET_COOLDOWN_MS` (1.2 s) cooldown refuses a repeat. The cooldown
+exists because a tap is a cheap gesture: without it a held finger could farm
+mood, XP and the "Pet 4 Times" daily task. A pull that starts on the spider still
+fires, because a click only arrives when the finger did not drag.
+
+```
+>>> pet
+OK pet mood=34 bond=2 pets=2 xp=177
+>>> pet
+ERR pet refused (cooldown or out of range)
+```
+
 ### `speckle [N]`
 
 Drops `N` bug speckles (default 1, capped at `MAX_POOP` = 8) into the tank,
@@ -529,15 +552,29 @@ ERR daily task not ready (1/2)
 ```
 
 `day N` forces the in-game day, which is how the streak and the task rotation
-are exercised without waiting `AGE_TICK_MS * TICKS_PER_DAY` (24 real hours at
-`GAME_TIME_SCALE` 1). It snapshots the task baseline exactly as a real rollover
-does, so the task starts at 0 rather than inheriting the previous day's
-counters.
+are exercised without waiting a real day. It snapshots the task baseline exactly
+as a real rollover does, so the task starts at 0 rather than inheriting the
+previous day's counters.
 
 ```
 >>> daily day 3
 OK daily day=3 task=3
 ```
+
+`clock` drops the override so the real clock takes over again.
+
+```
+>>> daily clock
+OK daily clock day=20768
+```
+
+The day number itself prefers the **RTC**: a real calendar day is what the player
+expects, so the check-in resets at midnight rather than after 24 hours of play.
+The RTC is optional (no backup battery, no sync without WiFi), so when it is not
+valid the loop falls back to the in-game day counter, which advances with
+`AGE_TICK_MS` and is compressed by `GAME_TIME_SCALE` for verification. The
+console override wins over both, because the RTC refuses dates before 2000 and a
+small day number therefore cannot be written to it.
 
 `reset` clears the claim and the streak so the next `claim` pays again.
 

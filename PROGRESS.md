@@ -6403,3 +6403,77 @@ a multi-day real-time soak has not been performed. The `hunttest` failure seen
 mid-session was transient -- it requires a free poop slot -- and passed on the
 final run; it also fails identically on the unmodified baseline when the tank is
 full, so it is not caused by this work.
+
+## Round 62 - Petting, a real calendar day, and a menu that looks like one
+
+**Status:** COMPLETE - built, flashed, tested on COM7 and in the browser.
+
+### Decisions made
+
+**Petting is back, and the gesture ambiguity is resolved by the gesture itself.**
+The mechanic was removed once because a tap near the spider was ambiguous between
+"pet" and "start a pull". A click only arrives when the finger did *not* drag, so
+a pull that starts on the spider still fires and a tap that lands on the body
+pets. No mode, no modifier, no extra button.
+
+**The pet cooldown uses a separate `petted_once` flag, not `last_pet != 0`.** The
+first version tested `s_last_pet != 0`, but the clock legitimately reads 0 early
+in a session, so the guard never engaged and a rapid double-tap petted twice.
+Found by a test that tapped twice in the same frame; fixed on both targets.
+
+**The daily day prefers the RTC.** Keying the check-in to the in-game counter
+meant it reset after 24 hours of *play* rather than at midnight. The RTC is
+optional, so the in-game counter remains the fallback, and the browser uses its
+own wall clock.
+
+**The console override wins over both clocks.** The RTC refuses dates before
+2000, so `daily day 3` cannot be written to it. An explicit in-memory override is
+the only way to exercise the streak and the task rotation without waiting a day.
+`daily clock` drops it.
+
+**Settings moved to the last row of the main menu.** It is the least-used entry,
+so it belongs at the bottom rather than in the middle.
+
+**The redundant Back rows are gone from Daily and Treats.** The corner Back
+button already exists; the extra full-width row pushed the real content up on a
+list that only has two or three items.
+
+**The menu chrome is now a gradient panel with an accent rule, gradient row cards
+and a lit selection bar.** The flat rectangles read as unstyled boxes. The
+selected row gets a warmer gradient and a 4 px accent bar down its left edge so
+the current choice is legible at a glance rather than only by a subtle background
+shift.
+
+### Evidence
+
+- Build exit 0, zero `main/` warnings. Flash exit 0.
+- Device suite **47/47** (`SUMMARY passed=47 failed=0`).
+- Soak: `VERDICT: PASS - clean boot window`, `FAULTS/ERRORS: 0`,
+  `largest=65536` (floor 51,200).
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Petting on hardware: `OK pet mood=48 bond=1 pets=1 xp=167`, then
+  `ERR pet refused (cooldown or out of range)` on an immediate repeat.
+- Petting advances the daily task: `daily day 3` (task 3, "Pet 4 Times") then
+  `progress=0/4` -> `1/4` after one pet.
+- RTC-first day: `DAILY day=20768` (a real epoch day) instead of the in-game
+  counter, with `daily day 3` overriding it to `day=3 task=3`.
+- Menus verified by screen capture on hardware: gradient panel with drop shadow,
+  corner arrow Back with a gold border, accent rule under the header, gradient
+  row cards, Settings last, no redundant Back rows on Daily or Treats.
+- Browser suite **88/88** (was 84). Four new tests: petting raises mood/bond/pets
+  and pays the achievement once, the hit radius rejects a distant tap, the
+  cooldown refuses an immediate repeat and allows one after it, petting advances
+  the "Pet 4 Times" task, and the day prefers the wall clock while honouring the
+  override.
+- Browser UI verified live: Settings is the last row, Daily and Treats have no
+  Back row, and a tap on the spider reports "Spider Petted." with `pets` 3 -> 4
+  on the first tap and unchanged on an immediate second.
+
+### Honest boundaries
+
+The RTC-first day was verified with the board's RTC reporting a real epoch day,
+but a genuine midnight rollover has not been observed -- that needs a day of
+wall-clock time. The fallback path is exercised by the console override, not by
+removing the RTC. The menu overhaul was verified by screen capture, not by
+touching the panel.

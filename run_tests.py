@@ -19,7 +19,7 @@ PORT = ARGS[0] if ARGS else "COM7"
 OUT = ARGS[1] if len(ARGS) > 1 else "test_results.txt"
 
 COMMANDS = [
-    ("help", 10, "OK"),
+    ("help", 20, "OK"),
     ("mem", 10, "OK"),
     ("stat", 10, "OK"),
     ("radio", 10, "OK"),

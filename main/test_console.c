@@ -126,6 +126,7 @@ static void cmd_help(void)
     printf("  daily [show|claim|task|reset]  inspect or drive the daily loop\n");
     printf("  treat [0..2]         buy a treat with Silk (no arg lists them)\n");
     printf("  play                 press PLAY\n");
+    printf("  pet                  pet the spider at its current position\n");
     printf("  sleep                press SLEEP\n");
     printf("  menu                 open the main menu\n");
     printf("  open NAME            open a menu (main gift chrome nochrome)\n");
@@ -719,7 +720,15 @@ static void cmd_daily(const char *arg)
                (unsigned)needs_daily_task());
         return;
     }
-    printf("ERR usage: daily [show|claim|task|reset|day N]\n");
+    /* `daily clock` drops the override so the real RTC (or the in-game counter
+     * when the RTC is not valid) takes over again. */
+    if (!strcmp(arg, "clock")) {
+        needs_daily_clear_override();
+        game_save_now();
+        printf("OK daily clock day=%lu\n", (unsigned long)needs_daily_today());
+        return;
+    }
+    printf("ERR usage: daily [show|claim|task|reset|clock|day N]\n");
 }
 
 static void cmd_treat(const char *arg)
@@ -749,6 +758,20 @@ static void cmd_treat(const char *arg)
 static void cmd_play(void)
 {
     printf("%s play\n", game_ui_call(GAME_UI_PLAY) ? "OK" : "ERR");
+}
+
+/* Pet the spider at its current position, exercising the same needs_pet() path
+ * a tap on the body takes. Reports the counters so a script can see the effect. */
+static void cmd_pet(void)
+{
+    bool ok = needs_pet(g.spider_x, g.spider_y);
+    if (!ok) {
+        printf("ERR pet refused (cooldown or out of range)\n");
+        return;
+    }
+    game_save_now();
+    printf("OK pet mood=%u bond=%u pets=%lu xp=%lu\n", g.mood, (unsigned)g.bond,
+           (unsigned long)g.pets, (unsigned long)g.xp);
 }
 
 static void cmd_sleep(void)
@@ -979,6 +1002,7 @@ static void run_line(char *line)
     else if (!strcmp(line, "daily"))    cmd_daily(arg);
     else if (!strcmp(line, "treat"))    cmd_treat(arg);
     else if (!strcmp(line, "play"))     cmd_play();
+    else if (!strcmp(line, "pet"))      cmd_pet();
     else if (!strcmp(line, "sleep"))    cmd_sleep();
     else if (!strcmp(line, "menu"))     cmd_menu();
     else if (!strcmp(line, "open"))     cmd_open(arg ? arg : "");

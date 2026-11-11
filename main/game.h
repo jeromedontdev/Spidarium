@@ -374,6 +374,9 @@ uint32_t needs_daily_task_claim(void);
  * exactly as a real rollover does. */
 void needs_daily_force_day(uint32_t day);
 
+/* Drop the console day override so the real clock takes over again. */
+void needs_daily_clear_override(void);
+
 /* ------------------------------------------------------------------ */
 /* Treats: the recurring Silk sink                                     */
 /* ------------------------------------------------------------------ */

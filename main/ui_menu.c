@@ -19,6 +19,17 @@
 #define COL_TEXT   0xe8efda
 #define COL_DIM    0x9aaeb5
 #define COL_ACCENT 0x76d6b1
+/* Menu chrome. The panel is a vertical gradient rather than a flat fill so the
+ * surface reads as a lit card instead of a plain rectangle, and the header
+ * carries an accent rule that separates the title from the rows. */
+#define COL_PANEL_TOP 0x16283c
+#define COL_PANEL_BOT 0x0a1220
+#define COL_CARD_TOP  0x24405a
+#define COL_CARD_BOT  0x16283a
+#define COL_CARD_SEL_TOP 0x2b6a5f
+#define COL_CARD_SEL_BOT 0x1a4a44
+#define COL_RULE      0x76d6b1
+#define COL_GOLD      0xb99b67
 #define PAGE_ROWS 3
 #define MENU_WIDTH (ui.W - 2 * UI_CORNER)
 #define MENU_HEIGHT (ui.H - 2 * UI_CORNER)
@@ -27,6 +38,7 @@
 static lv_obj_t *s_menu, *s_backdrop, *s_page_label, *s_prev, *s_next;
 static lv_obj_t *s_row[PAGE_ROWS], *s_label[PAGE_ROWS], *s_detail[PAGE_ROWS];
 static lv_obj_t *s_marker[PAGE_ROWS];
+static lv_obj_t *s_accent[PAGE_ROWS];
 static lv_obj_t *s_icons[PAGE_ROWS];
 static lv_obj_t *s_checks[PAGE_ROWS];
 static lv_obj_t *s_sliders[PAGE_ROWS];
@@ -172,16 +184,41 @@ static void open_panel(const char *title)
     lv_obj_remove_style_all(s_menu);
     lv_obj_set_size(s_menu, MENU_WIDTH, MENU_HEIGHT);
     lv_obj_center(s_menu);
-    lv_obj_set_style_bg_color(s_menu, lv_color_hex(COL_PANEL), 0);
+    /* A vertical gradient reads as a lit surface rather than a flat rectangle. */
+    lv_obj_set_style_bg_color(s_menu, lv_color_hex(COL_PANEL_TOP), 0);
+    lv_obj_set_style_bg_grad_color(s_menu, lv_color_hex(COL_PANEL_BOT), 0);
+    lv_obj_set_style_bg_grad_dir(s_menu, LV_GRAD_DIR_VER, 0);
     lv_obj_set_style_bg_opa(s_menu, LV_OPA_COVER, 0);
-    ui_style_card(s_menu, 0xb99b67, false);
+    ui_style_card(s_menu, COL_GOLD, false);
+    lv_obj_set_style_shadow_width(s_menu, 24, 0);
+    lv_obj_set_style_shadow_color(s_menu, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_shadow_opa(s_menu, LV_OPA_50, 0);
     lv_obj_set_scrollable(s_menu, false);
     lv_obj_set_clickable(s_menu, true);
-    button(s_menu, 12, 12, 96, 56, "Back", on_back, NULL);
+
+    /* The corner Back button is the only Back control. A full-width Back row at
+     * the bottom of a short list was redundant and pushed the real rows up. */
+    lv_obj_t *back = button(s_menu, 12, 12, 96, 56, LV_SYMBOL_LEFT, on_back, NULL);
+    lv_obj_set_style_bg_color(back, lv_color_hex(0x1a2b3d), 0);
+    lv_obj_set_style_border_color(back, lv_color_hex(COL_GOLD), 0);
+    lv_obj_set_style_border_opa(back, LV_OPA_40, 0);
+
     lv_obj_t *heading = label(s_menu, title ? title : "", &lv_font_montserrat_18);
-    lv_obj_set_pos(heading, 120, 30);
+    lv_obj_set_pos(heading, 120, 26);
     lv_obj_set_width(heading, MENU_WIDTH - 132);
     lv_label_set_long_mode(heading, LV_LABEL_LONG_DOT);
+
+    /* Accent rule under the header: a thin gradient bar that fades out to the
+     * right, so the title block reads as a header rather than a floating word. */
+    lv_obj_t *rule = lv_obj_create(s_menu);
+    lv_obj_remove_style_all(rule);
+    lv_obj_set_pos(rule, 12, 68);
+    lv_obj_set_size(rule, MENU_WIDTH - 24, 2);
+    lv_obj_set_style_bg_color(rule, lv_color_hex(COL_RULE), 0);
+    lv_obj_set_style_bg_grad_color(rule, lv_color_hex(COL_PANEL_BOT), 0);
+    lv_obj_set_style_bg_grad_dir(rule, LV_GRAD_DIR_HOR, 0);
+    lv_obj_set_style_bg_opa(rule, LV_OPA_70, 0);
+    lv_obj_set_clickable(rule, false);
 }
 
 static void refresh_page(void);
@@ -227,8 +264,18 @@ static void refresh_page(void)
         lv_obj_set_y(s_detail[i], multiline ? 26 : 48);
         lv_obj_set_style_text_color(s_label[i],
             lv_color_hex(it->id == s_destructive_id ? 0xff7777 : it->enabled ? COL_TEXT : COL_DIM), 0);
+        /* Selected rows get a warmer gradient and a lit accent bar down the left
+         * edge, so the current choice is legible at a glance rather than only by
+         * a subtle background shift. */
         lv_obj_set_style_bg_color(s_row[i],
-            lv_color_hex(it->selected ? 0x214b48 : COL_CARD), 0);
+            lv_color_hex(it->selected ? COL_CARD_SEL_TOP : COL_CARD_TOP), 0);
+        lv_obj_set_style_bg_grad_color(s_row[i],
+            lv_color_hex(it->selected ? COL_CARD_SEL_BOT : COL_CARD_BOT), 0);
+        lv_obj_set_style_bg_grad_dir(s_row[i], LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_color(s_row[i],
+            lv_color_hex(it->selected ? COL_ACCENT : 0x2c4459), 0);
+        lv_obj_set_style_border_opa(s_row[i], it->selected ? LV_OPA_80 : LV_OPA_40, 0);
+        lv_obj_set_hidden(s_accent[i], !it->selected);
         lv_obj_set_clickable(s_row[i], it->enabled);
         lv_obj_set_hidden(s_checks[i], !s_check_items[index]);
         if (s_check_items[index]) {
@@ -633,6 +680,17 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
     for (int i = 0; i < PAGE_ROWS; i++) {
         s_row[i] = button(s_menu, 12, 76 + i * 84, w - 24, 76, NULL,
                           on_row, (void *)(uintptr_t)i);
+        /* A lit bar down the left edge marks the selected row. It is a child of
+         * the row so it moves and clips with it. */
+        s_accent[i] = lv_obj_create(s_row[i]);
+        lv_obj_remove_style_all(s_accent[i]);
+        lv_obj_set_pos(s_accent[i], 0, 8);
+        lv_obj_set_size(s_accent[i], 4, 60);
+        lv_obj_set_style_bg_color(s_accent[i], lv_color_hex(COL_ACCENT), 0);
+        lv_obj_set_style_bg_opa(s_accent[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(s_accent[i], 2, 0);
+        lv_obj_set_clickable(s_accent[i], false);
+        lv_obj_set_hidden(s_accent[i], true);
         s_icons[i] = lv_image_create(s_row[i]);
         lv_obj_set_pos(s_icons[i], 12, 12);
         lv_obj_set_clickable(s_icons[i], false);
@@ -670,8 +728,19 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
                     on_page, (void *)(intptr_t)-1);
     s_next = button(s_menu, w - 132, MENU_HEIGHT - 68, 120, 56, "Next " LV_SYMBOL_RIGHT,
                     on_page, (void *)(intptr_t)1);
+    /* The pager is chrome, not content: a flatter fill keeps it from competing
+     * with the rows above it. */
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *pager = i ? s_next : s_prev;
+        lv_obj_set_style_bg_color(pager, lv_color_hex(0x16283a), 0);
+        lv_obj_set_style_bg_grad_color(pager, lv_color_hex(0x0e1a28), 0);
+        lv_obj_set_style_bg_grad_dir(pager, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_color(pager, lv_color_hex(0x2c4459), 0);
+        lv_obj_set_style_border_opa(pager, LV_OPA_50, 0);
+    }
     s_page_label = label(s_menu, "", &lv_font_montserrat_14);
     lv_obj_align(s_page_label, LV_ALIGN_BOTTOM_MID, 0, -24);
+    lv_obj_set_style_text_color(s_page_label, lv_color_hex(COL_DIM), 0);
     refresh_page();
 }
 

@@ -682,8 +682,11 @@ static void menu_open(int which)
         items[1] = (ui_menu_item_t){ "Treats", "Spend Silk", true, false, true, MENU_SHOP };
         items[2] = (ui_menu_item_t){ "Backgrounds", NULL, true, false, true, MENU_THEME };
         items[3] = (ui_menu_item_t){ "Achievements", NULL, true, false, true, MENU_ACHIEVEMENTS };
-        items[4] = (ui_menu_item_t){ "Settings",     NULL, true, false, true, MENU_SETTINGS };
-        items[5] = (ui_menu_item_t){ "Prey Species", NULL, true, false, true, MENU_SPECIES };
+        items[4] = (ui_menu_item_t){ "Prey Species", NULL, true, false, true, MENU_SPECIES };
+        /* Settings is always the last row: it is the least-used entry and the
+         * one the player reaches for least often, so it belongs at the bottom
+         * of the list rather than in the middle. */
+        items[5] = (ui_menu_item_t){ "Settings",     NULL, true, false, true, MENU_SETTINGS };
         ui_menu_open("Spidarium", items, 6, on_main_pick);
         break;
     }
@@ -918,12 +921,11 @@ static void menu_open(int which)
                      (unsigned long)needs_daily_task_goal());
         }
         items[1] = (ui_menu_item_t){ task_name, task_sub, true, false, true, 1 };
-        items[2] = (ui_menu_item_t){ "Back", NULL, true, false, true, 2 };
 
         static char daily_title[48];
         snprintf(daily_title, sizeof daily_title, "Daily / Day %lu",
                  (unsigned long)today);
-        ui_menu_open(daily_title, items, 3, on_daily_pick);
+        ui_menu_open(daily_title, items, 2, on_daily_pick);
         ui_menu_set_back(back_to_main);
         break;
     }
@@ -939,12 +941,10 @@ static void menu_open(int which)
             items[i] = (ui_menu_item_t){ shop_name[i], shop_sub[i],
                                          true, false, true, (uint8_t)i };
         }
-        items[TREAT_COUNT] = (ui_menu_item_t){ "Back", NULL, true, false, true,
-                                               TREAT_COUNT };
         static char shop_title[48];
         snprintf(shop_title, sizeof shop_title, "Treats / %lu Silk",
                  (unsigned long)g.silk);
-        ui_menu_open(shop_title, items, TREAT_COUNT + 1, on_shop_pick);
+        ui_menu_open(shop_title, items, TREAT_COUNT, on_shop_pick);
         ui_menu_set_back(back_to_main);
         break;
     }
@@ -1599,13 +1599,20 @@ void game_on_terrarium_tap(lv_event_t *e)
         return;
     }
 
-    /* 3. Empty tap: nothing happens, and nothing is said.
+    /* 3. A tap on the spider itself is a pet.
      *
-     * The pet mechanic is gone. Tapping the spider used to raise mood and bond,
-     * but it competed with the slingshot for the same gesture -- a tap near the
-     * spider was ambiguous between "pet" and "start a pull" -- and mood is
-     * already raised deliberately by the PLAY button. Removing it makes the
-     * whole tank surface mean one thing: drag to hunt.
+     * Petting was removed once because it competed with the slingshot for the
+     * same gesture. The ambiguity is resolved by requiring the tap to land on
+     * the spider's body: a pull that starts on the spider still fires, because
+     * the release handler only treats a drag past AIM_MIN_PULL_PX as a shot and
+     * a click only arrives when the finger did not drag. */
+    if (indev && needs_pet(p.x, p.y)) {
+        g.taps++;
+        game_save_now();
+        return;
+    }
+
+    /* 4. Empty tap: nothing happens, and nothing is said.
      *
      * The player explicitly asked for the on-screen hints to go. "tap the
      * spider" and "wait for TAP!" were instructions, not feedback, and they

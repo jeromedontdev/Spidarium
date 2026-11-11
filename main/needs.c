@@ -8,6 +8,7 @@
 #include "game_config.h"
 #include "gift.h"
 #include "prey.h"
+#include "rtc.h"
 #include "spider.h"
 #include "terrarium.h"
 
@@ -15,6 +16,8 @@
 
 #include <stdlib.h>
 #include <math.h>
+#include <sys/time.h>
+#include <time.h>
 
 static const char *TAG = "spidarium.needs";
 
@@ -26,6 +29,10 @@ static float s_energy_acc;
 
 static uint32_t s_last_decay;
 static uint32_t s_last_age;
+static uint32_t s_last_pet;
+static bool s_petted_once;
+/* Console-only day override. DAILY_NEVER means "use the real clock". */
+static uint32_t s_daily_override = DAILY_NEVER;
 
 static void daily_ensure_base(void);
 
@@ -198,9 +205,42 @@ void needs_play(void)
     audio_play(SFX_POUNCE);
 }
 
-void needs_sleep(void)
+/* Petting: a tap that lands on the spider's body. Returns true when the tap was
+ * consumed as a pet, so the caller can stop treating it as an empty tap.
+ *
+ * The cooldown exists because a tap is a cheap gesture: without it a player
+ * could hold a finger on the spider and farm mood, XP and the daily task. */
+bool needs_pet(int x, int y)
 {
-    /* Toggle, but through the forced-sleep path so the state is held for a
+    int dx = x - g.spider_x;
+    int dy = y - g.spider_y;
+    if (dx * dx + dy * dy > PET_RADIUS_PX * PET_RADIUS_PX) return false;
+
+    uint32_t now = game_now();
+    /* A separate "has petted" flag, not `s_last_pet != 0`: the clock can
+     * legitimately read 0 early in a session, and then the guard would never
+     * engage and a held finger could farm mood. */
+    if (s_petted_once && now - s_last_pet < PET_COOLDOWN_MS) return false;
+    s_petted_once = true;
+    s_last_pet = now;
+
+    g.mood = clamp100((int)g.mood + PET_MOOD_GAIN);
+    g.pets++;
+    if (g.bond < 100) g.bond++;
+
+    behaviour_set_state(SPIDER_PLAY);
+    spider_play_once(ANIM_IDLE, true);
+
+    game_add_xp(PET_XP);
+    game_award(ACH_FIRST_PET);
+    audio_play(SFX_CHIRP);
+    ESP_LOGI(TAG, "pet: mood=%u bond=%u pets=%lu", g.mood, (unsigned)g.bond,
+             (unsigned long)g.pets);
+    return true;
+}
+
+void needs_sleep(void)
+{    /* Toggle, but through the forced-sleep path so the state is held for a
      * minimum duration. Setting SPIDER_SLEEP directly let the wake condition
      * fire on the very next tick at high energy, so the button appeared to do
      * nothing. */
@@ -447,6 +487,20 @@ void needs_tick(uint32_t now_ms, float dt_s)
 
 uint32_t needs_daily_today(void)
 {
+    /* A console override wins over both clocks. It exists so the streak and the
+     * task rotation can be exercised without waiting a real day, and it has to
+     * bypass the RTC because the RTC refuses dates before 2000. */
+    if (s_daily_override != DAILY_NEVER) return s_daily_override;
+
+    /* Prefer the RTC. A real calendar day is what the player expects: the
+     * check-in should reset at midnight, not after 24 hours of play. The RTC is
+     * optional (no backup battery, no sync without WiFi), so when it is not
+     * valid we fall back to the in-game day counter, which advances with
+     * AGE_TICK_MS and is compressed by GAME_TIME_SCALE for verification. */
+    time_t now = 0;
+    if (pet_rtc_read(&now) == ESP_OK && now > 0) {
+        return (uint32_t)(now / 86400);
+    }
     return needs_days_lived();
 }
 
@@ -583,6 +637,11 @@ uint32_t needs_daily_task_claim(void)
  * counters. */
 void needs_daily_force_day(uint32_t day)
 {
+    /* The day number comes from the RTC when it is valid, and the RTC refuses
+     * dates before 2000, so a small day number cannot be written to it. An
+     * explicit override is the only way to exercise the streak and the task
+     * rotation without waiting a real day. */
+    s_daily_override = day;
     g.age_ticks = day * TICKS_PER_DAY;
     g.days_lived = day;
     g.daily_base_day = day;
@@ -591,6 +650,13 @@ void needs_daily_force_day(uint32_t day)
     ESP_LOGI(TAG, "daily: forced to day %u (task %u, base %lu)",
              (unsigned)day, (unsigned)daily_task_for_day(day),
              (unsigned long)g.daily_task_base);
+}
+
+/* Drop the console override so the real clock takes over again. */
+void needs_daily_clear_override(void)
+{
+    s_daily_override = DAILY_NEVER;
+    ESP_LOGI(TAG, "daily: override cleared, day %u", (unsigned)needs_daily_today());
 }
 
 /* ------------------------------------------------------------------ */

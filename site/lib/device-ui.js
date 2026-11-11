@@ -172,8 +172,10 @@ export class DeviceGame {
       case 'Menu': rows = [
         row('Daily', () => this.open('Daily'), this.dailyDetail(), { submenu: true }),
         row('Treats', () => this.open('Treats'), 'Spend Silk', { submenu: true }),
-        ...['Backgrounds', 'Achievements', 'Settings', 'Prey Species'].map(label =>
+        ...['Backgrounds', 'Achievements', 'Prey Species'].map(label =>
           row(label, () => this.open(label), '', { submenu: true })),
+        /* Settings is always the last row: it is the least-used entry. */
+        row('Settings', () => this.open('Settings'), '', { submenu: true }),
       ]; break;
       case 'Daily': {
         const today = E.dailyToday(this.state);
@@ -199,7 +201,6 @@ export class DeviceGame {
           row(E.dailyTaskName(task),
             () => { E.dailyTaskClaim(this.state); this.persist(); this.open('Daily'); },
             taskDetail, { enabled: E.dailyTaskReady(this.state) }),
-          row('Back', () => this.open('Menu'), '', { submenu: true }),
         ];
         break;
       }
@@ -208,7 +209,6 @@ export class DeviceGame {
           () => { E.buyTreat(this.state, id); this.persist(); this.open('Treats'); },
           `${item.cost} Silk${this.state.silk < item.cost ? ' / Need More' : ''}`,
           { enabled: this.state.silk >= item.cost })),
-        row('Back', () => this.open('Menu'), '', { submenu: true }),
       ]; break;
       case 'Settings': rows = [
         row('WiFi', () => this.open('WiFi'), '', { submenu: true }),
@@ -259,7 +259,7 @@ export class DeviceGame {
   back(name) {
     if (name === 'Menu' || name === 'Gifts') this.close();
     else if (name === 'Daily' || name === 'Treats') this.open('Menu');
-    else this.open(['Backgrounds', 'Achievements', 'Settings', 'Prey Species'].includes(name) ? 'Menu' : 'Settings');
+    else this.open(['Backgrounds', 'Achievements', 'Prey Species'].includes(name) ? 'Menu' : 'Settings');
   }
   /** The Daily row's subtitle: what is waiting for the player right now. */
   dailyDetail() {
@@ -442,7 +442,14 @@ export class DeviceGame {
   }
   pointerMove(event) { if (this.aiming) { const p = this.point(event); E.moveAim(this.state, p.x, p.y); } }
   pointerUp(event) {
-    if (!this.aiming) return; this.aiming = false;
+    if (!this.aiming) {
+      /* A tap that did not start an aim is a pet if it landed on the spider.
+       * The engine enforces the hit radius and the cooldown. */
+      const p = this.point(event);
+      if (E.pet(this.state, p.x, p.y)) { this.persist(); this.report('Spider Petted.'); }
+      return;
+    }
+    this.aiming = false;
     const p = this.point(event); E.endAim(this.state, p.x, p.y); this.persist();
   }
   key(event) {

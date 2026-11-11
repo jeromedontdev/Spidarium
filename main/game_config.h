@@ -94,6 +94,11 @@
 #define PET_MOOD_GAIN          6
 #define PET_XP                 2
 
+/* Petting cooldown. A tap is a cheap gesture, so without this a player could
+ * hold a finger on the spider and farm mood, XP and the daily task. The hit
+ * radius itself is PET_RADIUS_PX, defined with the sprite geometry below. */
+#define PET_COOLDOWN_MS        1200u
+
 /* ------------------------------------------------------------------ */
 /* Daily loop                                                          */
 /* ------------------------------------------------------------------ */

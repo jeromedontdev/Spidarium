@@ -1,5 +1,30 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.10 follow-up
+
+Petting exists on both targets with the same numbers: a tap within
+`PET_RADIUS_PX` (56 px) of the spider raises mood by `PET_MOOD_GAIN` (6), bond by
+1, and pays `PET_XP` (2) plus the `first_pet` achievement the first time.
+`PET_COOLDOWN_MS` (1.2 s) refuses a repeat on both.
+Both use a separate `petted_once` flag rather than testing `last_pet != 0`. The
+clock legitimately reads 0 early in a session, so the `!= 0` form never engaged
+the guard and a rapid double-tap petted twice. That was a real bug on both
+targets, found by a test that tapped twice in the same frame.
+
+The daily day prefers a real clock on both targets: the device reads the RTC and
+falls back to the in-game counter when it is not valid, and the browser uses
+`Date.now()`. Both honour an explicit `daily_override`, which is how the console
+and the tests drive the loop without waiting a day. The device needs the override
+because its RTC refuses dates before 2000, so a small day number cannot be
+written to it.
+
+The menu layout matches on both: Settings is the last row of the main menu, and
+Daily and Treats have no redundant full-width Back row because the corner Back
+button already exists.
+
+Browser suite 88/88 (was 84). Four new tests cover petting, the hit radius, the
+cooldown, the daily task it advances, and the wall-clock day.
+
 ## v1.1.9 follow-up
 
 The daily loop and the treats shop exist on both targets with the same numbers.

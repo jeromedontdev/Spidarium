@@ -24,6 +24,9 @@ void needs_feed(void);
  * dirt removed: 0 for a spotless tank, up to CLEAN_XP_MAX for a filthy one. */
 uint32_t needs_clean(void);
 void needs_play(void);
+/* Petting: a tap that lands on the spider's body. Returns true when the tap was
+ * consumed as a pet, so the caller can stop treating it as an empty tap. */
+bool needs_pet(int x, int y);
 void needs_sleep(void);
 
 /* XP that cleaning would grant right now, without changing anything. */
