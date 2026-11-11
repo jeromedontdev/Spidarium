@@ -7076,3 +7076,42 @@ installation, SD media or RTC backup retention. A capture attempt with
 unsupported `--menu play` was rejected; native games are exercised by
 `uitest`, not inferred from that failed capture. Publication evidence follows
 after the official release and HTTPS deployment are verified.
+
+### Publication and cross-platform follow-up
+
+**Decisions made:** kept the published `v1.1.16` tag immutable. The first
+release-triggered Linux run passed all twelve art tests but rejected a
+re-encoded spider PNG under the strict source-byte preservation check.
+Generation now compares decoded mode, size and pixels before writing;
+pixel-identical approved PNGs retain their original bytes across encoders.
+Actual art edits still rewrite and trigger preservation failures. Added a
+regression using different PNG compression, plus a real changed pixel.
+No artwork, renderer or firmware image changed in this follow-up.
+
+- Release commit/tag: **`ca1abca` / `v1.1.16`**, pushed to origin/main and
+  published at <https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.16>.
+- Cross-platform tooling fix: **`f2539f6`**, pushed to origin/main.
+  Final local and Linux CI art regressions: **13/13 passed**.
+  Final package regressions: **9/9**; browser regressions: **110/110**.
+- Pages environment retains its existing protections; added only the allowed
+  **`v1.1.16` tag**. Corrected deployment
+  <https://github.com/jeromedontdev/Spidarium/actions/runs/43075248909>
+  completed **successfully** from `f2539f6`.
+- Official ZIP downloaded from the published release and matched the local
+  verified package: **1,743,372 bytes**, SHA-256
+  `ce98c2cfaecbebbdcad8d02ab4335023819fff60fe5c9e25394feffb06daaeb6`.
+  The five-image manifest, notices and actual v8 schema were verified; NVS
+  remains excluded.
+- Production <https://jeromedontdev.github.io/Spidarium/site/> was checked
+  over HTTPS: manifest **1.1.16**, all **five firmware image hashes**, and
+  **all 158 source PNGs byte-identical**, including every bug frame and all
+  unchanged spider exports.
+- Live HTML, both stylesheets, app, device UI and save decoder match source
+  bytes exactly. The live v8 schema matches exact normalized bytes/JSON:
+  the only byte difference is Linux LF versus Windows CRLF.
+  A transient HTTP 503 interrupted the first artwork-fetch pass; the full
+  subsequent 158-image pass succeeded, rather than treating that failure as
+  verification.
+- Live browser computed styles confirm navy `rgb(10,18,32)`, local Montserrat
+  and no filter on the promotional spider. Temporary preview server stopped;
+  read-only raw-save verification scratch data deleted.
