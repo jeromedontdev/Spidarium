@@ -1,0 +1,33 @@
+Release v1.1.11: a petting budget, a petting bounce, and a quieter pager
+
+Petting paid XP with no cap, so a bored thumb was an XP faucet. The reward
+is now a per-in-game-day budget of PET_XP_DAILY_MAX (10 XP, five pets at
+PET_XP). The cap is on the currency, not the affection: mood, bond, the pet
+counter and the "Pet 4 Times" daily task all still advance on every pet, so
+it is invisible unless the player is deliberately farming. The budget resets
+on the same RTC-first day the daily loop uses.
+
+The old pet animation was a no-op: needs_pet() called
+spider_play_once(ANIM_IDLE, true), but ANIM_IDLE has a zero duration so the
+call returned immediately. The reaction is now a timed overlay in the canvas
+renderer -- a 9 px rise and fall over 520 ms with the front legs forced into
+the happy wave. It is deliberately not a state change: ui_hud_tick()
+recomputes the emote every frame and would overwrite one set from the pet
+handler, and an overlay never interrupts a hunt or a sleep.
+
+The menu pager became two bare chevron arrows, 96x56 like the corner Back
+button, with the page counter centred between them. The header accent rule
+was reversed so its bright end runs away from Back rather than under it.
+
+Save format v7: game_state_t grew 152 -> 160 bytes for pet_xp_day and
+pet_xp_today. A v6 blob is a valid prefix and migrates in place; v5 and v2
+are still accepted.
+
+Verified: build exit 0 with zero main/ warnings, flash exit 0, 47/47 device
+tests, soak PASS with 0 faults, largest=65536, scanloop 5 and render 500
+both largest_drift=0, browser 90/90. Pet cap confirmed on hardware (five
+pets paid 2/10 through 10/10, then 0 XP with mood and bond still rising) and
+in the browser (xp 29 -> 39 then flat). Menu capture confirms the reversed
+rule (dark at x=60, bright at x=420) and bare chevron pager.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

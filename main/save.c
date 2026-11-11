@@ -36,6 +36,9 @@ typedef struct {
  * v6 appended the daily-loop fields, so a v5 blob is a valid prefix of the
  * current struct and can be migrated in place instead of discarded. */
 #define SAVE_V5_PAYLOAD 136
+/* Byte count of the v6 game_state_t: v5 plus the daily-loop fields. v7 appended
+ * the petting budget, so a v6 blob is likewise a valid prefix. */
+#define SAVE_V6_PAYLOAD 152
 
 static bool s_nvs_ready;
 typedef struct {
@@ -80,6 +83,13 @@ static void migrate_automation(game_state_t *state, uint16_t version)
         state->daily_task_base = 0;
         state->daily_streak = 0;
         state->daily_task_done = 0;
+    }
+    /* The petting budget arrived in v7. A zeroed pet_xp_day would read as
+     * "budget already reset on day 0", which is harmless, but DAILY_NEVER makes
+     * the intent explicit and matches the daily fields. */
+    if (version < 7) {
+        state->pet_xp_day = DAILY_NEVER;
+        state->pet_xp_today = 0;
     }
 }
 
@@ -283,7 +293,8 @@ bool save_load(void *dst, size_t size)
                  (unsigned)hdr.magic, (unsigned)SAVE_MAGIC);
         return false;
     }
-    if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5) {
+    if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
+        hdr.version != 6) {
         ESP_LOGW(TAG, "save version %u != %u; rejecting",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
@@ -292,9 +303,11 @@ bool save_load(void *dst, size_t size)
                   hdr.size == offsetof(game_state_t, silk);
     /* v5 payloads are 136 bytes: everything up to and including last_seen.
      * v6 appended the daily-loop fields, so a v5 blob is a valid prefix and is
-     * accepted rather than thrown away. */
+     * accepted rather than thrown away. v7 appended the petting budget, so a v6
+     * blob is a valid prefix in the same way. */
     bool v5 = size == sizeof(game_state_t) && hdr.size == SAVE_V5_PAYLOAD;
-    if (hdr.size != size && !legacy && !v5) {
+    bool v6 = size == sizeof(game_state_t) && hdr.size == SAVE_V6_PAYLOAD;
+    if (hdr.size != size && !legacy && !v5 && !v6) {
         ESP_LOGW(TAG, "save size %u != %u; rejecting",
                  (unsigned)hdr.size, (unsigned)size);
         return false;
@@ -315,6 +328,9 @@ bool save_load(void *dst, size_t size)
         }
         if (v5) {
             ESP_LOGI(TAG, "migrated v5 save: daily loop starts fresh");
+        }
+        if (v6) {
+            ESP_LOGI(TAG, "migrated v6 save: petting budget starts fresh");
         }
     }
     if (legacy) {
@@ -421,13 +437,14 @@ bool save_raw_valid(const void *src, size_t len)
         ESP_LOGW(TAG, "raw write: bad magic 0x%08x", (unsigned)hdr.magic);
         return false;
     }
-    if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5) {
+    if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
+        hdr.version != 6) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
     if (hdr.size != sizeof(game_state_t) && hdr.size != offsetof(game_state_t, silk) &&
-        hdr.size != SAVE_V5_PAYLOAD) {
+        hdr.size != SAVE_V5_PAYLOAD && hdr.size != SAVE_V6_PAYLOAD) {
         ESP_LOGW(TAG, "raw write: game-state size %u != %u",
                  (unsigned)hdr.size, (unsigned)sizeof(game_state_t));
         return false;
@@ -531,5 +548,23 @@ bool save_format_test(void)
     migrate_automation(&migrated, 5);
     ok = migrated.daily_day == DAILY_NEVER && migrated.daily_streak == 0 &&
          migrated.daily_base_day == DAILY_NEVER && ok;
+
+    /* A v6 blob is likewise a valid prefix of the v7 struct: the petting budget
+     * was appended, so an upgrade must not wipe the pet. */
+    header.version = 6;
+    header.size = SAVE_V6_PAYLOAD;
+    memcpy(blob, &header, sizeof header);
+    memcpy(blob + sizeof header, &g, SAVE_V6_PAYLOAD);
+    ok = save_raw_valid(blob, sizeof header + SAVE_V6_PAYLOAD) && ok;
+    /* ...and a v6 header claiming a v7 payload is a lie. */
+    header.size = sizeof(game_state_t);
+    memcpy(blob, &header, sizeof header);
+    ok = !save_raw_valid(blob, sizeof header + SAVE_V6_PAYLOAD) && ok;
+    /* The v6 migration must open the petting budget rather than inherit it. */
+    migrated = g;
+    migrated.pet_xp_day = 12345;
+    migrated.pet_xp_today = 200;
+    migrate_automation(&migrated, 6);
+    ok = migrated.pet_xp_day == DAILY_NEVER && migrated.pet_xp_today == 0 && ok;
     return ok;
 }

@@ -198,3 +198,24 @@ network/server. Existing hardware progress/credentials were never erased.
   of the old side-panel game. Existing progress is not reset for screenshots.
 - Original v1.0.0 tag/archive remain unchanged. Publication evidence is a
   documentation-only follow-up; the v1.1.0 code tag is not moved.
+
+## v1.1.11 follow-up
+
+Petting XP is capped per in-game day on both targets: `PET_XP_DAILY_MAX` (10)
+XP, which is five pets at `PET_XP` (2). The cap is on the currency, not the
+affection -- mood, bond, the pet counter and the "Pet 4 Times" daily task all
+still advance on every pet. Both targets reset the budget when the in-game day
+changes, using the same RTC-first day the daily loop uses, and both persist the
+budget (`pet_xp_day` / `pet_xp_today`) so a reboot does not reopen it.
+
+Petting has a visible reaction on both targets: a `PET_REACT_PX` (9 px) rise
+and fall over `PET_REACT_MS` (520 ms) with the front legs forced into the happy
+wave. It is a timed overlay, not a state change, so a pet never interrupts a
+hunt or a sleep. The device holds it in the canvas renderer because
+`ui_hud_tick()` recomputes the emote every frame; the browser holds it in
+`_engine.pet_react_until` and reads it in `spiderOptions()`.
+
+The menu pager is two bare chevron arrows on both targets, 96x56 like the corner
+Back button, with the page counter centred between them. The header accent rule
+fades from dark on the left to bright on the right on both, so its bright end
+runs away from the Back button rather than under it.

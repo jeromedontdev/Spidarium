@@ -99,6 +99,17 @@
  * radius itself is PET_RADIUS_PX, defined with the sprite geometry below. */
 #define PET_COOLDOWN_MS        1200u
 
+/* Petting pays XP, but only for the first few pets of each in-game day. A tap
+ * is the cheapest gesture in the game, so an uncapped reward turned a bored
+ * thumb into an XP faucet. The cap is on the currency, not on the affection:
+ * mood and bond still rise on every pet, and the spider still reacts. */
+#define PET_XP_DAILY_MAX       10     /* XP per in-game day; 5 pets at PET_XP */
+
+/* Height of the petting bounce, in px. The reaction is a gentle rise and fall
+ * rather than a startle, so it reads as affection. */
+#define PET_REACT_PX           9
+#define PET_REACT_MS           520u
+
 /* ------------------------------------------------------------------ */
 /* Daily loop                                                          */
 /* ------------------------------------------------------------------ */
@@ -468,6 +479,6 @@
 #define SAVE_MAGIC             0x53504944u   /* "SPID" */
 /* v3 uses two former padding bytes for opt-in automation. v2 progress is
  * retained, with both flags cleared; unsupported v1 layouts remain rejected. */
-#define SAVE_VERSION           6
+#define SAVE_VERSION           7
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

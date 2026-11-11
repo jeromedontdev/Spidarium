@@ -6477,3 +6477,72 @@ but a genuine midnight rollover has not been observed -- that needs a day of
 wall-clock time. The fallback path is exercised by the console override, not by
 removing the RTC. The menu overhaul was verified by screen capture, not by
 touching the panel.
+
+---
+
+## Round 63 - A petting budget, a petting bounce, and a quieter pager
+
+**Status:** COMPLETE - built, flashed, tested on COM7 and in the browser.
+
+### Decisions made
+
+**Petting pays XP, but only for the first few pets of each in-game day.** A tap
+is the cheapest gesture in the game, so an uncapped reward turned a bored thumb
+into an XP faucet. The cap is on the currency, not the affection: mood, bond, the
+pet counter and the "Pet 4 Times" daily task all still advance on every pet, and
+the spider still reacts. That keeps the cap invisible unless the player is
+deliberately farming, which is the only case it needs to stop.
+
+**The budget is a persisted field, not a derived one.** Deriving it from
+`g.pets` against a day-stamped baseline would have needed a second baseline
+field anyway, and the daily loop already showed that a lazily captured baseline
+is a real bug: it captures the value *after* the player acted. Two explicit
+fields (`pet_xp_day`, `pet_xp_today`) are simpler and cannot drift.
+
+**The petting animation is a timed overlay in the renderer, not an emote set
+from the handler.** `ui_hud_tick()` recomputes the emote from the game state on
+every frame, so `spider_set_emote(EMOTE_HAPPY)` from `needs_pet()` would be
+overwritten before it was ever drawn. Holding the reaction in `cspider_render()`
+also means a pet never interrupts a hunt, a sleep or a molt, which a state change
+would have.
+
+**The old pet animation was a no-op.** `needs_pet()` called
+`spider_play_once(ANIM_IDLE, true)`, but `ANIM_IDLE` has a zero duration, so
+`spider_play_once()` returned immediately. The pet produced no visual reaction
+at all. This was not a regression from v1.1.10; it had never worked.
+
+**The pager became arrows.** `Prev` / `Next` read as content rather than
+chrome and competed with the row labels above them. Bare chevrons at 96x56 match
+the corner Back button, and the page counter stays centred between them.
+
+**The accent rule was reversed, not moved.** The user's report was that the green
+line overlapped the Back button. The line is at y=68, below the 56 px Back
+button, so it never physically overlapped -- but its *bright* end was on the left,
+directly under Back, which read as a highlight on the wrong control. Swapping the
+gradient stops fixes the perception without moving the rule.
+
+### Evidence
+
+- Build: exit 0, zero `main/` warnings.
+- Flash: exit 0.
+- Device suite **47/47** (`SUMMARY passed=47 failed=0`).
+- Soak: `VERDICT: PASS - clean boot window`, `FAULTS/ERRORS: 0`,
+  `largest=65536` (floor 51,200).
+- `scanloop 5`: `LOOP ok=5 failed=0 largest_drift=0`.
+- `render 500`: `RENDER ticks=500 largest_drift=0`.
+- Pet cap on hardware: five pets paid `pet_xp=2/10` through `10/10` and
+  `xp` rose 195 -> 218; the sixth and seventh pets reported `pet_xp=10/10`
+  with `xp` unchanged at 218 while `mood` and `bond` still rose.
+- Menu capture on hardware: the accent rule at screen y=110 reads
+  `(8,24,32)` at x=60 and `(82,153,131)` at x=420 -- dark left, bright right.
+  Both pager buttons render as bare chevrons with no text.
+- Browser suite **90/90** (was 88). Two new tests: the pet XP budget caps at
+  `PET_XP_DAILY_MAX` while mood and bond keep rising and reopens on a new day,
+  and the reaction overlay is set without pinning a state.
+
+### Honest boundaries
+
+The petting bounce was verified by reading the render path and by the browser
+overlay test, not by watching the panel. The menu changes were verified by screen
+capture, not by touching the panel. The per-day budget reset was verified by
+moving `daily_override`, not by waiting for a real midnight.

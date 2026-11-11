@@ -209,13 +209,15 @@ static void open_panel(const char *title)
     lv_label_set_long_mode(heading, LV_LABEL_LONG_DOT);
 
     /* Accent rule under the header: a thin gradient bar that fades out to the
-     * right, so the title block reads as a header rather than a floating word. */
+     * LEFT, so the bright end sits under the title and the dim end runs away
+     * from the Back button. Fading right put the bright end directly beneath
+     * the Back button, which read as a highlight on the wrong control. */
     lv_obj_t *rule = lv_obj_create(s_menu);
     lv_obj_remove_style_all(rule);
     lv_obj_set_pos(rule, 12, 68);
     lv_obj_set_size(rule, MENU_WIDTH - 24, 2);
-    lv_obj_set_style_bg_color(rule, lv_color_hex(COL_RULE), 0);
-    lv_obj_set_style_bg_grad_color(rule, lv_color_hex(COL_PANEL_BOT), 0);
+    lv_obj_set_style_bg_color(rule, lv_color_hex(COL_PANEL_BOT), 0);
+    lv_obj_set_style_bg_grad_color(rule, lv_color_hex(COL_RULE), 0);
     lv_obj_set_style_bg_grad_dir(rule, LV_GRAD_DIR_HOR, 0);
     lv_obj_set_style_bg_opa(rule, LV_OPA_70, 0);
     lv_obj_set_clickable(rule, false);
@@ -724,9 +726,12 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
                             (void *)(uintptr_t)i);
         lv_obj_set_hidden(s_sliders[i], true);
     }
-    s_prev = button(s_menu, 12, MENU_HEIGHT - 68, 120, 56, LV_SYMBOL_LEFT " Prev",
+    /* The pager is two arrow buttons, matching the corner Back control. Text
+     * labels ("Prev" / "Next") made the pager read as content rather than
+     * chrome, and the words competed with the row labels above them. */
+    s_prev = button(s_menu, 12, MENU_HEIGHT - 68, 96, 56, LV_SYMBOL_LEFT,
                     on_page, (void *)(intptr_t)-1);
-    s_next = button(s_menu, w - 132, MENU_HEIGHT - 68, 120, 56, "Next " LV_SYMBOL_RIGHT,
+    s_next = button(s_menu, w - 108, MENU_HEIGHT - 68, 96, 56, LV_SYMBOL_RIGHT,
                     on_page, (void *)(intptr_t)1);
     /* The pager is chrome, not content: a flatter fill keeps it from competing
      * with the rows above it. */

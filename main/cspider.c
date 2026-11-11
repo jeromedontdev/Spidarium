@@ -101,6 +101,10 @@ static uint8_t *s_buf;
 
 static cspider_emote_t s_emote;
 
+/* Petting reaction: a timed overlay, not a state. See cspider_pet_react(). */
+static bool     s_pet_reacting;
+static uint32_t s_pet_react_until;
+
 /* Gait, carried over from the widget renderer. */
 typedef struct {
     float phase, x, y;
@@ -481,6 +485,18 @@ void cspider_set_emote(cspider_emote_t e)
     s_emote = e;
 }
 
+/* A short bounce plus a happy wave, played when the player pets the spider.
+ *
+ * This is a timed overlay rather than a state change: ui_hud_tick() recomputes
+ * the emote from the game state on every frame, so an emote set from the pet
+ * handler would be overwritten before it was ever drawn. Holding the reaction
+ * here also means a pet never interrupts a hunt or a sleep. */
+void cspider_pet_react(void)
+{
+    s_pet_reacting = true;
+    s_pet_react_until = lv_tick_get() + PET_REACT_MS;
+}
+
 bool cspider_hit(int32_t x, int32_t y)
 {
     /* The body is two overlapping circles. Test both, plus a little slack so a
@@ -525,6 +541,26 @@ void cspider_render(uint32_t now_ms)
     if (g.state == SPIDER_POUNCE)      { sx = 1.17f; sy = 0.82f; }
     else if (g.state == SPIDER_AIM)    { sx = 1.11f; sy = 0.84f; }
     else if (g.state == SPIDER_SLEEP)  { sx = 1.05f; sy = 0.95f; }
+
+    /* --- petting reaction -------------------------------------------
+     * A gentle bounce with a happy wave, drawn on top of whatever the spider
+     * is already doing. The emote is forced here rather than set from the pet
+     * handler because ui_hud_tick() recomputes the emote from the game state
+     * every frame and would overwrite it before it was ever drawn. */
+    cspider_emote_t emote = s_emote;
+    int32_t lift = 0;
+    if (s_pet_reacting) {
+        uint32_t elapsed = now_ms - (s_pet_react_until - PET_REACT_MS);
+        if (elapsed >= PET_REACT_MS) {
+            s_pet_reacting = false;
+        } else {
+            /* One smooth rise and fall: sin over half a period, so the spider
+             * starts and ends on the ground. */
+            float t = (float)elapsed / (float)PET_REACT_MS;
+            lift = -(int32_t)((float)PET_REACT_PX * sinf(t * PI_F));
+            emote = CSP_EMOTE_HAPPY;
+        }
+    }
 
     float heading = g.spider_heading;
 
@@ -572,7 +608,7 @@ void cspider_render(uint32_t now_ms)
         int side = (i < 4) ? -1 : 1;
         int k    = i & 3;
 
-        leg_pose_t pose = leg_pose(k, side, s_gait.phase, moving, s_emote,
+        leg_pose_t pose = leg_pose(k, side, s_gait.phase, moving, emote,
                                    now_ms);
         int32_t hx, hy, kx, ky, fx, fy;
         to_canvas(pose.hf, pose.hr, heading, 1, 1, &hx, &hy);
@@ -690,7 +726,7 @@ void cspider_render(uint32_t now_ms)
      * spiderling reads as small and an adult as full size. The canvas is a
      * fixed 96x96 buffer; scaling the widget keeps the pixel art crisp and
      * costs nothing per frame. */
-    lv_obj_set_pos(s_canvas, g.spider_x - CANVAS_C, g.spider_y - CANVAS_C);
+    lv_obj_set_pos(s_canvas, g.spider_x - CANVAS_C, g.spider_y - CANVAS_C + lift);
     lv_obj_set_style_transform_pivot_x(s_canvas, CANVAS_C, 0);
     lv_obj_set_style_transform_pivot_y(s_canvas, CANVAS_C, 0);
     lv_obj_set_style_transform_scale_x(s_canvas, stage_scale_256(), 0);

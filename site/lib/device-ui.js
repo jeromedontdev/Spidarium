@@ -299,8 +299,10 @@ export class DeviceGame {
       } else if (item.selected || item.submenu) button.append(element('span', 'row-marker', item.selected ? '✓' : '›'));
     });
     const name = this.modal.name;
-    this.button(this.modal.panel, 'Prev', 12, 332, 120, 56, () => this.open(name, page - 1)).disabled = page === 0;
-    this.button(this.modal.panel, 'Next', 264, 332, 120, 56, () => this.open(name, page + 1)).disabled = page === pages - 1;
+    // Arrow buttons, matching the corner Back control. Text labels made the
+    // pager read as content rather than chrome.
+    this.button(this.modal.panel, '‹', 12, 332, 96, 56, () => this.open(name, page - 1)).disabled = page === 0;
+    this.button(this.modal.panel, '›', 292, 332, 96, 56, () => this.open(name, page + 1)).disabled = page === pages - 1;
     this.modal.panel.append(element('span', 'd-pages', `${page + 1}/${pages}`));
   }
   // The browser has no PMIC, so runtime is stated as unavailable rather than
@@ -470,7 +472,10 @@ export class DeviceGame {
   spiderOptions() {
     const s = this.state;
     const state = E.STATE_NAMES[s.state];
-    return { state, emote: s.gift_visit ? 'happy' : state === 'sleep' ? 'sleepy' : ['aim', 'stalk'].includes(state) ? 'alert' : state === 'sick' || s.mood < 18 ? 'sad' : state === 'eat' || state === 'play' ? 'happy' : 'none',
+    // The petting reaction is a timed overlay, not a state: it forces a happy
+    // wave for a moment without interrupting whatever the spider is doing.
+    const reacting = (s.now_ms ?? 0) < (s._engine?.pet_react_until ?? 0);
+    return { state, emote: reacting ? 'happy' : s.gift_visit ? 'happy' : state === 'sleep' ? 'sleepy' : ['aim', 'stalk'].includes(state) ? 'alert' : state === 'sick' || s.mood < 18 ? 'sad' : state === 'eat' || state === 'play' ? 'happy' : 'none',
       heading: s.heading, phase: s.gait_phase, now: s.now_ms ?? 0,
       walking: s.spider.walking, colour: s.bodyColour, pupilColour: s.eyeColour,
       legColour: s.legColour, fangColour: s.fangColour, sick: s.sick !== 0 };
@@ -501,7 +506,11 @@ export class DeviceGame {
     // Life-stage size: a spiderling reads as small, an adult as full size.
     const stageScale = s.stage === 0 ? .75 : s.stage === 1 ? .875 : 1;
     const half = 48 * stageScale;
-    ctx.drawImage(this.spiderCanvas, s.spider_x - half, s.spider_y - half, half * 2, half * 2);
+    // Petting bounce: one smooth rise and fall, matching the device's
+    // PET_REACT_PX / PET_REACT_MS overlay.
+    const reactLeft = (s._engine?.pet_react_until ?? 0) - (s.now_ms ?? 0);
+    const lift = reactLeft > 0 ? -Math.round(9 * Math.sin((1 - reactLeft / E.CONFIG.PET_REACT_MS) * Math.PI)) : 0;
+    ctx.drawImage(this.spiderCanvas, s.spider_x - half, s.spider_y - half + lift, half * 2, half * 2);
     if (s.state === E.STATES.AIM) {
       ctx.strokeStyle = '#f5c86b'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath();
       ctx.moveTo(s.spider_x, s.spider_y); ctx.lineTo(s.aim_x, s.aim_y); ctx.stroke(); ctx.setLineDash([]);

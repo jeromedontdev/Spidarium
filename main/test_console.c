@@ -166,7 +166,8 @@ static void cmd_stat(void)
     printf("CARE clean_needed=%d dirt=%d clean_xp=%lu\n", needs_clean_needed() ? 1 : 0,
            terrarium_dirt(), (unsigned long)needs_clean_reward());
     printf("DAILY day=%lu claimed=%d streak=%u task=%u task_done=%d progress=%lu/%lu "
-           "ready=%d silk=%lu base_day=%lu base=%lu counters=%lu/%lu/%lu/%lu\n",
+           "ready=%d silk=%lu base_day=%lu base=%lu counters=%lu/%lu/%lu/%lu "
+           "pet_xp=%u/%u\n",
            (unsigned long)needs_daily_today(), needs_daily_available() ? 0 : 1,
            (unsigned)g.daily_streak, (unsigned)needs_daily_task(),
            g.daily_task_done ? 1 : 0,
@@ -175,7 +176,8 @@ static void cmd_stat(void)
            needs_daily_task_ready() ? 1 : 0, (unsigned long)g.silk,
            (unsigned long)g.daily_base_day, (unsigned long)g.daily_task_base,
            (unsigned long)g.meals, (unsigned long)g.cleans,
-           (unsigned long)g.plays, (unsigned long)g.pets);
+           (unsigned long)g.plays, (unsigned long)g.pets,
+           (unsigned)g.pet_xp_today, (unsigned)PET_XP_DAILY_MAX);
     printf("OK stat\n");
 }
 
@@ -478,6 +480,8 @@ static void cmd_save_schema(void)
         {"daily_task_base", "u32", offsetof(game_state_t, daily_task_base), 0, 6},
         {"daily_streak", "u8", offsetof(game_state_t, daily_streak), 0, 6},
         {"daily_task_done", "u8", offsetof(game_state_t, daily_task_done), 0, 6},
+        {"pet_xp_day", "u32", offsetof(game_state_t, pet_xp_day), 0, 7},
+        {"pet_xp_today", "u8", offsetof(game_state_t, pet_xp_today), 0, 7},
 #undef SAVE_FIELD
     };    enum { SCHEMA_CAP = 3328 };
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -704,6 +708,8 @@ static void cmd_daily(const char *arg)
         g.daily_task_base = 0;
         g.daily_streak = 0;
         g.daily_task_done = 0;
+        g.pet_xp_day = DAILY_NEVER;
+        g.pet_xp_today = 0;
         game_save_now();
         printf("OK daily reset\n");
         return;
@@ -770,8 +776,9 @@ static void cmd_pet(void)
         return;
     }
     game_save_now();
-    printf("OK pet mood=%u bond=%u pets=%lu xp=%lu\n", g.mood, (unsigned)g.bond,
-           (unsigned long)g.pets, (unsigned long)g.xp);
+    printf("OK pet mood=%u bond=%u pets=%lu xp=%lu pet_xp=%u/%u\n", g.mood,
+           (unsigned)g.bond, (unsigned long)g.pets, (unsigned long)g.xp,
+           (unsigned)g.pet_xp_today, (unsigned)PET_XP_DAILY_MAX);
 }
 
 static void cmd_sleep(void)

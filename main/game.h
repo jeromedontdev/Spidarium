@@ -185,9 +185,13 @@ typedef struct {
     uint32_t daily_task_base; /* counter value when daily_base_day began */
     uint8_t  daily_streak;    /* consecutive claimed days, capped at DAILY_STREAK_MAX */
     uint8_t  daily_task_done; /* 1 once today's task has been paid */
+
+    /* --- petting budget (appended; saves are disposable) --- */
+    uint32_t pet_xp_day;      /* in-game day the pet XP budget was last reset */
+    uint8_t  pet_xp_today;    /* XP already paid for petting on that day */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 152, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 160, "save payload ABI changed");
 _Static_assert(offsetof(game_state_t, brightness) == 128, "brightness ABI changed");
 _Static_assert(offsetof(game_state_t, auto_feed) == 129, "auto_feed ABI changed");
 _Static_assert(offsetof(game_state_t, auto_hunt) == 130, "auto_hunt ABI changed");
@@ -198,6 +202,8 @@ _Static_assert(offsetof(game_state_t, daily_base_day) == 140, "daily_base_day AB
 _Static_assert(offsetof(game_state_t, daily_task_base) == 144, "daily_task_base ABI changed");
 _Static_assert(offsetof(game_state_t, daily_streak) == 148, "daily_streak ABI changed");
 _Static_assert(offsetof(game_state_t, daily_task_done) == 149, "daily_task_done ABI changed");
+_Static_assert(offsetof(game_state_t, pet_xp_day) == 152, "pet_xp_day ABI changed");
+_Static_assert(offsetof(game_state_t, pet_xp_today) == 156, "pet_xp_today ABI changed");
 
 /* Live LVGL object handles. */
 typedef struct {

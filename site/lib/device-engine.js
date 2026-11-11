@@ -16,7 +16,7 @@ export const CONFIG = Object.freeze({
   BUG_POOP_MS:150000, POOP_DIRT_SPIDER:12, POOP_DIRT_BUG:6,
   PLAY_MOOD_GAIN:10, PLAY_ENERGY_COST:5,
   PLAY_XP:4, PET_MOOD_GAIN:6, PET_XP:2, EAT_MS:800, SLEEP_MIN_MS:6000,
-  PET_RADIUS_PX:56, PET_COOLDOWN_MS:1200,
+  PET_RADIUS_PX:56, PET_COOLDOWN_MS:1200, PET_XP_DAILY_MAX:10, PET_REACT_MS:520,
   MOVE_SPEED:55, TURN_RATE_DEG:540, WANDER_RETARGET_MS:2000, ARRIVE_RADIUS:12,
   PREY_SPEED:30, PREY_FLEE_SPEED:70, PREY_AGGRO_RADIUS:70, PREY_AGGRO_HYSTERESIS:1.25,
   WILD_SPAWN_MS:1200000, WILD_HUNGER_GAIN:8, WILD_MOOD_GAIN:4,
@@ -154,19 +154,19 @@ function engineDefaults(now=0) {
     aim_start:0,aim_active:false,aim_power:0,aim_ideal:0,pounce:null,next_pounce_at:0,
     sleep_forced:false,sleep_start:0,oneshot_until:0,gift_visit_at:0,gift_hold_until:0,
     gift_visit_end:0,gift_visiting:false,wild_seeded:false,last_wild:now,last_visitor_day:U32,
-    next_bond_gift:0,last_pet:0,petted_once:false,stuck_x:0,stuck_y:0,stuck_at:0,gait_x:240,gait_y:240,gait_valid:false,gait_moved_at:0,
+    next_bond_gift:0,last_pet:0,petted_once:false,pet_react_until:0,stuck_x:0,stuck_y:0,stuck_at:0,gait_x:240,gait_y:240,gait_valid:false,gait_moved_at:0,
     tap_heading:null};
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:6,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:7,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
     temperament:0,bond:0,name:'',colour:0,pupil_colour:0,leg_colour:2,fang_colour:1,
     silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,last_seen:0,background:'moss',
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
-    daily_override:0xFFFFFFFF,
+    daily_override:0xFFFFFFFF,pet_xp_day:0xFFFFFFFF,pet_xp_today:0,
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
   services.set(s,options);
@@ -207,7 +207,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -238,6 +238,7 @@ export function validateProgress(raw) {
   number('volume',0,100);
   number('daily_day',0,U32);number('daily_base_day',0,U32);
   number('daily_task_base',0,U32);number('daily_streak',0,255);number('daily_task_done',0,1);
+  number('pet_xp_day',0,U32);number('pet_xp_today',0,255);
   for(const key of ['spider_x','spider_y'])number(key,34,446);
   for(const key of ['x','y'])number(key,legacy?-Number.MAX_SAFE_INTEGER:34,legacy?Number.MAX_SAFE_INTEGER:446,false);
   for(const key of ['spider_heading','heading','gait_phase','now_ms'])
@@ -306,6 +307,10 @@ export function restoreSim(raw,options={}) {
   s.daily_task_base=integer(raw.daily_task_base,0,U32);
   s.daily_streak=integer(raw.daily_streak,0,255);
   s.daily_task_done=raw.daily_task_done===1?1:0;
+  // The petting budget arrived in v7. A v6 save has no budget, so it keeps the
+  // fresh-state sentinel and the first pet of the day opens it.
+  s.pet_xp_day=integer(raw.pet_xp_day,s.pet_xp_day,U32);
+  s.pet_xp_today=integer(raw.pet_xp_today,0,255);
   s.sick=raw.sick===1?1:0;s.muted=raw.muted===true||raw.muted===1?1:0;
   if(BACKGROUNDS.includes(raw.background??raw.theme))s.background=raw.background??raw.theme;
   if(typeof raw.sound==='boolean')s.muted=raw.sound?0:1;
@@ -507,8 +512,17 @@ export function pet(s,x,y){
   s.mood=clamp(s.mood+C.PET_MOOD_GAIN);
   s.pets++;
   if(s.bond<100)s.bond++;
+  // Affection is uncapped; the currency is not. A tap is the cheapest gesture
+  // in the game, so an uncapped reward turned a bored thumb into an XP faucet.
+  const today=dailyToday(s);
+  if(s.pet_xp_day!==today){s.pet_xp_day=today;s.pet_xp_today=0;}
+  if(s.pet_xp_today<C.PET_XP_DAILY_MAX){
+    const paid=Math.min(C.PET_XP,C.PET_XP_DAILY_MAX-s.pet_xp_today);
+    s.pet_xp_today+=paid;addXP(s,paid);
+  }
   setState(s,7);r.oneshot_until=now+180;
-  addXP(s,C.PET_XP);awardAchievement(s,'first_pet');
+  r.pet_react_until=now+C.PET_REACT_MS;
+  awardAchievement(s,'first_pet');
   syncView(s);
   return true;
 }

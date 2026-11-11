@@ -79,11 +79,13 @@ time (Juicy Fly 6, Silk Ribbon 8, Warm Pebble 10) and give a short, visible
 boost. The day prefers the RTC, so the check-in resets at midnight; when the RTC
 is not valid it falls back to the in-game day counter, so the loop still works on
 a board with no RTC battery and no WiFi sync.
-See [v1.1.10 release notes](docs/RELEASE_v1.1.10.md).
+See [v1.1.11 release notes](docs/RELEASE_v1.1.11.md).
 
-**Petting is back.** A tap that lands on the spider raises mood and bond and pays
-XP, with a 1.2 s cooldown so a held finger cannot farm it. A pull that starts on
-the spider still fires, because a click only arrives when the finger did not drag.
+**Petting is back.** A tap that lands on the spider raises mood and bond, plays a
+short bounce with a happy leg wave, and pays XP — but only for the first 10 XP of
+each in-game day, so a bored thumb cannot farm levels. A 1.2 s cooldown refuses a
+repeat, and a pull that starts on the spider still fires, because a click only
+arrives when the finger did not drag.
 
 **Battery-aware display.** Real AXP2101 battery/USB/charging telemetry,
 a 10..100% brightness slider, a heuristic runtime estimate, screen rotation,

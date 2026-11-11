@@ -167,14 +167,15 @@ the Clean predicate and the daily loop.
 ```
 STAT state=4 pos=(126,391) heading=1.57 hunger=21 mood=0 energy=9 hygiene=3 level=20 stage=1 sick=1 bond=0 prey=1
 CARE clean_needed=1 dirt=12 clean_xp=2
-DAILY day=1 claimed=0 streak=0 task=1 task_done=0 progress=0/2 ready=0 silk=24
+DAILY day=1 claimed=0 streak=0 task=1 task_done=0 progress=0/2 ready=0 silk=24 base_day=1 base=0 counters=0/0/0/0 pet_xp=0/10
 OK stat
 ```
 
 `CARE` reports whether there is anything to clean, the current mess in dirt
 units, and the XP a clean would pay. `DAILY` reports the in-game day, whether
 today's check-in is claimed, the streak, which rotating task is on offer, its
-progress and whether it is ready to pay.
+progress and whether it is ready to pay, plus the task baseline and the day's
+petting budget (`pet_xp=N/10`).
 
 Useful for confirming the simulation is actually running: if `pos` never changes
 between two calls, the logic timer is not ticking.
@@ -485,11 +486,12 @@ OK feed
 ### `pet`
 
 Pets the spider at its current position, exercising the same `needs_pet()` path
-a tap on the body takes. Reports the resulting mood, bond, pet count and XP.
+a tap on the body takes. Reports the resulting mood, bond, pet count, XP and the
+day's petting budget.
 
 ```
 >>> pet
-OK pet mood=48 bond=1 pets=1 xp=167
+OK pet mood=48 bond=1 pets=1 xp=167 pet_xp=2/10
 ```
 
 A tap only counts as a pet when it lands within `PET_RADIUS_PX` (56 px) of the
@@ -498,9 +500,15 @@ exists because a tap is a cheap gesture: without it a held finger could farm
 mood, XP and the "Pet 4 Times" daily task. A pull that starts on the spider still
 fires, because a click only arrives when the finger did not drag.
 
+Petting pays XP only for the first `PET_XP_DAILY_MAX` (10) XP of each in-game
+day, which is five pets at `PET_XP` (2). The cap is on the currency, not the
+affection: mood, bond, the pet counter and the daily task all still advance on
+every pet, and the spider still plays its bounce. The budget resets when the
+in-game day changes, using the same RTC-first day the daily loop uses.
+
 ```
 >>> pet
-OK pet mood=34 bond=2 pets=2 xp=177
+OK pet mood=34 bond=2 pets=2 xp=177 pet_xp=4/10
 >>> pet
 ERR pet refused (cooldown or out of range)
 ```
@@ -530,7 +538,7 @@ line `stat` does.
 
 ```
 >>> daily
-DAILY day=1 claimed=0 streak=0 task=1 task_done=0 progress=0/2 ready=0 silk=24
+DAILY day=1 claimed=0 streak=0 task=1 task_done=0 progress=0/2 ready=0 silk=24 base_day=1 base=0 counters=0/0/0/0 pet_xp=0/10
 OK daily
 ```
 

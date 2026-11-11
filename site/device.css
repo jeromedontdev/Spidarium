@@ -36,10 +36,13 @@
 .d-stat-bar { position:absolute; left:2px; right:2px; bottom:2px; height:6px; background:#30404b; }
 .d-stat-bar span { display:block; height:100%; }
 .d-overlay { position:absolute; inset:0; background:#080e18; pointer-events:auto; }
-.d-panel { position:absolute; left:40px; top:40px; width:400px; height:400px; background:#101c2c; border:2px solid #76c7ba99; border-radius:14px; }
+.d-panel { position:absolute; left:40px; top:40px; width:400px; height:400px; background:linear-gradient(#16283c,#0a1220); border:2px solid #b99b67; border-radius:14px; }
+/* Accent rule under the header. The bright end is on the RIGHT so it runs away
+ * from the Back button in the top-left corner, matching the device. */
+.d-panel::before { content:''; position:absolute; left:12px; top:68px; width:376px; height:2px; background:linear-gradient(90deg,#0a1220,#76d6b1); opacity:.7; }
 .d-heading { position:absolute; left:120px; top:30px; right:10px; font-size:18px; margin:0; line-height:22px; white-space:pre-line; }
-.game-screen .d-row { left:12px; width:376px; height:76px; align-items:stretch; text-align:left; background:#1c3044; }
-.game-screen .d-row.selected { background:#214b48; }
+.game-screen .d-row { left:12px; width:376px; height:76px; align-items:stretch; text-align:left; background:linear-gradient(#24405a,#16283a); }
+.game-screen .d-row.selected { background:linear-gradient(#2b6a5f,#1a4a44); }
 .d-row .row-label { position:absolute; left:14px; top:30px; right:40px; font-size:16px; line-height:18px; white-space:pre-line; }
 .d-row .row-detail { position:absolute; left:14px; top:48px; right:12px; font-size:12px; line-height:15px; white-space:pre-line; color:#93afb8; }
 .d-row.has-detail .row-label { top:16px; }

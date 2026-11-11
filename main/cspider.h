@@ -55,4 +55,9 @@ typedef enum {
 } cspider_emote_t;
 
 void cspider_set_emote(cspider_emote_t e);
+
+/* Play the petting reaction: a short bounce with a happy wave. A timed overlay
+ * on top of the current state, so it never interrupts a hunt or a sleep. */
+void cspider_pet_react(void);
+
 bool cspider_gait_test(void);

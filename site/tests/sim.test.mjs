@@ -354,7 +354,7 @@ test('restore migrates old progress/ownership and resets runtime, no offline dec
   assert.equal(BACKGROUNDS.length,8);
 });
 test('null restore creates fresh state but corrupt saves throw descriptive errors',()=>{
-  assert.equal(restoreSim(null,{random:()=>.5}).version,6);
+  assert.equal(restoreSim(null,{random:()=>.5}).version,7);
   const good=()=>JSON.parse(JSON.stringify(state()));
   for(const value of [[],new Date(),42,'{}',{}, {version:99}, {version:4}]){
     assert.throws(()=>restoreSim(value),/Invalid browser progress:/);
@@ -380,7 +380,7 @@ test('both valid legacy versions retain earned progress and clamp legacy need ra
     const raw={version,hunger:-5,mood:102,energy:999,hygiene:70.5,xp:80,silk:24,
       name:'Legacy spider',owned:[0,1],gift:1,background:'fern',autoFeed:true,autoHunt:true};
     const s=restoreSim(raw,{random:()=>.5});
-    assert.equal(s.version,6);assert.equal(s.level,3);assert.equal(s.xp,100);
+    assert.equal(s.version,7);assert.equal(s.level,3);assert.equal(s.xp,100);
     assert.deepEqual([s.hunger,s.mood,s.energy,s.hygiene],[0,100,100,70]);
     assert.equal(s.silk,24);assert.equal(s.gifts_owned,3);assert.equal(s.gift.kind,1);
     assert.equal(s.name,'Legacy spider');assert.equal(s.auto_feed,0);assert.equal(s.auto_hunt,0);
@@ -500,7 +500,7 @@ test('a v5 save restores with fresh daily fields and a baseline on first tick',(
   for(const key of ['daily_day','daily_base_day','daily_task_base','daily_streak','daily_task_done'])
     delete raw[key];
   const s=restoreSim(raw,{random:()=>.5});
-  assert.equal(s.version,6);
+  assert.equal(s.version,7);
   assert.equal(s.daily_day,CONFIG.DAILY_NEVER);
   assert.equal(s.daily_streak,0);
   assert.equal(dailyAvailable(s),true);
@@ -537,6 +537,39 @@ test('petting misses outside the hit radius and is rate-limited inside it',()=>{
   s._engine.now_ms+=CONFIG.PET_COOLDOWN_MS+1;
   assert.equal(pet(s,s.spider_x,s.spider_y),true);
   assert.equal(s.pets,2);
+});
+test('petting XP is capped per in-game day but affection is not',()=>{
+  const s=state();
+  s.daily_override=5;
+  // Pet until the budget is spent. PET_XP_DAILY_MAX / PET_XP = 5 pets.
+  const pets=CONFIG.PET_XP_DAILY_MAX/CONFIG.PET_XP;
+  for(let i=0;i<pets;i++){
+    assert.equal(pet(s,s.spider_x,s.spider_y),true);
+    s._engine.now_ms+=CONFIG.PET_COOLDOWN_MS+1;
+  }
+  assert.equal(s.pet_xp_today,CONFIG.PET_XP_DAILY_MAX);
+  const capped=s.xp,mood=s.mood,bond=s.bond;
+  // Further pets still work and still raise mood and bond, but pay no XP.
+  assert.equal(pet(s,s.spider_x,s.spider_y),true);
+  assert.equal(s.xp,capped);
+  assert.equal(s.mood,Math.min(100,mood+CONFIG.PET_MOOD_GAIN));
+  assert.equal(s.bond,Math.min(100,bond+1));
+  // A new day reopens the budget.
+  s.daily_override=6;
+  s._engine.now_ms+=CONFIG.PET_COOLDOWN_MS+1;
+  const before=s.xp;
+  assert.equal(pet(s,s.spider_x,s.spider_y),true);
+  assert.equal(s.xp,before+CONFIG.PET_XP);
+  assert.equal(s.pet_xp_today,CONFIG.PET_XP);
+});
+test('petting starts the reaction overlay without changing the state',()=>{
+  const s=state();
+  assert.equal(pet(s,s.spider_x,s.spider_y),true);
+  // The reaction is a timed overlay, so the spider still enters PLAY and the
+  // overlay expires on its own rather than pinning a state.
+  assert.equal(s.state,7);
+  assert.ok(s._engine.pet_react_until>s._engine.now_ms);
+  assert.equal(s._engine.pet_react_until-s._engine.now_ms,CONFIG.PET_REACT_MS);
 });
 test('petting advances the Pet 4 Times daily task',()=>{
   const s=state();

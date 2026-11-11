@@ -5,6 +5,7 @@
 
 #include "audio.h"
 #include "behaviour.h"
+#include "cspider.h"
 #include "game_config.h"
 #include "gift.h"
 #include "prey.h"
@@ -228,14 +229,31 @@ bool needs_pet(int x, int y)
     g.pets++;
     if (g.bond < 100) g.bond++;
 
-    behaviour_set_state(SPIDER_PLAY);
-    spider_play_once(ANIM_IDLE, true);
+    /* Affection is uncapped; the currency is not. A tap is the cheapest gesture
+     * in the game, so an uncapped reward turned a bored thumb into an XP
+     * faucet. Mood and bond still rise on every pet, and the spider still
+     * reacts, so the cap is invisible unless the player is farming. */
+    uint32_t today = needs_daily_today();
+    if (g.pet_xp_day != today) {
+        g.pet_xp_day = today;
+        g.pet_xp_today = 0;
+    }
+    uint8_t paid = 0;
+    if (g.pet_xp_today < PET_XP_DAILY_MAX) {
+        paid = (uint8_t)(PET_XP_DAILY_MAX - g.pet_xp_today < PET_XP ?
+                         PET_XP_DAILY_MAX - g.pet_xp_today : PET_XP);
+        g.pet_xp_today = (uint8_t)(g.pet_xp_today + paid);
+        game_add_xp(paid);
+    }
 
-    game_add_xp(PET_XP);
+    behaviour_set_state(SPIDER_PLAY);
+    cspider_pet_react();
+
     game_award(ACH_FIRST_PET);
     audio_play(SFX_CHIRP);
-    ESP_LOGI(TAG, "pet: mood=%u bond=%u pets=%lu", g.mood, (unsigned)g.bond,
-             (unsigned long)g.pets);
+    ESP_LOGI(TAG, "pet: mood=%u bond=%u pets=%lu xp=%u/%u",
+             g.mood, (unsigned)g.bond, (unsigned long)g.pets,
+             (unsigned)g.pet_xp_today, (unsigned)PET_XP_DAILY_MAX);
     return true;
 }
 
