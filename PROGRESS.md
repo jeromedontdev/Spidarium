@@ -7478,3 +7478,17 @@ evidence proves delivery and continuity, not that the player likes the sound.
   verified; UI says download requested, not proof of filesystem completion.
 - Hardware logs do not establish subjective speaker/touch approval, battery
   current, hosted OTA installation or RTC backup-battery retention.
+
+### Publication evidence
+
+- Firmware source `86f1ee5`; published
+  [v1.1.21](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.21).
+  Independently downloaded ZIP SHA-256:
+  **04467448a5d0afc6b51f2fae28f02d15b158ca749924c82618e9e35217c9943a**.
+  Five verified firmware images, no NVS; local website build passed.
+- [Website deployment](https://github.com/jeromedontdev/Spidarium/actions/runs/43097364105)
+  is queued on GitHub (no jobs assigned yet). Do not claim production browser
+  parity until deployment succeeds and public bytes are verified.
+- Local real-browser reload retained master 75, music 10 and Rainy Canopy.
+  File restore produced the visible in-game "Browser progress restored."
+  message and retained the v11 preferences.
