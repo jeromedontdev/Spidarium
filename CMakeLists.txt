@@ -1,4 +1,4 @@
 cmake_minimum_required(VERSION 3.16)
-set(PROJECT_VER "1.1.14")
+set(PROJECT_VER "1.1.16")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(spidarium)

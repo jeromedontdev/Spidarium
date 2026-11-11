@@ -3,8 +3,8 @@
 Spidarium sprite generator.
 
 Draws every sprite procedurally with Pillow and writes RGBA PNGs into assets/.
-Deterministic: no randomness, fixed geometry, so re-running produces identical
-bytes. All art tunables live in PALETTE and GEOMETRY at the top.
+Deterministic geometry and fixed per-theme seeds produce identical bytes.
+Background and decor materials are defined alongside their drawing helpers.
 
 Usage:  python tools/gen_sprites.py
 """
@@ -440,6 +440,28 @@ def _octagon(draw, box, color, cut=2):
                   (x0, y1 - cut), (x0, y0 + cut)], color)
 
 
+def _shade_materials(image, materials):
+    """Shade existing pixel clusters without changing their silhouette or ink."""
+    source = image.copy()
+    pixels = image.load()
+    for material in dict.fromkeys(materials):
+        points = [(x, y) for y in range(image.height) for x in range(image.width)
+                  if source.getpixel((x, y)) == material]
+        if not points:
+            continue
+        first = min(x + y for x, y in points)
+        span = max(1, max(x + y for x, y in points) - first)
+        light = tuple(min(255, v + (255 - v) // 3) for v in material[:3]) + (255,)
+        dark = tuple(v * 3 // 4 for v in material[:3]) + (255,)
+        for x, y in points:
+            position = (x + y - first) * 10
+            if position <= span * 2:
+                pixels[x, y] = light
+            elif position >= span * 8:
+                pixels[x, y] = dark
+    return image
+
+
 def _draw_added_prey(species, anim, frame):
     """Small fly, antenna-led roach, and two contrasting segmented larvae."""
     img, d = _pixel_canvas(24, 24)
@@ -498,11 +520,11 @@ def _draw_added_prey(species, anim, frame):
         d.point((18, head_y - 1), fill=body)
         eye = (19, head_y)
     d.point(eye, fill=CREAM)
-    return _enlarge(img)
+    return _enlarge(_shade_materials(img, (body, dark, highlight)))
 
 
 def draw_prey(species, anim, frame):
-    """Eight top-down prey; preserve the original four species' drawing path."""
+    """Eight readable top-down prey with crisp shaded body and wing materials."""
     if anim == "dead":
         return draw_splatter(species)
     if species in ("roach", "mealworm", "fruitfly", "waxworm"):
@@ -573,7 +595,7 @@ def draw_prey(species, anim, frame):
         d.rectangle((16, 13, 17, 14), fill=_rgba(0xD5634D))
         eye = (16, 10)
     d.point(eye, fill=CREAM)
-    return _enlarge(img)
+    return _enlarge(_shade_materials(img, (body, dark, wing)))
 
 
 def draw_splatter(species):
@@ -603,6 +625,13 @@ def draw_splatter(species):
     else:
         d.rectangle((6, 7, 8, 8), fill=highlight)
         d.point((8, 8), fill=dark)
+    body_mid = tuple((body[i] * 2 + dark[i]) // 3 for i in range(3)) + (255,)
+    rim = tuple((body[i] * 2 + highlight[i]) // 3 for i in range(3)) + (255,)
+    glint = tuple(min(255, v + (255 - v) // 3) for v in highlight[:3]) + (255,)
+    d.line([(6, 14), (8, 15), (10, 14)], fill=body_mid)
+    d.line([(12, 9), (14, 9), (15, 10)], fill=rim)
+    d.line([(7, 11), (8, 10), (10, 10)], fill=rim)
+    d.point((9, 10), fill=glint)
     return _enlarge(img)
 
 
@@ -710,7 +739,7 @@ def draw_achievement(name):
         d.rectangle((10, 19, 14, 21), fill=CREAM)
     else:
         raise ValueError(f"Unknown achievement: {name}")
-    return _enlarge(img)
+    return _enlarge(_shade_materials(img, (accent, shade, CREAM)))
 
 
 def _pixel_star(d, color):
@@ -803,160 +832,192 @@ def draw_icon(name):
         d.line([(7, 12), (17, 12)], fill=CREAM)
         d.rectangle((11, 14, 13, 16), fill=INK)
         d.line([(12, 16), (12, 19)], fill=INK)
-    return _enlarge(img)
+    return _enlarge(_shade_materials(img, (accent, shade, CREAM)))
 
 
 def draw_gift(name):
-    """Habitat furniture: shelters, perches, resting places and enrichment."""
+    """All eighteen furnishings share the terrain/decor material language."""
     img, d = _pixel_canvas(16, 16)
+    ink, shadow, grain, wood, cut, light = map(
+        _rgba, (0x232332, 0x623C39, 0x875239, 0xAE743D, 0xC99459, 0xEAC58A))
     c = _rgba(GIFT_COLORS[name])
-    shade = tuple(max(0, v - 48) for v in c[:3]) + (255,)
-    wood, dark, cut = map(_rgba, (0x734D31, 0x523B27, 0xA47346))
-    if name in ("twig", "crystal", "sapphire", "crown"):
-        d.rectangle((3, 12, 12, 14), fill=dark, outline=INK)
-        d.rectangle((7, 5, 9, 12), fill=wood, outline=INK)
-        _shape(d, [(2, 4), (11, 2), (14, 4), (12, 7), (3, 8)], cut)
-        d.line([(4, 5), (11, 4)], fill=CREAM)
-        d.rectangle((4, 6, 6, 7), fill=c)
-        if name == "twig":
-            d.line([(9, 9), (13, 10), (14, 8)], fill=wood, width=2)
-        elif name == "crown":
-            d.line([(3, 10), (3, 3), (11, 1)], fill=wood)
-            d.point((11, 1), fill=c)
+    dark = tuple(v * 3 // 5 for v in c[:3]) + (255,)
+    hi = tuple(min(255, v + (255 - v) * 2 // 3) for v in c[:3]) + (255,)
+    mid = tuple((c[i] + dark[i]) // 2 for i in range(3)) + (255,)
+
+    def slab(box):
+        x0, y0, x1, y1 = box
+        d.rectangle(box, fill=ink)
+        d.rectangle((x0 + 1, y0 + 1, x1 - 1, y1 - 1), fill=wood)
+        d.line([(x0 + 1, y0 + 1), (x1 - 1, y0 + 1)], fill=light)
+        d.line([(x0 + 1, y1 - 1), (x1 - 1, y1 - 1)], fill=shadow)
+        for x in range(x0 + 3, x1 - 1, 4):
+            d.line([(x, y0 + 2), (x - 1, y1 - 2)], fill=grain)
+            d.point((x + 1, y0 + 2), fill=cut)
+
+    def gem(cx, top, bottom, width):
+        d.polygon([(cx, top), (cx + width, top + 3), (cx + width - 1, bottom),
+                   (cx - width + 1, bottom), (cx - width, top + 3)], fill=ink)
+        d.polygon([(cx, top + 1), (cx, bottom - 1),
+                   (cx - width + 1, top + 3)], fill=c)
+        d.polygon([(cx, top + 1), (cx + width - 1, top + 3),
+                   (cx + width - 2, bottom - 1), (cx, bottom - 1)], fill=dark)
+        d.line([(cx, top + 1), (cx - width + 1, top + 3),
+                (cx - 1, top + 4)], fill=hi)
+        d.line([(cx + 1, top + 4), (cx + 1, bottom - 1)], fill=mid)
+
+    if name == "pebble":
+        _blob(d, 8, 9, 7, 5, c, hi, dark, ink)
+        d.polygon([(3, 8), (6, 5), (10, 5), (8, 9)], fill=hi)
+        d.polygon([(9, 9), (13, 8), (13, 11), (10, 13)], fill=mid)
+        d.line([(4, 7), (6, 6), (9, 6)], fill=light)
+        d.point((6, 9), fill=grain)
+        d.point((11, 10), fill=shadow)
     elif name in ("leaf", "acorn", "bone", "diamond"):
-        _shape(d, [(1, 12), (2, 6), (6, 2), (10, 2), (14, 6), (15, 12)], wood)
-        _shape(d, [(4, 12), (4, 8), (6, 6), (10, 6), (12, 8), (12, 12)], dark)
-        d.rectangle((6, 8, 10, 12), fill=INK)
-        d.line([(3, 6), (6, 3), (10, 3)], fill=cut)
+        body, lit, shade = (c, hi, dark) if name in ("bone", "diamond") else (wood, light, shadow)
+        _blob(d, 8, 9, 7, 5, body, lit, shade, ink)
         if name == "leaf":
-            _shape(d, [(1, 6), (4, 2), (11, 1), (14, 4), (9, 6)], _rgba(0x68975C))
-            d.line([(3, 4), (11, 3)], fill=CREAM)
-        elif name == "diamond":
-            d.line([(3, 7), (5, 4), (10, 4), (13, 7)], fill=CREAM)
-            d.line([(4, 6), (11, 7)], fill=c)
+            for base, tip in (((2, 7), (10, 1)), ((7, 7), (14, 4))):
+                _leaf_shape(d, base, tip, 3, c, hi, dark, ink)
+        elif name == "acorn":
+            _blob(d, 8, 5, 6, 3, grain, cut, shadow, ink)
+            for x in (4, 7, 10):
+                d.line([(x, 4), (x + 1, 5)], fill=light)
+            d.line([(8, 2), (9, 0), (11, 0)], fill=wood)
         elif name == "bone":
-            d.rectangle((2, 5, 4, 11), fill=CREAM)
-            d.rectangle((12, 5, 14, 11), fill=c)
+            for x in (2, 13):
+                d.line([(x, 7), (x, 12)], fill=hi, width=2)
+                d.point((x, 9), fill=mid)
         else:
-            d.line([(7, 2), (8, 0)], fill=wood)
-            d.line([(3, 6), (13, 6)], fill=cut)
-    elif name == "pebble":
-        _shape(d, [(2, 9), (4, 6), (9, 5), (13, 8), (14, 11),
-                   (11, 13), (4, 13), (1, 11)], c)
-        d.line([(4, 8), (7, 7), (9, 7)], fill=CREAM)
-        d.line([(4, 11), (11, 11), (12, 10)], fill=shade)
+            d.line([(3, 7), (6, 4), (10, 4), (13, 7)], fill=light)
+            d.line([(4, 6), (8, 5), (11, 6)], fill=cut)
+            d.point((12, 10), fill=wood)
+        d.ellipse((4, 7, 11, 14), fill=shadow)
+        d.ellipse((5, 8, 10, 14), fill=ink)
+        d.line([(5, 14), (10, 14)], fill=grain)
+        d.line([(3, 9), (3, 12)], fill=cut)
+    elif name == "twig":
+        slab((3, 12, 12, 15))
+        d.line([(7, 13), (7, 7), (4, 3)], fill=ink, width=4)
+        d.line([(8, 9), (12, 5), (13, 2)], fill=ink, width=3)
+        d.line([(7, 12), (7, 7), (4, 3)], fill=wood, width=2)
+        d.line([(8, 9), (12, 5), (13, 2)], fill=cut)
+        d.line([(6, 10), (6, 7), (3, 3)], fill=light)
+        d.point((9, 8), fill=grain)
+        d.point((12, 3), fill=shadow)
+        _leaf_shape(d, (11, 5), (15, 4), 2, c, hi, dark, ink)
+    elif name in ("crystal", "sapphire", "crown"):
+        slab((2, 12, 13, 15))
+        if name == "crystal":
+            gem(5, 5, 12, 3)
+            gem(9, 1, 12, 4)
+            d.line([(4, 11), (11, 11)], fill=light)
+        elif name == "sapphire":
+            slab((5, 6, 10, 13))
+            gem(4, 2, 8, 3)
+            gem(11, 1, 7, 3)
+            slab((2, 7, 13, 10))
+            d.point((8, 11), fill=hi)
+        else:
+            d.line([(4, 12), (3, 5), (11, 3), (12, 12)], fill=ink, width=3)
+            d.line([(4, 11), (3, 5), (11, 3), (12, 11)], fill=cut)
+            slab((2, 8, 13, 11))
+            for x, y in ((4, 2), (8, 0), (12, 2)):
+                d.polygon([(x - 1, y + 3), (x, y), (x + 1, y + 3)], fill=c)
+                d.point((x, y + 1), fill=hi)
+                d.point((x, y + 3), fill=dark)
     elif name == "moss":
-        _shape(d, [(1, 12), (2, 8), (4, 8), (4, 5), (7, 4), (9, 6),
-                   (12, 5), (14, 8), (14, 12), (12, 14), (3, 14)], shade)
-        for x, y in ((3, 9), (6, 6), (10, 8), (8, 11), (12, 11)):
-            d.rectangle((x, y, x + 1, y + 1), fill=c)
-        d.point((6, 5), fill=CREAM)
+        for x, y, rx, ry in ((5, 10, 4, 4), (11, 10, 4, 4), (8, 6, 4, 3)):
+            _blob(d, x, y, rx, ry, c, hi, dark, ink)
+        for x, y in ((3, 9), (6, 5), (10, 7), (8, 11), (12, 10)):
+            d.line([(x, y + 1), (x, y - 1), (x + 1, y - 2)], fill=light)
+            d.point((x + 1, y + 1), fill=mid)
+        d.line([(4, 14), (11, 14)], fill=shadow)
     elif name == "sap":
-        _shape(d, [(1, 13), (3, 9), (8, 8), (11, 3), (14, 2), (13, 7),
-                   (10, 11), (4, 12)], wood)
-        for x, y in ((3, 10), (7, 9), (11, 6), (13, 3)):
-            d.rectangle((x, y, x + 1, y + 1), fill=c)
+        d.line([(2, 13), (7, 10), (10, 6), (13, 3)], fill=ink, width=5)
+        d.line([(2, 12), (7, 9), (10, 5), (13, 2)], fill=wood, width=3)
+        d.line([(2, 11), (7, 8), (10, 4), (13, 1)], fill=cut)
+        d.point((6, 11), fill=grain)
+        d.point((9, 8), fill=shadow)
+        for x, y in ((3, 11), (8, 8), (12, 4)):
+            _blob(d, x, y, 2, 2, c, hi, dark, ink)
+            d.point((x - 1, y - 1), fill=light)
     elif name == "flower":
-        d.line([(8, 8), (8, 14)], fill=GREEN, width=2)
-        _shape(d, [(8, 12), (11, 10), (13, 10), (11, 13)], GREEN)
-        for box in ((6, 1, 9, 5), (2, 4, 6, 7), (10, 4, 14, 7),
-                    (4, 8, 7, 11), (9, 8, 12, 11)):
-            _octagon(d, box, c, 1)
-        _octagon(d, (6, 5, 10, 8), _rgba(0xF5D571), 1)
-        d.point((7, 6), fill=CREAM)
+        green, green_hi = map(_rgba, (0x387344, 0xB5D65C))
+        d.line([(8, 8), (8, 15)], fill=ink, width=3)
+        d.line([(8, 8), (8, 14)], fill=green)
+        _leaf_shape(d, (8, 13), (14, 10), 2, green, green_hi, green, ink)
+        for x, y in ((7, 3), (3, 6), (12, 6), (5, 10), (10, 10)):
+            _blob(d, x, y, 3, 3, c, hi, dark, ink)
+        d.ellipse((6, 5, 10, 9), fill=shadow)
+        d.ellipse((6, 5, 9, 8), fill=cut)
+        d.point((7, 6), fill=light)
     elif name == "amber":
-        _octagon(d, (1, 7, 14, 14), dark, 2)
-        _octagon(d, (3, 4, 12, 11), c, 2)
-        d.rectangle((5, 6, 10, 8), fill=shade)
-        d.line([(4, 5), (10, 5)], fill=CREAM)
+        slab((1, 10, 14, 15))
+        _blob(d, 8, 7, 5, 5, c, hi, dark, ink)
+        d.polygon([(6, 4), (10, 5), (11, 8), (8, 10), (6, 8)], fill=mid)
+        d.line([(5, 6), (6, 4), (8, 3)], fill=light)
+        d.line([(7, 7), (9, 6), (8, 8)], fill=shadow)
     elif name == "coral":
-        d.line([(8, 14), (8, 5)], fill=INK, width=3)
-        d.line([(8, 10), (3, 7), (3, 3)], fill=INK, width=3)
-        d.line([(8, 9), (12, 6), (12, 2)], fill=INK, width=3)
-        d.line([(8, 13), (8, 5)], fill=c)
-        d.line([(8, 10), (3, 7), (3, 3)], fill=c)
-        d.line([(8, 9), (12, 6), (12, 2)], fill=c)
-        d.point((3, 3), fill=CREAM)
-        d.line([(6, 14), (10, 14)], fill=shade)
+        _blob(d, 8, 13, 6, 2, wood, light, shadow, ink)
+        for points in (((8, 13), (8, 4)), ((8, 10), (3, 7), (3, 2)),
+                       ((8, 9), (12, 6), (12, 1)), ((4, 7), (1, 5))):
+            d.line(points, fill=ink, width=3)
+            d.line(points, fill=c, width=2)
+            d.line([(x - 1, y) for x, y in points], fill=hi)
+        for x, y in ((3, 3), (8, 6), (12, 3), (6, 9)):
+            d.point((x, y), fill=dark)
+        d.point((9, 12), fill=mid)
     elif name == "silk":
-        d.rectangle((1, 3, 3, 14), fill=wood, outline=INK)
-        d.rectangle((12, 3, 14, 14), fill=wood, outline=INK)
-        _shape(d, [(3, 5), (7, 8), (10, 8), (12, 5), (11, 11), (6, 12)], c)
-        d.line([(4, 7), (7, 10), (10, 10), (11, 7)], fill=shade)
+        slab((0, 2, 4, 15))
+        slab((11, 2, 15, 15))
+        d.polygon([(3, 5), (7, 8), (9, 8), (12, 5), (11, 12), (8, 14),
+                   (5, 12)], fill=ink)
+        d.polygon([(4, 6), (7, 9), (9, 9), (11, 6), (10, 12), (7, 13),
+                   (5, 11)], fill=c)
+        d.line([(4, 6), (7, 9), (9, 9), (11, 6)], fill=hi)
+        d.line([(5, 10), (7, 12), (10, 11)], fill=dark)
+        d.line([(6, 9), (6, 11), (9, 11), (10, 8)], fill=mid)
     elif name == "pearl":
-        _octagon(d, (2, 2, 13, 13), c, 3)
-        d.line([(3, 8), (5, 11), (10, 11), (12, 8)], fill=shade)
-        d.rectangle((5, 4, 7, 5), fill=CREAM)
-        d.point((4, 6), fill=CREAM)
+        _blob(d, 8, 8, 6, 6, c, hi, dark, ink)
+        d.line([(4, 5), (6, 3), (8, 3)], fill=light)
+        d.line([(6, 11), (9, 12), (12, 9)], fill=mid)
+        d.line([(6, 14), (11, 14)], fill=shadow)
+        d.point((10, 4), fill=cut)
     elif name == "ruby":
-        _shape(d, [(2, 12), (2, 8), (10, 3), (13, 3), (14, 13)], wood)
-        d.line([(3, 8), (10, 4), (13, 4)], fill=c, width=2)
-        d.line([(5, 12), (10, 8)], fill=cut)
+        d.polygon([(1, 14), (1, 9), (11, 2), (14, 3), (14, 14)], fill=ink)
+        d.polygon([(3, 13), (3, 9), (12, 3), (13, 4), (13, 13)], fill=wood)
+        d.line([(3, 9), (12, 3)], fill=hi, width=2)
+        d.line([(4, 10), (12, 5)], fill=c)
+        d.line([(5, 11), (12, 6)], fill=dark)
+        d.line([(6, 12), (12, 8)], fill=grain)
+        d.line([(8, 12), (12, 9)], fill=cut)
+        d.point((12, 12), fill=shadow)
+        d.point((3, 13), fill=light)
+        d.point((11, 7), fill=mid)
     elif name == "emerald":
-        _octagon(d, (1, 9, 14, 14), wood, 1)
-        d.line([(8, 11), (8, 3)], fill=shade, width=2)
-        for points in ([(8, 6), (3, 2), (2, 4), (5, 7)],
-                       [(8, 8), (12, 4), (14, 5), (11, 9)],
-                       [(8, 10), (3, 6), (2, 8), (5, 11)]):
-            _shape(d, points, c)
-        d.point((8, 2), fill=CREAM)
+        slab((1, 10, 14, 15))
+        d.line([(8, 11), (8, 2)], fill=ink, width=3)
+        d.line([(8, 10), (8, 2)], fill=dark)
+        for base, tip in (((8, 5), (3, 1)), ((8, 8), (14, 3)),
+                          ((8, 10), (2, 6)), ((8, 10), (13, 7))):
+            _leaf_shape(d, base, tip, 2, c, hi, dark, ink)
     else:
         raise ValueError("Unknown gift: " + name)
     return _enlarge(img)
 
 
 def draw_decor(name):
-    """Optional props: two rocks, a fern, a succulent, and a cut bark log."""
+    """Keep legacy prop sizes, using the same materials as placeable decor."""
     width, height = {
         "rock_0": (24, 16), "rock_1": (20, 14),
         "plant_0": (24, 32), "plant_1": (26, 28), "wood_log": (48, 18),
     }[name]
-    img, d = _pixel_canvas(width, height)
-    stone, stone_dark, stone_hi = map(_rgba, (0x6B766C, 0x444E46, 0xBBB89F))
-    stem, leaf, leaf_hi = map(_rgba, (0x4D663D, 0x68975C, 0xAEC180))
-    bark, bark_dark, cut = map(_rgba, (0x734D31, 0x523B27, 0xA47346))
-    if name == "rock_0":
-        _shape(d, [(2, 12), (4, 7), (9, 3), (16, 4), (21, 9),
-                   (20, 13), (10, 15)], stone)
-        d.line([(5, 7), (9, 4), (15, 5)], fill=stone_hi)
-        _shape(d, [(11, 8), (20, 10), (19, 12), (12, 13)], stone_dark)
-    elif name == "rock_1":
-        _shape(d, [(1, 11), (5, 5), (11, 3), (18, 8), (18, 12), (9, 13)], cut)
-        d.line([(5, 6), (10, 4), (14, 6)], fill=stone_hi)
-        d.line([(10, 8), (14, 11), (17, 11)], fill=bark_dark, width=2)
-    elif name == "plant_0":
-        d.line([(12, 30), (12, 4)], fill=stem, width=2)
-        _shape(d, [(12, 10), (9, 6), (12, 1), (15, 6)], leaf)
-        for y, length in ((11, 6), (17, 8), (23, 10)):
-            for side in (-1, 1):
-                x = 12 + side * length
-                _shape(d, [(12, y + 4), (x, y + 2), (x - side, y - 2),
-                           (12 + side * 3, y)], leaf)
-                d.line([(12 + side, y + 3), (x - side, y)], fill=leaf_hi)
-        d.line([(8, 30), (16, 30)], fill=stone_dark, width=2)
-    elif name == "plant_1":
-        _shape(d, [(6, 22), (19, 22), (17, 27), (8, 27)], bark)
-        for points in (
-            [(12, 23), (4, 20), (1, 12), (7, 14)],
-            [(13, 23), (21, 20), (24, 12), (18, 14)],
-            [(12, 23), (7, 13), (8, 4), (12, 9)],
-            [(13, 23), (18, 13), (17, 4), (13, 9)],
-            [(12, 23), (10, 12), (13, 1), (15, 12)],
-        ):
-            _shape(d, points, leaf)
-        d.line([(13, 5), (13, 19)], fill=leaf_hi)
-        d.line([(8, 25), (16, 25)], fill=cut)
-    else:
-        _shape(d, [(8, 4), (43, 4), (46, 7), (46, 12),
-                   (43, 15), (8, 15)], bark)
-        for x in (17, 25, 34, 41):
-            d.line([(x, 6), (x - 2, 10), (x - 1, 13)], fill=bark_dark)
-        d.line([(13, 5), (35, 5)], fill=cut)
-        _octagon(d, (1, 4, 12, 15), cut, 3)
-        _octagon(d, (3, 6, 10, 13), bark_dark, 2)
-        _octagon(d, (5, 8, 8, 11), cut, 1)
-        d.point((6, 9), fill=CREAM)
-    return _enlarge(img)
+    item = {"rock_0": "rock_large", "rock_1": "rock_small",
+            "plant_0": "fern", "plant_1": "succulent", "wood_log": "log"}[name]
+    source = draw_decor_item(item).resize((32, 32), Image.Resampling.NEAREST)
+    source = source.crop(source.getbbox())
+    return _enlarge(source.resize((width, height), Image.Resampling.NEAREST))
 
 
 def _decor_canvas():
@@ -970,41 +1031,26 @@ def _outline(d, points, color, width=1):
 
 
 def _blob(d, cx, cy, rx, ry, body, light, dark, ink=INK):
-    """A rounded prop body with SNES-era shading.
-
-    Ink rim, mid body, then a lit crescent on the top-left and a shadowed
-    crescent on the bottom-right. Drawing the crescents as offset ellipses
-    clipped by the body is what gives the prop volume; concentric rings just
-    read as a flat disc with a border.
-    """
-    def box(inset):
-        x0, y0 = cx - rx + inset, cy - ry + inset
-        x1, y1 = cx + rx - inset, cy + ry - inset
-        return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
-
-    outer = box(0)
-    if not outer:
-        return
-    d.ellipse(outer, fill=ink)
-    inner = box(1)
-    if not inner:
-        return
-    d.ellipse(inner, fill=body)
-    # Lit crescent: a smaller ellipse nudged up-left, then the body re-stamped
-    # over its lower-right so only the crescent survives.
-    lit = (cx - rx + 1 - rx // 3, cy - ry + 1 - ry // 3,
-           cx + rx - 1 - rx // 3, cy + ry - 1 - ry // 3)
-    if lit[2] > lit[0] and lit[3] > lit[1]:
-        d.ellipse(lit, fill=light)
-        d.ellipse((cx - rx + 1 + rx // 4, cy - ry + 1 + ry // 4,
-                   cx + rx - 1, cy + ry - 1), fill=body)
-    # Shadow crescent on the opposite side.
-    shade = (cx - rx + 1 + rx // 3, cy - ry + 1 + ry // 3,
-             cx + rx - 1 + rx // 3, cy + ry - 1 + ry // 3)
-    if shade[2] > shade[0] and shade[3] > shade[1]:
-        d.ellipse(shade, fill=dark)
-        d.ellipse((cx - rx + 1, cy - ry + 1,
-                   cx + rx - 1 - rx // 4, cy + ry - 1 - ry // 4), fill=body)
+    """Clipped six-tone volume; no offset ellipse can leak past the ink rim."""
+    mid = tuple((body[i] + dark[i]) // 2 for i in range(3)) + (255,)
+    bounce = tuple((body[i] * 2 + light[i]) // 3 for i in range(3)) + (255,)
+    mask = Image.new("1", (rx * 2 + 1, ry * 2 + 1))
+    ImageDraw.Draw(mask).ellipse((0, 0, rx * 2, ry * 2), fill=1)
+    for y in range(ry * 2 + 1):
+        for x in range(rx * 2 + 1):
+            if not mask.getpixel((x, y)):
+                continue
+            edge = (x == 0 or y == 0 or x == rx * 2 or y == ry * 2
+                    or not all(mask.getpixel((x + dx, y + dy))
+                               for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1))))
+            value = x * ry + y * rx
+            color = (light if value < rx * ry else body if value < rx * ry * 2
+                     else mid if value < rx * ry * 3 else dark)
+            if edge:
+                color = ink
+            elif y == ry * 2 - 2 and x > rx:
+                color = bounce
+            d.point((cx - rx + x, cy - ry + y), fill=color)
 
 
 def _leaf_shape(d, base, tip, breadth, body, light, dark, ink=INK):
@@ -1022,11 +1068,18 @@ def _leaf_shape(d, base, tip, breadth, body, light, dark, ink=INK):
         left.append((px + nx * width, py + ny * width))
         right.append((px - nx * width, py - ny * width))
     points = [(bx, by)] + left + [(tx, ty)] + right[::-1]
-    d.polygon([(px + (1 if px >= bx else -1), py + (1 if py >= by else -1))
-               for px, py in points], fill=ink)
+    points = [(round(px), round(py)) for px, py in points]
+    left = [(round(px), round(py)) for px, py in left]
+    right = [(round(px), round(py)) for px, py in right]
     d.polygon(points, fill=body)
-    d.polygon([(bx, by)] + left + [(tx, ty)], fill=light)
-    d.line([(bx, by), (tx, ty)], fill=dark)
+    d.polygon([base] + left + [tip], fill=light)
+    d.polygon([base] + right[:4] + [tip], fill=dark)
+    _outline(d, points, ink)
+    vein = tuple((body[i] + light[i]) // 2 for i in range(3)) + (255,)
+    d.line([base, tip], fill=vein)
+    for step in (3, 5, 7):
+        px, py = bx + dx * step // 9, by + dy * step // 9
+        d.line([(px, py), left[step - 1]], fill=body)
 
 
 def _frond(d, base, tip, curve, body, light, dark, ink=INK):
@@ -1041,48 +1094,56 @@ def _frond(d, base, tip, curve, body, light, dark, ink=INK):
     dx, dy = tx - bx, ty - by
     length = math.hypot(dx, dy) or 1.0
     nx, ny = -dy / length, dx / length
-    steps = 9
+    steps = 7
     spine = []
     for step in range(steps + 1):
         t = step / steps
         # Bend the rachis sideways so the frond arcs instead of standing rigid.
         bend = curve * math.sin(math.pi * t)
-        spine.append((bx + dx * t + nx * bend, by + dy * t + ny * bend))
+        spine.append((round(bx + dx * t + nx * bend),
+                      round(by + dy * t + ny * bend)))
     d.line(spine, fill=ink, width=2)
     d.line(spine, fill=dark, width=1)
     for step in range(1, steps):
         t = step / steps
         px, py = spine[step]
-        span = 4.6 * math.sin(math.pi * (0.15 + 0.85 * t)) ** 0.6
+        span = 5.0 * (1 - t) + 1
         if span < 1.2:
             continue
         for side in (1, -1):
             ex = px + nx * span * side + dx / length * 1.6
             ey = py + ny * span * side + dy / length * 1.6
-            d.line([(px, py), (ex, ey)], fill=ink, width=2)
-            d.line([(px, py), (ex, ey)], fill=body, width=1)
-            d.point((ex, ey), fill=light)
+            _leaf_shape(d, (px, py), (round(ex), round(ey)), 1.4,
+                        body, light, dark, ink)
 
 
 def draw_decor_item(name):
     """One placeable decor item at 32x32, doubled to 64x64."""
     img, d = _decor_canvas()
-    stone, stone_hi, stone_dark = map(_rgba, (0x8A8F86, 0xC6C9BE, 0x5A5F58))
-    leaf, leaf_hi, leaf_dark = map(_rgba, (0x4E8A34, 0x8CC85A, 0x2E5A22))
-    bark, bark_hi, bark_dark = map(_rgba, (0xA8763C, 0xE4BC80, 0x6E4A22))
+    stone, stone_hi, stone_dark = map(_rgba, (0x909188, 0xD6CEAC, 0x505568))
+    leaf, leaf_hi, leaf_dark = map(_rgba, (0x52963A, 0xB5D65C, 0x245B49))
+    bark, bark_hi, bark_dark = map(_rgba, (0xAE743D, 0xEAC58A, 0x623C39))
     white, white_hi, white_dark = map(_rgba, (0xF2EEDC, 0xFFFFFF, 0xC8C2AC))
     pink, pink_hi, pink_dark = map(_rgba, (0xE87AB0, 0xFFB8D8, 0xB84E80))
     red, red_hi, red_dark = map(_rgba, (0xD83A2E, 0xFF7A5A, 0x8A1E18))
     cyan, cyan_hi, cyan_dark = map(_rgba, (0x62C8D8, 0xC8F4FF, 0x2E7A8A))
     bone, bone_hi, bone_dark = map(_rgba, (0xE8E2CC, 0xFFFDF0, 0xA8A088))
     shell, shell_hi, shell_dark = map(_rgba, (0xF2A08E, 0xFFD8C8, 0xC06A5A))
+    stone_mid, stone_glint = map(_rgba, (0x73788A, 0xF0E8C9))
+    grain, cut = map(_rgba, (0x875239, 0xC99459))
 
     if name == "rock_small":
         _blob(d, 16, 19, 10, 7, stone, stone_hi, stone_dark)
+        d.polygon([(8, 19), (12, 14), (19, 14), (17, 18)], fill=stone_hi)
+        d.polygon([(18, 19), (24, 17), (25, 21), (20, 24)], fill=stone_mid)
+        d.line([(10, 17), (12, 15), (16, 15)], fill=stone_glint)
         d.line([(11, 16), (15, 14), (20, 16)], fill=stone_hi)
         d.line([(13, 21), (18, 22)], fill=stone_dark)
     elif name == "rock_large":
         _blob(d, 16, 17, 14, 11, stone, stone_hi, stone_dark)
+        d.polygon([(5, 16), (12, 8), (20, 8), (17, 16)], fill=stone_hi)
+        d.polygon([(19, 14), (28, 16), (25, 23), (20, 25)], fill=stone_mid)
+        d.line([(8, 13), (13, 9), (18, 9)], fill=stone_glint)
         d.line([(7, 14), (13, 9), (21, 10)], fill=stone_hi, width=2)
         d.line([(10, 21), (17, 24), (23, 21)], fill=stone_dark, width=2)
         d.line([(19, 13), (22, 17)], fill=stone_dark)
@@ -1090,43 +1151,67 @@ def draw_decor_item(name):
         for cx, cy, rx, ry in ((10, 22, 5, 4), (20, 24, 4, 3), (16, 15, 6, 5),
                                (24, 16, 3, 3), (7, 14, 3, 2)):
             _blob(d, cx, cy, rx, ry, stone, stone_hi, stone_dark)
+            d.line([(cx - 1, cy - ry + 1), (cx + 1, cy - ry + 1)],
+                   fill=stone_glint)
+            d.point((cx + rx - 1, cy), fill=stone_mid)
     elif name == "log":
-        d.rectangle((3, 12, 28, 21), fill=INK)
-        d.rectangle((4, 13, 27, 20), fill=bark)
-        d.rectangle((4, 13, 27, 15), fill=bark_hi)
-        d.rectangle((4, 18, 27, 20), fill=bark_dark)
-        for x in (10, 16, 22):
-            d.line([(x, 14), (x - 1, 19)], fill=bark_dark)
-        d.ellipse((1, 11, 8, 22), fill=INK)
-        d.ellipse((2, 12, 7, 21), fill=bark_hi)
-        d.ellipse((3, 14, 6, 19), fill=bark_dark)
+        d.polygon([(7, 8), (26, 6), (30, 11), (30, 21),
+                   (25, 25), (7, 27), (2, 23), (1, 15)], fill=INK)
+        d.polygon([(8, 9), (25, 7), (29, 11), (29, 20),
+                   (25, 24), (8, 26)], fill=bark_dark)
+        d.polygon([(8, 9), (25, 7), (28, 10), (27, 15),
+                   (8, 18)], fill=bark)
+        for y in (10, 14, 19, 23):
+            d.line([(10, y), (16, y - 1), (20, y), (27, y - 2)], fill=grain)
+            d.line([(11, y - 1), (16, y - 2), (20, y - 1)], fill=cut)
+        d.line([(11, 9), (23, 8), (26, 9)], fill=bark_hi)
+        d.line([(18, 11), (17, 14), (19, 17), (18, 22)], fill=INK)
+        d.line([(19, 12), (18, 14), (20, 17)], fill=cut)
+        _blob(d, 7, 18, 6, 9, cut, bark_hi, grain)
+        d.ellipse((3, 12, 10, 24), fill=bark_dark)
+        d.ellipse((4, 13, 9, 23), fill=INK)
+        d.line([(4, 23), (7, 24), (9, 21)], fill=grain)
     elif name == "bark":
         d.polygon([(4, 20), (8, 10), (18, 7), (27, 12), (26, 22), (14, 25)],
                   fill=INK)
         d.polygon([(5, 19), (9, 11), (18, 8), (26, 13), (25, 21), (14, 24)],
                   fill=bark)
         d.polygon([(5, 19), (9, 11), (18, 8), (20, 12), (12, 20)], fill=bark_hi)
-        for x, y in ((14, 14), (19, 17), (11, 17)):
-            d.line([(x, y), (x + 3, y + 3)], fill=bark_dark)
+        for x, y in ((14, 11), (19, 14), (11, 14), (18, 19)):
+            d.line([(x, y), (x - 3, y + 4), (x - 2, y + 7)], fill=bark_dark)
+            d.line([(x + 1, y), (x - 2, y + 4)], fill=cut)
+            d.point((x + 2, y - 1), fill=grain)
+        d.line([(8, 17), (12, 12), (16, 10)], fill=_rgba(0xF3DAA2))
+        d.line([(16, 23), (23, 21)], fill=_rgba(0xBF8951))
     elif name == "fern":
         # A rosette of arcing fronds, the way a real fern grows from a crown.
-        for base, tip, curve in (((16, 29), (5, 8), 2.5),
-                                 ((16, 29), (16, 3), 0.0),
-                                 ((16, 29), (27, 8), -2.5),
-                                 ((16, 29), (2, 18), 3.0),
-                                 ((16, 29), (30, 18), -3.0)):
+        for base, tip, curve in (((16, 27), (5, 8), 2.5),
+                                 ((16, 27), (16, 2), 0.0),
+                                 ((16, 27), (27, 8), -2.5),
+                                 ((16, 27), (2, 19), 3.0),
+                                 ((16, 27), (30, 19), -3.0)):
             _frond(d, base, tip, curve, leaf, leaf_hi, leaf_dark)
+        _blob(d, 16, 27, 3, 3, bark, bark_hi, bark_dark)
     elif name == "moss_clump":
         for cx, cy, rx, ry in ((12, 20, 8, 6), (21, 21, 7, 5), (16, 14, 7, 5),
                                (9, 15, 5, 4), (24, 14, 4, 3)):
             _blob(d, cx, cy, rx, ry, leaf, leaf_hi, leaf_dark)
+        for x, y in ((8, 13), (13, 11), (19, 12), (22, 18), (12, 19),
+                     (8, 22), (17, 22), (25, 13)):
+            d.line([(x, y + 1), (x, y - 1), (x + 2, y - 2)],
+                   fill=_rgba(0xD5E77B))
+            d.point((x + 2, y + 1), fill=_rgba(0x387344))
+            d.point((x - 1, y + 2), fill=_rgba(0x718E32))
     elif name == "succulent":
-        for step in range(8):
-            angle = step * math.pi / 4
-            cx = int(16 + math.cos(angle) * 9)
-            cy = int(17 + math.sin(angle) * 7)
-            _blob(d, cx, cy, 5, 4, leaf, leaf_hi, leaf_dark)
-        _blob(d, 16, 17, 6, 5, leaf_hi, white_hi, leaf_dark)
+        for radius, breadth, body, hi, dk in (
+            (14, 4, _rgba(0x388D79), _rgba(0x82C68B), _rgba(0x24535B)),
+            (9, 3, _rgba(0x68AE80), _rgba(0xC2DD9A), _rgba(0x3B796E)),
+        ):
+            for dx, dy in ((0, -10), (7, -7), (10, 0), (7, 7), (0, 10),
+                           (-7, 7), (-10, 0), (-7, -7)):
+                _leaf_shape(d, (16, 17), (16 + dx * radius // 10,
+                            17 + dy * radius // 12), breadth, body, hi, dk)
+        d.line([(16, 18), (16, 13), (18, 15)], fill=_rgba(0xE6E9AB))
     elif name == "flower_white":
         for step in range(5):
             angle = step * 2 * math.pi / 5 - math.pi / 2
@@ -1154,14 +1239,31 @@ def draw_decor_item(name):
         d.polygon([(16, 27), (5, 12), (9, 7), (16, 5), (23, 7), (27, 12)],
                   fill=shell)
         for step in range(-2, 3):
-            d.line([(16, 27), (16 + step * 5, 6)], fill=shell_dark)
+            tx = 16 + step * 4
+            ty = 6 + abs(step) * 2
+            d.line([(16, 26), (tx, ty)], fill=shell_dark, width=2)
+            d.line([(16, 24), (tx - 1, ty)], fill=shell_hi)
+        d.line([(7, 12), (10, 8), (16, 6), (21, 8)], fill=_rgba(0xFFF0D5))
+        d.line([(8, 16), (16, 26), (24, 16)], fill=_rgba(0xDB8279))
+        d.line([(10, 18), (16, 24), (22, 18)], fill=_rgba(0xF5BAA1))
         d.ellipse((12, 24, 20, 29), fill=shell_hi)
+        d.line([(13, 28), (19, 28)], fill=_rgba(0xA75468))
+        d.line([(14, 25), (18, 25)], fill=_rgba(0xFFEAC3))
     elif name == "crystal":
-        d.polygon([(16, 2), (25, 12), (22, 28), (10, 28), (7, 12)], fill=INK)
-        d.polygon([(16, 3), (24, 12), (21, 27), (11, 27), (8, 12)], fill=cyan)
-        d.polygon([(16, 3), (24, 12), (21, 27), (16, 27)], fill=cyan_hi)
-        d.polygon([(16, 3), (8, 12), (11, 27), (16, 27)], fill=cyan_dark)
-        d.line([(16, 4), (16, 26)], fill=INK)
+        for x, y, w, h in ((7, 15, 5, 12), (24, 12, 5, 15), (16, 2, 7, 26)):
+            d.polygon([(x, y), (x + w, y + 6), (x + w - 1, y + h),
+                       (x - w + 1, y + h), (x - w, y + 6)], fill=INK)
+            d.polygon([(x, y + 1), (x, y + h - 1), (x - w + 2, y + h - 1),
+                       (x - w + 1, y + 6)], fill=cyan)
+            d.polygon([(x, y + 1), (x + w - 1, y + 6),
+                       (x + w - 2, y + h - 1), (x, y + h - 1)], fill=cyan_dark)
+            d.polygon([(x, y + 1), (x + w - 1, y + 6), (x, y + 9),
+                       (x - w + 1, y + 6)], fill=cyan_hi)
+            d.line([(x - 1, y + 4), (x - 1, y + h - 3)], fill=_rgba(0xE9FCFF))
+            d.line([(x + 2, y + 10), (x + 2, y + h - 2)], fill=_rgba(0x4278BA))
+        d.line([(11, 28), (19, 29), (23, 27)], fill=_rgba(0x4B4A88))
+        d.point((8, 28), fill=_rgba(0x82A8E8))
+        d.point((25, 28), fill=_rgba(0xA7E7EE))
     elif name == "leaf_pile":
         for base, tip, body, hi, dk in (
             ((8, 26), (4, 12), bark, bark_hi, bark_dark),
@@ -1178,6 +1280,13 @@ def draw_decor_item(name):
         d.line([(14, 15), (10, 8)], fill=bark_hi, width=1)
         d.line([(22, 12), (26, 18)], fill=INK, width=3)
         d.line([(22, 11), (26, 18)], fill=bark_hi, width=1)
+        for x, y in ((7, 23), (16, 15), (24, 9)):
+            d.line([(x, y), (x + 2, y - 2)], fill=grain)
+            d.point((x, y - 1), fill=cut)
+        d.ellipse((3, 24, 6, 27), fill=cut)
+        d.point((4, 25), fill=_rgba(0xF3DAA2))
+        d.line([(25, 16), (26, 17)], fill=_rgba(0xBF8951))
+        d.line([(12, 12), (13, 14)], fill=_rgba(0xD6A36B))
     else:  # bone
         d.rectangle((10, 12, 22, 20), fill=INK)
         d.rectangle((11, 13, 21, 19), fill=bone)
@@ -1187,22 +1296,33 @@ def draw_decor_item(name):
             d.ellipse((cx - 3, cy - 3, cx + 3, cy + 3), fill=bone)
             d.ellipse((cx - 3, cy - 3, cx + 1, cy), fill=bone_hi)
         d.line([(13, 17), (19, 17)], fill=bone_dark)
+        d.line([(11, 18), (20, 18)], fill=_rgba(0xC8B99A))
+        d.line([(11, 16), (20, 16)], fill=_rgba(0xE1D2B0))
+        d.line([(7, 23), (10, 24)], fill=_rgba(0xB7A58B))
+        d.point((22, 10), fill=_rgba(0xF5EACF))
+    # Broken surface highlights and small material marks, clipped to the prop.
+    texture = {
+        "rock_small": stone_mid, "rock_large": stone_mid, "pebbles": stone_mid,
+        "bark": grain, "moss_clump": _rgba(0x387344), "bone": bone_dark,
+        "mushroom": red_dark, "shell": shell_dark,
+    }.get(name)
+    if texture is not None:
+        pixels = img.load()
+        candidates = {stone, stone_hi} if name.startswith("rock") or name == "pebbles" else {
+            "bark": {bark, bark_hi}, "moss_clump": {leaf, leaf_hi},
+            "bone": {bone, bone_hi}, "mushroom": {red, red_hi},
+            "shell": {shell, shell_hi},
+        }.get(name, set())
+        for y in range(3, 29):
+            for x in range(3, 29):
+                if (x * 37 + y * 61) % 29 == 0 and pixels[x, y] in candidates:
+                    d.point((x, y), fill=texture)
     return _enlarge(img)
 
 
 # ---------------------------------------------------------------------------
-# Enclosures — authored at the full 240x240 the panel displays, with no palette
-# cap and no pixel-grid quantisation. These are illustrations of a keeper's
-# substrate seen from above, not 8-bit sprites: the detail budget is whatever
-# the QOI stream can carry.
-#
-# Palettes are generated from HLS specs so every theme keeps the same contrast
-# structure: foliage always sits well above the ground in lightness, and its
-# shadow well below. Hand-picked greens kept collapsing into the substrate.
-#
-# Roles, each a ramp from shadow to highlight:
-#
-#   ground 7 tones   stone 5 tones   foliage 5 tones   accents 3
+# Native-resolution terrain: discrete colour clusters, quiet central substrate,
+# and low-profile edge materials. Furniture remains player-placed decor.
 # ---------------------------------------------------------------------------
 def _hls(hue, light, sat):
     """HLS triple to a packed RGB int, clamped to the 0-255 cube."""
@@ -1213,98 +1333,73 @@ def _hls(hue, light, sat):
 
 
 def _ramp(hue, light, sat, count, spread):
-    """A lightness ramp centred on the base tone, shadow first."""
-    return [_hls(hue, light + spread * (i / (count - 1) - 0.5), sat)
+    """Finite hue-shifted ramp, ordered from shadow to highlight."""
+    return [_hls(hue + 16 * (0.5 - i / (count - 1)),
+                 light + spread * (i / (count - 1) - 0.5), sat)
             for i in range(count)]
 
 
 def _palette(ground, foliage, stone, accents):
-    """Expand four HLS specs into the role ramps a scene draws from.
-
-    Each role keeps its HLS spec alongside a coarse ramp: the ramp is used for
-    flat fills, and the spec drives continuous per-pixel shading. The reference
-    art is a smooth-shaded render with tens of thousands of colours, so a
-    handful of flat tones reads as 8-bit no matter how good the shapes are.
-    """
+    """Limited material ramps; never interpolate colours between entries."""
     gh, gl, gs = ground
     fh, fl, fs = foliage
     sh, sl, ss = stone
-    # The trail is a warm earth tone, always distinct from both the floor and
-    # the foliage: the reference's floors are green or pale, and its paths are
-    # bare brown dirt.
-    trail = (28, gl * 0.85 + 0.06, 0.52)
     return {
-        "ground": _ramp(gh, gl, gs, 26, 0.34),
-        "stone": _ramp(sh, sl, ss, 18, 0.40),
-        "leaf": _ramp(fh, fl, fs, 20, 0.36),
-        "trail": _ramp(trail[0], trail[1], trail[2], 22, 0.36),
-        "accent": [_ramp(spec[0], spec[1], spec[2], 12, 0.30)
+        "ground": _ramp(gh, gl, gs, 7, 0.14),
+        "stone": _ramp(sh, sl, ss, 6, 0.36),
+        "leaf": _ramp(fh, fl, fs, 6, 0.40),
+        "accent": [_ramp(spec[0], spec[1], spec[2], 5, 0.28)
                    for spec in accents],
-        "spec": {"ground": ground, "leaf": foliage, "stone": stone,
-                 "trail": trail, "accent": accents},
     }
 
 
-def _tone(p, role, t, index=0):
-    """A continuous tone from a role's HLS spec, so shading never bands."""
-    hue, light, sat = p["spec"][role][index] if role == "accent" \
-        else p["spec"][role]
-    spread = {"ground": 0.34, "leaf": 0.36, "trail": 0.36}.get(role, 0.40)
-    return _rgba(_hls(hue, light + spread * (max(0.0, min(1.0, t)) - 0.5), sat))
-
-
 BACKGROUND_PALETTES = {
-    # Every theme follows the reference's material logic: an earth-toned floor,
-    # green foliage, neutral grey stone and a pale flower. Themes differ in the
-    # hue of the floor and in which props they scatter, not in whether the
-    # foliage separates from the ground.
-    #
     # cork — warm ochre bark mulch
     "cork": _palette((30, 0.40, 0.58), (96, 0.50, 0.72), (40, 0.62, 0.10),
                      ((52, 0.94, 0.16), (18, 0.52, 0.72), (44, 0.78, 0.62))),
-    # moss — dark peaty floor under vivid moss
-    "moss": _palette((26, 0.30, 0.44), (96, 0.52, 0.78), (40, 0.60, 0.10),
+    # moss — green clearing
+    "moss": _palette((75, 0.42, 0.55), (96, 0.50, 0.72), (40, 0.60, 0.10),
                      ((52, 0.95, 0.14), (28, 0.50, 0.66), (72, 0.80, 0.66))),
     # leaf_litter — rust drift
-    "leaf_litter": _palette((20, 0.38, 0.62), (92, 0.50, 0.70), (40, 0.60, 0.10),
-                            ((52, 0.94, 0.14), (8, 0.56, 0.70), (40, 0.82, 0.66))),
+    "leaf_litter": _palette((25, 0.43, 0.57), (92, 0.50, 0.70), (40, 0.60, 0.10),
+                            ((52, 0.75, 0.44), (8, 0.48, 0.68), (38, 0.58, 0.72))),
     # sand — pale gold dunes
     "sand": _palette((40, 0.62, 0.62), (110, 0.34, 0.62), (40, 0.66, 0.08),
                      ((52, 0.96, 0.12), (24, 0.54, 0.68), (44, 0.80, 0.62))),
     # fern — dark forest floor
-    "fern": _palette((28, 0.26, 0.42), (96, 0.54, 0.80), (40, 0.58, 0.10),
+    "fern": _palette((45, 0.39, 0.42), (96, 0.54, 0.80), (40, 0.58, 0.10),
                      ((52, 0.95, 0.12), (28, 0.48, 0.64), (76, 0.82, 0.68))),
     # orchid — deep plum floor
-    "orchid": _palette((310, 0.30, 0.42), (100, 0.44, 0.62), (40, 0.58, 0.10),
+    "orchid": _palette((315, 0.42, 0.32), (100, 0.44, 0.62), (40, 0.58, 0.10),
                        ((330, 0.72, 0.72), (312, 0.56, 0.62), (300, 0.90, 0.86))),
     # woodland — timber and moss
-    "woodland": _palette((26, 0.34, 0.52), (100, 0.46, 0.66), (40, 0.60, 0.10),
+    "woodland": _palette((32, 0.43, 0.49), (100, 0.46, 0.66), (40, 0.60, 0.10),
                          ((52, 0.94, 0.14), (20, 0.50, 0.62), (44, 0.80, 0.68))),
     # minimal — bare pale gravel
-    "minimal": _palette((40, 0.70, 0.06), (110, 0.36, 0.56), (40, 0.62, 0.06),
+    "minimal": _palette((42, 0.64, 0.30), (110, 0.36, 0.56), (40, 0.62, 0.06),
                         ((52, 0.96, 0.10), (36, 0.30, 0.62), (0, 0.00, 0.98))),
-    # mushroom — warm loam
-    "mushroom": _palette((28, 0.38, 0.56), (100, 0.44, 0.64), (40, 0.60, 0.10),
+    # mushroom — grassy glade
+    "mushroom": _palette((80, 0.43, 0.50), (100, 0.44, 0.64), (40, 0.60, 0.10),
                          ((52, 0.94, 0.14), (2, 0.72, 0.62), (16, 0.80, 0.66))),
     # gothic — violet flagstones
-    "gothic": _palette((262, 0.30, 0.40), (100, 0.40, 0.58), (250, 0.44, 0.10),
+    "gothic": _palette((262, 0.44, 0.28), (100, 0.40, 0.58), (250, 0.44, 0.10),
                        ((52, 0.92, 0.12), (272, 0.44, 0.62), (286, 0.60, 0.76))),
     # seashell — shell sand
-    "seashell": _palette((34, 0.70, 0.34), (150, 0.34, 0.56), (40, 0.66, 0.08),
+    "seashell": _palette((34, 0.65, 0.56), (150, 0.34, 0.56), (40, 0.66, 0.08),
                          ((52, 0.96, 0.10), (8, 0.72, 0.72), (350, 0.66, 0.66))),    # succulent — cool teal floor
-    "succulent": _palette((176, 0.26, 0.38), (150, 0.52, 0.66), (40, 0.58, 0.10),
+    "succulent": _palette((155, 0.43, 0.31), (150, 0.52, 0.66), (40, 0.58, 0.10),
                           ((52, 0.94, 0.12), (160, 0.34, 0.78), (140, 0.44, 0.86))),
     # willow — dark bank under yellow-green
-    "willow": _palette((30, 0.28, 0.44), (66, 0.56, 0.76), (40, 0.58, 0.10),
+    "willow": _palette((66, 0.43, 0.48), (66, 0.56, 0.76), (40, 0.58, 0.10),
                        ((52, 0.94, 0.12), (28, 0.50, 0.62), (70, 0.82, 0.70))),
     # desert — terracotta sand
     "desert": _palette((22, 0.50, 0.62), (120, 0.34, 0.56), (40, 0.64, 0.08),
                        ((52, 0.96, 0.10), (36, 0.72, 0.72), (130, 0.50, 0.50))),
     # crystal — dark geode rock
-    "crystal": _palette((220, 0.24, 0.40), (186, 0.52, 0.66), (250, 0.40, 0.10),
+    "crystal": _palette((258, 0.40, 0.37), (186, 0.52, 0.66), (250, 0.40, 0.10),
                         ((186, 0.90, 0.86), (176, 0.72, 0.72), (322, 0.66, 0.66))),
     # cemetery — cold earth
-    "cemetery": _palette((206, 0.24, 0.36), (110, 0.34, 0.54), (210, 0.34, 0.10),
+    "cemetery": _palette((200, 0.43, 0.24), (110, 0.34, 0.54), (210, 0.47, 0.16),
                          ((52, 0.90, 0.10), (206, 0.24, 0.72), (200, 0.30, 0.86))),
 }
 
@@ -1326,223 +1421,257 @@ def _rng(seed):
     def nxt(n):
         nonlocal state
         state = (state * 1103515245 + 12345) & 0x7FFFFFFF
-        return state % n
+        return (state >> 8) % n
 
     return nxt
 
 
-def _rect(d, x0, y0, x1, y1, color):
-    d.rectangle((x0, y0, x1, y1), fill=color)
+def _terrain_stone(d, x, y, r, ramp):
+    """Low, chipped terrain stone with three planes and a broken lit rim."""
+    colors = list(map(_rgba, ramp))
+    points = [(x - r, y), (x - r + 2, y - r // 2),
+              (x, y - r), (x + r - 2, y - r + 1),
+              (x + r, y), (x + r - 1, y + r // 2),
+              (x - r + 2, y + r // 2 + 1)]
+    d.polygon(points, fill=colors[0])
+    d.polygon([(x - r + 1, y), (x, y - r + 1),
+               (x + r - 2, y - r + 2), (x + r - 1, y),
+               (x, y + r // 2)], fill=colors[3])
+    d.polygon([(x, y), (x + r - 2, y - r + 3),
+               (x + r - 1, y), (x + r - 2, y + r // 2),
+               (x, y + r // 2)], fill=colors[1])
+    d.line([(x - r + 2, y - 1), (x, y - r + 2),
+            (x + r - 3, y - r + 2)], fill=colors[5])
+    d.line([(x - r + 3, y + 1), (x - 1, y + r // 2 - 1)], fill=colors[2])
+    d.point((x + 1, y - r + 3), fill=colors[4])
 
 
-def _poly(d, points, color):
-    d.polygon(points, fill=color)
+def _moss_bank(d, x, y, r, ramp, rng):
+    colors = list(map(_rgba, ramp))
+    for _ in range(26):
+        cx, cy = x + rng(r * 2 + 1) - r, y + rng(r + 1) - r // 2
+        w, h = 3 + rng(4), 2 + rng(3)
+        _blob(d, cx, cy, w, h, colors[2], colors[4], colors[1], colors[0])
+        d.line([(cx - 1, cy), (cx, cy - 2), (cx + 1, cy - 1)], fill=colors[5])
+        d.point((cx + 1, cy + 1), fill=colors[3])
 
 
-def _oval(d, cx, cy, rx, ry, color):
-    d.ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=color)
-
-
-def _line(d, points, color, width=1):
-    d.line(points, fill=color, width=width)
-
-
-def _pick(ramp, t):
-    """Sample a ramp by a 0..1 position, interpolating between entries.
-
-    Interpolating rather than snapping is what keeps shading smooth: a ramp of
-    twenty tones sampled by index gives twenty flat bands, which is exactly the
-    8-bit look we are trying to avoid.
-    """
-    t = max(0.0, min(1.0, t)) * (len(ramp) - 1)
-    low = int(t)
-    high = min(low + 1, len(ramp) - 1)
-    return _mix(ramp[low], ramp[high], t - low)
-
-
-def _channels(color):
-    """Normalise a packed RGB int or an RGBA tuple to three channels."""
-    if isinstance(color, tuple):
-        return color[:3]
-    return ((color >> 16) & 255, (color >> 8) & 255, color & 255)
-
-
-def _mix(a, b, t):
-    """Blend two colours, so shading is continuous rather than banded."""
-    t = max(0.0, min(1.0, t))
-    ca, cb = _channels(a), _channels(b)
-    return tuple(int(ca[i] * (1 - t) + cb[i] * t) for i in range(3)) + (255,)
-
-
-def _noise(rng, cells):
-    """A smooth value-noise field over the whole frame, bilinearly sampled."""
-    grid = [[rng(256) for _ in range(cells + 1)] for _ in range(cells + 1)]
-    field = []
-    for y in range(BG_SIZE):
-        fy = y * cells / BG_SIZE
-        y0 = min(int(fy), cells - 1)
-        ty = fy - y0
-        row = []
-        for x in range(BG_SIZE):
-            fx = x * cells / BG_SIZE
-            x0 = min(int(fx), cells - 1)
-            tx = fx - x0
-            top = grid[y0][x0] * (1 - tx) + grid[y0][x0 + 1] * tx
-            bot = grid[y0 + 1][x0] * (1 - tx) + grid[y0 + 1][x0 + 1] * tx
-            row.append(int(top * (1 - ty) + bot * ty))
-        field.append(row)
-    return field
-
-
-def _ground(d, p, rng, cells=9, contrast=1.0, path=None, debris=1.0):
-    """Layered value noise, a directional light, and an optional worn path.
-
-    Backgrounds are GROUND TEXTURE ONLY. Props used to be baked in, which made
-    the floor busy enough to fight the spider for contrast and left the player
-    nothing to arrange. Everything that sits on the floor is now a decor item
-    the player buys and places, so the floor's only job is to read as a
-    material: a lit side, a shadowed side, and a grain that does not compete
-    with a moving creature on top of it.
-    """
-    tones = p["ground"]
-    coarse = _noise(rng, cells)
-    medium = _noise(rng, cells * 4)
-    fine = _noise(rng, cells * 13)
-    # A meandering path of a second material, if the theme has one. Two
-    # materials meeting is what stops a floor reading as wallpaper.
-    if path is not None:
-        wander = _noise(rng, 3)
-        band = _noise(rng, 7)
-        edge = _noise(rng, 11)
-    for y in range(BG_SIZE):
-        for x in range(BG_SIZE):
-            value = (coarse[y][x] * 0.55 + medium[y][x] * 0.30
-                     + fine[y][x] * 0.15) / 255.0
-            value = 0.5 + (value - 0.5) * contrast
-            # Directional light from the top-left, plus a soft vignette.
-            value *= 1.0 - 0.30 * (0.55 * (y / BG_SIZE) + 0.45 * (x / BG_SIZE))
-            if path is not None:
-                centre = 34 + wander[y][0] * 172 / 255.0
-                half = 26 + edge[y][x] / 9.0
-                if abs(x - centre) < half:
-                    # Blend the trail into the ground over its last few pixels.
-                    blend = min(1.0, (half - abs(x - centre)) / 7.0)
-                    trail = 0.40 + band[y][x] / 255.0 * 0.45
-                    d.point((x, y), fill=_mix(_tone(p, "ground", value),
-                                              _tone(p, "trail", trail), blend))
-                    continue
-            d.point((x, y), fill=_tone(p, "ground", value))
-    # Barely-there tonal drift, so the floor is not perfectly flat. Anything
-    # stronger reads as a stain, and a stain under the spider reads as a bug.
-    for _ in range(30):
-        cx, cy = rng(BG_SIZE), rng(BG_SIZE)
-        tone = _pick(tones, 0.46 + rng(12) / 100.0)
-        for _ in range(3 + rng(4)):
-            _oval(d, cx + rng(41) - 20, cy + rng(41) - 20,
-                  8 + rng(16), 6 + rng(12), tone)
-    # Fine grit only. No twigs, husks or pebbles: those are decor now, and
-    # scattering them here is what made the floor fight the spider.
-    for _ in range(int(2200 * debris)):
-        x, y = rng(BG_SIZE), rng(BG_SIZE)
-        d.point((x, y), fill=_pick(tones, 0.0 if rng(3) == 0 else 1.0))
-    for _ in range(int(700 * debris)):
-        x, y = rng(BG_SIZE), rng(BG_SIZE)
-        dx, dy = rng(5) - 2, rng(5) - 2
-        _line(d, [(x, y), (x + dx, y + dy)],
-              _pick(tones, 0.0 if rng(2) else 1.0))
+def _ground(d, p, rng, material="soil", fringe="green"):
+    """Clustered substrate with a protected, low-contrast 160x160 center."""
+    g = list(map(_rgba, p["ground"]))
+    d.rectangle((0, 0, 239, 239), fill=g[3])
+    # Small, flat clusters replace both smooth noise and isolated bright grit.
+    for _ in range(320 if material != "minimal" else 70):
+        x, y = rng(240), rng(240)
+        w, h = 2 + rng(4), 1 + rng(3)
+        if material in ("sand", "shell", "desert", "minimal"):
+            d.line([(x, y), (x + 1, y)], fill=g[2])
+            d.point((x + 1, y - 1), fill=g[4])
+        elif material == "moss":
+            d.line([(x, y), (x + 1, y - h), (x + 2, y)], fill=g[2])
+            d.line([(x + 2, y), (x + 3, y - h), (x + 4, y)], fill=g[4])
+        else:
+            d.line([(x, y), (x + w - 1, y), (x + w, y - 1)], fill=g[2])
+            d.line([(x + 1, y + 1), (x + w - 1, y + 1)], fill=g[4])
+            d.point((x - 1, y + 2), fill=g[2])
+    if material != "minimal":
+        for _ in range(300):
+            side, along, depth = rng(4), rng(240), rng(26)
+            x, y = ((along, depth) if side == 0 else (239 - depth, along)
+                    if side == 1 else (along, 239 - depth) if side == 2
+                    else (depth, along))
+            w, h = 2 + rng(6), 1 + rng(3)
+            d.polygon([(x - w, y), (x - 2, y - h), (x + w, y - h),
+                       (x + w + 1, y), (x + 2, y + h), (x - w, y + h)],
+                      fill=g[1 if depth < 12 else 2])
+            d.line([(x - w + 1, y), (x - 1, y - h + 1), (x + 2, y - h + 1)],
+                   fill=g[5 if depth < 12 else 4])
+            if depth < 10:
+                d.point((x + 1, y - h), fill=g[6])
+    if material in ("sand", "shell", "desert"):
+        for y in range(17, 240, 31):
+            x = rng(45) - 25
+            while x < 240:
+                w = 14 + rng(20)
+                d.line([(x, y + 2), (x + w // 3, y),
+                        (x + w, y), (x + w + 4, y - 2)], fill=g[4])
+                x += w + 12 + rng(24)
+    if material in ("slate", "ruins"):
+        for row in range(-1, 7):
+            y = row * 43
+            for col in range(-1, 6):
+                x = col * 53 + (row % 2) * 25
+                d.line([(x, y + 5), (x + 5, y), (x + 45, y),
+                        (x + 51, y + 6), (x + 49, y + 35),
+                        (x + 43, y + 40), (x + 5, y + 40),
+                        (x, y + 34), (x, y + 5)], fill=g[2])
+                d.line([(x + 6, y + 1), (x + 43, y + 1)], fill=g[4])
+    for _ in range(58 if material != "minimal" else 16):
+        side, along, depth = rng(4), rng(240), rng(18)
+        x, y = ((along, depth) if side == 0 else (239 - depth, along)
+                if side == 1 else (along, 239 - depth) if side == 2
+                else (depth, along))
+        if material in ("cork", "wood"):
+            w, h = 4 + rng(7), 3 + rng(4)
+            a = list(map(_rgba, p["accent"][1]))
+            d.polygon([(x - w, y), (x - w + 3, y - h),
+                       (x + w - 2, y - h - 1), (x + w, y),
+                       (x + w - 3, y + h), (x - w + 1, y + h + 1)], fill=a[0])
+            d.polygon([(x - w + 1, y), (x - w + 3, y - h + 1),
+                       (x + w - 2, y - h), (x + w - 1, y),
+                       (x + w - 4, y + h - 1)], fill=a[2])
+            d.line([(x - w + 3, y - h + 1), (x + w - 3, y - h)], fill=a[4])
+            d.line([(x - w + 3, y + 1), (x, y - 1), (x + w - 3, y)], fill=a[1])
+            d.point((x + 1, y - h + 2), fill=a[3])
+        elif material == "leaves":
+            ramp = p["accent"][1 if rng(2) else 2]
+            _leaf_shape(d, (x, y), (x + rng(17) - 8, y - 5 - rng(9)),
+                        3 + rng(3), _rgba(ramp[2]), _rgba(ramp[4]),
+                        _rgba(ramp[0]), g[0])
+        else:
+            _terrain_stone(d, x, y, 3 + rng(5), p["stone"])
+    if material != "minimal":
+        for x, y, r in ((10, 10, 12), (228, 230, 14), (237, 61, 8)):
+            _terrain_stone(d, x + rng(9) - 4, y + rng(9) - 4, r, p["stone"])
+    if fringe != "bare":
+        # Asymmetric shallow banks, not a frame of repeated furniture.
+        banks = ((9, 20, 18), (30, 3, 23), (228, 213, 21),
+                 (213, 237, 24), (3, 174, 14))
+        for x, y, r in banks:
+            _moss_bank(d, x, y, r, p["leaf"], rng)
+        for x, y, dx, dy in ((4, 24, 25, -16), (22, 3, 14, 25),
+                             (236, 214, -26, 13), (212, 236, 9, -23)):
+            if fringe == "fern":
+                _frond(d, (x, y), (x + dx, y + dy), 3,
+                       _rgba(p["leaf"][2]), _rgba(p["leaf"][5]),
+                       _rgba(p["leaf"][0]), _rgba(p["leaf"][0]))
+            else:
+                _leaf_shape(d, (x, y), (x + dx, y + dy), 7,
+                            _rgba(p["leaf"][2]), _rgba(p["leaf"][4]),
+                            _rgba(p["leaf"][1]), _rgba(p["leaf"][0]))
+    if material == "mineral":
+        for x, y in ((12, 41), (221, 12), (234, 185), (36, 231)):
+            a = list(map(_rgba, p["accent"][1]))
+            d.polygon([(x - 7, y + 3), (x - 4, y - 5), (x + 5, y - 3),
+                       (x + 8, y + 4), (x, y + 7)], fill=a[0])
+            d.polygon([(x - 4, y - 4), (x, y + 1), (x + 4, y - 2)], fill=a[4])
+            d.polygon([(x, y + 1), (x + 4, y - 2), (x + 6, y + 3)], fill=a[2])
 
 
 def _bg_cork(d, p, rng):
     """Warm ochre bark mulch."""
-    _ground(d, p, rng, path=True)
+    _ground(d, p, rng, "cork")
 
 
 def _bg_moss(d, p, rng):
     """Dark peaty floor under moss."""
-    _ground(d, p, rng, cells=11, path=True)
+    _ground(d, p, rng, "moss")
+    for x, y, r in ((0, 78, 16), (173, 0, 18), (239, 131, 12)):
+        _moss_bank(d, x, y, r, p["leaf"], rng)
 
 
 def _bg_leaf_litter(d, p, rng):
     """Rust autumn drift."""
-    _ground(d, p, rng, path=True, debris=1.4)
+    _ground(d, p, rng, "leaves", "bare")
 
 
 def _bg_sand(d, p, rng):
     """Pale gold dunes."""
-    _ground(d, p, rng, cells=13, contrast=0.7, debris=0.8)
+    _ground(d, p, rng, "sand", "bare")
 
 
 def _bg_fern(d, p, rng):
     """Dark forest floor."""
-    _ground(d, p, rng, cells=11, path=True)
+    _ground(d, p, rng, "soil", "fern")
 
 
 def _bg_orchid(d, p, rng):
     """Deep plum floor."""
-    _ground(d, p, rng, cells=10)
+    _ground(d, p, rng, "soil")
+    for x, y in ((8, 24), (223, 224), (17, 178)):
+        a = list(map(_rgba, p["accent"][0]))
+        for dx, dy in ((-3, 0), (3, 0), (0, -3), (0, 3)):
+            _blob(d, x + dx, y + dy, 3, 2, a[2], a[4], a[0])
+        d.point((x, y), fill=_rgba(p["accent"][2][4]))
 
 
 def _bg_woodland(d, p, rng):
     """Timber-brown forest floor."""
-    _ground(d, p, rng, path=True)
+    _ground(d, p, rng, "wood")
 
 
 def _bg_minimal(d, p, rng):
     """Bare pale gravel."""
-    _ground(d, p, rng, cells=15, contrast=0.6, path=True, debris=0.5)
+    _ground(d, p, rng, "minimal", "bare")
 
 
 def _bg_mushroom(d, p, rng):
     """Warm loam."""
-    _ground(d, p, rng, path=True)
+    _ground(d, p, rng, "soil")
+    for x, y in ((6, 62), (232, 198), (24, 234)):
+        a = list(map(_rgba, p["accent"][1]))
+        d.rectangle((x, y, x + 2, y + 4), fill=_rgba(p["accent"][0][3]))
+        _blob(d, x + 1, y - 1, 4, 3, a[2], a[4], a[0])
+        d.point((x, y - 2), fill=_rgba(p["accent"][0][4]))
 
 
 def _bg_gothic(d, p, rng):
     """Violet flagstones."""
-    _ground(d, p, rng, cells=8, contrast=0.5)
-    for row in range(9):
-        x = -12 + rng(12)
-        y = row * 28 - 8
-        while x < BG_SIZE:
-            w = 24 + rng(24)
-            _rect(d, x, y, x + w, y + 26, _pick(p["ground"], 0.0))
-            _rect(d, x + 1, y + 1, x + w - 1, y + 25, _pick(p["ground"], 0.55))
-            _rect(d, x + 2, y + 2, x + w - 2, y + 5, _pick(p["ground"], 0.80))
-            for _ in range(3):
-                _line(d, [(x + 3 + rng(w - 6), y + 6 + rng(18)),
-                          (x + 3 + rng(w - 6), y + 6 + rng(18))],
-                      _pick(p["ground"], 0.30))
-            x += w + 4 + rng(6)
+    _ground(d, p, rng, "slate")
 
 
 def _bg_seashell(d, p, rng):
     """Shell sand."""
-    _ground(d, p, rng, cells=12, contrast=0.8, debris=0.9)
+    _ground(d, p, rng, "shell", "bare")
+    for x, y in ((4, 36), (230, 180), (21, 229), (181, 6)):
+        a = list(map(_rgba, p["accent"][1]))
+        d.polygon([(x - 4, y), (x - 2, y - 4), (x + 3, y - 4),
+                   (x + 5, y), (x, y + 5)], fill=a[1])
+        for dx in (-2, 0, 2):
+            d.line([(x, y + 3), (x + dx, y - 3)], fill=a[4])
 
 
 def _bg_succulent(d, p, rng):
     """Cool teal floor."""
-    _ground(d, p, rng, cells=10)
+    _ground(d, p, rng, "gravel", "bare")
+    for x, y in ((6, 12), (232, 222), (12, 202)):
+        for dx, dy in ((-8, -4), (0, -10), (8, -3), (0, 4)):
+            _leaf_shape(d, (x, y), (x + dx, y + dy), 3,
+                        _rgba(p["leaf"][2]), _rgba(p["leaf"][5]),
+                        _rgba(p["leaf"][0]))
 
 
 def _bg_willow(d, p, rng):
     """Dark bank under willow."""
-    _ground(d, p, rng, cells=10, path=True)
+    _ground(d, p, rng, "moss")
+    water = list(map(_rgba, (0x285D63, 0x3D8584, 0x6CB7AF, 0xB5D9C3)))
+    d.polygon([(0, 0), (59, 0), (54, 7), (40, 13), (38, 22),
+               (24, 27), (18, 39), (0, 46)], fill=_rgba(p["leaf"][0]))
+    d.polygon([(0, 0), (54, 0), (47, 7), (35, 11), (32, 20),
+               (19, 24), (13, 35), (0, 40)], fill=water[1])
+    for x, y in ((3, 8), (20, 5), (7, 23), (29, 13)):
+        d.line([(x, y), (x + 7, y), (x + 9, y - 1)], fill=water[2])
+        d.line([(x + 1, y + 3), (x + 4, y + 3)], fill=water[0])
 
 
 def _bg_desert(d, p, rng):
     """Terracotta sand."""
-    _ground(d, p, rng, cells=12, contrast=0.8, debris=0.9)
+    _ground(d, p, rng, "desert", "bare")
+    for x, y in ((3, 16), (233, 226)):
+        for dx in (-8, 0, 8):
+            _leaf_shape(d, (x, y + 6), (x + dx, y - 9 + abs(dx)), 2,
+                        _rgba(p["leaf"][2]), _rgba(p["leaf"][5]),
+                        _rgba(p["leaf"][0]))
 
 
 def _bg_crystal(d, p, rng):
     """Dark geode rock."""
-    _ground(d, p, rng, cells=9, contrast=0.9, debris=0.7)
+    _ground(d, p, rng, "mineral", "bare")
 
 
 def _bg_cemetery(d, p, rng):
     """Cold earth."""
-    _ground(d, p, rng, cells=9, contrast=0.7, debris=0.8)
+    _ground(d, p, rng, "ruins")
 
 
 _BACKGROUND_SCENES = {
@@ -1568,7 +1697,7 @@ _BACKGROUND_SCENES = {
 def draw_background(name):
     """Compose one top-down ground texture at the panel's native 240x240."""
     p = BACKGROUND_PALETTES[name]
-    img = Image.new("RGBA", (BG_SIZE, BG_SIZE), _rgba(p["ground"][13]))
+    img = Image.new("RGBA", (BG_SIZE, BG_SIZE), _rgba(p["ground"][3]))
     d = ImageDraw.Draw(img)
     rng = _rng(BACKGROUND_SEEDS[name])
     _BACKGROUND_SCENES[name](d, p, rng)

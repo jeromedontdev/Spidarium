@@ -15,48 +15,48 @@ item changes.
 | Achievement badges | 11 | 24×24 → 48×48 | Unique badge for each persisted achievement bit; ten currently earnable |
 | Gifts | 18 | 16×16 → 32×32 | Placed furniture enlarged to 64px; shop explains purpose and price |
 | Placeable decor | 16 | 32×32 → 64×64 | Bought with Silk, placed by the player, drawn at `radius × 4` px |
+| Legacy decor | 5 | Half PNG size → unchanged PNG dimensions | Derived from matching redesigned placeable props |
 | Enclosure ground textures | 16 | 240×240 → 240×240 | Ground texture only, enlarged 2× into the 480×480 RGB565 canvas |
 
-The 119 non-spider sprites are authored pixel art, enlarged exactly 2× using
+The 103 non-spider sprites are authored pixel art, enlarged exactly 2× using
 nearest-neighbour sampling. Every aligned 2×2 RGBA block is identical, alpha is
 binary (0/255), and each sprite has at most 12 visible colours. The 39 spider
 PNGs are exempt from the 2×2 grid rule because they are a direct export of
 `main/cspider.c`, which writes single pixels into a 96×96 canvas; forcing them
 onto a 2×2 grid would make the published art disagree with the spider the panel
 draws. They are still checked for binary alpha, determinism and the 12-colour
-limit, and they are not preservation-protected.
-Living fly/cricket/moth/beetle PNGs also remain byte-identical; species are
-appended after those four to preserve their IDs. Each species has two walk
+limit. This art release leaves both renderers and all 39 exports byte-identical.
+Species are appended after fly/cricket/moth/beetle to preserve their IDs;
+all eight species now share the refreshed material shading. Each has two walk
 frames, two flee frames, and one dead frame. Roach uses an oval body and long
 antennae; mealworm is narrow, segmented, and tan; fruitfly is a small red-eyed
 winged insect; waxworm is plump and pale with a brown head.
 
 ## Art direction
 
-The whole set follows a **16-bit SNES-era** contract, documented in
-[ART_STYLE.md](ART_STYLE.md): crescent shading rather than concentric rings,
-three tones per material (shadow, body, highlight), an ink rim on every
-silhouette, and no gradients, translucent shadows or blur. Two tones read flat;
-the third tone is the entire difference between an 8-bit look and a 16-bit one.
+Every non-spider asset follows the **16-bit SNES-era** contract in
+[ART_STYLE.md](ART_STYLE.md): crisp material clusters, finite hue-shifted ramps,
+top-left lighting, ink rims, shaded volume and surface detail. Placeable decor
+and all eighteen gift furnishings use 8-12 visible tones. No gradients,
+translucent shadows or blur. Living prey use 9-12 tones, dead puddles 6-12,
+icons 5-12 and badges 8-12. Their silhouettes, recognizable motifs and gameplay
+IDs are retained; only the approved spider remains unchanged.
 
 ## Enclosure ground textures
 
-Backgrounds are **ground texture only**. Each of the sixteen themes is the
-substrate a keeper would actually use — cork, moss, leaf litter, sand, coir,
-bark chip, gravel — seen from directly above, with a meandering trail and fine
-grit. There are no canopies, pebble scatter, flower clusters or fronds.
-
-This is deliberate. Earlier rounds painted furniture into the background, and
-the result was cluttered: the spider had poor contrast against its own floor and
-every enclosure looked like the same scene recoloured. Props are now placeable
-decor the player buys and positions.
+Backgrounds are low-profile terrain with restrained edge materials: bark
+chips, leaf fragments, stone, shallow foliage banks, sand ripples and mineral
+facets. Large furniture remains optional placeable decor. The central 160x160
+source pixels use at most three substrate tones with luminance span <=24/255,
+leaving a 320x320 screen area quiet for the spider and player arrangements.
+Smooth noise, vignettes and high-contrast grit have been removed.
 
 Background source dimensions are exactly 240×240 and fully opaque. The renderer
 caches sixteen RGB565A8 sources and scales the selected image 2× into its
 existing 480×480 RGB565 PSRAM canvas. Background art is not synthesized by
 runtime procedural pixel functions. Backgrounds are exempt from the 12-colour
-cap and the 2×2 uniformity rule because they are illustrations authored at the
-panel's native resolution, not sprites.
+sprite cap and the 2×2 uniformity rule because they use native single-pixel
+detail. They have their own 64-color maximum and quiet-center checks.
 
 ## Placeable decor
 
@@ -83,8 +83,11 @@ item consumes the art.
 - Ground textures: `background_{cork,moss,leaf_litter,sand,fern,orchid,woodland,minimal,mushroom,gothic,seashell,succulent,willow,desert,crystal,cemetery}_0.png`
 
 `tools\asset_build.py` validates every filename, count, image size, PNG format,
-RGBA mode, repeat-generation hash, preservation of 84 earlier accepted PNGs,
-and the exact non-spider 2×2 grid/binary-alpha/12-colour limit. Backgrounds also
-require 240×240 dimensions and opaque alpha. It retains MMAP table and decoded
+RGBA mode, repeat-generation hash, preservation of all 158 source PNGs,
+and the sprite 2×2 grid/binary-alpha/12-colour limit. Placeable decor and gift
+furnishings require at least eight tones. Backgrounds require 240×240 dimensions,
+opaque alpha, at most 64 colors and quiet centers. It retains MMAP table and decoded
 QOI pixel validation for packed assets. Use `--png-only` to validate source art
 before rebuilding a stale pack; runtime mapping checks remain enabled.
+`--preview PATH.png` writes the complete non-spider review sheet. Approved
+redesigns explicitly regenerate the source baseline before validation.

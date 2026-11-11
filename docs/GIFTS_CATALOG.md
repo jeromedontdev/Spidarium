@@ -5,6 +5,20 @@ asset filenames, but presentation names, prices and progression live in
 `main/gift.c`. Only one is placed at a time. Each has clearer furniture art,
 drawn at 64x64 on the tank using one reused 12,288-byte PSRAM buffer.
 
+## Shared SNES art direction
+
+All eighteen gifts are decorative furnishings and share the background/decor
+style, not a separate flat icon style. Their deterministic 16x16 logical art
+uses 8-12 visible tones, ink rims, top-left lighting and discrete shaded planes.
+Wood has grain and cut edges, shelters have dark openings, stone has chips,
+crystal accents have facets, leaves have midribs and silk has folded strands.
+Every gift has a distinct silhouette/composition, including the three lookouts
+and royal perch. Filenames, IDs, 32x32 PNG sizes, 64x64 displayed size, price,
+bonuses and saved ownership remain unchanged.
+
+The generator and validator cover every `gift_*.png`; focused art tests reject
+flat palettes and repeated gift images. See [the full style contract](ART_STYLE.md).
+
 ## Earn, buy, place
 
 Silk is a separate wallet, never spent XP. New pets and migrated old saves get

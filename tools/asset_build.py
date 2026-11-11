@@ -9,19 +9,15 @@ import subprocess
 import sys
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageDraw
 except ImportError:
     sys.exit("ERROR: Pillow is required. Install it with: pip install Pillow")
 
 
 SPIDER_COUNT = 39
-LEGACY_PREY_SPECIES = ("fly", "cricket", "moth", "beetle")
-PREY_SPECIES = LEGACY_PREY_SPECIES + ("roach", "mealworm", "fruitfly", "waxworm")
+PREY_SPECIES = ("fly", "cricket", "moth", "beetle", "roach", "mealworm", "fruitfly", "waxworm")
 ASSET_COUNT = 158
 NON_SPIDER_COUNT = 119
-# Spider frames are a generated export of main/cspider.c, not preserved art: they
-# must be free to change whenever the renderer does.
-PRESERVED_ASSET_COUNT = 84
 BACKGROUNDS = (
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
     "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
@@ -64,6 +60,7 @@ DECOR_ITEMS = (
 )
 PIXEL_SCALE = 2
 MAX_VISIBLE_COLORS = 12
+MAX_BACKGROUND_COLORS = 64
 
 
 def expected_dimensions():
@@ -117,9 +114,8 @@ def read_bytes(path):
 def validate_pixel_art(image, name):
     """Reject smoothing, off-grid detail, and unrestricted color ramps.
 
-    Backgrounds are illustrations rather than sprites: they are authored at the
-    panel's native 240x240 with a full colour ramp, so the pixel-grid and
-    palette-cap rules apply only to the sprite set.
+    Backgrounds use native 240x240 pixels and finite material ramps, not the
+    sprite grid. Their central 160x160 area stays quiet for spider and decor.
 
     Spider frames are exempt from the 2x2 grid rule because they are a direct
     export of main/cspider.c, which writes single pixels into a 96x96 canvas.
@@ -153,6 +149,21 @@ def validate_pixel_art(image, name):
         raise ValueError(
             f"{name}: {len(colors)} visible RGBA colors exceeds {MAX_VISIBLE_COLORS}"
         )
+    if name.startswith(("decoritem_", "gift_")) and len(colors) < 8:
+        raise ValueError(f"{name}: furnishings need at least 8 visible material tones")
+    minimum = (6 if "_dead_" in name else 9) if name.startswith("prey_") else (
+        8 if name.startswith("achievement_") else 5 if name.startswith("ui_") else 0)
+    if len(colors) < minimum:
+        raise ValueError(f"{name}: shaded materials need at least {minimum} visible tones")
+    if is_background:
+        if len(colors) > MAX_BACKGROUND_COLORS:
+            raise ValueError(f"{name}: background exceeds {MAX_BACKGROUND_COLORS} colors")
+        center = {color for _, color in image.crop((40, 40, 200, 200)).getcolors(160 * 160)}
+        if len(center) > 3:
+            raise ValueError(f"{name}: quiet center exceeds 3 substrate tones")
+        luminances = [(r * 299 + g * 587 + b * 114) // 1000 for r, g, b, _ in center]
+        if max(luminances) - min(luminances) > 24:
+            raise ValueError(f"{name}: quiet center luminance span exceeds 24/255")
     return len(colors)
 
 
@@ -463,6 +474,33 @@ def validate_runtime_mappings(root):
                 raise ValueError(f"{path} does not consume {symbol}")
 
 
+def write_preview(directory, destination):
+    """Make a review sheet from validated sources, never filtered game artwork."""
+    names = sorted(expected_dimensions())
+    backgrounds = [name for name in names if name.startswith("background_")]
+    sprites = [name for name in names if not name.startswith(("background_", "spider_"))]
+    top = ((len(backgrounds) + 3) // 4) * 260
+    sheet = Image.new("RGB", (960, top + ((len(sprites) + 5) // 6) * 140), "#16283c")
+    draw = ImageDraw.Draw(sheet)
+    for group, columns, width, height, start in (
+        (backgrounds, 4, 240, 260, 0), (sprites, 6, 160, 140, top),
+    ):
+        for index, name in enumerate(group):
+            with Image.open(os.path.join(directory, name)) as source:
+                scale = 1 if name.startswith("background_") else min(
+                    2, 128 // max(source.size))
+                image = source.resize((source.width * scale, source.height * scale),
+                                      Image.Resampling.NEAREST)
+            x, y = index % columns * width, start + index // columns * height
+            sheet.paste(image, (x + (width - image.width) // 2, y), image)
+            label = name.removesuffix(".png")
+            draw.text((x + 2, y + height - 24), label[:24], fill="#e8efda")
+            draw.text((x + 2, y + height - 12), label[24:], fill="#e8efda")
+    os.makedirs(os.path.dirname(os.path.abspath(destination)), exist_ok=True)
+    sheet.save(destination)
+    print(f"PREVIEW: all {len(backgrounds) + len(sprites)} non-spider assets: {destination}")
+
+
 def main():
     import argparse
 
@@ -473,6 +511,7 @@ def main():
         "--png-only", action="store_true",
         help="validate source PNGs without checking an existing (possibly stale) pack",
     )
+    parser.add_argument("--preview", help="write a nearest-neighbor non-spider review sheet")
     args = parser.parse_args()
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     asset_dir = os.path.join(root, "assets")
@@ -482,27 +521,10 @@ def main():
     )
     os.makedirs(asset_dir, exist_ok=True)
 
-    old_spiders = {
-        name: read_bytes(os.path.join(asset_dir, name))
-        for name in os.listdir(asset_dir)
-        if name.startswith("spider_") and name.endswith(".png")
-    }
-    if len(old_spiders) != SPIDER_COUNT:
-        raise ValueError(f"Expected {SPIDER_COUNT} existing spider PNGs; found {len(old_spiders)}")
-    old_prey = {
-        name: read_bytes(os.path.join(asset_dir, name))
-        for name in expected_dimensions()
-        if any(name.startswith(f"prey_{species}_") for species in LEGACY_PREY_SPECIES)
-        and "_dead_" not in name
-    }
     preserved = {
         name: read_bytes(os.path.join(asset_dir, name))
         for name in expected_dimensions()
-        if not name.startswith("achievement_") and "_dead_" not in name
-        and not name.startswith("background_") and not name.startswith("spider_")
     }
-    if len(preserved) != PRESERVED_ASSET_COUNT:
-        raise ValueError(f"Expected {PRESERVED_ASSET_COUNT} existing unchanged PNGs")
 
     subprocess.run([sys.executable, generator], cwd=root, check=True,
                    stdout=subprocess.DEVNULL)
@@ -534,19 +556,21 @@ def main():
         raise ValueError(f"packed asset image not found: {packed_path}")
     else:
         print("PACKED: skipped (no build/mmap_build/assets/storage/storage.bin)")
+    if args.preview:
+        write_preview(asset_dir, args.preview)
 
     print(f"VALID: {len(expected)} PNGs, RGBA, expected dimensions and names")
     print(f"PIXEL ART: {NON_SPIDER_COUNT} non-spider PNGs, binary alpha; sprites use uniform "
           f"2x2 blocks and at most {MAX_VISIBLE_COLORS} visible colors each")
     print("DETERMINISTIC: two generation passes have identical SHA-256 hashes")
-    print(f"SPIDER: {len(old_spiders)} frames exported from main/cspider.c geometry and palette")
-    print(f"PRESERVED: {len(old_prey)} original fly/cricket/moth/beetle PNGs are byte-identical")
-    print(f"PRESERVED: all {len(preserved)} living-prey/UI/gift/decor PNGs "
-          "are byte-identical")
+    print(f"SPIDER: {SPIDER_COUNT} frames exported from main/cspider.c geometry and palette")
+    print(f"PRESERVED: all {len(preserved)} source PNGs are byte-identical across generation")
     print(f"ACHIEVEMENTS: {len(ACHIEVEMENTS)} unique dedicated badge contents and silhouettes")
     print(f"SPLATTERS: all {len(PREY_SPECIES)} species, colored puddles and detached droplets")
     print(f"BACKGROUNDS: {len(BACKGROUNDS)} opaque 240x240 keeper enclosures, "
-          "authored at native resolution with a full colour ramp")
+          f"at most {MAX_BACKGROUND_COLORS} colors, quiet three-tone 160x160 centers")
+    print(f"DECOR: {len(DECOR_ITEMS)} placeable props with 8-12 material tones each")
+    print(f"GIFTS: {len(GIFTS)} furnishings with 8-12 material tones each")
 
 
 if __name__ == "__main__":

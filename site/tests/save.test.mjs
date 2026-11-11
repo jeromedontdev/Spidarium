@@ -51,7 +51,8 @@ test('WiFi validation enforces byte lengths, open networks and protocol injectio
 });
 test('bundled hardware-compiled schema decodes both actual ABI payload sizes', async () => {
   const actual = validateSchema(JSON.parse(await readFile(new URL('../save-schema.json', import.meta.url), 'utf8')));
-  assert.equal(actual.fields.length, 26);
+  assert.equal(actual.version, 8);
+  assert.equal(actual.fields.length, 35);
   for (const size of actual.payloadSizes) {
     const bytes = new Uint8Array(12 + size), view = new DataView(bytes.buffer);
     view.setUint32(0, actual.magic, true); view.setUint16(4, size === 120 ? 2 : actual.version, true); view.setUint32(8, size, true);
@@ -62,10 +63,37 @@ test('bundled hardware-compiled schema decodes both actual ABI payload sizes', a
     if (silk.offset + 4 <= size) view.setUint32(12 + silk.offset, 12345, true);
     const parsed = decodeSave(fromHex(toHex(bytes)), actual);
     assert.equal(parsed.fields.name, 'Schema Test'); assert.equal(parsed.fields.hunger, 83);
-    if (size === 136) assert.equal(parsed.fields.silk, 12345);
+    if (size === 236) assert.equal(parsed.fields.silk, 12345);
     else assert.match(parsed.fields.silk, /older save/);
-    assert.equal(parsed.fields.volume, size === 136 ? 0 : 70);
+    assert.equal(parsed.fields.volume, size === 236 ? 0 : 70);
+    if (size === 236) assert.equal(parsed.fields.decor.length, 12);
   }
+});
+test('current compiled schema reads v5-v8 prefixes and all twelve little-endian decor slots', async () => {
+  const actual = validateSchema(JSON.parse(await readFile(new URL('../save-schema.json', import.meta.url), 'utf8')));
+  for (const [version, size] of [[2, 132], [5, 136], [6, 152], [7, 160], [8, 236]]) {
+    const bytes = new Uint8Array(12 + size), view = new DataView(bytes.buffer);
+    view.setUint32(0, actual.magic, true); view.setUint16(4, version, true); view.setUint32(8, size, true);
+    if (version === 8) {
+      const start = 12 + actual.fields.find(field => field.name === 'decor').offset;
+      for (let slot = 0; slot < 12; slot++) {
+        bytes[start + slot * 6] = slot;
+        bytes[start + slot * 6 + 1] = slot % 2;
+        view.setUint16(start + slot * 6 + 2, 280 + slot, true);
+        view.setUint16(start + slot * 6 + 4, 340 + slot, true);
+      }
+    }
+    const parsed = decodeSave(fromHex(toHex(bytes)), actual);
+    assert.equal(toHex(bytes).length, (12 + size) * 2);
+    if (version < 8) assert.match(parsed.fields.decor, /older save/);
+    else for (let slot = 0; slot < 12; slot++) assert.deepEqual(parsed.fields.decor[slot],
+      { kind: slot, blocking: slot % 2, x: 280 + slot, y: 340 + slot });
+    const wrongSize = bytes.slice(); new DataView(wrongSize.buffer).setUint32(8, size - 1, true);
+    assert.throws(() => decodeSave(wrongSize, actual), /payload/);
+  }
+  const badDecor = structuredClone(actual);
+  badDecor.fields.find(field => field.name === 'decor').length = 71;
+  assert.throws(() => validateSchema(badDecor), /schema field/);
 });
 test('v3 checkbox bytes validate while v2 padding always means off', () => {
   const actual = { ...schema, version: 3, fields: [

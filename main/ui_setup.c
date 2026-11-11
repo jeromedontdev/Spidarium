@@ -1,4 +1,5 @@
 #include "ui_setup.h"
+#include "ui_style.h"
 
 #include "game.h"
 #include "game_config.h"
@@ -8,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define COL_PANEL 0x101c2c
+#define COL_PANEL 0x16283c
 #define COL_BORDER 0x355167
 #define COL_TEXT 0xe8efda
 #define COL_ACCENT 0x76d6b1
@@ -98,8 +99,7 @@ void ui_setup_init(void)
     lv_obj_set_pos(name, UI_CORNER, 102);
     lv_obj_set_size(name, 264, 56);
     lv_obj_set_style_bg_color(name, lv_color_hex(COL_PANEL), 0);
-    lv_obj_set_style_shadow_width(name, 0, 0);
-    lv_obj_set_style_radius(name, 4, 0);
+    ui_style_card(name, COL_ACCENT, false);
     lv_obj_add_event_cb(name, on_name, LV_EVENT_CLICKED, NULL);
     s_name_label = lv_label_create(name);
     lv_obj_set_style_text_font(s_name_label, &lv_font_montserrat_14, 0);
@@ -142,8 +142,7 @@ void ui_setup_init(void)
     lv_obj_set_size(start, ui.W - 2 * UI_CORNER, 56);
     lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -UI_CORNER - 10);
     lv_obj_set_style_bg_color(start, lv_color_hex(COL_ACCENT), 0);
-    lv_obj_set_style_shadow_width(start, 0, 0);
-    lv_obj_set_style_radius(start, 4, 0);
+    ui_style_card(start, 0xb99b67, false);
     lv_obj_add_event_cb(start, on_start, LV_EVENT_CLICKED, NULL);
     lv_obj_t *text = lv_label_create(start);
     lv_label_set_text(text, "Start");

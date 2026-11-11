@@ -6,7 +6,7 @@ import struct
 import tempfile
 import unittest
 
-from package_release import REGIONS, copy_licenses, image_manifest
+from package_release import REGIONS, copy_licenses, image_manifest, validate_save_schema
 
 
 class ManifestTests(unittest.TestCase):
@@ -61,6 +61,33 @@ class ManifestTests(unittest.TestCase):
         (self.build / "spidarium.bin").write_bytes(data)
         with self.assertRaisesRegex(ValueError, "wrong version"):
             image_manifest(self.build, "1.0.0")
+
+    def schema_fixture(self, version=8):
+        (self.build / "site").mkdir(exist_ok=True)
+        (self.build / "main").mkdir(exist_ok=True)
+        (self.build / "main" / "game_config.h").write_text("#define SAVE_VERSION 8\n")
+        schema = {"version": version, "headerSize": 12, "payloadSizes": [120, 236],
+                  "fields": [{"name": "decor", "type": "decor[12]", "length": 72, "offset": 164}]}
+        path = self.build / "site" / "save-schema.json"
+        path.write_text(json.dumps(schema))
+        return path, schema
+
+    def test_current_schema_is_accepted(self):
+        path, _ = self.schema_fixture()
+        self.assertEqual(validate_save_schema(self.build), path)
+
+    def test_stale_schema_is_rejected_before_publication(self):
+        self.schema_fixture(5)
+        with self.assertRaisesRegex(ValueError, "Stale save schema"):
+            validate_save_schema(self.build)
+
+    def test_schema_fields_must_cover_but_not_overflow_payload(self):
+        path, schema = self.schema_fixture()
+        for width in (71, 73):
+            schema["fields"][0]["length"] = width
+            path.write_text(json.dumps(schema))
+            with self.subTest(width=width), self.assertRaisesRegex(ValueError, "schema"):
+                validate_save_schema(self.build)
 
     def test_nested_licenses_and_spdx_texts_included(self):
         source = self.build / "vendor"

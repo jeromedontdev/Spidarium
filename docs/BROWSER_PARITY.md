@@ -1,5 +1,34 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.16: shared SNES artwork and chrome
+
+All 119 non-spider PNGs now use the same finite, crisp material ramps: sixteen
+quiet terrain backgrounds, all decor/gifts, forty bug frames, thirteen HUD
+glyphs and eleven badges. The 39 approved spider exports and both renderers
+remain byte-identical.
+
+Native/browser menus and all three games (Bug Hunt, Color Match, Quick Tap)
+use flat two-pixel chrome. Bug Hunt targets and decoys use the refreshed prey
+PNGs; Color Match and Quick Tap retain their native finite signal palette,
+timing and scoring. Browser tests execute all eight bug-art paths, preview/
+active color states and wait/feint/green states. Native `uitest` checks tile/
+timer styling and actual Bug Hunt image descriptors alongside its existing
+eight-round, cancellation and reward tests. Settings Back now returns to the
+root instead of reopening Settings, so care and games remain reachable.
+
+The final firmware's actual `save schema` response was captured: **v8**,
+**35 fields**, payload sizes **120/236**, `decor_owned` at 160 and twelve
+six-byte `decor` slots at 164. The tracked browser/release schema is updated
+from that response, replacing the stale v5 source file; the firmware save
+layout itself did not change. Packaging rejects a schema with an outdated
+version or invalid/incomplete field bounds before creating the release.
+The USB save inspector now accepts that v8 schema and 248-byte raw saves,
+decodes all twelve little-endian decor slots, and keeps reading older v2/v5/
+v6/v7 payload prefixes. Decor is displayed as JSON, not `[object Object]`.
+The browser decoder also passed against a read-only actual device export.
+Full-flash installation preserves NVS. Exact validation evidence belongs in
+the newest [progress round](../PROGRESS.md).
+
 ## v1.1.14 follow-up: moving decor, shop icons, and sleep
 
 Decor can now be moved on both targets. The device adds `decor_move()` and a

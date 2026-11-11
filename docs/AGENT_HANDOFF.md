@@ -13,6 +13,19 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.16: [complete SNES art/chrome release](RELEASE_v1.1.16.md).
+  All 119 non-spider assets now share the [style contract](ART_STYLE.md):
+  quiet terrain, shaded decor/gifts, material-lit prey, splatters, icons and
+  badges. Both spider renderers and all 39 exports remain unchanged.
+  Native/browser/website chrome uses flat navy/mint/gold, two-pixel stepped
+  corners, hard borders and highlights, not gradients or blurred shadows.
+  Keep touch geometry, keyboard coverage, readable Montserrat and distinct
+  disabled/selected/destructive/focus states. The generator is authoritative;
+  ordinary validation now protects **all 158 source PNGs**, superseding the
+  historical 84-image preservation subset. Generate an approved redesign
+  before validation. `asset_build.py --png-only --preview PATH.png` reviews
+  every non-spider asset; CI checks art before website publication.
+
 - v1.1.1: [HUD and screenshot update](RELEASE_v1.1.1.md). Battery chrome is
   transparent, HUD-only and safely inset; browser ear has an explicit origin
   and square viewport. Promotional fangs are mint, not player colors.
@@ -113,9 +126,13 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   `site/lib/spider-renderer.js`); the 39 `spider_*.png` are a generated export of
   that renderer, not preserved art. Sickness dulls the palette rather than
   applying canvas opacity, so the spider stays opaque against pale floors. The
-  current art does not yet meet the contract;
-  [ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md) is the measured gap and the
-  refinement brief.
+  terrain/decor redraw replaces smooth noise with crisp edge material clusters
+  and quiet three-tone centers; placeable props and all eighteen gift
+  furnishings use 8-12 tones. Gift furniture is part of the decor art scope,
+  not an unchanged icon set. The spider and
+  its 39 exports are byte-identical to their pre-redesign state.
+  [ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md) is the current maintenance brief,
+  not the superseded proposal to add hundreds of interpolated colors.
 - Sixteen selectable habitats use one reusable 460,800-byte PSRAM canvas, not a
   web/prop object tree. Backgrounds are **ground texture only** — substrate,
   trail, grain, tonal drift — with no painted props, so the spider always has a
@@ -294,6 +311,7 @@ a matching full flash until a separate asset-update mechanism exists.
 - Queue copied state, not pointers to live LVGL objects or mutable game state.
 - Report rejection/failure explicitly; test failure cleanup and radio-off.
 - Compare internal/DMA `largest` before and after repeated operations.
-- Preserve dirty user changes. No commits or flash-wide erasures were requested.
+- Preserve dirty user changes. Commit only when requested; never erase NVS or
+  flash-wide storage for an artwork or menu change.
 - Append each round to [PROGRESS](../PROGRESS.md), including Decisions made and
   honest build/flash/hardware evidence. Do not label blocked checks as passed.

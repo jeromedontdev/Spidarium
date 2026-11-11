@@ -24,6 +24,14 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: site/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate deterministic pixel artwork
+        run: |
+          python -m pip install Pillow
+          python -m unittest discover -s tools -p test_art_style.py -v
+          python tools/asset_build.py --png-only
       - name: Test browser logic
         working-directory: site
         run: npm ci && npm test

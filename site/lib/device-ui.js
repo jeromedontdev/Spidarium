@@ -323,7 +323,7 @@ export class DeviceGame {
     else if (name === 'Daily' || name === 'Treats') this.open('Menu');
     else if (name === 'Decor Item') this.open('Placed Decor');
     else if (name === 'Placed Decor') this.open('Decor');
-    else this.open(['Backgrounds', 'Achievements', 'Prey Species', 'Decor'].includes(name) ? 'Menu' : 'Settings');
+    else this.open(['Backgrounds', 'Achievements', 'Prey Species', 'Decor', 'Settings'].includes(name) ? 'Menu' : 'Settings');
   }
   /** The Daily row's subtitle: what is waiting for the player right now. */
   dailyDetail() {
@@ -498,12 +498,12 @@ export class DeviceGame {
           const image = element('img', ''); image.src = asset(`prey_${item.key}_walk_0`); image.alt = title(item.name);
           button.append(image);
         }
-        button.style.background = '#253a4c';
+        button.style.background = '#24405a';
       } else if (g.kind === 1) {
         button.style.background = COLOR_RGB[g.colors[i]];
         button.lastChild.textContent = g.preview ? '...' : COLOR_NAMES[g.colors[i]];
       } else {
-        button.style.background = g.ready ? '#296e55' : g.feints >= 2 ? '#b94646' : g.feints ? '#846421' : '#1c3044';
+        button.style.background = g.ready ? '#296e55' : g.feints >= 2 ? '#b94646' : g.feints ? '#846421' : '#24405a';
         button.lastChild.textContent = g.ready ? 'Tap!' : g.feints >= 2 ? 'NOT YET' : g.feints ? 'HOLD' : 'WAIT';
       }
     });

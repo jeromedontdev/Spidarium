@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import struct
 import zipfile
@@ -68,9 +69,38 @@ def copy_licenses(source: Path, destination: Path) -> None:
             shutil.copyfile(path, target)
 
 
+def validate_save_schema(root: Path) -> Path:
+    schema_path = root / "site" / "save-schema.json"
+    if not schema_path.is_file():
+        raise ValueError("Capture the compiled save schema before packaging")
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    config = (root / "main" / "game_config.h").read_text(encoding="utf-8")
+    version = re.search(r"^#define\s+SAVE_VERSION\s+(\d+)\s*$", config, re.MULTILINE)
+    if not version or schema.get("version") != int(version[1]):
+        raise ValueError("Stale save schema: capture it from the verified firmware")
+    sizes = schema.get("payloadSizes", [])
+    if (schema.get("headerSize") != 12 or len(sizes) != 2 or
+            any(type(size) is not int or size <= 0 for size in sizes) or sizes[0] > sizes[1]):
+        raise ValueError("Invalid save schema header/payload sizes")
+    fields = schema.get("fields", [])
+    names = set()
+    ends = []
+    for field in fields:
+        width = {"u8": 1, "u16": 2, "u32": 4}.get(field["type"], field["length"])
+        if (field["name"] in names or width <= 0 or field["offset"] < 0 or
+                field["offset"] + width > sizes[1]):
+            raise ValueError("Invalid save schema field bounds or duplicate name")
+        names.add(field["name"])
+        ends.append(field["offset"] + width)
+    if not ends or max(ends) != sizes[1]:
+        raise ValueError("Save schema does not describe the complete current payload")
+    return schema_path
+
+
 def package(root: Path, version: str) -> Path:
     build = root / "build"
     manifest = image_manifest(build, version)
+    schema = validate_save_schema(root)
     output = root / "release" / f"spidarium-v{version}"
     web = root / "site" / "firmware"
     output.mkdir(parents=True, exist_ok=True)
@@ -87,9 +117,6 @@ def package(root: Path, version: str) -> Path:
     shutil.copyfile(notes, output / "README.md")
     shutil.copyfile(root / "LICENSE", output / "LICENSE")
     shutil.copyfile(root / "docs" / "BROWSER_PARITY.md", output / "BROWSER_PARITY.md")
-    schema = root / "site" / "save-schema.json"
-    if not schema.is_file():
-        raise ValueError("Capture the compiled save schema before packaging")
     shutil.copyfile(schema, output / "save-schema.json")
     description = json.loads((build / "project_description.json").read_text())
     notices = output / "third-party"
@@ -116,7 +143,7 @@ def package(root: Path, version: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", default="1.1.1")
+    parser.add_argument("--version", required=True, help="exact version of the verified build")
     args = parser.parse_args()
     package(Path(__file__).resolve().parents[1], args.version)
 

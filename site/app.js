@@ -64,7 +64,9 @@ function showSave(bytes) {
   const table = document.createElement('table');
   for (const [name, value] of Object.entries(parsed.fields)) {
     const row = document.createElement('tr'), key = document.createElement('td'), cell = document.createElement('td');
-    key.textContent = name; cell.textContent = String(value); row.append(key, cell); table.append(row);
+    key.textContent = name;
+    cell.textContent = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    row.append(key, cell); table.append(row);
   }
   $('#save-view').replaceChildren(table); deviceUI();
 }

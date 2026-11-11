@@ -58,8 +58,16 @@ Achievements use ten distinct authored 48px badges, including Perfect Hunt;
 the retired First Pet badge remains mapped for legacy data but is not earnable.
 `ui_menu_set_item_icon(item, asset_index)` attaches an icon without changing
 static item definitions. Backgrounds has no root-card subtext.
-Shared `ui_style_card()` supplies rounded silk-bordered panels and pressed
-outlines without shadows, filters or per-frame object creation. Prev/Next
+Shared `ui_style_card()` supplies two-pixel corner steps, opaque two-pixel
+borders, flat fills and hard ink/pressed outlines. No gradient fills, blurred
+shadows, filters or per-frame object creation. The native palette is navy
+`0x16283c` panels, `0x24405a` rows, `0x2b6a5f` selection, mint `0x76d6b1`
+and gold `0xb99b67`; text remains readable Montserrat. Setup/status cards,
+square slider/bar tracks, keyboard keys and minigame tiles share this language.
+The browser and website follow it with visible focus and hard inset highlights.
+HUD fill translucency and the folded ear are intentional exceptions, not
+permission to smooth the artwork. See [the full style contract](ART_STYLE.md).
+Prev/Next
 remain visible, gray and inert at both page boundaries, including single pages.
 Routine WiFi actions have no explanatory subtext; status/errors, scan security
 and unavailable-action requirements remain visible.

@@ -1,182 +1,184 @@
-# Spidarium asset style
+# Spidarium art style
 
-Spidarium's art direction is **16-bit SNES-era pixel art**: the look of a
-late-generation 16-bit console game, not an 8-bit micro, not a vector
-illustration, and not a filtered photo.
+## Direction
 
-The distinction matters because it is easy to drift into the wrong one. An
-8-bit look is a handful of flat colours, one-pixel outlines and no shading. A
-16-bit look keeps the crisp pixel grid but spends far more of its budget on
-volume and material: crescent shading, three to five tones per material, a hard
-terminator between lit and shadowed faces, bounce light on the shadow side, ink
-rims that separate a prop from the floor, and enough colour depth that a rock
-reads as stone rather than as a grey blob.
+**16-bit SNES-era pixel art**, with crisp clusters, hue-shifted material ramps,
+top-left lighting, shaded volume and broken highlights. Not smooth noise,
+vector shapes, filtered photographs, or flat 8-bit silhouettes.
 
-The current art does not yet meet this contract. See
-[ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md) for the measured gap and the plan.
+The November 2026 reference is a nine-panel sheet of woodland, ruins, desert,
+mushroom glade, autumn, snow, shore, crystal cave and pond scenes. Its useful
+qualities are readable materials, stepped edges, rich foliage and shaded
+objects. The game deliberately uses a **quieter, more open composition**:
+the spider and player-placed decor must remain the focal points.
+The reference was supplied in chat, not committed as a source asset.
 
-## The 16-bit contract
+Do not restyle the approved spider. This direction applies to every other
+asset and to native/browser/website chrome; it does not authorize changes to
+spider geometry, palettes or rendering.
 
-| Rule | Why |
-|---|---|
-| Integer geometry only, drawn on a half-resolution canvas, then enlarged exactly 2× with nearest-neighbour | Keeps every pixel a crisp 2×2 block. No antialiasing, no filtered resizes. |
-| Binary alpha (0 or 255) on every sprite | LVGL blends RGB565A8; a soft alpha edge would smear the pixel grid. |
-| Ink rim on every prop silhouette | A prop must separate from the substrate. Without the rim, dark decor on a dark floor disappears. |
-| Three-to-five tone ramp per material: ink rim, shadow, body, highlight, specular | This is the whole difference between 8-bit and 16-bit. Two tones read flat; three is the floor, not the target. |
-| A hard terminator between the lit and shadowed faces | A visible band, not a smooth falloff. This is what separates 16-bit from airbrushed. |
-| A bounce-light sliver on the shadow side | A one-pixel sliver of the material's own hue, lightened. The single most "16-bit" trick there is. |
-| Crescent shading, not concentric rings | Offset the highlight ellipse up-left and re-stamp the body over its lower-right. Concentric rings read as a flat disc with a border. |
-| Light always from the top-left | Every prop, every theme, every frame. |
-| No gradients, no translucent shadows, no blur | The grid is the style. A gradient is a filtered resize in disguise. |
-| Backgrounds are exempt from the 12-colour cap and the 2×2 uniformity rule | They are authored at native 240×240 and are illustrations, not sprites. |
+## Pixel and palette contracts
 
-## Pixel-grid contract
+| Group | Logical canvas | PNG / runtime size | Visible colors |
+|---|---|---|---|
+| Living prey | 24x24 | 48x48 | 9-12 |
+| Prey splatters | 24x24 | 48x48 | 6-12 |
+| UI icons | 24x24 | 48x48 | 5-12; simple arrows remain readable |
+| Achievement badges | 24x24 | 48x48 | 8-12 |
+| Gifts | 16x16 | 32x32; gifts displayed at 64x64 | 8-12 |
+| Placeable decor | 32x32 | 64x64; runtime uses footprint radius | 8-12 |
+| Legacy decor | Half its PNG dimensions | Existing dimensions unchanged | At most 12 |
+| Backgrounds | 240x240 | 240x240, enlarged to 480x480 | At most 64 |
+| Spider exports | 96x96 | 96x96 | At most 12; approved renderer unchanged |
 
-| Group | Logical canvas | PNG and runtime size |
-|---|---|---|
-| Prey | 24×24 | 48×48 |
-| UI icons | 24×24 | 48×48 |
-| Achievement badges | 24×24 | 48×48 |
-| Gifts | 16×16 | 32×32 |
-| Placeable decor | 32×32 | 64×64 |
-| Enclosure ground textures | 240×240 | 240×240 source → 480×480 floor canvas |
+Sprites use exact nearest-neighbor doubling: each aligned 2x2 block is uniform.
+Backgrounds and spider exports use native single-pixel detail and are exempt
+from that rule. All alpha is binary; backgrounds are fully opaque.
+No smoothing, blur, continuous gradients or translucent shadows.
 
-Sprites keep the 2×2 uniformity rule and the 12-visible-colour cap. Backgrounds
-keep neither: they are authored at the panel's native 240×240 and enlarged 2×
-into the 480×480 canvas at runtime, so each source pixel covers a 2×2 block
-without being quantised to a tiny palette. Backgrounds must still be fully
-opaque.
+## Terrain: detail at the edges, breathing room in the middle
 
-## Enclosure ground textures
+All sixteen saved theme IDs remain unchanged. Backgrounds are low-profile
+terrain, not pre-furnished rooms:
 
-Backgrounds are **ground texture only**. They are the substrate a keeper would
-actually use — cork, moss, leaf litter, sand, coir, bark chip, gravel — seen
-from directly above, with a meandering trail and fine grit. They contain no
-props.
+- Cork and woodland: warm substrate with rimmed bark chips.
+- Moss and mushroom: green clearings with moss cushions; mushroom has tiny
+  edge fungi, not a mandatory large mushroom house.
+- Leaf litter: warm soil and separate red/gold leaf fragments.
+- Sand, seashell and desert: sparse sand grains, stepped ripples and edge
+  stone; shell fragments and desert shoots distinguish those themes.
+- Fern and orchid: earthy or plum ground, with shallow fern/leaf banks and
+  small orchid accents at the margins.
+- Gothic and cemetery: quiet beveled paving, respectively violet and blue-gray.
+- Succulent: teal gravel with small fleshy edge shoots.
+- Willow: yellow-green bank with a shallow corner of rippled water.
+- Crystal: violet mineral ground with embedded edge facets.
+- Minimal: pale, sparsely marked substrate with very little edge detail.
 
-This is a deliberate split. Earlier rounds painted furniture into the
-background, and the result was cluttered: the spider had poor contrast against
-its own floor, and every enclosure looked like the same scene recoloured. Props
-are now **placeable decor** the player buys with Silk and positions themselves,
-which is what makes an enclosure feel arranged rather than painted.
+The central **160x160 source pixels**, coordinates `[40,200)` on both axes,
+use at most **three closely spaced substrate tones**, with luminance span
+at most **24/255** (integer luma weights 299/587/114). On screen this protects
+a 320x320 play area. Strong outlines, stones, foliage banks and accent colors
+stay outside it. Fine center texture is clustered and low contrast, never
+isolated bright/dark noise.
 
-Each ground texture is built from:
+This is an intentional refinement of the former "ground texture only" brief:
+small non-blocking terrain-edge vegetation is allowed, but large logs,
+shelters, trees, crystals and other furniture remain optional placeable decor.
+Painted edge materials do not add collision obstacles.
 
-- layered value noise at three scales (coarse, medium, fine) so the substrate
-  has structure at more than one distance;
-- directional light from the top-left with a vignette, so the floor has a
-  consistent light source;
-- an optional meandering trail blended over about 7 px, in a warm earth tone
-  distinct from both the floor and any foliage;
-- gentle tonal drift that never goes darker than the base, plus fine grit.
+Use a finite palette of discrete material ramps. Do not revive the old advice
+to target 200-900 colors, interpolate shading, add value-noise octaves or
+increase contrast everywhere. Color count is a regression guard, not proof of
+art quality: inspect the actual composition with the spider and placed items.
 
-**This is the current implementation, and it is not yet the target.** Value
-noise has no edges, so the result reads as mud, fog or wallpaper rather than as
-a material. The target is a scatter of **discrete, rimmed elements** — bark
-chips, moss cushions, gravel stones, shell fragments, flagstones, per theme —
-each with an ink rim, a shadow tone, a body tone, a highlight tone and a
-bounce-light sliver. A 16-bit floor is legible because each element on it is a
-shape with a rim and its own tone ramp. See
-[ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md).
+## Decor
 
-Palettes are generated from HLS specs rather than hand-picked, so every theme
-keeps the same contrast structure: the floor sits in a narrow lightness band,
-and the trail always separates from it. Hand-picked greens kept collapsing into
-the substrate. Every theme must measure **mean luminance 0.34–0.58** and **mean
-saturation ≥ 0.35** so the mid-grey spider always separates from its floor.
+All sixteen placeable sprites have 8-12 visible tones. Distinct material
+surfaces matter more than simply adding colors:
 
-Do not reintroduce canopies, pebble scatter, flower clusters, fronds or any
-other prop primitive into the background path. If a scene needs a prop, it is a
-decor item.
+- Rocks have lit upper faces, cool shadow planes, small chips and broken rims.
+- The hollow log has bark grain, a cut rim and a dark opening; bark has
+  paired light/dark furrows.
+- Ferns have curved rachises with separate paired pinnae; not a grass star.
+- Moss has overlapping cushions with short shoots; succulents have layered,
+  pointed leaves, not a ring of green circles.
+- Flowers and mushroom caps have hard-banded volume and material details.
+- Shell ribs converge at the hinge; crystals have separate lit/shadow facets.
+- Leaves, twigs and bone retain readable outlines and small surface accents.
 
-## Placeable decor
+Shading is clipped inside the silhouette. `_blob()` must not spill offset
+highlight/shadow ellipses outside an ink rim. `_leaf_shape()` draws lit and
+shadowed halves and a midrib. Top-left lighting is shared throughout.
+Legacy `decor_*.png` derive from the same redesigned placeable art.
 
-Sixteen kinds, each a 32×32 logical sprite doubled to 64×64. Each has a
-footprint radius and a blocking flag:
+**Decor includes all eighteen gift furnishings**, not only the sixteen
+`decoritem_*.png` props. Gifts use the same top-left light, ink rims, shaded
+wood/stone/foliage and 8-12 visible tones within their smaller 16x16 logical
+canvas. Their stable filenames denote gameplay IDs, not literal jewels:
+Crystal/Sapphire Lookouts and Royal Perch are furniture; Leaf Shelter,
+Acorn Hide, Bone Tunnel and Diamond Retreat are usable-looking shelters.
+Shared cut-wood platforms have grain and lit edges; gemstone accents have
+facets, foliage has separate leaf planes, and silk has woven folds.
 
-- **blocking** — the spider steers around it and will not walk over it;
-- **non-blocking** — the spider walks straight over it.
+Never change catalogue IDs, ordering, footprint radii, blocking defaults or
+save data for an art-only change. The C enum/catalogue, sprite mappings,
+validator and browser catalogue must continue to agree.
 
-Blocking is a steering input, not a positional shove, so the spider turns away
-before reaching the item instead of grinding against it. The renderer draws each
-item at `radius * 4` pixels so the art and the collision circle agree.
+## Prey, glyphs and badges
 
-The catalogue order is load-bearing: `decor_kind_t` in `main/decor.h`,
-`k_decor_kinds[]` in `main/decor.c`, `k_decor_items[]` in `main/sprites.c`,
-`DECOR_ITEMS` in `tools/asset_build.py`, and `DECOR_KINDS` in
-`site/lib/device-engine.js` must all agree.
+All forty prey frames now use discrete top-left highlights and lower-right
+shadows on body, shell and wing clusters. Ink, legs, antennae, species sizes
+and walk/flee silhouettes remain readable; no smoothing or random color noise.
+All eight dead frames retain their species-colored puddle, detached droplets
+and separate silhouettes, with a broken highlight and darker pooled edge.
 
-A fern is drawn as a rosette of arcing fronds — a curved rachis with paired
-pinnae stamped along it, shrinking toward the tip. Drawing a fern as one pointed
-blade is what makes it read as grass.
+All thirteen action/stat glyphs and eleven achievement badges share the
+same cluster lighting. Keep their recognizable motifs and semantic colors:
+mint hygiene, amber food, blue energy, gold XP, and individual badge accents.
+`_shade_materials()` changes only exact selected material colors within
+existing clusters; it never changes alpha, ink or unrelated details.
 
-The current props use only three to seven colours each against a cap of twelve,
-which is the 8-bit look the contract above rejects. The target is **8–10 tones
-per prop**: ink rim, shadow, body, terminator band, highlight, specular, plus
-material detail (grain, facets, speckles). See
-[ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md).
+## Menu and website chrome
 
-## Generate and validate
+Native modal rows, setup, status, care cards, editor keys, sliders and minigame
+tiles use flat palette fills, opaque two-pixel borders, two-pixel corner steps
+and hard ink/pressed outlines. No gradient fills or blurred drop shadows.
+Shared `ui_style_card()` owns the native card contract. Preserve touch sizes,
+keyboard coverage, selection markers, destructive red and disabled navigation.
+The care overlay may retain its intentional translucent fill; the folded ear,
+physical viewport mask and approved spider are not redesigned.
 
-Pillow is required. From the repository root:
+Browser game chrome and the website use the same navy/mint/gold palette and
+local Montserrat. Hard inset highlights are allowed; artwork is displayed
+without recoloring or smoothing. Keep visible keyboard focus, readable labels,
+mobile layouts and distinct selected/disabled/destructive states. This is a
+pixel-art visual treatment, not an instruction to replace text with tiny
+bitmap lettering or change game behavior.
+
+## Generate, pack and verify
+
+Edit [the generator](../tools/gen_sprites.py), not individual PNGs. Geometry is
+pixel-snapped; procedural curves may calculate positions before snapping.
+Random placement uses fixed per-theme seeds. No downloaded art or machine fonts.
+
+From the repository root:
 
 ```powershell
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' -m unittest discover -s tools -p test_art_style.py -v
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\gen_sprites.py
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\asset_build.py --png-only
+powershell -File build.ps1
 & 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\asset_build.py
 ```
 
-`tools\gen_sprites.py` deterministically writes all assets into `assets\`.
-`tools\asset_build.py` runs it twice and checks the exact file set, count,
-dimensions, PNG format, RGBA mode, identical SHA-256 hashes across both runs,
-byte-for-byte preservation of the accepted images, and the non-spider
-pixel-grid/alpha/palette contract. Background opacity is checked separately.
+For a complete review sheet, add `--preview PATH.png` to the validator.
+It lays out all 119 non-spider assets with nearest-neighbor sampling.
 
-It also validates an existing MMAP pack, decodes its QOI streams, and compares
-every pixel with the PNGs. Use `--png-only` while the existing pack is stale;
-runtime mapping checks remain enabled. After rebuilding, run the default command
-or `--packed PATH` to validate the packed image.
+The validator checks 158 RGBA PNGs, dimensions/names, binary alpha, sprite grid,
+palette limits, quiet centers, deterministic hashes across two passes, runtime
+mappings, and every decoded QOI pixel in the existing pack. Every source PNG,
+including backgrounds, badges and spider exports, must remain byte-identical
+across ordinary validation runs. For an explicitly approved redesign, run the
+edited generator first to establish the new source baseline; this does not
+bypass any style or packed-pixel check. CI runs both art tests and source
+validation before publishing the site.
 
-Preservation compares the files present before a validator run. Achievements,
-dead-prey splatters, backgrounds and the 39 spider frames are
-preservation-exempt, never exempt from determinism or pixel/palette tests. The
-spider frames are exempt because they are a generated export of
-`main/cspider.c`: they must change whenever the renderer does. For an intentional
-approved redesign, run the edited generator first, then validate with
-`--png-only` and rebuild the pack.
+Build only with the wrappers. Never hand-edit the generated MMAP header.
+After a browser build, run `tools\prepare_website.py --assets-only` to copy
+the exact same PNGs into the distribution. Source browser rendering already
+loads the root assets. Art changes need no new runtime buffers or per-frame objects.
+See [the handoff](ART_HANDOFF_SNES.md) for hardware and visual acceptance.
 
-## Adding or replacing art
+## Spider preservation
 
-1. Add deterministic integer Pillow geometry on a half-resolution canvas and a
-   filename in `tools\gen_sprites.py`. Use `_enlarge()` only for exact
-   nearest-neighbour doubling. Avoid random inputs, machine fonts, external
-   downloads, float geometry, and smoothing.
-2. Update the expected names and native dimensions in `tools\asset_build.py`.
-3. If runtime code needs the asset, add its generated enum mapping in
-   `main\sprites.c` and reference it from the owning renderer. The enum is
-   produced by the ESP-IDF asset-pack step; do not hand-edit
-   `main\mmap_generate_storage.h`.
-4. Run `asset_build.py`, then build with `build.ps1` to pack the PNGs as QOI.
+`main/cspider.c` draws the approved 96x96 RGB565A8 spider.
+`site/lib/spider-renderer.js` is its pixel port; the 39 `spider_*.png` are a
+generated export, not the live device renderer. An art-only terrain/decor
+change must leave all three byte-identical. Compare against pre-edit hashes,
+not only hashes taken immediately before a validation run.
 
-The spider is **not** a sprite sheet. `main/cspider.c` draws it procedurally into
-a 96×96 RGB565A8 canvas every frame, and `site/lib/spider-renderer.js` is a pixel
-port of that renderer. `draw_spider()` in the generator is a faithful export of
-the same geometry, palette and RGB565 quantisation, so the published PNGs show
-the creature the panel actually draws. Keep the two in step: if you change the
-renderer, regenerate the spider frames. Do not restyle the spider — the player
-has explicitly approved how it looks.
-
-**Both ports must compute in binary32.** `cspider.c` uses `float`, so the
-generator rounds every intermediate through `_f32()` and the browser port through
-`Math.fround`. This is not pedantry: `cosf(PI_F / 2)` is `-4.37e-8` while
-`Math.cos(Math.PI / 2)` is `+6.12e-17`, and a coordinate that lands exactly on an
-integer truncates one pixel apart between the two. The generator also uses C
-integer division (`_idiv`) rather than Python's floor division, because the two
-disagree for negative operands.
-
-Draw order matters as much as arithmetic. `cspider_render()` draws **both** eyes,
-then **both** pupils, then **both** fangs. Interleaving them per side lets the
-second eye overwrite the first pupil's inner edge, which is a visible notch at
-this size. A browser test decodes all 39 exported PNGs and compares them to the
-renderer pixel for pixel, so neither mistake can return silently.
-
-The checked asset set currently contains 158 PNGs (119 non-spider); the runtime
-descriptor table is sized from the generated asset count.
+Both ports calculate in binary32 (`_f32()` / `Math.fround`); generator division
+uses C truncation (`_idiv`). Preserve draw order: both eyes, both pupils, both
+fangs. The browser test compares every pixel of all 39 exports to its renderer.
+Do not replace these invariants with approximate visual similarity.

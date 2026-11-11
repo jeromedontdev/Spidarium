@@ -7,3 +7,75 @@
 .feature-grid canvas{display:block;width:70px;height:70px;margin:7px 0 12px;image-rendering:pixelated;pointer-events:none}
 .hero-spider{image-rendering:pixelated;pointer-events:none}
 @media(max-width:740px){.feature-grid canvas{position:absolute;left:0;top:10px;width:65px;height:65px}}
+
+/* Shared SNES-style chrome; layout and control geometry stay unchanged. */
+:root {
+  --bg:#0a1220; --panel:#16283c; --panel2:#24405a;
+  --ink:#e8efda; --muted:#9aaeb5; --lime:#76d6b1;
+  --line:#b99b67; --pink:#ffb5ab;
+  --sans:Montserrat,Arial,sans-serif; --serif:var(--sans);
+}
+button, a { transition:none; }
+button:not(:disabled):hover, .button:hover { transform:none; }
+:focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
+.site-header, .spec-strip, .marquee, .sim-tabs, .hardware-tabs,
+.feature-grid, .feature-grid article, .notes-section, .notes-section details,
+.console-log { border-width:2px; }
+.site-header, .marquee, .notes-section { background:var(--panel); }
+.brand-tag, .marquee-mark, .marquee, .orbit-label, .gesture-hint,
+summary, .console-log summary { color:var(--muted); }
+h1, h2, h3 { font-weight:500; }
+.status-dot { border-radius:0; box-shadow:none; }
+.nav-pill, .button, .care-grid button, .menu-item button,
+.feed-selector button, .game-tile {
+  border:2px solid var(--line); border-radius:2px;
+  background:var(--panel2); color:var(--ink);
+  box-shadow:inset 2px 2px 0 #395873,inset -2px -2px 0 var(--bg);
+}
+.primary { background:var(--lime); color:var(--bg); border-color:var(--ink); box-shadow:inset 2px 2px 0 #a2edce,inset -2px -2px 0 #2b6a5f; }
+.danger { background:#4a2531; color:#ffb5ab; border-color:#dc8178; }
+.nav-pill:hover, .button:hover, .care-grid button:hover,
+.menu-item button:hover, .feed-selector button:hover, .game-tile:hover {
+  border-color:var(--lime);
+}
+button:not(:disabled):active, .button:active { box-shadow:inset 2px 2px 0 var(--bg); }
+button:disabled, .button:disabled {
+  opacity:1; background:var(--panel); color:var(--muted);
+  border-color:#526474; border-style:dashed; box-shadow:none; cursor:not-allowed;
+}
+.hero-vivarium {
+  border-color:var(--panel2);
+  box-shadow:0 0 0 2px var(--line),0 0 0 20px var(--panel),0 0 0 22px var(--line),8px 12px 0 22px var(--bg);
+  background:var(--panel);
+}
+.hero-moss, .hero-spider { filter:none; }
+.hero-name, .tank-bottom { background:var(--panel); color:var(--ink); }
+.device-preview { background:var(--panel); border:2px solid var(--line); border-radius:2px; box-shadow:6px 6px 0 var(--bg); }
+.canvas-shell { border-color:var(--panel2); box-shadow:0 0 0 2px var(--line); }
+.tank-top { text-shadow:none; }
+.silk-badge, .device-notice, .tool-card, .journal-grid div {
+  border:2px solid var(--line); border-radius:2px; background:var(--panel);
+}
+.silk-badge { color:var(--lime); }
+.tool-card { box-shadow:inset 2px 2px 0 #395873,4px 4px 0 var(--bg); }
+.tool-card input:not([type=checkbox]), .setting-input,
+.setting-row select, pre {
+  border:2px solid var(--line); border-radius:2px;
+  background:var(--bg); color:var(--ink);
+}
+progress { background:var(--panel2); border-radius:0; }
+progress::-webkit-progress-bar { background:var(--panel2); border-radius:0; }
+progress::-webkit-progress-value { border-radius:0; }
+progress::-moz-progress-bar { border-radius:0; }
+.sim-tabs button, .hardware-tabs button { border-radius:0; }
+.sim-tabs button[aria-selected=true], .hardware-tabs button[aria-selected=true] {
+  background:#2b6a5f; color:var(--ink); border-color:var(--lime);
+}
+.menu-item, .file-list li, .save-view td { border-bottom:2px solid var(--line); }
+dialog {
+  background:var(--panel); border:2px solid var(--line); border-radius:2px;
+  box-shadow:inset 2px 2px 0 #395873,8px 8px 0 var(--bg);
+}
+dialog::backdrop { background:#0a1220cc; backdrop-filter:none; }
+.game-tile.target { background:#2b6a5f; color:var(--ink); border-color:var(--lime); }
+.game-board.memory-hidden .target { background:var(--panel2); color:var(--ink); border-color:var(--line); }

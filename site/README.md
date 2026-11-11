@@ -4,6 +4,27 @@ A static, vanilla ES-module website for the Waveshare
 ESP32-S3-Touch-AMOLED-2.16. No accounts, telemetry, external font/CDN requests,
 or cloud credential services.
 
+## Visual style
+
+The whole set uses SNES-style pixel artwork: quiet habitat centers, all decor
+and gift furnishings, and matching flat menu chrome. Panels use `#16283c`, rows
+`#24405a`, selected rows `#2b6a5f`, mint `#76d6b1` and gold `#b99b67` over deep
+ink `#0a1220`. Opaque two-pixel borders, square/two-pixel corners and hard inset
+highlights replace gradients, blur and soft shadows. The physical viewport
+shell remains rounded; spider and terrain pixels have no CSS filter effects.
+The existing local Montserrat font is shared with the landing page.
+
+Disabled controls have dim text and dashed borders; destructive actions use
+red, selection uses mint with an inset marker, and keyboard focus uses a light
+outline. Slider, checkbox and keyboard geometry and interactions are retained.
+These source changes do not imply that a build has been deployed or published.
+
+Focused visual CSS regressions (no build, browser or hardware required):
+
+```powershell
+node --test tests/visual-style.test.mjs
+```
+
 ## Run and build
 
 Requires Node.js 22+ and npm. In `site`:

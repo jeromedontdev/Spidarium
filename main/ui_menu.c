@@ -14,20 +14,12 @@
 #include "power.h"
 #include "ui_style.h"
 
-#define COL_PANEL  0x101c2c
-#define COL_CARD   0x1c3044
+#define COL_PANEL  0x16283c
+#define COL_CARD   0x24405a
 #define COL_TEXT   0xe8efda
 #define COL_DIM    0x9aaeb5
 #define COL_ACCENT 0x76d6b1
-/* Menu chrome. The panel is a vertical gradient rather than a flat fill so the
- * surface reads as a lit card instead of a plain rectangle, and the header
- * carries an accent rule that separates the title from the rows. */
-#define COL_PANEL_TOP 0x16283c
-#define COL_PANEL_BOT 0x0a1220
-#define COL_CARD_TOP  0x24405a
-#define COL_CARD_BOT  0x16283a
-#define COL_CARD_SEL_TOP 0x2b6a5f
-#define COL_CARD_SEL_BOT 0x1a4a44
+#define COL_CARD_SELECTED 0x2b6a5f
 #define COL_RULE      0x76d6b1
 #define COL_GOLD      0xb99b67
 #define PAGE_ROWS 3
@@ -184,15 +176,9 @@ static void open_panel(const char *title)
     lv_obj_remove_style_all(s_menu);
     lv_obj_set_size(s_menu, MENU_WIDTH, MENU_HEIGHT);
     lv_obj_center(s_menu);
-    /* A vertical gradient reads as a lit surface rather than a flat rectangle. */
-    lv_obj_set_style_bg_color(s_menu, lv_color_hex(COL_PANEL_TOP), 0);
-    lv_obj_set_style_bg_grad_color(s_menu, lv_color_hex(COL_PANEL_BOT), 0);
-    lv_obj_set_style_bg_grad_dir(s_menu, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_color(s_menu, lv_color_hex(COL_PANEL), 0);
     lv_obj_set_style_bg_opa(s_menu, LV_OPA_COVER, 0);
     ui_style_card(s_menu, COL_GOLD, false);
-    lv_obj_set_style_shadow_width(s_menu, 24, 0);
-    lv_obj_set_style_shadow_color(s_menu, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_shadow_opa(s_menu, LV_OPA_50, 0);
     lv_obj_set_scrollable(s_menu, false);
     lv_obj_set_clickable(s_menu, true);
 
@@ -201,25 +187,19 @@ static void open_panel(const char *title)
     lv_obj_t *back = button(s_menu, 12, 12, 96, 56, LV_SYMBOL_LEFT, on_back, NULL);
     lv_obj_set_style_bg_color(back, lv_color_hex(0x1a2b3d), 0);
     lv_obj_set_style_border_color(back, lv_color_hex(COL_GOLD), 0);
-    lv_obj_set_style_border_opa(back, LV_OPA_40, 0);
+    lv_obj_set_style_border_opa(back, LV_OPA_COVER, 0);
 
     lv_obj_t *heading = label(s_menu, title ? title : "", &lv_font_montserrat_18);
     lv_obj_set_pos(heading, 120, 26);
     lv_obj_set_width(heading, MENU_WIDTH - 132);
     lv_label_set_long_mode(heading, LV_LABEL_LONG_DOT);
 
-    /* Accent rule under the header: a thin gradient bar that fades out to the
-     * LEFT, so the bright end sits under the title and the dim end runs away
-     * from the Back button. Fading right put the bright end directly beneath
-     * the Back button, which read as a highlight on the wrong control. */
     lv_obj_t *rule = lv_obj_create(s_menu);
     lv_obj_remove_style_all(rule);
     lv_obj_set_pos(rule, 12, 68);
     lv_obj_set_size(rule, MENU_WIDTH - 24, 2);
-    lv_obj_set_style_bg_color(rule, lv_color_hex(COL_PANEL_BOT), 0);
-    lv_obj_set_style_bg_grad_color(rule, lv_color_hex(COL_RULE), 0);
-    lv_obj_set_style_bg_grad_dir(rule, LV_GRAD_DIR_HOR, 0);
-    lv_obj_set_style_bg_opa(rule, LV_OPA_70, 0);
+    lv_obj_set_style_bg_color(rule, lv_color_hex(COL_RULE), 0);
+    lv_obj_set_style_bg_opa(rule, LV_OPA_COVER, 0);
     lv_obj_set_clickable(rule, false);
 }
 
@@ -266,17 +246,11 @@ static void refresh_page(void)
         lv_obj_set_y(s_detail[i], multiline ? 26 : 48);
         lv_obj_set_style_text_color(s_label[i],
             lv_color_hex(it->id == s_destructive_id ? 0xff7777 : it->enabled ? COL_TEXT : COL_DIM), 0);
-        /* Selected rows get a warmer gradient and a lit accent bar down the left
-         * edge, so the current choice is legible at a glance rather than only by
-         * a subtle background shift. */
         lv_obj_set_style_bg_color(s_row[i],
-            lv_color_hex(it->selected ? COL_CARD_SEL_TOP : COL_CARD_TOP), 0);
-        lv_obj_set_style_bg_grad_color(s_row[i],
-            lv_color_hex(it->selected ? COL_CARD_SEL_BOT : COL_CARD_BOT), 0);
-        lv_obj_set_style_bg_grad_dir(s_row[i], LV_GRAD_DIR_VER, 0);
+            lv_color_hex(it->selected ? COL_CARD_SELECTED : COL_CARD), 0);
         lv_obj_set_style_border_color(s_row[i],
             lv_color_hex(it->selected ? COL_ACCENT : 0x2c4459), 0);
-        lv_obj_set_style_border_opa(s_row[i], it->selected ? LV_OPA_80 : LV_OPA_40, 0);
+        lv_obj_set_style_border_opa(s_row[i], LV_OPA_COVER, 0);
         lv_obj_set_hidden(s_accent[i], !it->selected);
         lv_obj_set_clickable(s_row[i], it->enabled);
         lv_obj_set_hidden(s_checks[i], !s_check_items[index]);
@@ -582,6 +556,8 @@ static void play_open(uint8_t kind, ui_minigame_reward_cb reward)
     lv_obj_set_pos(s_play_bar, 12, 132);
     lv_obj_set_clickable(s_play_bar, false);
     lv_obj_set_style_bg_color(s_play_bar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
+    lv_obj_set_style_radius(s_play_bar, 0, 0);
+    lv_obj_set_style_radius(s_play_bar, 0, LV_PART_INDICATOR);
     for (int i = 0; i < 4; i++) {
         int w = (MENU_WIDTH - 36) / 2;
         s_play_tiles[i] = button(s_menu, 12 + (i % 2) * (w + 12),
@@ -589,7 +565,6 @@ static void play_open(uint8_t kind, ui_minigame_reward_cb reward)
                                 NULL, play_pick, (void *)(uintptr_t)i);
         s_play_text[i] = label(s_play_tiles[i], "", &lv_font_montserrat_24);
         lv_obj_center(s_play_text[i]);
-        lv_obj_set_style_radius(s_play_tiles[i], 12, 0);
         lv_obj_set_style_border_width(s_play_tiles[i], 2, 0);
         lv_obj_set_style_border_color(s_play_tiles[i], lv_color_hex(0x4b6072), 0);
         s_play_images[i] = lv_image_create(s_play_tiles[i]);
@@ -709,6 +684,11 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
         lv_obj_align(s_marker[i], LV_ALIGN_RIGHT_MID, -14, 0);
         s_checks[i] = lv_checkbox_create(s_row[i]);
         lv_checkbox_set_text(s_checks[i], "");
+        lv_obj_set_style_radius(s_checks[i], UI_PIXEL_RADIUS, LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(s_checks[i], lv_color_hex(COL_PANEL), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_color(s_checks[i], lv_color_hex(COL_ACCENT),
+                                  LV_PART_INDICATOR | LV_STATE_CHECKED);
+        lv_obj_set_style_border_color(s_checks[i], lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
         lv_obj_align(s_checks[i], LV_ALIGN_RIGHT_MID, -14, 0);
         lv_obj_set_clickable(s_checks[i], false);
         lv_obj_set_hidden(s_checks[i], true);
@@ -722,6 +702,9 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
         lv_obj_set_style_bg_opa(s_sliders[i], LV_OPA_COVER, LV_PART_INDICATOR);
         lv_obj_set_style_bg_color(s_sliders[i], lv_color_hex(COL_TEXT), LV_PART_KNOB);
         lv_obj_set_style_pad_all(s_sliders[i], 4, LV_PART_KNOB);
+        lv_obj_set_style_radius(s_sliders[i], 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(s_sliders[i], 0, LV_PART_INDICATOR);
+        lv_obj_set_style_radius(s_sliders[i], UI_PIXEL_RADIUS, LV_PART_KNOB);
         lv_obj_add_event_cb(s_sliders[i], on_slider, LV_EVENT_VALUE_CHANGED,
                             (void *)(uintptr_t)i);
         lv_obj_set_hidden(s_sliders[i], true);
@@ -738,10 +721,8 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
     for (int i = 0; i < 2; i++) {
         lv_obj_t *pager = i ? s_next : s_prev;
         lv_obj_set_style_bg_color(pager, lv_color_hex(0x16283a), 0);
-        lv_obj_set_style_bg_grad_color(pager, lv_color_hex(0x0e1a28), 0);
-        lv_obj_set_style_bg_grad_dir(pager, LV_GRAD_DIR_VER, 0);
         lv_obj_set_style_border_color(pager, lv_color_hex(0x2c4459), 0);
-        lv_obj_set_style_border_opa(pager, LV_OPA_50, 0);
+        lv_obj_set_style_border_opa(pager, LV_OPA_COVER, 0);
     }
     s_page_label = label(s_menu, "", &lv_font_montserrat_14);
     lv_obj_align(s_page_label, LV_ALIGN_BOTTOM_MID, 0, -24);
@@ -812,8 +793,7 @@ void ui_menu_open_input(const char *title, const char *initial, bool password,
     lv_obj_set_style_text_font(s_input, &lv_font_montserrat_18, 0);
     lv_obj_set_style_bg_color(s_input, lv_color_hex(COL_CARD), 0);
     lv_obj_set_style_text_color(s_input, lv_color_hex(COL_TEXT), 0);
-    lv_obj_set_style_border_width(s_input, 0, 0);
-    lv_obj_set_style_radius(s_input, 4, 0);
+    ui_style_card(s_input, COL_ACCENT, false);
     lv_textarea_set_one_line(s_input, true);
     lv_textarea_set_password_show_time(s_input, 0);
     lv_textarea_set_password_mode(s_input, password);
@@ -837,7 +817,9 @@ void ui_menu_open_input(const char *title, const char *initial, bool password,
     lv_obj_set_style_pad_column(s_keyboard, 4, 0);
     lv_obj_set_style_bg_color(s_keyboard, lv_color_hex(COL_CARD), LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(s_keyboard, LV_OPA_COVER, LV_PART_ITEMS);
-    lv_obj_set_style_radius(s_keyboard, 3, LV_PART_ITEMS);
+    lv_obj_set_style_radius(s_keyboard, UI_PIXEL_RADIUS, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_keyboard, 2, LV_PART_ITEMS);
+    lv_obj_set_style_border_color(s_keyboard, lv_color_hex(0x76b9ad), LV_PART_ITEMS);
     lv_obj_set_style_text_color(s_keyboard, lv_color_hex(COL_TEXT), LV_PART_ITEMS);
     lv_obj_set_style_text_font(s_keyboard, &lv_font_montserrat_18, LV_PART_ITEMS);
     lv_obj_set_style_bg_color(s_keyboard, lv_color_hex(0x335568),
@@ -865,7 +847,12 @@ static bool test_minigames(void)
         play_open(kind, test_reward);
         lv_obj_update_layout(s_menu);
         ok = ok && lv_obj_get_width(s_play_tiles[0]) >= 180 &&
-             lv_obj_get_height(s_play_tiles[0]) >= 100;
+             lv_obj_get_height(s_play_tiles[0]) >= 100 &&
+             lv_obj_get_style_radius(s_play_tiles[0], 0) == UI_PIXEL_RADIUS &&
+             lv_obj_get_style_bg_grad_dir(s_play_tiles[0], 0) == LV_GRAD_DIR_NONE &&
+             lv_obj_get_style_shadow_width(s_play_tiles[0], 0) == 0 &&
+             lv_obj_get_style_radius(s_play_bar, 0) == 0 &&
+             lv_obj_get_style_radius(s_play_bar, LV_PART_INDICATOR) == 0;
         for (int round = 0; round < PLAY_ROUNDS; round++) {
             ok = ok && s_play_duration == (kind == 2 ? 620u - round * 45u : 2000u - round * 110u);
             if (kind == 1) {
@@ -879,6 +866,11 @@ static bool test_minigames(void)
                 ok = ok && !s_play_preview;
             }
             if (kind == 0) {
+                ok = ok && lv_image_get_src(s_play_target) ==
+                    assets_image(sprite_prey_index(s_play_bug, false, false, 0));
+                for (int tile = 0; tile < 4; tile++)
+                    ok = ok && lv_image_get_src(s_play_images[tile]) ==
+                        assets_image(sprite_prey_index(s_play_bugs[tile], false, false, 0));
                 int old = s_play_answer;
                 s_play_shift_at = lv_tick_get();
                 play_tick(s_play_timer);
@@ -964,6 +956,13 @@ bool ui_menu_test(void)
     bool targets_ok = lv_obj_get_height(s_row[0]) >= 76 &&
         lv_obj_get_width(lv_obj_get_child(s_menu, 0)) >= 96 &&
         lv_obj_get_height(s_next) >= 56;
+    targets_ok = targets_ok &&
+        lv_obj_get_style_radius(s_menu, 0) == UI_PIXEL_RADIUS &&
+        lv_obj_get_style_radius(s_row[0], 0) == UI_PIXEL_RADIUS &&
+        lv_obj_get_style_shadow_width(s_menu, 0) == 0 &&
+        lv_obj_get_style_bg_grad_dir(s_menu, 0) == LV_GRAD_DIR_NONE &&
+        lv_obj_get_style_bg_grad_dir(s_row[0], 0) == LV_GRAD_DIR_NONE &&
+        lv_obj_get_style_border_opa(s_row[0], 0) == LV_OPA_COVER;
     targets_ok = targets_ok && lv_obj_has_state(s_prev, LV_STATE_DISABLED) &&
         lv_color_eq(lv_obj_get_style_bg_color(s_prev, 0), lv_color_hex(0x1b2530)) &&
         !lv_obj_has_state(s_next, LV_STATE_DISABLED);
@@ -1011,6 +1010,8 @@ bool ui_menu_test(void)
          lv_obj_get_content_height(s_row[0]);
     ui_menu_open_input("Test password", "", true, 63, NULL);
     ok = ok && s_password && lv_textarea_get_password_mode(s_input);
+    ok = ok && lv_obj_get_style_radius(s_input, 0) == UI_PIXEL_RADIUS &&
+        lv_obj_get_style_radius(s_keyboard, LV_PART_ITEMS) == UI_PIXEL_RADIUS;
     ok = ok && !strcmp(lv_buttonmatrix_get_button_text(s_keyboard, 0), "q") &&
         !strcmp(lv_buttonmatrix_get_button_text(s_keyboard, 9), "p");
     test_key("a"); test_key("Aa"); test_key("B"); test_key("123");

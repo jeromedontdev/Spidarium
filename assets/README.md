@@ -1,97 +1,76 @@
-# Asset source files
+# Generated artwork
 
-These are generator outputs. Edit `tools\gen_sprites.py`, not individual PNGs, so
-art changes remain reproducible.
+Edit [tools/gen_sprites.py](../tools/gen_sprites.py), not individual PNGs.
+The [style contract](../docs/ART_STYLE.md) and
+[SNES handoff](../docs/ART_HANDOFF_SNES.md) describe the current direction.
 
-The spider is **not** a sprite sheet. `main/cspider.c` draws it procedurally into
-a 96×96 RGB565A8 canvas every frame, and `site/lib/spider-renderer.js` is a pixel
-port of that renderer. `draw_spider()` in the generator is a faithful export of
-the same geometry, palette and RGB565 quantisation, so the published PNGs show
-the creature the panel actually draws. Keep the two in step: if you change the
-renderer, regenerate the spider frames. Do not restyle the spider — the player
-has explicitly approved how it looks.
+The deterministic set contains **158 RGBA PNGs**: 39 spider exports, 40 prey
+frames, 13 UI icons, 11 achievement badges, 18 gifts, 16 placeable decor,
+five legacy decor and 16 backgrounds. IDs and dimensions are stable.
 
-Preservation compares the PNGs present before a validation run, not a committed
-hash baseline. Achievements, dead-prey files, backgrounds and the 39 spider
-frames are exempt. The spider frames are exempt because they are a generated
-export of `main/cspider.c` and must change whenever the renderer does. For an
-intentional approved gift/background change, edit the generator, run
-`tools\gen_sprites.py` first to establish the new source baseline, then validate
-with `tools\asset_build.py --png-only`, rebuild and validate the packed art.
-`--png-only` is not a preservation bypass.
+## Shared SNES artwork
 
-From the repository root, regenerate and validate the complete set with:
+Backgrounds are 240x240 native-pixel terrain, enlarged exactly 2x to the
+480x480 floor at runtime. Finite hue-shifted ramps, crisp texture clusters,
+rimmed edge materials and restrained foliage replace smooth noise and grit.
+Strong detail stays near the edges; the central 160x160 pixels use at most
+three substrate tones with luminance span <=24/255. Each background is opaque
+and uses at most 64 colors. Large furniture remains optional player decor.
+
+Sixteen `decoritem_*.png` props are authored at 32x32 and doubled to 64x64,
+with 8-12 visible material tones, ink rims, lit/shadow planes and surface
+details. The five legacy `decor_*.png` derive from the same art at their
+unchanged dimensions.
+
+All eighteen `gift_*.png` furnishings also use 8-12 material tones, with the
+same shaded wood, stone, foliage, facets and ink rims. This includes every
+shelter, perch, hammock, garden and toy, not only the separate decor catalogue.
+All forty prey frames, thirteen UI glyphs and eleven achievement badges now
+share discrete material lighting, without changing their recognizable motifs,
+species IDs or animation silhouettes. Living prey require 9-12 visible tones,
+splatters 6-12, icons 5-12 and badges 8-12. Simple arrows are deliberately
+less elaborate than furnishings. Sprites use uniform aligned
+2x2 blocks and binary alpha. Prey/icons are 48x48;
+gifts are 32x32 and use the existing reusable 64x64 PSRAM display buffer.
+No filtered resizing, blur, gradients or soft shadows.
+
+## Do not touch the approved spider
+
+`main/cspider.c` draws the live 96x96 RGB565A8 spider.
+`site/lib/spider-renderer.js` is its pixel port. The 39 `spider_*.png` are
+faithful exports of the same geometry, palette, draw order and binary32 math.
+Non-spider art/chrome work must leave all these byte-identical. Spider PNGs are
+exempt only from the sprite grid rule; their alpha/palette/determinism checks
+still apply. Browser tests compare all 39 exports pixel for pixel.
+
+## Generate and validate
+
+From the repository root:
 
 ```powershell
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' -m unittest discover -s tools -p test_art_style.py -v
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\gen_sprites.py
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\asset_build.py --png-only
+powershell -File build.ps1
 & 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\asset_build.py
 ```
 
-The script checks exactly 158 PNGs, their names and dimensions, RGBA mode,
-determinism across two runs, and byte-preservation of 84 accepted images,
-including all living prey art. Eight dead images intentionally become splatters
-and eleven achievement badges are added. The 119 non-spider assets are authored
-as retro pixel art at half resolution and enlarged exactly
-2× with nearest-neighbor sampling: prey/icons 24→48 px, gifts 16→32 px,
-backgrounds 120→240 px, and props at half their native sizes. Each 2×2 RGBA
-block must be uniform, alpha must be 0 or 255 (always 255 for backgrounds),
-and each asset has at most 12 visible colors. The 39 spider frames are exempt
-from the 2×2 grid rule only, because they are a direct export of the device
-renderer; they are still checked for binary alpha, determinism and the
-12-colour limit.
-No smoothing, gradients, translucent shadows, or downsampled vector art.
+Validation checks the exact file set, dimensions, PNG/RGBA format, style,
+determinism across two generator passes and preservation of all 158 source
+PNGs. For an approved redesign, generate first
+to establish its new source baseline. `--png-only` skips a stale pack, not
+preservation or runtime mapping checks.
+Add `--preview PATH.png` to write a review sheet of all 119 non-spider assets.
+The publication workflow runs the art tests and source validation.
 
-An existing pack must match the regenerated PNG pixels. Before rebuilding a
-stale pack, validate source art alone with:
+The build wrapper packs QOI into the memory-mapped `storage` partition.
+Default validation decodes each packed entry and compares every pixel to its
+PNG. `--packed PATH` validates an explicit pack. Never hand-edit the
+generated MMAP header. Update generator, expected names/dimensions and runtime
+mappings together when adding an asset.
+
+After building the browser, copy the same source art into its distribution:
 
 ```powershell
-& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\asset_build.py --png-only
+& 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\prepare_website.py --assets-only
 ```
-
-After packing, use `--packed PATH` to explicitly validate the MMAP/QOI image;
-runtime mapping checks remain enabled in all modes. The default command also
-checks the pack when present. The build system converts these PNGs to QOI
-for the memory-mapped `storage` partition.
-
-The 40 prey PNGs cover fly, cricket, moth, beetle, roach, mealworm, fruitfly,
-and waxworm: two walk frames, two flee frames, and one dead frame per species.
-The new silhouettes are an oval roach with long antennae, a segmented tan
-mealworm, a small red-eyed fruitfly, and a plump pale waxworm.
-Each dead frame is now a species-colored organic puddle with detached drops
-or fragments. Tests reject intact-corpse regressions.
-
-Eleven `achievement_*.png` badges have distinct silhouettes/material accents,
-not repeated generic UI symbols. Ten are currently earnable; First Pet is
-retained for legacy achievement-bit mapping only. The icon helper maps bits,
-not list positions, so ordering changes cannot silently award the wrong badge.
-
-The eight `background_{name}_0.png` images are carefully composed retro
-top-down keeper enclosures: cork, moss, leaf litter (`leaf_litter`), sand,
-fern, orchid, woodland, and minimal. Their fixed 240×240 dimensions are a
-runtime contract: each is cached as RGB565A8 in PSRAM and the selected image
-is enlarged 2× into the existing 480×480 RGB565 canvas. Eight cached sources
-consume 1,382,400 bytes (about 1.38 MB); selecting a theme does not redraw
-procedural scenery.
-
-The art leaves a clean substrate or paper floor in the center, with bark
-slabs, hollow cork tubes, climbing twigs, rooted foliage, and an anchored silk
-retreat at the edges. Acrylic rims and ventilation slots establish the keeper
-box. Texture stays inside defined objects using two or three flat material
-tones, not gradients or randomly sprinkled noise. Minimal has folded paper,
-a forked climbing twig, a small leafy sprig, and a silk sleeping retreat;
-none are outside landscapes or blank geometric grids.
-
-The five separate decor PNGs remain optional props; scene furniture is
-already painted into the backgrounds and needs no automatic prop placement.
-Keep prey and icons at 48×48, gifts at 32×32, and backgrounds at 240×240.
-The gift source sprites now depict shelters, perches, a hammock, garden and
-enrichment objects instead of disconnected jewels. Asset names/IDs remain
-stable for saved items. Runtime enlarges the selected gift exactly 2x to 64x64
-in a single reusable RGB565A8 PSRAM buffer; it does not use LVGL image transforms
-or allocate a blending buffer per frame. Keep each 32px source on the existing
-2px art grid. See [gift purposes and prices](../docs/GIFTS_CATALOG.md).
-
-When adding art, update the generator and validator's expected file list and
-dimensions. Add runtime mappings in `main\sprites.c` when an asset is consumed.
-The ESP-IDF build regenerates `main\mmap_generate_storage.h`; that generated
-header should not be edited by hand. See `docs\ART_STYLE.md` for the current
-style and authoring rules.

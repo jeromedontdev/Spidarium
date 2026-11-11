@@ -6878,3 +6878,201 @@ in `spider_s_walk_0.png` produces
 - `screenshot spider` on the device: healthy canvas body `#8B95A4`, sick canvas
   body `#7B818B` -- dulled, and both fully opaque with 8 distinct colours.
 - Pet restored to `hunger=90 mood=63 energy=80 sick=0` after testing.
+
+## Round 68 - quieter SNES terrain and matching decor (2026-11-11)
+
+### Decisions made
+
+- Used the supplied nine-panel reference for crisp material clusters, shaded
+  objects and restrained terrain-edge foliage, not its crowded composition.
+  Replaced all sixteen noisy backgrounds while preserving every saved theme ID
+  and the 240x240 source dimensions.
+- Removed bilinear noise, continuously interpolated shading, vignettes and
+  bright grit. Backgrounds use finite hue-shifted ramps and 9-28 colors in the
+  generated set (hard ceiling 64). Their central 160x160 source pixels use
+  exactly three low-contrast substrate tones; the validator limits their luma
+  span to 24/255. Stronger material detail stays outside that center.
+- Allowed shallow, non-blocking terrain-edge moss, leaves, fragments and small
+  accents. Large furniture remains player-placed decor. This supersedes both
+  the old prohibition on all edge vegetation and the proposal to produce
+  200-900 colors per floor. No collision or gameplay changes.
+- Redrew all sixteen placeable props with 8-10 visible tones, cut/grained wood,
+  shaded stone planes, fern pinnae, layered succulent leaves, shell ribs and
+  crystal facets. Five legacy props derive from the same redesigned art.
+  Clipped rounded shading to its silhouette so highlights cannot leak over the
+  ink rim. Used higher LCG bits to avoid correlated edge scatter.
+- Kept the spider completely untouched: both renderer sources and all 39 PNG
+  exports are byte-identical to their pre-edit hashes. All 121 non-target PNGs
+  are byte-identical; only the 37 background/decor PNGs changed. Prey, gifts,
+  UI, IDs, radii, blocking flags, saves and runtime allocations are unchanged.
+- Replaced the obsolete art handoff and updated the style contract, asset
+  README, inventory and agent handoff. Added six focused style regressions,
+  including rejection of a noisy center/continuous palette/flat prop and an
+  exact silhouette-boundary check.
+
+### Exact evidence
+
+- `tools\test_art_style.py`: **6 tests passed**. Pylance syntax checks: no
+  errors in generator, validator or new tests.
+- `tools\asset_build.py`: **158 MMAP entries**, all QOI dimensions/opcodes and
+  decoded pixels match PNGs; deterministic across two passes; **84 preserved**
+  accepted images byte-identical across validation. Separate pre-edit SHA-256
+  comparison verifies all **121 non-target PNGs** and both spider renderers.
+- `build.ps1`: exit **0**, **zero warning/error matches**, no main warnings.
+  Packed storage is **310,772 bytes**, below the existing 6 MB partition.
+  The generated MMAP header was updated by the build, not edited manually.
+- `flash.ps1 COM7`: exit **0**, hashes verified, full wrapper including assets.
+  No NVS erase.
+- `run_tests.py COM7`: **47 passed, 0 failed**.
+- `stability_check.py COM7 40`: **VERDICT: PASS**, **0 faults/errors**.
+- `uitest`: **backgrounds=1**; `decortest`: **placed=12 slots=12**.
+- Internal/DMA largest **63,488 bytes**, above the **51,200-byte** floor.
+  `render 500`: **largest_drift=0**.
+- Browser tests: **101 passed, 0 failed**, including exact parity of all 39
+  spider PNGs. Browser build and `prepare_website.py --assets-only`: exit **0**;
+  all **158** distribution PNGs match their source bytes.
+- Inspected the final sixteen-theme montage, sixteen-prop sheet and four
+  explicitly labeled composed asset previews. Inspected a live local browser
+  moss scene and an actual **480x480 device playfield capture** of the saved
+  minimal enclosure with its placed hollow log. The capture did not change the
+  saved theme or arrange new decor.
+
+### Verification boundaries
+
+These are source/browser/framebuffer inspections, not physical touchscreen
+appearance or player approval. No website publication or release was requested
+or performed. No allocation change was made; the allocation-specific scan-loop
+gate was not required. No claim is made for unrelated association/SNTP, OTA,
+SD media or battery-retention workflows.
+
+## Round 69 - include every gift furnishing in the decor restyle (2026-11-11)
+
+### Decisions made
+
+- Corrected the incomplete Round 68 scope: decorative gifts are furniture too.
+  Redrew all eighteen `gift_*.png` sources, not just the sixteen placeable decor
+  kinds and five legacy props already updated.
+- Shared the decor's ink rims, top-left lighting and material ramps: grained
+  cut wood, shaded stone, leafy shelter roofs, acorn caps, moss cushions,
+  faceted lookouts, folded silk and readable tunnel openings. Gifts use 8-12
+  visible tones and keep their 16x16 logical / 32x32 source dimensions.
+  Crystal/Sapphire Lookouts and Royal Perch now have distinct constructions,
+  rather than repeating one platform with a recolored accent.
+- Extended the style validator's eight-tone minimum to gifts, and added tests
+  covering all eighteen distinct gift images plus rejection of flat gift art.
+  Updated the style guide, handoff, asset README/inventory, agent handoff and
+  gift catalogue so "all decor" explicitly includes all gift furnishings.
+- No gameplay, price, ownership, save, collision, runtime buffer or allocation
+  changes. Exactly eighteen gift PNGs changed relative to the start of this
+  follow-up; the other 140 PNGs and both spider renderer sources are
+  byte-identical. Prior background/decor edits were retained.
+
+### Exact evidence
+
+- Focused art regressions: **8 passed**. Editor diagnostics: **no errors** in
+  generator, validator or art tests.
+- Asset validator: **158 packed MMAP/QOI entries verified**, decoded pixels
+  match PNGs; deterministic across two passes; **84 preserved** PNGs unchanged
+  during validation. Every gift has **8-12 visible tones**, binary alpha and
+  uniform 2x2 blocks; all eighteen images are distinct.
+- `build.ps1`: exit **0**, zero warning/error matches. `flash.ps1 COM7`: exit
+  **0**, full-flash wrapper and asset hashes verified, no NVS erase.
+- `run_tests.py COM7`: **47 passed, 0 failed**.
+- `stability_check.py COM7 40`: **VERDICT: PASS**, **0 faults/errors**.
+- `gifttest`: **tested=18 removed_neutral=1 economy=1 visits=1**.
+  `uitest`: **backgrounds=1**, including existing exact gift-scaling checks.
+  `decortest`: **placed=12 slots=12**.
+- Internal/DMA largest **63,488 bytes**, above the **51,200-byte** floor.
+- Browser suite: **101 passed, 0 failed**, including all 39 unchanged spider
+  exports. Browser build and asset-copy step succeeded; all **158** distribution
+  PNGs match their source bytes.
+- Visually inspected an eighteen-gift sheet at the actual 64x64 displayed size,
+  plus four labeled compositions combining the new furnishings, existing decor,
+  new terrain and the unchanged spider.
+
+### Verification boundaries
+
+The preview compositions are source-asset previews, not device screenshots or
+player approval. Hardware tests verify decoding, existing scaling and gameplay
+integration; they do not prove physical panel appearance. No live website
+publication, release or allocation change was made.
+
+## Round 70 - complete SNES assets, menus and v1.1.16 publication
+
+### Decisions made
+
+- Extended the approved direction to **all 119 non-spider PNGs**. All forty
+  prey frames (eight species, walk/flee/dead), thirteen icons and eleven
+  badges now use discrete material highlights/shadows. Retained silhouettes,
+  species identities, badge motifs, semantic colors, binary alpha and 2x2
+  sprite blocks. The earlier sixteen backgrounds, sixteen props, five legacy
+  props and eighteen gifts are included in this release.
+- **Do not touch the spider:** both renderers and all 39 exports are
+  SHA-256-identical against both the original art-task snapshot and the
+  current-request snapshot. Every one of the other 119 PNGs differs from the
+  original art-task baseline.
+- Native shared cards, modal rows, setup/status/care chrome, keyboard, sliders,
+  timer bars and all three minigames now use flat fills, two-pixel corners/
+  borders and hard outlines. No gradient fills or blurred menu shadows.
+  Touch geometry, readable Montserrat, IDs, prices, blocking, save layout,
+  worker ownership and persistent render buffers are unchanged.
+- Browser menus and website share navy/mint/gold chrome, hard inset accents,
+  unfiltered artwork and distinct disabled/selected/destructive/focus states.
+  Bug Hunt loads the refreshed bug PNGs for targets and decoys. Color Match
+  and Quick Tap retain the native finite signal palette, timing and scoring.
+  Fixed Settings Back reopening itself, discovered while reaching the games.
+- Validation now protects **all 158 source PNGs** across regeneration, not
+  only the former 84-file subset. Added complete non-spider preview output
+  (`--preview PATH.png`), material/grid tests and website CI art gates.
+- Chose **v1.1.16** above the existing local v1.1.15 work and published v1.1.14.
+  Aligned firmware/package/lock versions; release packaging requires an
+  explicit version. Full flashing is required because the art partition
+  changes; never erase NVS.
+- Caught a stale **v5** browser schema during distribution verification,
+  before publication. Captured the actual final firmware schema: **v8**,
+  **35 fields**, **120/236-byte** payloads, `decor_owned` offset 160 and
+  `decor[12]` offset 164/length 72. Updated the tracked schema and added
+  package rejection for stale versions and incomplete/out-of-range fields.
+  Updated the USB save inspector's former v5 ceiling as well: v8/248-byte
+  saves and all twelve little-endian decor slots decode correctly, alongside
+  older v2/v5/v6/v7 prefixes; structured decor displays as JSON. This fixes
+  host compatibility and release metadata, not the firmware save layout.
+
+### Exact local evidence
+
+- **12/12 art regressions**, **9/9 package regressions**, **110/110 browser
+  tests** passed. Browser checks include all 39 exact spider exports, all
+  eight Bug Hunt art paths, three game signal states and Settings Back.
+- Read-only actual **248-byte v8 device export** decoded by the browser save
+  module, including all twelve decor slots, with exact hex round trip.
+  No pet fields were changed/restored for this compatibility check.
+- **158 packed MMAP/QOI entries** decoded and matched to source RGBA pixels;
+  deterministic across two passes and all 158 source bytes preserved.
+- Wrapper final build exit **0**, zero compiler warning/error matches; full
+  flash exit **0**, including verified asset partition, without NVS erase.
+- Final `run_tests.py COM7`: **47 passed, 0 failed**. Embedded menu checks
+  include crisp panel/row/editor styles and all three games' tile/timer styles
+  and actual Bug Hunt target/decoy descriptors, in addition to eight-round
+  scoring, timing, cancellation and reward checks.
+- Final 40-second soak: **VERDICT: PASS**, **0 faults/errors**.
+- `scanloop 5`: **ok=5 failed=0 largest_drift=0**.
+  `render 500`: **ticks=500 largest_drift=0**. These measurements preceded
+  the last test-only native assertion addition; rendering/allocation code
+  and the art pack were unchanged in that final build.
+- Final suite internal/DMA largest **63,488 bytes**; console stack free
+  **4,592 bytes**. The internal/DMA floor is **51,200 bytes**.
+- Inspected the complete **119-asset** source montage, an actual 480x480
+  device main-menu framebuffer, and browser Bug Hunt/Color Match views.
+  Browser inspection confirms all four Bug Hunt images loaded, panel
+  `rgb(22,40,60)`, two-pixel corners and canvas smoothing disabled; Quick Tap
+  has one two-pixel-corner tile. Temporary clock/RNG controls were used only
+  to hold browser visual test states, not to change gameplay source.
+
+### Verification boundaries
+
+These are source/framebuffer/browser observations, not physical touchscreen
+aesthetic approval. No new claims of WiFi association, SNTP, hosted OTA
+installation, SD media or RTC backup retention. A capture attempt with
+unsupported `--menu play` was rejected; native games are exercised by
+`uitest`, not inferred from that failed capture. Publication evidence follows
+after the official release and HTTPS deployment are verified.

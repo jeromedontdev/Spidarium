@@ -10,14 +10,15 @@
 #include "needs.h"
 #include "prey.h"
 #include "sprites.h"
+#include "ui_style.h"
 
 #include <stdio.h>
 
-#define COL_BG        0x04050a
-#define COL_PANEL     0x15181f
-#define COL_BORDER    0x2a2f3a
-#define COL_TEXT      0xdfe7ff
-#define COL_DIM       0x8b93a7
+#define COL_BG        0x0a1220
+#define COL_PANEL     0x16283c
+#define COL_BORDER    0x76b9ad
+#define COL_TEXT      0xe8efda
+#define COL_DIM       0x9aaeb5
 #define COL_HUNGER    0xf5b342
 #define COL_MOOD      0x58d68d
 #define COL_ENERGY    0x7c9cff
@@ -91,8 +92,8 @@ static lv_obj_t *make_bar(lv_obj_t *parent, int32_t x, int32_t y,
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(b, 1, 0);
     lv_obj_set_style_border_color(b, lv_color_hex(COL_BORDER), 0);
-    lv_obj_set_style_radius(b, 6, 0);
-    lv_obj_set_style_radius(b, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(b, 0, 0);
+    lv_obj_set_style_radius(b, 0, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(b, lv_color_hex(col), LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_clickable(b, false);
@@ -135,9 +136,7 @@ void ui_status_init(void)
     lv_obj_set_size(back, 44, 34);
     lv_obj_align(back, LV_ALIGN_TOP_RIGHT, -UI_CORNER, 10);
     lv_obj_set_style_bg_color(back, lv_color_hex(COL_PANEL), 0);
-    lv_obj_set_style_border_width(back, 1, 0);
-    lv_obj_set_style_border_color(back, lv_color_hex(COL_BORDER), 0);
-    lv_obj_set_style_radius(back, 8, 0);
+    ui_style_card(back, COL_BORDER, false);
     lv_obj_add_event_cb(back, on_back, LV_EVENT_CLICKED, NULL);
 
     int idx = sprite_icon_index("back");
@@ -210,9 +209,7 @@ void ui_status_init(void)
     lv_obj_set_size(s_mute_btn, 120, 34);
     lv_obj_set_pos(s_mute_btn, UI_CORNER, sy);
     lv_obj_set_style_bg_color(s_mute_btn, lv_color_hex(COL_PANEL), 0);
-    lv_obj_set_style_border_width(s_mute_btn, 1, 0);
-    lv_obj_set_style_border_color(s_mute_btn, lv_color_hex(COL_BORDER), 0);
-    lv_obj_set_style_radius(s_mute_btn, 8, 0);
+    ui_style_card(s_mute_btn, COL_BORDER, false);
     lv_obj_add_event_cb(s_mute_btn, on_mute, LV_EVENT_CLICKED, NULL);
 
     s_mute_label = lv_label_create(s_mute_btn);
