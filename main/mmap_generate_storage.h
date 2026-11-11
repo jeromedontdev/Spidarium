@@ -14,7 +14,7 @@
 #include "esp_mmap_assets.h"
 
 #define MMAP_STORAGE_FILES           158
-#define MMAP_STORAGE_CHECKSUM        0xBE9A
+#define MMAP_STORAGE_CHECKSUM        0x1201
 
 enum MMAP_STORAGE_LISTS {
     MMAP_STORAGE_ACHIEVEMENT_ADULT_QOI = 0,        /*!< achievement_adult.qoi */

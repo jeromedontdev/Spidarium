@@ -66,8 +66,10 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   translucent identity panel, corner battery gauge/details, Sound in Settings,
   gray/inert pagination and distinct achievement assets. There are 158 PNGs,
   including eleven badges, eight species-specific splatters, sixteen ground
-  textures and sixteen placeable decor sprites. Preserve all 123 other accepted
-  images; do not revive obsolete spider PNGs as live anatomy.
+  textures and sixteen placeable decor sprites. Preserve the 84 accepted
+  non-spider images. The 39 spider PNGs are a generated export of
+  `main/cspider.c` and regenerate with it; they are not live anatomy and not
+  preservation-protected.
 - Browser save tooling uses the compiled schema and validated raw export/restore.
   Restore pauses the tank and blocks subsequent saves until explicit reboot;
   never resave the old live state over a restored blob. Screenshot capture is
@@ -106,10 +108,14 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   hard terminator, bounce light, an ink rim on every silhouette, no gradients.
   Eight prey species, eighteen gifts, sixteen placeable decor sprites and
   thirteen HUD icons. [Inventory](ASSETS_INVENTORY.md) and
-  [asset commands](../assets/README.md) define the maintenance contract. All
-  thirty-nine spider PNGs were preserved. The current art does not yet meet the
-  contract; [ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md) is the measured gap and
-  the refinement brief.
+  [asset commands](../assets/README.md) define the maintenance contract. The
+  spider is drawn procedurally by `main/cspider.c` (ported in
+  `site/lib/spider-renderer.js`); the 39 `spider_*.png` are a generated export of
+  that renderer, not preserved art. Sickness dulls the palette rather than
+  applying canvas opacity, so the spider stays opaque against pale floors. The
+  current art does not yet meet the contract;
+  [ART_HANDOFF_SNES.md](ART_HANDOFF_SNES.md) is the measured gap and the
+  refinement brief.
 - Sixteen selectable habitats use one reusable 460,800-byte PSRAM canvas, not a
   web/prop object tree. Backgrounds are **ground texture only** — substrate,
   trail, grain, tonal drift — with no painted props, so the spider always has a

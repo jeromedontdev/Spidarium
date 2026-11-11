@@ -136,9 +136,12 @@ runtime mapping checks remain enabled. After rebuilding, run the default command
 or `--packed PATH` to validate the packed image.
 
 Preservation compares the files present before a validator run. Achievements,
-dead-prey splatters and backgrounds are preservation-exempt, never exempt from
-determinism or pixel/palette tests. For an intentional approved redesign, run
-the edited generator first, then validate with `--png-only` and rebuild the pack.
+dead-prey splatters, backgrounds and the 39 spider frames are
+preservation-exempt, never exempt from determinism or pixel/palette tests. The
+spider frames are exempt because they are a generated export of
+`main/cspider.c`: they must change whenever the renderer does. For an intentional
+approved redesign, run the edited generator first, then validate with
+`--png-only` and rebuild the pack.
 
 ## Adding or replacing art
 
@@ -153,9 +156,13 @@ the edited generator first, then validate with `--png-only` and rebuild the pack
    `main\mmap_generate_storage.h`.
 4. Run `asset_build.py`, then build with `build.ps1` to pack the PNGs as QOI.
 
-The spider artwork is a separate 96×96 canvas set and is intentionally
-unchanged. Do not edit `draw_spider()`, its inputs, or the existing
-`spider_*.png` files as part of non-spider asset work.
+The spider is **not** a sprite sheet. `main/cspider.c` draws it procedurally into
+a 96×96 RGB565A8 canvas every frame, and `site/lib/spider-renderer.js` is a pixel
+port of that renderer. `draw_spider()` in the generator is a faithful export of
+the same geometry, palette and RGB565 quantisation, so the published PNGs show
+the creature the panel actually draws. Keep the two in step: if you change the
+renderer, regenerate the spider frames. Do not restyle the spider — the player
+has explicitly approved how it looks.
 
 The checked asset set currently contains 158 PNGs (119 non-spider); the runtime
 descriptor table is sized from the generated asset count.

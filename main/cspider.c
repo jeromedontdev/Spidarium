@@ -525,6 +525,36 @@ static int32_t stage_scale_256(void)
     }
 }
 
+/* Sickness is shown by dulling the palette, never by making the canvas
+ * translucent.
+ *
+ * The canvas used to get lv_obj_set_style_opa(LV_OPA_60) while sick. Against
+ * the pale ground textures that shipped in v1.1.13 the floor showed straight
+ * through the body, so a sick spider read as "the spider has gone transparent"
+ * rather than "the spider is unwell". Blending 45% toward the pixel's own luma
+ * and darkening 12% keeps every pixel fully opaque while still reading as dull
+ * and listless.
+ *
+ * The grey target is the pixel's own luma rather than a fixed grey: a fixed
+ * blue-grey increased the channel spread of near-white pixels (the eye whites
+ * and glints) instead of reducing it. */
+static inline uint32_t sick_aware(uint32_t rgb)
+{
+    if (!g.sick) return rgb;
+
+    uint32_t r = (rgb >> 16) & 0xFF;
+    uint32_t gg = (rgb >> 8) & 0xFF;
+    uint32_t b = rgb & 0xFF;
+
+    uint32_t luma = (r * 30 + gg * 59 + b * 11) / 100;
+
+    r  = ((r  * 55 + luma * 45) / 100) * 88 / 100;
+    gg = ((gg * 55 + luma * 45) / 100) * 88 / 100;
+    b  = ((b  * 55 + luma * 45) / 100) * 88 / 100;
+
+    return (r << 16) | (gg << 8) | b;
+}
+
 void cspider_render(uint32_t now_ms)
 {
     if (!s_canvas) return;
@@ -592,6 +622,16 @@ void cspider_render(uint32_t now_ms)
         col_fuzz = col_mid;
     }
 
+    /* Dull the whole palette while sick. Applied after the ramp is built so the
+     * gradient stays intact and only its hue and brightness shift. */
+    col_base = sick_aware(col_base);
+    col_mid  = sick_aware(col_mid);
+    col_hi   = sick_aware(col_hi);
+    col_fuzz = sick_aware(col_fuzz);
+    col_pup  = sick_aware(col_pup);
+    col_leg  = sick_aware(col_leg);
+    col_fang = sick_aware(col_fang);
+
     bool asleep = (g.state == SPIDER_SLEEP);
 
     /* --- clear ------------------------------------------------------
@@ -658,7 +698,7 @@ void cspider_render(uint32_t now_ms)
     }
 
     /* --- secondary eyes --------------------------------------------- */
-    const uint32_t col_sec = 0x6b7280;
+    const uint32_t col_sec = sick_aware(0x6b7280);
     to_canvas(CEPH_FWD + EYE_MID_FWD, -EYE_MID_DX, heading, sx, sy, &x, &y);
     fill_circle(x, y, EYE_SMALL_R, col_sec);
     to_canvas(CEPH_FWD + EYE_MID_FWD, +EYE_MID_DX, heading, sx, sy, &x, &y);
@@ -671,7 +711,7 @@ void cspider_render(uint32_t now_ms)
     /* --- primary eyes ----------------------------------------------- */
     /* Asleep: the eyes go black, so the spider reads as resting rather than
      * staring. Same rule as the widget renderer. */
-    uint32_t col_eye = asleep ? 0x000000 : 0xf7f9ff;
+    uint32_t col_eye = asleep ? 0x000000 : sick_aware(0xf7f9ff);
 
     to_canvas(CEPH_FWD + EYE_FWD, -EYE_DX, heading, sx, sy, &x, &y);
     fill_circle(x, y, EYE_R, col_eye);
@@ -687,10 +727,10 @@ void cspider_render(uint32_t now_ms)
 
         to_canvas(CEPH_FWD + EYE_FWD + 2.0f, -EYE_DX - 2.0f,
                   heading, sx, sy, &x, &y);
-        fill_circle(x, y, 1, 0xffffff);
+        fill_circle(x, y, 1, sick_aware(0xffffff));
         to_canvas(CEPH_FWD + EYE_FWD + 2.0f, +EYE_DX - 2.0f,
                   heading, sx, sy, &x, &y);
-        fill_circle(x, y, 1, 0xffffff);
+        fill_circle(x, y, 1, sick_aware(0xffffff));
     }
 
     /* --- fangs ------------------------------------------------------
@@ -732,6 +772,8 @@ void cspider_render(uint32_t now_ms)
     lv_obj_set_style_transform_scale_x(s_canvas, stage_scale_256(), 0);
     lv_obj_set_style_transform_scale_y(s_canvas, stage_scale_256(), 0);
 
-    /* Sick spiders are visibly dulled. */
-    lv_obj_set_style_opa(s_canvas, g.sick ? LV_OPA_60 : LV_OPA_COVER, 0);
+    /* The canvas is always fully opaque. Sickness is expressed by the palette
+     * (see sick_aware), not by widget opacity: a translucent spider let the
+     * pale ground textures show through and read as a rendering bug. */
+    lv_obj_set_style_opa(s_canvas, LV_OPA_COVER, 0);
 }

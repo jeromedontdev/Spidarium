@@ -40,7 +40,8 @@ Set-Location site
 ```
 
 The portable files are only a local convenience; CI uses ordinary Node/npm.
-`native-spider.png` is the published promotional preview with mint fangs.
+`native-spider.png` is the published promotional preview, generated directly from
+`lib/spider-renderer.js` so it matches the spider the device draws.
 Hero and gameplay render the native spider directly through `lib/spider-renderer.js`.
 The source simulator works without an npm install; device flashing requires
 the production bundle. `node serve.mjs` alone serves the source.
@@ -82,7 +83,8 @@ Settings switch, off by default, that drives both wild prey and unattended
 hunting. Manual feeding and
 aim/release are otherwise required. Gifts cost Silk and unlock by level.
 Achievement rows use the unique native icons; unavailable pages are disabled.
-Promotional spiders have mint fangs; each player's chosen colors are preserved.
+Promotional spiders are rendered from the same `lib/spider-renderer.js` the game
+uses, so they match the device; each player's chosen colors are preserved.
 The unboxed battery icon appears only with care, inside the upper-right safe
 area below the identity panel. The page ear is flush with the square playfield
 corner at all sizes. Settings > Save Screenshot downloads a 480x480 PNG of the

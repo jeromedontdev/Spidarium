@@ -38,8 +38,19 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
     r += trunc((255 - r) / divisor); g += trunc((255 - g) / divisor); b += trunc((255 - b) / divisor);
     return (r << 16) | (g << 8) | b;
   };
-  const mid = lighten(base, 4), hi = lighten(mid, 3);
-  const pupil = ACCENT_COLOURS[pupilColour % 9], leg = ACCENT_COLOURS[legColour % 9], fang = ACCENT_COLOURS[fangColour % 9];
+  // Sickness dulls the palette instead of making the sprite translucent. The
+  // device used to apply LV_OPA_60 to the whole canvas, which let the pale
+  // ground textures show through and read as a transparency bug. The grey
+  // target is the pixel's own luma so near-white pixels desaturate too.
+  const dull = (rgb) => {
+    if (!sick) return rgb;
+    const r0 = (rgb >> 16) & 255, g0 = (rgb >> 8) & 255, b0 = rgb & 255;
+    const luma = trunc((r0 * 30 + g0 * 59 + b0 * 11) / 100);
+    const mix = (c) => trunc(trunc((c * 55 + luma * 45) / 100) * 88 / 100);
+    return (mix(r0) << 16) | (mix(g0) << 8) | mix(b0);
+  };
+  const mid = dull(lighten(base, 4)), hi = dull(lighten(lighten(base, 4), 3)), body = dull(base);
+  const pupil = dull(ACCENT_COLOURS[pupilColour % 9]), leg = dull(ACCENT_COLOURS[legColour % 9]), fang = dull(ACCENT_COLOURS[fangColour % 9]);
   const toCanvas = (fwd, right, sf = scaleF, sr = scaleR) => [
     48 + trunc(Math.cos(heading) * fwd * sf - Math.sin(heading) * right * sr),
     48 + trunc(Math.sin(heading) * fwd * sf + Math.cos(heading) * right * sr),
@@ -47,7 +58,7 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
   const put = (x, y, channels) => {
     if (x < 0 || y < 0 || x >= 96 || y >= 96) return;
     const i = (y * 96 + x) * 4;
-    pixels[i] = channels[0]; pixels[i + 1] = channels[1]; pixels[i + 2] = channels[2]; pixels[i + 3] = sick ? 153 : 255;
+    pixels[i] = channels[0]; pixels[i + 1] = channels[1]; pixels[i + 2] = channels[2]; pixels[i + 3] = 255;
   };
   const circle = (cx, cy, radius, rgb) => {
     const channels = rgb565Channels(rgb);
@@ -88,7 +99,7 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
     line(hip, knee, 3, leg); line(knee, foot, 3, leg);
   }
   for (const [forward, radius] of [[-13, 13], [8, 11]]) {
-    circle(...toCanvas(forward, 0), radius, base);
+    circle(...toCanvas(forward, 0), radius, body);
     circle(...toCanvas(forward - 1.5, -1.5), radius - 3, mid);
     circle(...toCanvas(forward - 3, -3), radius - (radius === 13 ? 7 : 6), hi);
     for (let i = 0; i < 14; i++) {
@@ -96,13 +107,13 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
       circle(...toCanvas(forward + Math.cos(angle) * (radius + 2), Math.sin(angle) * (radius + 2)), 3 - (i % 2), mid);
     }
   }
-  for (const [forward, right] of [[4, -8], [4, 8], [0, -4], [0, 4]]) circle(...toCanvas(forward, right), 2, 0x6b7280);
+  for (const [forward, right] of [[4, -8], [4, 8], [0, -4], [0, 4]]) circle(...toCanvas(forward, right), 2, dull(0x6b7280));
   const asleep = state === 'sleep';
   for (const side of [-1, 1]) {
-    circle(...toCanvas(14, side * 5.5), 7, asleep ? 0 : 0xf7f9ff);
+    circle(...toCanvas(14, side * 5.5), 7, asleep ? 0 : dull(0xf7f9ff));
     if (!asleep) {
       circle(...toCanvas(15, side * 5.5), 4, pupil);
-      circle(...toCanvas(16, side * 5.5 - 2), 1, 0xffffff);
+      circle(...toCanvas(16, side * 5.5 - 2), 1, dull(0xffffff));
       triangle([toCanvas(8 + 15.5 - 4.5 * .5, side * 4 - 3),
         toCanvas(8 + 15.5 - 4.5 * .5, side * 4 + 3), toCanvas(8 + 15.5 + 4.5 * .5, side * 4)], fang);
     }

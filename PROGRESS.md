@@ -6754,3 +6754,88 @@ Three reports from the player, plus one they raised while the round was open.
 - Browser suite **99/99** (was 97). Two new tests cover moving decor without
   losing its slot/kind/blocking flag, and a forced sleep holding until energy is
   full rather than ending at 95.
+
+## Round 67 - A spider that is opaque when sick, and PNGs that match the screen
+
+### What was wrong
+
+Two reports, one cause each.
+
+**"The spider in game is now transparent."** It was not transparent. It was
+*dimmed*. `cspider_render()` ended with
+
+```c
+lv_obj_set_style_opa(s_canvas, g.sick ? LV_OPA_60 : LV_OPA_COVER, 0);
+```
+
+so a sick spider was drawn at 60% widget opacity. Against the pale v1.1.13
+ground textures that reads exactly as "the spider has gone see-through": the
+floor shows through the body. The pet on the bench was `state=9 sick=1` with
+`hunger=0`, which is why it looked that way and not the other way.
+
+**"The PNG pictures are not what the spider looks like."** They were not. The
+device draws the spider procedurally in `main/cspider.c`; the PNGs came from a
+separate hand-written design in `tools/gen_sprites.py` that had drifted. The
+in-game spider is the one the user likes, so the PNGs were the thing that had to
+change.
+
+### Decisions made
+
+- **Dull the palette, do not fade the canvas.** Sickness is now expressed by
+  desaturating and darkening every colour the renderer uses, so the spider stays
+  fully opaque and simply looks unwell. `sick_aware()` blends each channel 45%
+  toward **its own luma** and then darkens 12%. The luma target matters: the
+  first attempt mixed toward a fixed blue-grey (`0x6b7280`) and that *increased*
+  channel spread on near-white pixels, so only 1197 of 2076 pixels actually
+  desaturated and the browser test caught it. Mixing toward the pixel's own luma
+  desaturates every pixel by construction.
+- **`LV_OPA_COVER` unconditionally.** There is no longer any code path that can
+  make the spider translucent. `put_px`, `fill_circle`, `draw_line` and
+  `fill_triangle` already wrote `0xFF` alpha, so the widget opacity was the only
+  way in and it is gone.
+- **The PNGs become an export, not a design.** `draw_spider()` in
+  `tools/gen_sprites.py` is now a port of `cspider.c`: the same geometry
+  constants, the same `leg_pose()` maths, the same draw order, the same RGB565
+  quantisation, the same `_lighten()` ramp. If the renderer changes, the export
+  changes with it. The old spider `PALETTE`/`GEOMETRY` keys and the `_taper`,
+  `_ell`, `_star` helpers that only that design used are deleted.
+- **Spider frames leave the preservation set.** `PRESERVED_ASSET_COUNT` drops
+  123 -> 84. The 39 spider PNGs are generated output now, so pinning them
+  byte-for-byte would defeat the point. They are still validated for binary
+  alpha, determinism and the 12-colour cap, and they are exempt from the 2x2
+  uniform-block rule because they are single-pixel exports rather than 2x
+  upscales.
+- **`site/native-spider.png` regenerated from `spider-renderer.js`.** It had
+  "mint fangs" that the renderer does not draw. The stale claims in
+  `site/README.md` and `site/index.html` are corrected.
+
+### Evidence
+
+- `asset_build.py`: packed, **158 MMAP entries verified**, 158 PNGs valid,
+  deterministic across two passes, 84 preserved PNGs byte-identical.
+- `build.ps1` exit 0, **zero `main/` warnings**.
+- `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **47 passed, 0 failed**.
+- `stability_check.py COM7 40`: `VERDICT: PASS`, **0 faults**.
+- `uitest`: `backgrounds=1`. `decortest`: `placed=12 slots=12`.
+- `render 500`: `largest_drift=0`. `scanloop 5`: `largest_drift=0`.
+- Internal DMA largest **63,488** bytes, above the 51,200 floor.
+- Browser suite **100/100** (was 99). The sickness test now asserts alpha
+  `[0,255]` rather than `153`, and a new test asserts every drawn pixel stays
+  opaque and more than 90% of them desaturate.
+- **Hardware proof, healthy:** captured playfield, spider body mean
+  `(80,83,88)`, fully opaque, `stat` reports `sick=0`.
+- **Hardware proof, sick:** forced with `set hunger 0` / `set mood 0`, `stat`
+  reports `state=9 sick=1`, captured body mean `(82,85,90)` - darker and
+  desaturated, **still opaque**. The floor does not show through.
+- **Browser proof:** `#tank` darkest pixel `(0,0,0,255)`; the screenshot matches
+  the device.
+- Pet restored to `hunger=90 mood=84 energy=80 sick=0` after testing.
+
+### Note
+
+`set sick 0` does not stick. `needs.c` re-derives sickness every tick from
+`hunger < 10 || mood < 10` and only clears it at `hunger > 25 && mood > 25`, so
+the sick path can only be exercised by actually starving the pet and can only be
+left by feeding it. That is correct behaviour, but it makes the console command
+misleading.

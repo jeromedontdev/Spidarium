@@ -28,13 +28,29 @@ test('native pixel canvas is 96 square, transparent outside anatomy, RGB565-quan
     assert.equal(pixels[(95 * 96 + i) * 4 + 3], 0);
   }
 });
-test('sleep removes white eye/fang pixels and sickness applies native 60% opacity', () => {
+test('sleep removes white eye/fang pixels and sickness dulls the palette without transparency', () => {
   const pixels = new Uint8ClampedArray(96 * 96 * 4);
   renderSpider(pixels, { state: 'sleep', emote: 'sleepy', sick: true });
   for (let i = 0; i < pixels.length; i += 4) {
-    assert.ok([0, 153].includes(pixels[i + 3]));
+    assert.ok([0, 255].includes(pixels[i + 3]));
     assert.ok(!(pixels[i] > 230 && pixels[i + 1] > 230 && pixels[i + 2] > 230));
   }
+});
+test('sickness keeps every drawn pixel opaque and desaturates the body', () => {
+  const healthy = new Uint8ClampedArray(96 * 96 * 4);
+  const sick = new Uint8ClampedArray(96 * 96 * 4);
+  renderSpider(healthy);
+  renderSpider(sick, { sick: true });
+  let drawn = 0, duller = 0;
+  for (let i = 0; i < healthy.length; i += 4) {
+    assert.equal(sick[i + 3], healthy[i + 3]);
+    if (!healthy[i + 3]) continue;
+    drawn++;
+    const spread = (buf) => Math.max(buf[i], buf[i + 1], buf[i + 2]) - Math.min(buf[i], buf[i + 1], buf[i + 2]);
+    if (spread(sick) <= spread(healthy)) duller++;
+  }
+  assert.ok(drawn > 1500);
+  assert.ok(duller > drawn * .9, `only ${duller}/${drawn} pixels desaturated`);
 });
 test('happy/alert gait never inverts knees and all animated frames remain within the native canvas', () => {
   for (const emote of ['none', 'happy', 'sad', 'alert', 'sleepy']) for (let frame = 0; frame < 32; frame++) {

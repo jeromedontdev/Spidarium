@@ -25,14 +25,6 @@ except ImportError:
 # Tunables — retune the art here without touching the drawing code.
 # ---------------------------------------------------------------------------
 PALETTE = {
-    "body":       (0x6F, 0x7A, 0x8A, 255),
-    "body_hi":    (0x8A, 0x94, 0xA6, 255),
-    "body_rim":   (0x9E, 0xA8, 0xBA, 255),
-    "body_dull":  (0x55, 0x5E, 0x6C, 255),
-    "leg":        (0x4A, 0x52, 0x60, 255),
-    "eye":        (0xF5, 0xB3, 0x42, 255),
-    "pupil":      (0x05, 0x06, 0x0A, 255),
-    "fang":       (0xD8, 0xDD, 0xE8, 255),
     "prey_body":  (0x6B, 0x5A, 0x48, 255),
     "prey_dark":  (0x3F, 0x35, 0x2A, 255),
     "prey_wing":  (0x8A, 0x84, 0x78, 210),
@@ -46,19 +38,6 @@ PALETTE = {
 }
 
 GEOMETRY = {
-    "spider_canvas": 96,
-    "spider_centre": (48.0, 48.0),
-    "ceph_r":        (13.0, 11.0),
-    "ceph_offset":   9.0,
-    "abd_r":         (15.0, 17.0),
-    "abd_offset":    -13.0,
-    "leg_fwd":       (9.0, 3.5, -3.5, -9.0),
-    "leg_side":      7.0,
-    "leg_knee_out":  11.0,
-    "leg_foot_out":  22.0,
-    "leg_w0":        5.0,
-    "leg_w1":        2.6,
-    "rim":           1.2,
     "prey_canvas":   48,
     "prey_centre":   (24.0, 24.0),
     "ui_canvas":     48,
@@ -140,134 +119,247 @@ PREY_COLORS = {
 }
 
 # ---------------------------------------------------------------------------
-# Primitives
-# ---------------------------------------------------------------------------
-def _taper(d, p0, p1, w0, w1, col):
-    """A tapered quad from p0 (width w0) to p1 (width w1)."""
-    dx, dy = p1[0] - p0[0], p1[1] - p0[1]
-    length = math.hypot(dx, dy)
-    if length < 1e-6:
-        return
-    nx, ny = -dy / length, dx / length
-    d.polygon([
-        (p0[0] + nx * w0 * 0.5, p0[1] + ny * w0 * 0.5),
-        (p1[0] + nx * w1 * 0.5, p1[1] + ny * w1 * 0.5),
-        (p1[0] - nx * w1 * 0.5, p1[1] - ny * w1 * 0.5),
-        (p0[0] - nx * w0 * 0.5, p0[1] - ny * w0 * 0.5),
-    ], fill=col)
-
-
-def _ell(d, c, r, col):
-    d.ellipse([c[0] - r[0], c[1] - r[1], c[0] + r[0], c[1] + r[1]], fill=col)
-
-
-def _star(d, c, r_out, r_in, col, points=5):
-    pts = []
-    for i in range(points * 2):
-        ang = -math.pi / 2.0 + i * math.pi / points
-        r = r_out if i % 2 == 0 else r_in
-        pts.append((c[0] + math.cos(ang) * r, c[1] + math.sin(ang) * r))
-    d.polygon(pts, fill=col)
-
-
-# ---------------------------------------------------------------------------
 # Spider — 96x96, body centre pinned at (48, 48)
 # ---------------------------------------------------------------------------
-def _spider_params(anim, frame):
-    """(gait_phase, leg_ext, body_shift, body_col, cracked, fang_spread)."""
-    if anim == "walk":
-        return (frame / 4.0 * 2.0 * math.pi, 1.0, 0.0, PALETTE["body"], False, 0.0)
-    if anim == "idle":
-        return (0.0, 1.0, 0.0, PALETTE["body"], False, 0.0)
-    if anim == "eat":
-        return (0.0, 1.0, 0.0, PALETTE["body"], False, 1.0 if frame else 0.0)
+# The device does not blit a spider sprite sheet: main/cspider.c renders the
+# creature procedurally into a 96x96 RGB565A8 canvas every frame. These PNGs are
+# a port of that renderer, so the published artwork shows the spider the panel
+# actually draws. Geometry, palette, draw order and RGB565 quantisation below
+# are copied from cspider.c -- keep the two in step.
+SPIDER_CANVAS = 96
+SPIDER_CENTRE = 48
+
+ABD_FWD, ABD_R = -13.0, 13
+CEPH_FWD, CEPH_R = 8.0, 11
+EYE_FWD, EYE_DX, EYE_R, PUPIL_R, EYE_SMALL_R = 6.0, 5.5, 7, 4, 2
+EYE_MID_FWD, EYE_MID_DX = -4.0, 8.0
+EYE_REAR_FWD, EYE_REAR_DX = -8.0, 4.0
+FANG_LEN, FANG_HALF_W, FANG_FWD, FANG_DX = 4.5, 3.0, 15.5, 4.0
+FUZZ_COUNT, FUZZ_OUT, FUZZ_R = 14, 2.0, 3
+LEG_LEN, LEG_SEG1, LEG_SEG2, BODY_R, LEG_WIDTH = 22.0, 0.58, 0.72, 16, 3
+NUM_LEGS = 8
+
+# A fresh save uses the charcoal body with black pupils, grey legs and white
+# fangs, so that is the palette exported here.
+COL_BASE = 0x2B3138
+COL_PUPIL = 0x000000
+COL_LEG = 0x8A94A6
+COL_FANG = 0xF7F9FF
+COL_SECONDARY = 0x6B7280
+COL_EYE = 0xF7F9FF
+COL_GLINT = 0xFFFFFF
+
+
+def _rgb565(rgb):
+    """Quantise to RGB565 and expand back, matching the panel's colour depth."""
+    r = (rgb >> 19) & 0x1F
+    g = (rgb >> 10) & 0x3F
+    b = (rgb >> 3) & 0x1F
+    return ((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2))
+
+
+def _lighten(rgb, divisor):
+    r, g, b = (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF
+    r += (255 - r) // divisor
+    g += (255 - g) // divisor
+    b += (255 - b) // divisor
+    return (r << 16) | (g << 8) | b
+
+
+def _leg_pose(k, side, phase, walking, emote, now):
+    """Port of leg_pose() in cspider.c: (hf, hr, kf, kr, ff, fr)."""
+    base = side * (math.pi * 0.5 + (k - 1.5) * 0.42)
+    gait = phase + k * (math.pi * 0.5) + (0.0 if side < 0 else math.pi)
+    lead = 1.55 if k == 0 else 1.15 if k == 1 else 1.0
+    swing = 0.42 * lead * math.sin(gait) if walking else 0.0
+    bend = 0.55 + (0.30 * lead * math.sin(gait + math.pi * 0.5) if walking else 0.0)
+    wave = math.sin((now % 1200) * (2 * math.pi / 1200))
+    if emote == "happy":
+        if k == 0:
+            swing += 1.10 * wave
+            bend -= 0.55 + 0.35 * wave
+    elif emote == "sad":
+        bend += 0.60
+        swing *= 0.35
+    elif emote == "alert":
+        bend -= 0.45 + 0.10 * wave
+        swing *= 0.25
+    elif emote == "sleepy":
+        bend -= 0.30 + 0.05 * wave
+        swing *= 0.15
+    angle = max(0.15, min(1.25, swing + bend))
+    dir1, dir2 = base + side * angle, base - side * angle
+    hf, hr = BODY_R * math.cos(base), BODY_R * math.sin(base)
+    kf = hf + LEG_LEN * LEG_SEG1 * math.cos(dir1)
+    kr = hr + LEG_LEN * LEG_SEG1 * math.sin(dir1)
+    ff = kf + LEG_LEN * LEG_SEG2 * math.cos(dir2)
+    fr = kr + LEG_LEN * LEG_SEG2 * math.sin(dir2)
+    return hf, hr, kf, kr, ff, fr
+
+
+class _Canvas:
+    """The 96x96 buffer cspider.c writes into, with the same primitives."""
+
+    def __init__(self):
+        self.pixels = [[None] * SPIDER_CANVAS for _ in range(SPIDER_CANVAS)]
+
+    def _set(self, x, y, colour):
+        if 0 <= x < SPIDER_CANVAS and 0 <= y < SPIDER_CANVAS:
+            self.pixels[y][x] = colour
+
+    def circle(self, cx, cy, r, rgb):
+        if r <= 0:
+            return
+        colour = _rgb565(rgb)
+        r2 = r * r
+        for dy in range(-r, r + 1):
+            y = cy + dy
+            if not 0 <= y < SPIDER_CANVAS:
+                continue
+            w = int(math.sqrt(r2 - dy * dy))
+            for x in range(max(0, cx - w), min(SPIDER_CANVAS - 1, cx + w) + 1):
+                self.pixels[y][x] = colour
+
+    def line(self, x1, y1, x2, y2, width, rgb):
+        colour = _rgb565(rgb)
+        dx, dy = x2 - x1, y2 - y1
+        steps = max(abs(dx), abs(dy))
+        if steps <= 0:
+            self._set(x1, y1, colour)
+            return
+        half = width // 2
+        for i in range(steps + 1):
+            x = x1 + int(dx * i / steps)
+            y = y1 + int(dy * i / steps)
+            for oy in range(-half, half + 1):
+                for ox in range(-half, half + 1):
+                    if ox * ox + oy * oy <= half * half + half:
+                        self._set(x + ox, y + oy, colour)
+
+    def triangle(self, x0, y0, x1, y1, x2, y2, rgb):
+        colour = _rgb565(rgb)
+        ex, ey = (x0, x1, x2), (y0, y1, y2)
+        miny = max(0, min(ey))
+        maxy = min(SPIDER_CANVAS - 1, max(ey))
+        for y in range(miny, maxy + 1):
+            lo, hi = SPIDER_CANVAS, -1
+            for e in range(3):
+                ax, ay = ex[e], ey[e]
+                bx, by = ex[(e + 1) % 3], ey[(e + 1) % 3]
+                if ay == by:
+                    if y == ay:
+                        lo, hi = min(lo, ax, bx), max(hi, ax, bx)
+                    continue
+                if (y < ay and y < by) or (y > ay and y > by):
+                    continue
+                x = ax + int((bx - ax) * (y - ay) / (by - ay))
+                lo, hi = min(lo, x), max(hi, x)
+            if hi < lo:
+                continue
+            for x in range(max(0, lo), min(SPIDER_CANVAS - 1, hi) + 1):
+                self._set(x, y, colour)
+
+
+def _spider_emote(anim):
+    """The emote ui_hud.c would pick for this state."""
     if anim == "sleep":
-        return (0.0, 0.42, 0.0, PALETTE["body"], False, 0.0)
-    if anim == "pounce":
-        if frame == 0:
-            return (0.0, 0.55, -1.5, PALETTE["body"], False, 0.0)
-        return (0.0, 1.45, 1.5, PALETTE["body"], False, 0.0)
-    if anim == "molt":
-        if frame == 0:
-            return (0.0, 1.0, 0.0, PALETTE["body_dull"], True, 0.0)
-        return (0.0, 1.0, 0.0, PALETTE["body_hi"], False, 0.0)
-    return (0.0, 1.0, 0.0, PALETTE["body"], False, 0.0)
+        return "sleepy"
+    if anim == "eat":
+        return "happy"
+    return "none"
 
 
 def draw_spider(theta, anim, frame):
-    size = GEOMETRY["spider_canvas"]
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
+    canvas = _Canvas()
+    heading = theta
 
-    cx, cy = GEOMETRY["spider_centre"]
-    fx, fy = math.cos(theta), math.sin(theta)
-    rx, ry = -fy, fx                      # "right" of the facing direction
+    sx, sy = 1.0, 1.0
+    if anim == "pounce":
+        sx, sy = 1.17, 0.82
+    elif anim == "sleep":
+        sx, sy = 1.05, 0.95
 
-    phase, ext, shift, body_col, cracked, fang_spread = _spider_params(anim, frame)
+    asleep = anim == "sleep"
+    emote = _spider_emote(anim)
+    walking = anim == "walk"
+    phase = frame / 4.0 * 2.0 * math.pi if walking else 0.0
+    now = frame * 110
 
-    def loc(fwd, side):
-        """Local (forward, right) -> screen."""
-        return (cx + fx * (fwd + shift) + rx * side,
-                cy + fy * (fwd + shift) + ry * side)
+    col_base = COL_BASE
+    col_mid = _lighten(col_base, 4)
+    col_hi = _lighten(col_mid, 3)
+    col_fuzz = col_mid
 
-    # --- legs first, so the body overlaps the hips -------------------------
+    def to_canvas(fwd, right, sf=1.0, sr=1.0):
+        fx, fy = math.cos(heading), math.sin(heading)
+        rx, ry = -fy, fx
+        return (SPIDER_CENTRE + int(fx * fwd * sf + rx * right * sr),
+                SPIDER_CENTRE + int(fy * fwd * sf + ry * right * sr))
+
+    # --- legs, drawn first so the body covers the hips --------------------
+    for i in range(NUM_LEGS):
+        side = -1 if i < 4 else 1
+        hf, hr, kf, kr, ff, fr = _leg_pose(i & 3, side, phase, walking, emote, now)
+        hx, hy = to_canvas(hf, hr)
+        kx, ky = to_canvas(kf, kr)
+        tx, ty = to_canvas(ff, fr)
+        canvas.line(hx, hy, kx, ky, LEG_WIDTH, COL_LEG)
+        canvas.line(kx, ky, tx, ty, LEG_WIDTH, COL_LEG)
+
+    # --- abdomen ----------------------------------------------------------
+    canvas.circle(*to_canvas(ABD_FWD, 0.0, sx, sy), ABD_R, col_base)
+    canvas.circle(*to_canvas(ABD_FWD - 1.5, -1.5, sx, sy), ABD_R - 3, col_mid)
+    canvas.circle(*to_canvas(ABD_FWD - 3.0, -3.0, sx, sy), ABD_R - 7, col_hi)
+    for i in range(FUZZ_COUNT):
+        a = i * 2.0 * math.pi / FUZZ_COUNT
+        canvas.circle(*to_canvas(ABD_FWD + math.cos(a) * (ABD_R + FUZZ_OUT),
+                                 math.sin(a) * (ABD_R + FUZZ_OUT), sx, sy),
+                      FUZZ_R - (i % 2), col_fuzz)
+
+    # --- cephalothorax ----------------------------------------------------
+    canvas.circle(*to_canvas(CEPH_FWD, 0.0, sx, sy), CEPH_R, col_base)
+    canvas.circle(*to_canvas(CEPH_FWD - 1.5, -1.5, sx, sy), CEPH_R - 3, col_mid)
+    canvas.circle(*to_canvas(CEPH_FWD - 3.0, -3.0, sx, sy), CEPH_R - 6, col_hi)
+    for i in range(FUZZ_COUNT):
+        a = i * 2.0 * math.pi / FUZZ_COUNT
+        canvas.circle(*to_canvas(CEPH_FWD + math.cos(a) * (CEPH_R + FUZZ_OUT),
+                                 math.sin(a) * (CEPH_R + FUZZ_OUT), sx, sy),
+                      FUZZ_R - (i % 2), col_fuzz)
+
+    # --- secondary eyes ---------------------------------------------------
+    for fwd, dx in ((EYE_MID_FWD, EYE_MID_DX), (EYE_REAR_FWD, EYE_REAR_DX)):
+        for side in (-1, 1):
+            canvas.circle(*to_canvas(CEPH_FWD + fwd, side * dx, sx, sy),
+                          EYE_SMALL_R, COL_SECONDARY)
+
+    # --- primary eyes -----------------------------------------------------
+    col_eye = 0x000000 if asleep else COL_EYE
     for side in (-1, 1):
-        for k, fwd in enumerate(GEOMETRY["leg_fwd"]):
-            swing = 0.0
-            if anim == "walk":
-                # Tetrapod gait: legs 1/3 left + 2/4 right move together.
-                group = 0.0 if ((k % 2 == 0) == (side < 0)) else math.pi
-                swing = 2.2 * math.sin(phase + group)
+        canvas.circle(*to_canvas(CEPH_FWD + EYE_FWD, side * EYE_DX, sx, sy),
+                      EYE_R, col_eye)
 
-            hip = loc(fwd, side * GEOMETRY["leg_side"] * 0.72)
-            knee = loc(fwd * 1.5 + swing * 0.5,
-                       side * (GEOMETRY["leg_side"] + GEOMETRY["leg_knee_out"] * ext))
-            foot = loc(fwd * 2.3 + swing - 1.0,
-                       side * (GEOMETRY["leg_side"] + GEOMETRY["leg_foot_out"] * ext))
+    if not asleep:
+        for side in (-1, 1):
+            canvas.circle(*to_canvas(CEPH_FWD + EYE_FWD + 1.0, side * EYE_DX, sx, sy),
+                          PUPIL_R, COL_PUPIL)
+            canvas.circle(*to_canvas(CEPH_FWD + EYE_FWD + 2.0, side * EYE_DX - 2.0, sx, sy),
+                          1, COL_GLINT)
+        for side in (-1.0, 1.0):
+            bx0, by0 = to_canvas(CEPH_FWD + FANG_FWD - FANG_LEN * 0.5,
+                                 side * FANG_DX - FANG_HALF_W, sx, sy)
+            bx1, by1 = to_canvas(CEPH_FWD + FANG_FWD - FANG_LEN * 0.5,
+                                 side * FANG_DX + FANG_HALF_W, sx, sy)
+            ax, ay = to_canvas(CEPH_FWD + FANG_FWD + FANG_LEN * 0.5,
+                               side * FANG_DX, sx, sy)
+            canvas.triangle(bx0, by0, bx1, by1, ax, ay, COL_FANG)
 
-            _taper(d, hip, knee, GEOMETRY["leg_w0"], GEOMETRY["leg_w1"] * 1.4, PALETTE["leg"])
-            _taper(d, knee, foot, GEOMETRY["leg_w1"] * 1.4, GEOMETRY["leg_w1"] * 0.7, PALETTE["leg"])
-
-    abd_c = loc(GEOMETRY["abd_offset"], 0.0)
-    ceph_c = loc(GEOMETRY["ceph_offset"], 0.0)
-
-    # --- fuzzy rim (1 px lighter silhouette) -------------------------------
-    rim = GEOMETRY["rim"]
-    _ell(d, abd_c, (GEOMETRY["abd_r"][0] + rim, GEOMETRY["abd_r"][1] + rim), PALETTE["body_rim"])
-    _ell(d, ceph_c, (GEOMETRY["ceph_r"][0] + rim, GEOMETRY["ceph_r"][1] + rim), PALETTE["body_rim"])
-
-    # --- abdomen (larger, teardrop) ---------------------------------------
-    _ell(d, abd_c, GEOMETRY["abd_r"], body_col)
-    _ell(d, (abd_c[0] - 4.0, abd_c[1] - 5.0), (6.0, 6.0), PALETTE["body_hi"])
-
-    # --- cephalothorax (compact, rounded) ---------------------------------
-    _ell(d, ceph_c, GEOMETRY["ceph_r"], body_col)
-    _ell(d, (ceph_c[0] - 3.0, ceph_c[1] - 3.5), (4.5, 4.0), PALETTE["body_hi"])
-
-    # --- eight eyes: four large anterior, four small ----------------------
-    for a, b in ((6.5, -3.2), (6.5, 3.2), (3.0, -5.6), (3.0, 5.6)):
-        p = loc(GEOMETRY["ceph_offset"] + a, b)
-        _ell(d, p, (2.7, 2.7), PALETTE["eye"])
-        _ell(d, (p[0] + fx * 0.8, p[1] + fy * 0.8), (1.2, 1.2), PALETTE["pupil"])
-    for a, b in ((1.0, -7.4), (1.0, 7.4), (8.6, -1.0), (8.6, 1.0)):
-        _ell(d, loc(GEOMETRY["ceph_offset"] + a, b), (1.5, 1.5), PALETTE["eye"])
-
-    # --- chelicerae / fangs ------------------------------------------------
-    spread = 2.2 + fang_spread * 1.2
-    for b in (-spread, spread):
-        base = loc(GEOMETRY["ceph_offset"] + 11.0, b)
-        tip = loc(GEOMETRY["ceph_offset"] + 15.0, b * 0.6)
-        _taper(d, base, tip, 3.0, 1.0, PALETTE["fang"])
-
-    # --- molt_0: old exoskeleton splitting --------------------------------
-    if cracked:
-        pts = []
-        for i in range(7):
-            a = -14.0 + i * 4.5
-            b = 1.6 if i % 2 == 0 else -1.6
-            pts.append(loc(a, b))
-        d.line(pts, fill=PALETTE["pupil"], width=2)
-
+    img = Image.new("RGBA", (SPIDER_CANVAS, SPIDER_CANVAS), (0, 0, 0, 0))
+    pixels = img.load()
+    for y in range(SPIDER_CANVAS):
+        for x in range(SPIDER_CANVAS):
+            colour = canvas.pixels[y][x]
+            if colour is not None:
+                pixels[x, y] = colour + (255,)
     return img
 
 

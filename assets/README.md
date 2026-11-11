@@ -1,11 +1,20 @@
 # Asset source files
 
-These are generator outputs. Edit `tools\gen_sprites.py`, not individual
-non-spider PNGs, so art changes remain reproducible. The spider PNGs are
-preserved artwork; the validator fails if generation changes their bytes.
+These are generator outputs. Edit `tools\gen_sprites.py`, not individual PNGs, so
+art changes remain reproducible.
+
+The spider is **not** a sprite sheet. `main/cspider.c` draws it procedurally into
+a 96×96 RGB565A8 canvas every frame, and `site/lib/spider-renderer.js` is a pixel
+port of that renderer. `draw_spider()` in the generator is a faithful export of
+the same geometry, palette and RGB565 quantisation, so the published PNGs show
+the creature the panel actually draws. Keep the two in step: if you change the
+renderer, regenerate the spider frames. Do not restyle the spider — the player
+has explicitly approved how it looks.
 
 Preservation compares the PNGs present before a validation run, not a committed
-hash baseline. Only achievements and dead-prey files are exempt. For an
+hash baseline. Achievements, dead-prey files, backgrounds and the 39 spider
+frames are exempt. The spider frames are exempt because they are a generated
+export of `main/cspider.c` and must change whenever the renderer does. For an
 intentional approved gift/background change, edit the generator, run
 `tools\gen_sprites.py` first to establish the new source baseline, then validate
 with `tools\asset_build.py --png-only`, rebuild and validate the packed art.
@@ -17,15 +26,18 @@ From the repository root, regenerate and validate the complete set with:
 & 'C:\Espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe' tools\asset_build.py
 ```
 
-The script checks exactly 134 PNGs, their names and dimensions, RGBA mode,
-determinism across two runs, and byte-preservation of 115 accepted images,
-including all spider and living prey art. Eight dead images intentionally
-become splatters and eleven achievement badges are added. All 95 non-spider assets are authored as retro
-pixel art at half resolution and enlarged exactly
+The script checks exactly 158 PNGs, their names and dimensions, RGBA mode,
+determinism across two runs, and byte-preservation of 84 accepted images,
+including all living prey art. Eight dead images intentionally become splatters
+and eleven achievement badges are added. The 119 non-spider assets are authored
+as retro pixel art at half resolution and enlarged exactly
 2× with nearest-neighbor sampling: prey/icons 24→48 px, gifts 16→32 px,
 backgrounds 120→240 px, and props at half their native sizes. Each 2×2 RGBA
 block must be uniform, alpha must be 0 or 255 (always 255 for backgrounds),
-and each asset has at most 12 visible colors.
+and each asset has at most 12 visible colors. The 39 spider frames are exempt
+from the 2×2 grid rule only, because they are a direct export of the device
+renderer; they are still checked for binary alpha, determinism and the
+12-colour limit.
 No smoothing, gradients, translucent shadows, or downsampled vector art.
 
 An existing pack must match the regenerated PNG pixels. Before rebuilding a

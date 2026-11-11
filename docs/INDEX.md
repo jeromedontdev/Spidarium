@@ -10,7 +10,7 @@
 - [Architecture quick reference](ARCHITECTURE_SUMMARY.md).
 - [Project README](../README.md).
 - [Feature guide and actual screenshots](README.md).
-- [Latest release notes](RELEASE_v1.1.14.md).
+- [Latest release notes](RELEASE_v1.1.15.md).
 - [Release verification](RELEASE_VERIFICATION.md).
 - [Browser tools and simulator](../site/README.md).
 - [Implementation phases](../IMPLEMENTATION_PLAN.md).
@@ -31,9 +31,9 @@
 - [Serial commands and automated tests](serial_console.md).
 - [Memory budget](memory_budget.md).
 - [Development history](../PROGRESS.md).
-- [Release notes](RELEASE_v1.1.14.md), [v1.1.12](RELEASE_v1.1.12.md),
-  [v1.1.11](RELEASE_v1.1.11.md), [v1.1.0](RELEASE_v1.1.0.md),
-  [v1.0.0](RELEASE_v1.0.0.md).
+- [Release notes](RELEASE_v1.1.15.md), [v1.1.14](RELEASE_v1.1.14.md),
+  [v1.1.12](RELEASE_v1.1.12.md), [v1.1.11](RELEASE_v1.1.11.md),
+  [v1.1.0](RELEASE_v1.1.0.md), [v1.0.0](RELEASE_v1.0.0.md).
 
 The progress log retains historical failed theories for context. Later
 verification and the current implementation docs take precedence; do not

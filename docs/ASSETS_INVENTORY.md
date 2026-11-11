@@ -9,7 +9,7 @@ item changes.
 
 | Group | Files | Logical → native dimensions | Runtime use |
 |---|---:|---|---|
-| Spider | 39 | Preserved 96×96 | Spider sprite table/setup; existing artwork preserved |
+| Spider | 39 | 96×96 | Generated export of `main/cspider.c`; the device draws the spider procedurally, not from these PNGs |
 | Prey | 40 | 24×24 → 48×48 | Fly, cricket, moth, beetle, roach, mealworm, fruitfly, and waxworm walk/flee/dead clips |
 | UI icons | 13 | 24×24 → 48×48 | Native-size HUD actions, stat icons, and back/lock |
 | Achievement badges | 11 | 24×24 → 48×48 | Unique badge for each persisted achievement bit; ten currently earnable |
@@ -20,7 +20,11 @@ item changes.
 The 119 non-spider sprites are authored pixel art, enlarged exactly 2× using
 nearest-neighbour sampling. Every aligned 2×2 RGBA block is identical, alpha is
 binary (0/255), and each sprite has at most 12 visible colours. The 39 spider
-PNGs and their generator are exempt from this contract and remain unchanged.
+PNGs are exempt from the 2×2 grid rule because they are a direct export of
+`main/cspider.c`, which writes single pixels into a 96×96 canvas; forcing them
+onto a 2×2 grid would make the published art disagree with the spider the panel
+draws. They are still checked for binary alpha, determinism and the 12-colour
+limit, and they are not preservation-protected.
 Living fly/cricket/moth/beetle PNGs also remain byte-identical; species are
 appended after those four to preserve their IDs. Each species has two walk
 frames, two flee frames, and one dead frame. Roach uses an oval body and long
@@ -79,7 +83,7 @@ item consumes the art.
 - Ground textures: `background_{cork,moss,leaf_litter,sand,fern,orchid,woodland,minimal,mushroom,gothic,seashell,succulent,willow,desert,crystal,cemetery}_0.png`
 
 `tools\asset_build.py` validates every filename, count, image size, PNG format,
-RGBA mode, repeat-generation hash, preservation of 123 earlier accepted PNGs,
+RGBA mode, repeat-generation hash, preservation of 84 earlier accepted PNGs,
 and the exact non-spider 2×2 grid/binary-alpha/12-colour limit. Backgrounds also
 require 240×240 dimensions and opaque alpha. It retains MMAP table and decoded
 QOI pixel validation for packed assets. Use `--png-only` to validate source art
