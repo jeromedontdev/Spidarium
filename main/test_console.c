@@ -108,7 +108,8 @@ static void cmd_help(void)
     printf("  wifi add SSID|PASS   join, save on success, sync RTC\n");
     printf("  wifi sync N          sync RTC through saved network N\n");
     printf("  wifi forget N        forget saved network N\n");
-    printf("  wifi ota HTTPS_URL   manual firmware update\n");
+    printf("  wifi ota latest|HTTPS_URL  GitHub latest or manual update\n");
+    printf("  otatest             validate latest-release manifest parser\n");
     printf("  rtc                  read hardware RTC and system clock\n");
     printf("  buttons [lock|unlock|toggle]  report or drive the side buttons\n");
     printf("  rtcset EPOCH          set RTC to UTC epoch (manual recovery)\n");
@@ -221,7 +222,8 @@ static void cmd_wifi(char *arg)
             return;
         }
         accepted = forget ? net_forget_saved(index) : net_sync_saved(index);
-    } else if (!strncmp(arg, "ota ", 4)) accepted = net_ota_start(arg + 4);
+    } else if (!strcmp(arg, "ota latest")) accepted = net_ota_latest();
+    else if (!strncmp(arg, "ota ", 4)) accepted = net_ota_start(arg + 4);
     else { printf("ERR unknown wifi action\n"); return; }
     if (!accepted) { printf("ERR wifi request rejected\n"); return; }
     int waited = 0;
@@ -1177,6 +1179,7 @@ static void run_line(char *line)
     else if (!strcmp(line, "save"))     cmd_save_tool(arg);
     else if (!strcmp(line, "reset"))    cmd_reset();
     else if (!strcmp(line, "reboot"))   cmd_reboot();
+    else if (!strcmp(line, "otatest")) printf("%s otatest\n", net_ota_test() ? "OK" : "ERR");
     else if (!strcmp(line, "set")) {
         /* "set FIELD VALUE" -- split the argument again. */
         char *field = arg;

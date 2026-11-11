@@ -1,5 +1,20 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.24: grids throughout, spider hero and safe update modes
+
+The current menus supersede v1.1.23's list exceptions: Achievements and Prey
+Species join the five shops in six-tile grids. Navigation, settings, contextual
+actions and status menus use four wider tiles, with separate slider tracks and
+checkbox indicators. Gift effects and text editors remain dedicated detail views.
+The hero is again the native spider, with exactly one small beetle on moss;
+no pink decor or large replacement insect. Spider renderer/PNG bytes are intact.
+
+The real web flasher distinguishes existing-device update from full installation.
+Update checks the installed table before any write, preserves bootloader/table,
+writes matching app/art and OTA selection, and compares all NVS bytes afterward.
+The browser game does not emulate OTA: the device's GitHub-latest flow and
+physical installation need independent hardware evidence.
+
 ## v1.1.23: shop grids and discreet HUD entry
 
 Treats, Backgrounds, Borders, Decor and Gifts show six tiles per page in a

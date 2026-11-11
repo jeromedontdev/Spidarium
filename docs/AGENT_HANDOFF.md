@@ -13,6 +13,20 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.24 restores the website hero spider with one small beetle on plain moss.
+  All browse/navigation menus are grids: six catalogue tiles, including
+  Achievements/Prey/Borders, or four wider settings/control tiles. Keep full
+  gift effects in the explicit detail preview. Slider callbacks use stable
+  item indices, not mutable percentages; anchors must be TOP_LEFT in tiles.
+  Web updater defaults to update mode: reject a mismatched installed table,
+  write app/art/OTA selection last, compare all NVS bytes afterward and clear
+  in-memory snapshots. Full installation remains available for migration.
+  Native latest OTA follows GitHub's latest stable descriptor, validates exact
+  application hash/size/project/version and current art hash before boot selection.
+  Publish `spidarium-ota.json` and `spidarium.bin` alongside every release ZIP.
+  Art differences require USB update; no signed firmware/functional rollback.
+  See [OTA policy](WIFI_ARCHITECTURE.md) and latest progress evidence.
+
 - v1.1.23 uses six-tile (3x2) grids for Treats/Backgrounds/Borders/Decor/Gifts;
   other menus remain three-card lists. Use explicit `ui_menu_open_grid()`.
   Reuse at most six tile objects per open, never create objects per frame.

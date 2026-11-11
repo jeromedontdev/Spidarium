@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.23](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.23)**
+| **[Download v1.1.24](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.24)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -26,12 +26,15 @@ mix them with any background, or remove the frame for free. Themes include
 woodland fairy, gothic, academia, household, witchy, prehistoric, cyberpunk,
 sci-fi, fantasy, lost civilizations and Japanese zen. Placement grows beyond twelve;
 hold decor/gifts to move them for free and double tap to dim the enclosure.
-Six-item shop grids fit twice as many purchases on screen, with individual
-pixel icons and a full-effect gift preview. Gold menu ornaments
+Six-item catalogue grids include shops, achievements and prey, while navigation
+and settings use four wider tiles with usable sliders. Individual
+pixel icons and a full-effect gift preview keep purchases clear. Gold menu ornaments
 leave Back clear. Prey have thorax-attached legs, alternating tripod steps,
 travel-driven ground animation and heading-aware sprites; the spider is unchanged.
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
-See [v1.1.23 release notes](docs/RELEASE_v1.1.23.md).
+The web updater preserves and verifies the save region. On-device updates
+resolve GitHub's latest stable release, verify the image and require matching
+artwork; art changes use USB. See [v1.1.24 release notes](docs/RELEASE_v1.1.24.md).
 
 **The spider is one canvas, not a scene graph.** It is drawn from scratch into a
 single 96×96 RGB565A8 buffer every frame — legs, body, fuzz, eyes, fangs, gait,

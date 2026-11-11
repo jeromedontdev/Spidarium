@@ -11,8 +11,9 @@ Open Menu -> Settings -> WiFi. Merely opening the page does not enable WiFi.
 - **Add network:** SSID editor followed by password editor, including hidden
   networks. Blank password means open. WPA passphrases must be 8-63 bytes.
 - **Saved networks:** up to three; each can sync RTC or be forgotten.
-- **Manual firmware update:** enter an HTTPS URL for a Spidarium application
-  binary. A saved network is required. There is no always-on connection.
+- **Firmware update:** choose GitHub Latest Release, or enter an advanced
+  HTTPS application URL. A saved network is required. There is no always-on
+  connection or automatic update check at boot.
 
 During network work the display holds its last frame and input pauses. After
 stop/deinit, the display resumes and shows the result or error. Failed
@@ -95,22 +96,46 @@ OTA metadata, and a 6 MB asset partition. NVS remains at its original address.
 bootloader, table, application and repacked assets must agree.
 Back up user data before deployment. No whole-flash erase is required.
 
-HTTPS uses the ESP-IDF certificate bundle, certificate/hostname verification,
-and rejects automatic redirects. The image must have the same project name;
+HTTPS uses the ESP-IDF certificate bundle and certificate/hostname verification.
+GitHub release downloads require redirects: the latest-release path follows at
+most five redirects and rejects non-HTTPS destinations. The image must have the same project name;
 an uninitialized system clock triggers a fresh RTC/NTP sync before TLS.
 the running version is treated as up to date. Different-version firmware is
 downloaded to an inactive OTA slot, completeness/image verification is checked,
 and only successful finish changes the next boot partition. Reboot explicitly
 to apply (console `reboot`); download alone does not reset the device.
 
-Publish unique firmware versions. This is a direct binary URL, not a release
-manifest, semantic-version comparison, or automatic downgrade protection.
+**Update From GitHub** resolves
+`https://github.com/jeromedontdev/Spidarium/releases/latest/download/spidarium-ota.json`.
+This is GitHub's latest stable release, not a hardcoded version or Pages cache.
+The bounded 4 KB manifest supplies a numeric version, exact versioned
+`spidarium.bin` URL, application size/SHA-256 and required storage size/SHA-256.
+Identical versions report up to date; older versions are rejected.
+The worker checks the installed artwork bytes before writing. Different artwork
+requires the USB updater rather than risking an incompatible application.
+It streams the application through one 4 KB PSRAM buffer into an inactive slot,
+checks the exact received length and SHA-256, ends ESP image verification and
+checks the project/version descriptor before changing the boot partition.
+NVS and artwork are never written by this flow. Press RESET or use console
+`reboot` after the installed result; queue acceptance is not installation.
+
+Release packaging writes `spidarium-ota.json` alongside the five images.
+Publish **both that descriptor and the standalone `spidarium.bin`** as GitHub
+release assets, in addition to the complete ZIP. Their versioned URL prevents
+a moving latest alias from mixing releases midway through a download.
+Future artwork changes must ship the complete USB update bundle.
+
+The advanced URL path remains an explicit direct-binary operation, without
+the latest-release manifest's hash/artwork compatibility/downgrade checks.
+Only use an application built for the installed art pack.
 Application-level functional rollback and signed-release provisioning are
 not enabled. TLS authentication is not equivalent to firmware signing.
-There is no configured production update server in this repository.
 OTA updates the application only, not asset storage. Changes to packed artwork
 or generated asset identifiers require a matching full flash; do not deploy
-incompatible app/asset combinations through application-only OTA.
+incompatible app/asset combinations through application-only OTA. The web
+updater writes matching application/artwork and initializes OTA selection last,
+but preserves and readback-verifies NVS. A mismatched installed partition table
+is rejected before writes; back up the pet and use full installation to migrate.
 
 ## Verification
 

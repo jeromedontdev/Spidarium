@@ -158,7 +158,7 @@ static void back_to_gifts(void)
 static void on_gift_pick(uint8_t id)
 {
     s_gift_preview = id;
-    ui_menu_open(s_gift_name[id], &s_gifts[id], 1, game_gift_chosen);
+    ui_menu_open_detail(s_gift_name[id], &s_gifts[id], 1, game_gift_chosen);
     ui_menu_set_item_icon(0, sprite_gift_index(id));
     ui_menu_set_back(back_to_gifts);
 }

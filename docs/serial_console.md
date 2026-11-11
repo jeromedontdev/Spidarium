@@ -782,7 +782,9 @@ python cmd.py COM7 "wifi saved"
 python cmd.py COM7 "wifi add My Network|my-passphrase" 40
 python cmd.py COM7 "wifi sync 0" 40
 python cmd.py COM7 "wifi forget 0"
+python cmd.py COM7 "wifi ota latest" 150
 python cmd.py COM7 "wifi ota https://your-server/firmware.bin" 150
+python cmd.py COM7 "otatest"
 python cmd.py COM7 "rtc"
 python cmd.py COM7 "rtcset 1794078000"
 python cmd.py COM7 "gifttest"
@@ -798,6 +800,13 @@ index 0-2. OTA requires HTTPS and a saved network; missing credentials and
 non-HTTPS URLs return `ERR`, with no radio startup. Successful download is
 verified before selecting the next boot slot; run `reboot` to apply it.
 The firmware version must differ from the running version.
+`wifi ota latest` resolves GitHub's latest stable release descriptor, rejects
+older versions or incompatible installed artwork, verifies the exact application
+size/SHA-256 and project/version, and only then selects the inactive slot.
+Same-version checks report up to date without installing. `otatest` validates
+the descriptor parser without radio/flash writes and reports the running
+firmware version and partition, useful after the explicit reboot.
+The advanced URL path does not provide the latest descriptor's art/hash checks.
 
 `rtc` reports `RTC utc=<epoch> system=<epoch>` and fails when the oscillator-stop
 flag/calendar is invalid. `rtcset` is manual RTC recovery/testing, UTC epoch

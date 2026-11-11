@@ -6,10 +6,10 @@ from pathlib import Path
 import shutil
 import zipfile
 
-from package_release import REGIONS
+from package_release import REGIONS, ota_manifest
 
 
-def install_firmware(root: Path, archive: Path) -> None:
+def install_firmware(root: Path, archive: Path, ota_assets: Path | None = None) -> None:
     destination = root / "site" / "firmware"
     with zipfile.ZipFile(archive) as release:
         manifests = [name for name in release.namelist() if name.endswith("/manifest.json")]
@@ -35,6 +35,17 @@ def install_firmware(root: Path, archive: Path) -> None:
             images[name] = data
         if set(images) != set(REGIONS):
             raise ValueError("Missing full-flash image")
+        ota_name = prefix + "spidarium-ota.json"
+        if ota_name in release.namelist():
+            descriptor = json.loads(release.read(ota_name))
+            if descriptor != ota_manifest(manifest):
+                raise ValueError("OTA descriptor does not match the verified release")
+            if ota_assets is not None and (
+                    json.loads((ota_assets / "spidarium-ota.json").read_text()) != descriptor or
+                    (ota_assets / "spidarium.bin").read_bytes() != images["spidarium.bin"]):
+                raise ValueError("Published standalone OTA assets do not match the release ZIP")
+        elif ota_assets is not None:
+            raise ValueError("Release ZIP is missing its OTA descriptor")
         destination.mkdir(parents=True, exist_ok=True)
         for name, data in images.items():
             (destination / name).write_bytes(data)
@@ -62,12 +73,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", nargs="?", type=Path)
     parser.add_argument("--assets-only", action="store_true")
+    parser.add_argument("--ota-assets", type=Path,
+                        help="verify separately downloaded GitHub OTA assets against the ZIP")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     if args.assets_only:
         copy_art(root)
     elif args.archive:
-        install_firmware(root, args.archive)
+        install_firmware(root, args.archive, args.ota_assets)
     else:
         parser.error("Provide a release ZIP or --assets-only")
 

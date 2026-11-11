@@ -15,13 +15,13 @@ shell remains rounded; spider and terrain pixels have no CSS filter effects.
 The existing local Montserrat font is shared with the landing page.
 v1.1.18 adds framed row icons, pixel rivets and a gold header ornament clear
 of Back. Daily actions use care glyphs; backgrounds use real thumbnails.
-Treats, Backgrounds, Borders, Decor and Gifts now use six-item 3x2 shop grids;
-navigation/settings remain three-card lists. Gifts open a full-effect preview
+Treats, Backgrounds, Borders, Decor, Gifts, Achievements and Prey Species use
+six-item 3x2 grids; navigation/settings use four-item 2x2 grids. Gifts open a full-effect preview
 before placement, with Back restoring the same shop page without a purchase.
 The care HUD opens from a small paper/gold fold with a transparent 56px target
 inside the top-left corner; M is the keyboard equivalent.
-The landing-page emblem is a static blue-green beetle against Fairy Glade,
-separate from the unchanged in-game spider.
+The landing-page circle shows the unchanged native spider with one small
+beetle against a quiet moss floor, without pink furnishings or floating motion.
 
 Disabled controls have dim text and dashed borders; destructive actions use
 red, selection uses mint with an inset marker, and keyboard focus uses a light
@@ -73,7 +73,7 @@ The portable files are only a local convenience; CI uses ordinary Node/npm.
 `native-spider.png` is the published promotional preview, generated directly from
 `lib/spider-renderer.js` so it matches the spider the device draws.
 Gameplay and the sleeping preview render the native spider directly through
-`lib/spider-renderer.js`; the hero uses the existing woodland beetle artwork.
+`lib/spider-renderer.js`; the hero uses it too, with one small beetle beside it.
 The source simulator works without an npm install; device flashing requires
 the production bundle. `node serve.mjs` alone serves the source.
 
@@ -93,6 +93,24 @@ Absent resources produce explicit errors; there is no simulated flash success.
 The build intentionally permits missing release inputs so the playable website
 can be built before a firmware release. Publish device functionality only after
 these files have been provided.
+
+### Existing-device update
+
+The device-operation selector defaults to **Update existing device**. After
+verifying release hashes, it compares the installed partition-table bytes with
+the release table. A mismatch stops before writes. An update writes only the
+application, matching artwork and finally OTA selection; it leaves the
+bootloader/table/NVS untouched, then reads all 24 KB of NVS back and compares
+every byte. NVS snapshots stay in memory, are cleared, and are not logged or
+uploaded. Full installation remains available for new boards/layout migration,
+also without a whole-chip erase. Export a pet backup before either operation.
+Interrupted updates still require USB recovery; save preservation is not an
+atomic firmware/artwork transaction.
+
+On-device **WiFi > Firmware Update > Update From GitHub** resolves the latest
+stable release, verifies its application hash and installed artwork compatibility,
+and writes only an inactive application slot. It does not update artwork or
+emulate radio access in the browser. See [OTA policy](../docs/WIFI_ARCHITECTURE.md).
 
 Pinned dependencies: `esptool-js@0.7.1`, `js-md5@0.8.3`, and build-only
 `esbuild@0.25.5`; `npm ci` downloads their locked dependencies. No TypeScript.

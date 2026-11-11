@@ -25,6 +25,8 @@ bool net_connect_to(const char *ssid, const char *pass);
 bool net_sync_saved(int index);
 bool net_forget_saved(int index);
 bool net_ota_start(const char *https_url);
+bool net_ota_latest(void);
+bool net_ota_test(void);
 int net_saved_count(void);
 const char *net_saved_ssid(int index);
 bool net_has_credentials(void);

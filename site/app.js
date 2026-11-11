@@ -1,11 +1,11 @@
 import { SerialConsole } from './lib/protocol.js';
-import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.23';
-import { loadFirmware, flashFirmware } from './lib/flasher.js';
-import { DeviceGame } from './lib/device-ui.js?v=1.1.23';
+import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.24';
+import { loadFirmware, flashFirmware } from './lib/flasher.js?v=1.1.24';
+import { DeviceGame } from './lib/device-ui.js?v=1.1.24';
 import { renderSpider } from './lib/spider-renderer.js';
 
 const $ = selector => document.querySelector(selector);
-for (const [id, state, emote] of [['sleeping-spider', 'sleep', 'sleepy']]) {
+for (const [id, state, emote] of [['hero-spider', 'idle', 'happy'], ['sleeping-spider', 'sleep', 'sleepy']]) {
   const ctx = $(`#${id}`).getContext('2d'), frame = ctx.createImageData(96, 96);
   renderSpider(frame.data, { state, emote, fangColour: 7 });
   ctx.putImageData(frame, 0, 0);
@@ -130,8 +130,14 @@ $('#check-release').onclick = () => operation(async () => {
   $('#flash-status').textContent = 'Release verified. No firmware written yet.';
 }, $('#flash-status'));
 $('#flash-consent').onchange = deviceUI;
+$('#flash-mode').onchange = () => {
+  $('#flash-consent').checked = false;
+  $('#flash').textContent = $('#flash-mode').value === 'update' ? 'Choose board & update' : 'Choose board & install';
+  deviceUI();
+};
 $('#flash').onclick = () => operation(async () => {
-  if (!confirm(`Flash Spidarium ${firmware.manifest.version} onto your ESP32-S3? Do not unplug until complete. NVS will not be erased.`)) return;
+  const mode = $('#flash-mode').value, count = mode === 'update' ? 3 : 5;
+  if (!confirm(`${mode === 'update' ? 'Update' : 'Install'} Spidarium ${firmware.manifest.version} on your ESP32-S3? Do not unplug until complete. NVS will not be erased.`)) return;
   const port = consoleSession.connected ? selectedPort : await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a, usbProductId: 0x1001 }] });
   let tools;
   try { tools = await import('./vendor/esptool.js'); }
@@ -139,11 +145,14 @@ $('#flash').onclick = () => operation(async () => {
   $('#flash-status').textContent = 'Entering bootloader. If needed, hold BOOT and tap RESET.';
   const verified = await loadFirmware(new URL('./firmware/manifest.json', import.meta.url));
   if (JSON.stringify(verified.manifest) !== JSON.stringify(firmware.manifest)) throw new Error('Release changed since confirmation; check release again');
-  await flashFirmware({ port, consoleSession, firmware: verified, tools, log, progress: (index, written, total) => {
-    $('#flash-progress').value = (index + written / total) / verified.images.length * 100;
-    $('#flash-status').textContent = `Writing image ${index + 1} / ${verified.images.length} · ${Math.round(written / total * 100)}%`;
+  await flashFirmware({ port, consoleSession, firmware: verified, tools, mode, log, progress: (index, written, total) => {
+    $('#flash-progress').value = (index + written / total) / count * 100;
+    $('#flash-status').textContent = `Writing image ${index + 1} / ${count} · ${Math.round(written / total * 100)}%`;
   } });
-  $('#flash-progress').value = 100; $('#flash-status').textContent = 'Images written and device MD5 checks passed. Press RESET. NVS was not erased.'; deviceSchemaVerified = false;
+  $('#flash-progress').value = 100; $('#flash-status').textContent = mode === 'update'
+    ? 'Update written, device MD5 checks passed and all NVS bytes verified unchanged. Press RESET.'
+    : 'Images written and device MD5 checks passed. Press RESET. NVS was not erased.';
+  deviceSchemaVerified = false;
 }, $('#flash-status'));
 $('#clear-log').onclick = () => { $('#serial-log').textContent = ''; };
 navigator.serial?.addEventListener('disconnect', () => {

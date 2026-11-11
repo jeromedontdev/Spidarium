@@ -14,6 +14,7 @@
 #include "esp_event.h"
 #include "esp_heap_caps.h"
 #include "esp_https_ota.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_lv_adapter.h"
 #include "esp_netif.h"
@@ -25,7 +26,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/idf_additions.h"
+#include "cJSON.h"
+#include "mbedtls/sha256.h"
 
+#include <ctype.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +38,8 @@
 #define SCAN_MAX 12
 #define NET_STACK 12288
 #define NVS_NS "spidarium_net"
+#define RELEASE_BASE "https://github.com/jeromedontdev/Spidarium/releases/"
+#define LATEST_OTA RELEASE_BASE "latest/download/spidarium-ota.json"
 
 static const char *TAG = "spidarium.net";
 typedef struct { char ssid[33]; char pass[65]; } credential_t;
@@ -277,7 +283,7 @@ static bool ota(const char *url)
         .timeout_ms = 10000,
         .buffer_size = 2048,
         .buffer_size_tx = 1024,
-        .disable_auto_redirect = true,
+        .max_redirection_count = 5,
     };
     esp_https_ota_config_t config = { .http_config = &http };
     esp_https_ota_handle_t handle = NULL;
@@ -314,6 +320,210 @@ static bool ota(const char *url)
     if (err != ESP_OK) return fail("OTA verify", err);
     snprintf(s_status, sizeof s_status, "update installed; reboot to apply");
     return true;
+}
+
+typedef struct {
+    char version[32];
+    char url[256];
+    size_t size, storage_size;
+    uint8_t hash[32], storage_hash[32];
+} ota_release_t;
+
+static bool read_hash(const cJSON *item, uint8_t hash[32])
+{
+    if (!cJSON_IsString(item) || strlen(item->valuestring) != 64) return false;
+    for (int i = 0; i < 32; i++) {
+        unsigned value = 0;
+        for (int j = 0; j < 2; j++) {
+            unsigned char c = (unsigned char)item->valuestring[i * 2 + j];
+            if (!isxdigit(c)) return false;
+            value = value * 16 + (isdigit(c) ? c - '0' : tolower(c) - 'a' + 10);
+        }
+        hash[i] = (uint8_t)value;
+    }
+    return true;
+}
+
+static bool parse_release(const char *text, ota_release_t *release)
+{
+    cJSON *json = cJSON_Parse(text);
+    if (!json) return false;
+    const cJSON *version = cJSON_GetObjectItemCaseSensitive(json, "version");
+    const cJSON *url = cJSON_GetObjectItemCaseSensitive(json, "url");
+    const cJSON *size = cJSON_GetObjectItemCaseSensitive(json, "size");
+    const cJSON *storage = cJSON_GetObjectItemCaseSensitive(json, "storage");
+    const cJSON *storage_size = cJSON_GetObjectItemCaseSensitive(storage, "size");
+    unsigned major, minor, patch;
+    char extra;
+    bool ok = cJSON_IsString(version) && strlen(version->valuestring) < sizeof release->version &&
+        sscanf(version->valuestring, "%u.%u.%u%c", &major, &minor, &patch, &extra) == 3 &&
+        cJSON_IsString(url) && cJSON_IsNumber(size) && size->valuedouble >= 112 &&
+        size->valuedouble <= 0x300000 && size->valuedouble == size->valueint &&
+        cJSON_IsNumber(storage_size) && storage_size->valuedouble > 0 &&
+        storage_size->valuedouble <= 0x600000 && storage_size->valuedouble == storage_size->valueint &&
+        read_hash(cJSON_GetObjectItemCaseSensitive(json, "sha256"), release->hash) &&
+        read_hash(cJSON_GetObjectItemCaseSensitive(storage, "sha256"), release->storage_hash);
+    if (ok) {
+        char expected[256];
+        snprintf(expected, sizeof expected, RELEASE_BASE "download/v%s/spidarium.bin", version->valuestring);
+        ok = !strcmp(url->valuestring, expected);
+        if (ok) {
+            snprintf(release->version, sizeof release->version, "%s", version->valuestring);
+            snprintf(release->url, sizeof release->url, "%s", expected);
+            release->size = (size_t)size->valueint;
+            release->storage_size = (size_t)storage_size->valueint;
+        }
+    }
+    cJSON_Delete(json);
+    return ok;
+}
+
+static esp_http_client_handle_t open_release_url(const char *url)
+{
+    esp_http_client_config_t config = {
+        .url = url, .crt_bundle_attach = esp_crt_bundle_attach,
+        .timeout_ms = 10000, .buffer_size = 2048, .buffer_size_tx = 1024,
+        .user_agent = "Spidarium-updater", .disable_auto_redirect = true,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) { fail("update HTTP allocation", ESP_ERR_NO_MEM); return NULL; }
+    for (int redirects = 0; redirects <= 5; redirects++) {
+        esp_err_t err = esp_http_client_open(client, 0);
+        if (err != ESP_OK) { fail("update HTTPS connect", err); break; }
+        int64_t length = esp_http_client_fetch_headers(client);
+        if (length < 0 && !esp_http_client_is_chunked_response(client)) {
+            fail("update HTTPS headers", ESP_FAIL); break;
+        }
+        int status = esp_http_client_get_status_code(client);
+        if (status == 200) return client;
+        if (redirects == 5 || (status != 301 && status != 302 && status != 303 &&
+                              status != 307 && status != 308)) {
+            ESP_LOGE(TAG, "update HTTP status %d", status);
+            fail("update HTTP response", ESP_FAIL); break;
+        }
+        err = esp_http_client_set_redirection(client);
+        if (err != ESP_OK || esp_http_client_get_transport_type(client) != HTTP_TRANSPORT_OVER_SSL) {
+            fail("update HTTPS redirect", err == ESP_OK ? ESP_ERR_INVALID_ARG : err); break;
+        }
+        esp_http_client_close(client);
+    }
+    esp_http_client_cleanup(client);
+    return NULL;
+}
+
+static bool ota_latest(void)
+{
+    char *text = heap_caps_calloc(1, 4097, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!text) return fail("update manifest allocation", ESP_ERR_NO_MEM);
+    esp_http_client_handle_t client = open_release_url(LATEST_OTA);
+    if (!client) { free(text); return false; }
+    int used = 0, got = 0;
+    while (used < 4096 && (got = esp_http_client_read(client, text + used, 4096 - used)) > 0)
+        used += got;
+    bool complete = got >= 0 && used < 4096 && esp_http_client_is_complete_data_received(client);
+    esp_http_client_cleanup(client);
+    ota_release_t release = {0};
+    bool valid = complete && parse_release(text, &release);
+    free(text);
+    if (!valid) return fail("invalid latest release manifest", ESP_ERR_INVALID_ARG);
+    const char *current = esp_app_get_description()->version;
+    if (!strcmp(release.version, current)) {
+        snprintf(s_status, sizeof s_status, "GitHub latest %s; already up to date", release.version);
+        ESP_LOGI(TAG, "%s", s_status);
+        return true;
+    }
+    unsigned a = 0, b = 0, c = 0, x = 0, y = 0, z = 0;
+    if (sscanf(current, "%u.%u.%u", &a, &b, &c) != 3 ||
+        sscanf(release.version, "%u.%u.%u", &x, &y, &z) != 3 ||
+        x < a || (x == a && y < b) || (x == a && y == b && z < c))
+        return fail("latest release is older; update refused", ESP_ERR_INVALID_VERSION);
+    const esp_partition_t *storage = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+        ESP_PARTITION_SUBTYPE_ANY, "storage");
+    const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
+    if (!storage || !target || release.storage_size > storage->size || release.size > target->size)
+        return fail("update partition missing or too small", ESP_ERR_INVALID_SIZE);
+    uint8_t *buffer = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buffer) return fail("update buffer", ESP_ERR_NO_MEM);
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    uint8_t digest[32];
+    esp_err_t err = mbedtls_sha256_starts(&sha, 0) == 0 ? ESP_OK : ESP_FAIL;
+    for (size_t offset = 0; err == ESP_OK && offset < release.storage_size;) {
+        size_t count = release.storage_size - offset;
+        if (count > 4096) count = 4096;
+        err = esp_partition_read(storage, offset, buffer, count);
+        if (err == ESP_OK && mbedtls_sha256_update(&sha, buffer, count) != 0) err = ESP_FAIL;
+        offset += count;
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    if (err == ESP_OK && mbedtls_sha256_finish(&sha, digest) != 0) err = ESP_FAIL;
+    if (err == ESP_OK && memcmp(digest, release.storage_hash, sizeof digest))
+        err = ESP_ERR_INVALID_CRC;
+    if (err != ESP_OK) {
+        mbedtls_sha256_free(&sha); free(buffer);
+        return fail("art differs; use USB updater", err);
+    }
+    client = open_release_url(release.url);
+    if (!client) { mbedtls_sha256_free(&sha); free(buffer); return false; }
+    esp_ota_handle_t handle = 0;
+    bool started = false;
+    size_t received = 0;
+    err = mbedtls_sha256_starts(&sha, 0) == 0 ? ESP_OK : ESP_FAIL;
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(120000);
+    if (err == ESP_OK) {
+        err = esp_ota_begin(target, release.size, &handle);
+        started = err == ESP_OK;
+    }
+    while (err == ESP_OK && (got = esp_http_client_read(client, (char *)buffer, 4096)) > 0) {
+        if (received + got > release.size || (int32_t)(deadline - xTaskGetTickCount()) <= 0) {
+            err = ESP_ERR_INVALID_SIZE; break;
+        }
+        if (mbedtls_sha256_update(&sha, buffer, got) != 0) { err = ESP_FAIL; break; }
+        err = esp_ota_write(handle, buffer, got);
+        received += got;
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    if (err == ESP_OK && (got < 0 || received != release.size ||
+                          !esp_http_client_is_complete_data_received(client)))
+        err = ESP_ERR_INVALID_SIZE;
+    esp_http_client_cleanup(client);
+    if (err == ESP_OK && mbedtls_sha256_finish(&sha, digest) != 0) err = ESP_FAIL;
+    if (err == ESP_OK && memcmp(digest, release.hash, sizeof digest)) err = ESP_ERR_INVALID_CRC;
+    mbedtls_sha256_free(&sha);
+    free(buffer);
+    if (err != ESP_OK) {
+        if (started) esp_ota_abort(handle);
+        return fail("latest OTA download/hash", err);
+    }
+    err = esp_ota_end(handle);
+    esp_app_desc_t candidate;
+    if (err == ESP_OK) err = esp_ota_get_partition_description(target, &candidate);
+    if (err == ESP_OK && (strcmp(candidate.version, release.version) ||
+        strcmp(candidate.project_name, esp_app_get_description()->project_name)))
+        err = ESP_ERR_INVALID_VERSION;
+    if (err == ESP_OK) err = esp_ota_set_boot_partition(target);
+    if (err != ESP_OK) return fail("latest OTA verify/select", err);
+    snprintf(s_status, sizeof s_status, "GitHub %s installed; RESET to apply", release.version);
+    ESP_LOGI(TAG, "%s; NVS and artwork unchanged", s_status);
+    return true;
+}
+
+bool net_ota_test(void)
+{
+    ota_release_t release = {0};
+    const char *valid = "{\"version\":\"1.2.3\",\"url\":\"" RELEASE_BASE
+        "download/v1.2.3/spidarium.bin\",\"size\":1024,"
+        "\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\","
+        "\"storage\":{\"size\":2048,"
+        "\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}";
+    bool ok = parse_release(valid, &release) && release.size == 1024 &&
+        release.storage_size == 2048 && release.storage_hash[0] == 0xaa;
+    ok = ok && !parse_release("{}", &release) && !parse_release("{", &release);
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    ESP_LOGI(TAG, "OTA running version=%s partition=%s",
+             esp_app_get_description()->version, running ? running->label : "missing");
+    ESP_LOGI(TAG, "OTA release manifest validation: %s", ok ? "PASS" : "FAIL");
+    return ok;
 }
 
 static void worker(void *arg)
@@ -388,7 +598,10 @@ static void worker(void *arg)
                     }
                     if (saved) {
                         if (job.kind == JOB_OTA) {
-                            if (time(NULL) >= 1577836800 || sync_time()) ota(job.url);
+                            if (time(NULL) >= 1577836800 || sync_time()) {
+                                if (job.url[0]) ota(job.url);
+                                else ota_latest();
+                            }
                         }
                         else sync_time();
                     }
@@ -535,7 +748,17 @@ bool net_ota_start(const char *url)
         ESP_LOGW(TAG, "OTA rejected: requires HTTPS URL and a saved network");
         return false;
     }
+
     job_t job = { .kind = JOB_OTA, .index = 0 };
     snprintf(job.url, sizeof job.url, "%s", url);
     return queue(&job);
+}
+
+bool net_ota_latest(void)
+{
+    if (!net_has_credentials()) {
+        ESP_LOGW(TAG, "latest OTA rejected: save a network first");
+        return false;
+    }
+    return queue(&(job_t){.kind = JOB_OTA, .index = 0});
 }

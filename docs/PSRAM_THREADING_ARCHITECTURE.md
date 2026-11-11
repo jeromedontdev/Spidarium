@@ -57,6 +57,11 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
 - **Network worker:** 12 KB internal stack for credential/OTA flash writes;
   queued scan, join, time-sync, forget, OTA. Notifications
   wake it; atomics publish completion. Passwords never appear in logs.
+  GitHub latest-release OTA uses a bounded 4 KB manifest and a reusable 4 KB
+  streaming/hash buffer in PSRAM. All HTTP, storage compatibility reads and
+  OTA flash writes remain on this worker while the display is paused. Only
+  a fully size/hash/image/project/version-verified inactive slot becomes bootable;
+  no NVS or artwork writes occur during latest-release OTA.
 - **Save worker:** 4 KB internal stack, copies of game state queued by LVGL,
   NVS commits off-thread. Queue and stack are allocated by `save_init()` at
   boot before LVGL starts, never lazily by a gameplay save callback.

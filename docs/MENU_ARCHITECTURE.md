@@ -1,6 +1,6 @@
 # Menu implementation
 
-`ui_menu.c/h` owns one paged list/grid modal, a text editor and short minigames.
+`ui_menu.c/h` owns one paged grid modal, detail previews, a text editor and short minigames.
 `game.c` owns navigation and callbacks. This is not the previously proposed
 menu-stack/slider architecture; use the implemented API.
 
@@ -12,7 +12,7 @@ Menu
   Treats                 twelve consumables bought with Silk
   Backgrounds            forty-eight ground textures, buy once with Silk
   Achievements           read-only, paged
-  Prey species           read-only unlock list
+  Prey species           read-only unlock grid
   Decor                  sixty-eight kinds; buy, then tap the tank to place
   Borders                No Border + forty-eight theme frames; buy once with Silk
   Settings
@@ -21,14 +21,14 @@ Menu
       Add network        SSID -> masked password editor with Show/Hide
       Saved networks
         Selected network -> sync RTC / forget
-      Firmware update    HTTPS URL editor
+      Firmware update    GitHub latest release / advanced HTTPS URL
       Scanned networks   choose -> password editor if secured
     SD card              backup / restore / persistent status
     About                firmware and hardware information
     Battery              status, profiles, timeout, RTC sleep delay/wake
     Display              brightness slider, screen rotation
     Sound                volume, Sound checkbox, Background Music switch
-                         page 2: Music Volume, Soundtrack (three choices)
+                         Music Volume on page 1; Soundtrack on page 2
     Auto Feed            one switch: wild prey and unattended hunting together
     Save Screenshot      verified playfield BMP to SD (PNG in browser)
     Wipe Spider          red text; confirmation before reset; always last
@@ -40,15 +40,17 @@ redundant full-width Back row because the corner Back button already exists.
 Gifts has thirty-six furnishings, one active at a time. Borders are independent
 of backgrounds: buying a frame does not buy/change its floor. Owned frames
 reapply free, No Border removes one free without losing ownership. Native menu
-metadata capacity follows DECOR_COUNT (68); visible objects are three list cards
-or six shop tiles.
+metadata capacity follows DECOR_COUNT (68); visible objects are four control
+tiles or six catalogue tiles.
 
-Treats, Backgrounds, Borders, Decor and Gifts use a three-column, two-row grid.
-`ui_menu_open_grid()` explicitly selects this layout; navigation, settings and
-read-only catalogues retain `ui_menu_open()` lists. Each tile has a real 48px
+Treats, Backgrounds, Borders, Decor, Gifts, Achievements and Prey Species use a
+three-column, two-row grid. `ui_menu_open_grid()` selects this layout;
+`ui_menu_open()` uses two columns/two rows for navigation and settings.
+Each catalogue tile has a real 48px
 icon, name, price/status and selected marker. Gift tiles open a full-effect
 preview before the original placement flow; Back returns to the same grid page
-without spending Silk.
+without spending Silk. The gift effect preview uses `ui_menu_open_detail()`;
+it is a detail/confirmation view, not a browsing list.
 
 Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Back from saved network/editor
 returns to WiFi. Other submenus return to the root; root Back closes.
@@ -75,11 +77,14 @@ petting waits 450 ms so a double tap cannot also pet the spider.
 Use static tables/detail buffers for menu definitions. The callback is captured
 before closing, so selecting a row can safely open its destination.
 
-The corner-safe 400x400 panel and backdrop are opaque. Three 76-pixel-high
-cards are reused on each list page, with 96x56 Back and 120x56 Prev/Next controls.
-Shop pages reuse six 120x116 tiles at x12/140/268 and y76/200. Their bottom
+The corner-safe 400x400 panel and backdrop are opaque. Back and Prev/Next are
+96x56 controls. Navigation/settings reuse four 184x116 tiles at x12/204 and
+y76/200, with 32px icons, separate labels/status and bottom slider tracks.
+Slider callbacks receive the stable item index, never its mutable percentage.
+Catalogues reuse six 120x116 tiles at x12/140/268 and y76/200. Their bottom
 edge is y316, clear of the footer at y332. Names and status use 12px text;
 full gift effects remain in the preview rather than being squeezed into tiles.
+Detail previews retain a full-width card for complete effect text.
 There is no scrolling, momentum or scroll animation. Selected entries open
 on their page. Cards show press feedback, selected tint, disabled styling and
 chevrons on actionable submenus. Read-only/disabled cards have no dash marker.
@@ -89,7 +94,8 @@ the retired First Pet badge remains mapped for legacy data but is not earnable.
 static item definitions. Backgrounds has no root-card subtext.
 Every row has a default meaningful glyph, with real thumbnails overriding it
 for backgrounds, decor, gifts and species. Daily tasks choose their care glyph.
-Icon images use 48x48 contain alignment, not cropped 240px backgrounds.
+Catalogue icons use 48x48 contain alignment, navigation icons 32x32;
+neither crops a full 240px background.
 Gold corner rivets and framed icon tiles reinforce the pixel-art treatment.
 The header ornament is x120/y60/w264/h4, clear of Back's x12..108/y12..68.
 Closing hides the backdrop before deferred deletion, removing it from hit

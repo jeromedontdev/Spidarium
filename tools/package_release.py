@@ -68,6 +68,19 @@ def copy_licenses(source: Path, destination: Path) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(path, target)
 
+def ota_manifest(manifest: dict) -> dict:
+    app = next(item for item in manifest["files"] if item["path"] == "spidarium.bin")
+    storage = next(item for item in manifest["files"] if item["path"] == "storage.bin")
+    version = manifest["version"]
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ValueError("OTA publication requires a stable numeric release version")
+    return {
+        "version": version,
+        "url": f"https://github.com/jeromedontdev/Spidarium/releases/download/v{version}/spidarium.bin",
+        "size": app["size"], "sha256": app["sha256"],
+        "storage": {"size": storage["size"], "sha256": storage["sha256"]},
+    }
+
 
 def validate_save_schema(root: Path) -> Path:
     schema_path = root / "site" / "save-schema.json"
@@ -139,6 +152,8 @@ def package(root: Path, version: str) -> Path:
     contents = json.dumps(manifest, indent=2) + "\n"
     (output / "manifest.json").write_text(contents, encoding="utf-8")
     (web / "manifest.json").write_text(contents, encoding="utf-8")
+    (output / "spidarium-ota.json").write_text(
+        json.dumps(ota_manifest(manifest), indent=2) + "\n", encoding="utf-8")
     notes = root / "docs" / f"RELEASE_v{version}.md"
     shutil.copyfile(notes, output / "README.md")
     shutil.copyfile(root / "LICENSE", output / "LICENSE")

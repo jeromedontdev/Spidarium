@@ -60,7 +60,8 @@ export async function loadFirmware(manifestURL, fetcher = fetch, cryptoAPI = glo
   validatePartitions(manifest, images[manifest.files.findIndex(file => file.path === 'partition-table.bin')].data);
   return { manifest, images };
 }
-export async function flashFirmware({ port, consoleSession, firmware, progress, log, tools }) {
+export async function flashFirmware({ port, consoleSession, firmware, progress, log, tools, mode = 'install' }) {
+  if (!['install', 'update'].includes(mode)) throw new Error('Choose install or update mode');
   if (typeof tools.ESPLoader !== 'function' || typeof tools.Transport !== 'function' || typeof tools.md5 !== 'function') throw new Error('Incomplete local flasher bundle');
   validateManifest(firmware.manifest);
   validatePartitions(firmware.manifest, firmware.images[firmware.manifest.files.findIndex(file => file.path === 'partition-table.bin')].data);
@@ -68,17 +69,39 @@ export async function flashFirmware({ port, consoleSession, firmware, progress, 
   const transport = new tools.Transport(port, false);
   const terminal = { clean() {}, write: log, writeLine: log };
   const loader = new tools.ESPLoader({ transport, baudrate: firmware.manifest.baud, terminal, debugLogging: false });
+  let before;
   try {
     await loader.main();
     if (loader.chip?.CHIP_NAME !== 'ESP32-S3') throw new Error('Wrong chip: this release requires ESP32-S3');
+    let images = firmware.images;
+    if (mode === 'update') {
+      const expected = firmware.images[firmware.manifest.files.findIndex(file => file.path === 'partition-table.bin')].data;
+      const installed = await loader.readFlash(0x8000, expected.length);
+      if (installed.length !== expected.length || !expected.every((byte, i) => byte === installed[i]))
+        throw new Error('Installed partition layout differs. Nothing written. Export your pet, then use full installation for this migration.');
+      before = await loader.readFlash(0x9000, 0x6000);
+      if (before.length !== 0x6000) throw new Error('Could not read the complete save region. Nothing written.');
+      // Select the factory application only after both application and art writes.
+      images = ['spidarium.bin', 'storage.bin', 'ota_data_initial.bin'].map(name =>
+        firmware.images[firmware.manifest.files.findIndex(file => file.path === name)]);
+      log('Update: preserving bootloader, partition table and NVS; verifying save-region bytes after writing.');
+    }
     await loader.writeFlash({
-      fileArray: firmware.images, flashSize: 'keep', flashMode: 'keep', flashFreq: 'keep',
+      fileArray: images, flashSize: 'keep', flashMode: 'keep', flashFreq: 'keep',
       eraseAll: false, compress: true,
       calculateMD5Hash: tools.md5,
       reportProgress: (fileIndex, written, total) => progress(fileIndex, written, total),
     });
+    if (before) {
+      const after = await loader.readFlash(0x9000, before.length);
+      const same = after.length === before.length && before.every((byte, i) => byte === after[i]);
+      before.fill(0); after.fill(0);
+      if (!same) throw new Error('Save-region verification failed. Do not start a new pet; retain your backup and recover over USB.');
+      log('Update verified: all NVS bytes unchanged. No save data was logged or uploaded.');
+    }
     log('Flash writes completed. Press RESET on the board when ready; no automatic reboot.');
   } finally {
+    before?.fill(0);
     await transport.disconnect();
   }
 }

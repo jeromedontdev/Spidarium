@@ -8,7 +8,7 @@
  * Usage:
  *   ui_menu_open("give a gift", items, count, on_pick);
  *
- * Three list cards or six shop tiles per page, without animated scrolling.
+ * Four navigation/control tiles or six catalogue tiles per page.
  * Open/close and all callbacks run exclusively on the LVGL task.
  */
 #pragma once
@@ -41,6 +41,8 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
                   ui_menu_pick_cb cb);
 void ui_menu_open_grid(const char *title, const ui_menu_item_t *items, int count,
                        ui_menu_pick_cb cb);
+void ui_menu_open_detail(const char *title, const ui_menu_item_t *items, int count,
+                         ui_menu_pick_cb cb);
 
 /* Set the BACK handler for the currently open menu. Call after ui_menu_open.
  * Without this, BACK simply closes the menu. */

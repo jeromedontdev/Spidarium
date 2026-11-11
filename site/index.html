@@ -7,12 +7,12 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="description" content="A tiny world for an eight-legged friend. Play Spidarium in your browser, flash an ESP32-S3, and safely manage your pet save.">
   <title>Spidarium — a little wild, a little wonderful</title>
-  <link rel="stylesheet" href="./style.css?v=1.1.23">
-  <link rel="stylesheet" href="./device.css?v=1.1.23">
+  <link rel="stylesheet" href="./style.css?v=1.1.24">
+  <link rel="stylesheet" href="./device.css?v=1.1.24">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="../assets/ui_status.png" type="image/png">
   <link rel="apple-touch-icon" href="../assets/ui_status.png">
-  <script type="module" src="./app.js?v=1.1.23"></script>
+  <script type="module" src="./app.js?v=1.1.24"></script>
 </head>
 <body>
   <header class="site-header">
@@ -29,8 +29,8 @@
         <div class="spec-strip"><span><b>480 × 480</b> AMOLED WORLD</span><span><b>ESP32-S3</b> REAL LITTLE HARDWARE</span><span><b>100% local</b> NO ACCOUNT NEEDED</span></div>
       </div>
       <div class="hero-art">
-        <div class="orbit-label label-top">COLEOPTERA · WOODLAND BEETLE</div>
-        <div class="hero-vivarium"><div class="hero-moss"></div><img class="hero-beetle" src="../assets/prey_beetle_walk_0.png" width="48" height="48" alt="A blue-green pixel-art beetle in a quiet fairy woodland"><span class="hero-spark spark-a">✦</span><span class="hero-spark spark-b">✧</span><div class="hero-name" id="hero-name"><span class="status-dot"></span> A LITTLE WOODLAND JEWEL</div></div>
+        <div class="orbit-label label-top">SALTICIDAE · JUMPING SPIDER</div>
+        <div class="hero-vivarium"><div class="hero-moss"></div><canvas class="hero-spider" id="hero-spider" width="96" height="96" aria-label="Your jumping spider with one small beetle on a quiet moss floor"></canvas><img class="hero-prey" src="../assets/prey_beetle_walk_0.png" width="48" height="48" alt="One small beetle"><div class="hero-name" id="hero-name"><span class="status-dot"></span> YOUR LITTLE EIGHT-LEGGED FRIEND</div></div>
         <div class="orbit-label label-bottom">A TINY FRIEND. NOT JUST A SCREEN.</div>
         <span class="art-note">gentle care. little leaps.</span>
       </div>
@@ -56,8 +56,8 @@
       <div class="device-notice" id="serial-support" role="status">Checking Web Serial availability…</div>
       <div class="hardware-tabs" role="tablist" aria-label="Device tools"><button role="tab" aria-selected="true" data-hardware="flash">01 Flash firmware</button><button role="tab" aria-selected="false" data-hardware="save">02 Your pet save</button><button role="tab" aria-selected="false" data-hardware="wifi">03 WiFi setup</button></div>
       <div id="hardware-flash" class="hardware-panel">
-        <div><p class="eyebrow">GIVE YOUR BOARD A LITTLE LIFE</p><h3>Flash, right here.</h3><p>Use a USB data cable. Choose the board’s USB Serial/JTAG port (303A:1001). If bootloader entry fails, hold BOOT, tap RESET, then release BOOT and retry.</p><p class="small">Only the five release images are written. NVS is not erased. Back up your pet first, especially before changing firmware versions. Release hashes check integrity, not publisher identity—use a trusted copy of this site.</p></div>
-        <div class="tool-card"><p id="release-info">Load the release manifest to inspect the version and images before connecting.</p><button id="check-release" class="button secondary">Check release</button><ul id="release-files" class="file-list"></ul><label class="check"><input type="checkbox" id="flash-consent"> I backed up my pet and accept that a failed update can require recovery.</label><button id="flash" class="button primary" disabled>Choose board & flash <span>↗</span></button><progress id="flash-progress" max="100" value="0" aria-label="Firmware flash progress"></progress><p id="flash-status" role="status">No firmware written.</p></div>
+        <div><p class="eyebrow">KEEP YOUR LITTLE FRIEND UP TO DATE</p><h3>Install or update.</h3><p>Use a USB data cable. Choose the board’s USB Serial/JTAG port (303A:1001). If bootloader entry fails, hold BOOT, tap RESET, then release BOOT and retry.</p><p class="small">Update existing device checks its installed partition table, writes the app and matching artwork, then selects the new app. It preserves the bootloader, partition table and save region, and verifies every NVS byte afterward. Full installation writes all five release images, still without erasing NVS. Back up your pet first. Release hashes check integrity, not publisher identity—use a trusted copy of this site.</p></div>
+        <div class="tool-card"><p id="release-info">Load the release manifest to inspect the version and images before connecting.</p><button id="check-release" class="button secondary">Check release</button><label class="file-label">Device operation<select id="flash-mode"><option value="update">Update existing device / preserve pet</option><option value="install">Full installation / new device or migration</option></select></label><ul id="release-files" class="file-list"></ul><label class="check"><input type="checkbox" id="flash-consent"> I backed up my pet and accept that a failed update can require recovery.</label><button id="flash" class="button primary" disabled>Choose board & update <span>↗</span></button><progress id="flash-progress" max="100" value="0" aria-label="Firmware flash progress"></progress><p id="flash-status" role="status">No firmware written.</p></div>
       </div>
       <div id="hardware-save" class="hardware-panel" hidden>
         <div><p class="eyebrow">A BACKUP FOR YOUR EIGHT-LEGGED FRIEND</p><h3>Keep their story safe.</h3><p>Export the complete, versioned raw save from your device. View a backup offline, or restore an exact compatible blob. WiFi passwords are not in pet backups.</p><div class="console-controls"><button id="connect" class="button secondary">Connect console</button><button id="disconnect" class="button secondary" disabled>Disconnect</button></div><p class="small">Opening the port may reset your device. We wait three seconds, then finish the help response before sending commands. Restoring never automatically reboots.</p></div>

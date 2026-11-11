@@ -68,6 +68,14 @@
 .d-row.has-slider .row-detail { top:10px; left:auto; right:14px; width:60px; text-align:right; }
 .d-row.has-slider input[type=range].d-slider { bottom:12px; margin:0; }
 .d-row.has-slider.has-icon input[type=range].d-slider { left:72px; width:calc(100% - 86px); }
+.game-screen .d-menu-tile { width:184px; height:116px; text-align:center; }
+.game-screen .d-menu-tile img { left:74px; top:0; width:32px; height:32px; }
+.d-menu-tile .row-label, .d-menu-tile.has-icon .row-label { left:2px; right:2px; top:34px; height:30px; font-size:12px; line-height:15px; overflow:hidden; }
+.d-menu-tile .row-detail, .d-menu-tile.has-icon .row-detail { left:2px; right:2px; top:64px; height:44px; font-size:12px; line-height:14px; overflow:hidden; }
+.d-menu-tile .row-marker { top:3px; right:4px; font-size:12px; }
+.d-menu-tile input[type=checkbox] { top:3px; right:4px; width:20px; height:20px; }
+.d-menu-tile.has-slider .row-detail { left:2px; right:2px; width:auto; top:64px; height:16px; text-align:center; }
+.d-menu-tile.has-slider input[type=range].d-slider, .d-menu-tile.has-slider.has-icon input[type=range].d-slider { left:12px; width:calc(100% - 24px); bottom:8px; height:20px; }
 .d-pages { position:absolute; left:148px; top:348px; width:104px; text-align:center; font-size:14px; }
 .d-notice { position:absolute; left:44px; right:44px; bottom:44px; z-index:20; padding:10px; border:2px solid #76d6b1; background:#16283c; color:#e8efda; font-size:13px; line-height:18px; pointer-events:none; box-shadow:2px 2px 0 #0a1220; }
 .d-notice.error { border-color:#dc8178; color:#ffb5ab; }

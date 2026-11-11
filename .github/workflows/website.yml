@@ -50,7 +50,8 @@ jobs:
             echo "No release named '$RELEASE_TAG'; using latest published release '$tag'."
           fi
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "spidarium-$tag.zip" --dir "$RUNNER_TEMP"
-          python tools/prepare_website.py "$RUNNER_TEMP/spidarium-$tag.zip"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "spidarium.bin" --pattern "spidarium-ota.json" --dir "$RUNNER_TEMP"
+          python tools/prepare_website.py "$RUNNER_TEMP/spidarium-$tag.zip" --ota-assets "$RUNNER_TEMP"
       - name: Build website and bundled flasher
         working-directory: site
         run: npm run build

@@ -5,11 +5,47 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+import zipfile
 
-from package_release import REGIONS, copy_licenses, image_manifest, validate_save_schema
+from package_release import REGIONS, copy_licenses, image_manifest, validate_save_schema, ota_manifest
+from prepare_website import install_firmware
 
 
 class ManifestTests(unittest.TestCase):
+    def test_published_ota_assets_must_match_verified_zip(self):
+        manifest = image_manifest(self.build, "1.0.0")
+        descriptor = ota_manifest(manifest)
+        archive = self.build / "release.zip"
+        with zipfile.ZipFile(archive, "w") as bundle:
+            prefix = "spidarium-v1.0.0/"
+            for item in manifest["files"]:
+                bundle.write(self.build / item["path"], prefix + item["path"])
+            bundle.writestr(prefix + "manifest.json", json.dumps(manifest))
+            bundle.writestr(prefix + "save-schema.json", "{}")
+            bundle.writestr(prefix + "spidarium-ota.json", json.dumps(descriptor))
+        (self.build / "spidarium-ota.json").write_text(json.dumps(descriptor))
+        install_firmware(self.build, archive, self.build)
+        (self.build / "spidarium-ota.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "standalone OTA assets"):
+            install_firmware(self.build, archive, self.build)
+        (self.build / "spidarium-ota.json").write_text(json.dumps(descriptor))
+        (self.build / "spidarium.bin").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "standalone OTA assets"):
+            install_firmware(self.build, archive, self.build)
+
+    def test_ota_manifest_uses_versioned_application_and_exact_asset_hash(self):
+        files = [
+            {"path": "spidarium.bin", "size": 2000000, "sha256": "a" * 64},
+            {"path": "storage.bin", "size": 1033657, "sha256": "b" * 64},
+        ]
+        result = ota_manifest({"version": "1.1.24", "files": files})
+        self.assertEqual(result["url"], "https://github.com/jeromedontdev/Spidarium/releases/download/v1.1.24/spidarium.bin")
+        self.assertEqual(result["sha256"], "a" * 64)
+        self.assertEqual(result["storage"], {"size": 1033657, "sha256": "b" * 64})
+        for version in ("../invalid", "1.2", "1.1.24-probe"):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "stable numeric"):
+                ota_manifest({"version": version, "files": files})
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

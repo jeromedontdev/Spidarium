@@ -1,8 +1,8 @@
-import * as E from './sim.js?v=1.1.23';
+import * as E from './sim.js?v=1.1.24';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.23';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.24';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -390,7 +390,7 @@ export class DeviceGame {
       ]; break;      case 'About': this.copy('Spidarium / Browser Edition\n\nDevice-coordinate UI and native game rules.\n480 × 480, scaled without changing targets.\nProgress stays in this browser.\n\nHardware: Waveshare ESP32-S3\nESP-IDF 5.5.6 / LVGL 9.6\n\nPersonal, Non-Commercial License.'); return;
       default: throw new Error(`Unknown menu: ${name}`);
     }
-    this.list(rows, page, ['Treats', 'Backgrounds', 'Borders', 'Decor', 'Gifts'].includes(name));
+    this.list(rows, page, ['Treats', 'Backgrounds', 'Borders', 'Decor', 'Gifts', 'Achievements', 'Prey Species'].includes(name) ? 3 : 2);
   }
   previewGift(id, status, page) {
     const item = E.GIFTS[id];
@@ -427,16 +427,17 @@ export class DeviceGame {
     this.modal.panel.append(element('div', 'd-copy', text));
     this.button(this.modal.panel, label, 60, 308, 280, 64, action ?? (() => this.back(this.modal.name)));
   }
-  list(rows, page, grid = false) {
-    const size = grid ? 6 : 3;
+  list(rows, page, columns = 0) {
+    const grid = columns !== 0, size = grid ? columns * 2 : 3;
+    const width = grid ? (376 - (columns - 1) * 8) / columns : 376;
     const pages = Math.max(1, Math.ceil(rows.length / size));
     rows.slice(page * size, page * size + size).forEach((item, i) => {
-      const button = this.button(this.modal.panel, '', grid ? 12 + i % 3 * 128 : 12,
-        grid ? 76 + Math.floor(i / 3) * 124 : 76 + i * 84,
-        grid ? 120 : 376, grid ? 116 : 76, item.click ?? (() => {}));
+      const button = this.button(this.modal.panel, '', grid ? 12 + i % columns * (width + 8) : 12,
+        grid ? 76 + Math.floor(i / columns) * 124 : 76 + i * 84,
+        width, grid ? 116 : 76, item.click ?? (() => {}));
       button.replaceChildren(); button.classList.add('d-row');
       if (grid) {
-        button.classList.add('d-shop-tile');
+        button.classList.add(columns === 3 ? 'd-shop-tile' : 'd-menu-tile');
         button.setAttribute('aria-label', `${item.label}${item.detail ? `: ${item.detail}` : ''}`);
       }
       button.disabled = item.enabled === false || (!item.click && !item.slider);
@@ -446,7 +447,7 @@ export class DeviceGame {
       if (item.detail?.includes('\n')) button.classList.add('multi');
       if (item.icon) { button.classList.add('has-icon'); const img = element('img', ''); img.src = asset(item.icon); img.alt = ''; button.append(img); }
       button.append(element('span', 'row-label', item.label));
-      if (item.detail) button.append(element('span', 'row-detail', grid ? item.detail.split('\n')[0] : item.detail));
+      if (item.detail) button.append(element('span', 'row-detail', columns === 3 ? item.detail.split('\n')[0] : item.detail));
       if (item.checkbox) {
         const check = element('input', ''); check.type = 'checkbox'; check.checked = item.selected; check.tabIndex = -1; check.setAttribute('aria-hidden', 'true');
         button.setAttribute('role', 'checkbox'); button.setAttribute('aria-checked', String(item.selected)); button.append(check);
@@ -460,6 +461,7 @@ export class DeviceGame {
           change(Number(input.value));
           const detail = button.querySelector('.row-detail');
           if (detail) detail.textContent = `${input.value}%`;
+          if (grid) button.setAttribute('aria-label', `${item.label}: ${input.value}%`);
         });
         button.append(input);
         button.disabled = false;

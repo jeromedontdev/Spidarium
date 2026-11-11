@@ -73,3 +73,38 @@ test('flash closes console first, uses real writeFlash API with eraseAll false a
   await assert.rejects(flashFirmware({ port: {}, consoleSession: { close: async () => {} }, firmware, tools, progress() {}, log() {} }), /USB write failed/);
   assert.equal(order.at(-1), 'disconnect');
 });
+
+test('updater preserves bootloader/table, selects factory last and verifies complete NVS bytes', async () => {
+  const {manifest,data}=await release();
+  const firmware={manifest,images:manifest.files.map(file=>({data:data.get(file.path),address:file.offset}))};
+  let written=false,corrupt=false,badTable=false,reads=[];
+  const tools={
+    md5:()=> 'md5',
+    Transport:class {async disconnect(){}},
+    ESPLoader:class {
+      constructor(){this.chip={CHIP_NAME:'ESP32-S3'};}
+      async main(){}
+      async readFlash(address,length){
+        reads.push([address,length]);
+        if(address===0x8000){const bytes=table();if(badTable)bytes[20]^=1;return bytes;}
+        const bytes=new Uint8Array(length).fill(42);
+        if(corrupt&&written)bytes[0]^=1;
+        return bytes;
+      }
+      async writeFlash(options){
+        written=true;
+        assert.equal(options.eraseAll,false);
+        assert.deepEqual(options.fileArray.map(file=>file.address),[0x20000,0x920000,0x10000]);
+      }
+    },
+  };
+  const args={mode:'update',port:{},consoleSession:{async close(){}},firmware,tools,progress(){},log(){}};
+  await flashFirmware(args);
+  assert.deepEqual(reads,[[0x8000,table().length],[0x9000,0x6000],[0x9000,0x6000]]);
+  written=false;corrupt=true;
+  await assert.rejects(flashFirmware(args),/Save-region verification failed/);
+  written=false;badTable=true;
+  await assert.rejects(flashFirmware(args),/partition layout differs/);
+  assert.equal(written,false);
+  await assert.rejects(flashFirmware({...args,mode:'erase'}),/install or update/);
+});

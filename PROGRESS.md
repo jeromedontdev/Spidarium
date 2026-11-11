@@ -7629,3 +7629,66 @@ evidence proves delivery and continuity, not that the player likes the sound.
 - Normal production-browser navigation confirms the folded corner opens care,
   Menu opens six-tile Backgrounds, cache revision is1.1.23, existing progress
   remains v12 and the emblem uses the beetle plus Fairy Glade.
+
+## Round 78 - Safe updates, all-menu grids and the spider hero (v1.1.24)
+
+### Decisions made
+
+- Correct the misunderstood hero request: restore the original spider renderer,
+  add exactly one small beetle and use quiet moss, not pink Fairy Glade decor.
+  Remove floating motion; preserve all 337 PNG bytes and both spider renderers.
+- Make catalogue browsing six-tile grids, including Achievements, Prey Species
+  and Borders. Navigation/settings/context/status menus use four wider tiles,
+  keeping slider tracks, values, names and checkboxes separate. Gift effects,
+  keyboards and explanatory pages remain dedicated detail views, not browsing
+  lists. Normalization keeps detail-view column arithmetic nonzero.
+- Hardware tests caught a divide-by-zero in the new detail/grid transition and
+  inherited RIGHT_MID slider anchoring placing tracks outside their tile.
+  Normalize the divisor and use TOP_LEFT anchors; add exact real-LVGL geometry,
+  last-page and slider callback tests. Route slider callbacks by stable item
+  index, not the percentage stored in its mutable ID field.
+- Default the web flasher to explicit existing-device update. Reject mismatched
+  installed partition-table bytes before writing. Write app and matching art,
+  then OTA selection last; preserve bootloader/table/NVS and compare every NVS
+  byte afterward. Clear private in-memory snapshots without logging/uploading.
+  Keep full installation for new boards/layout migration, with no whole erase.
+  Interrupted app/art writes are not an atomic transaction; back up first.
+- Add on-demand GitHub latest-stable OTA with HTTPS redirects bounded to five,
+  a 4 KB manifest limit, numeric version/downgrade checks, versioned application
+  URL, installed-art hash compatibility and exact app size/SHA-256/project/version
+  verification before boot selection. One 4 KB PSRAM streaming buffer; all
+  HTTP/storage/flash work stays on the internal network worker with adapter
+  pause/drain/teardown. OTA never writes pet NVS or artwork. Art changes need USB.
+- Package and publish standalone spidarium-ota.json and spidarium.bin alongside
+  the ZIP. Pages rejects standalone assets that differ from the verified ZIP.
+  Retain advanced HTTPS URLs with their documented weaker compatibility checks.
+  Do not claim signed firmware or application-level functional rollback.
+
+### Verification before publication
+
+- Browser 164/164, package/art/capture 44/44 (15/22/7).
+  Tests cover updater write selection/order, NVS equality/mismatch, no writes on
+  layout mismatch, four/six-tile paging, sliders/switches and hero composition.
+- Wrapper build/full flash exit 0, zero main-source warnings. Native OTA
+  manifest diagnostic passes; native four/six-tile/slider diagnostics pass.
+- Final hardware 48/48. render500 and scanloop5 largest-block drift0; internal
+  and DMA largest63,488, above51,200. Original pet restored. Forty-second soak
+  VERDICT PASS, zero faults/errors. Failed exploratory builds/tests were fixed
+  before these final results; their crash logs are not clean-boot evidence.
+- Real saved-network association and fresh RTC/NTP sync succeed, fully stopping
+  and deinitializing WiFi afterward. No credentials were changed or published.
+- Real browser normal pointer/slider interactions: root four tiles, achievements
+  six then four on last page; sound sliders stay inside tiles. Native captures
+  show the same achievement/control layouts. Hero screenshot confirms original
+  spider plus one small beetle, no pink furnishings. Flasher defaults to Update,
+  verifies the release, distinguishes Install and requires explicit consent.
+- Real browser USB flashing is not claimed: no serial port is granted to the
+  shared browser. Transport tests are explicit mocks; wrapper flashing and the
+  console/save backend are real.
+- Prepared a unique 1.1.23-ota-probe build on hardware to require an actual
+  download/boot of the forthcoming published1.1.24, rather than accepting a
+  same-version response as OTA proof. Results follow after publication.
+- Final ZIP SHA256:
+  0822363f8aa4ee86536f73928d73edd535a6df495500fdcb6b9916d4e5015934.
+  Final local website build includes five verified images and all337 PNGs;
+  the independently published OTA descriptor/application must match this ZIP.

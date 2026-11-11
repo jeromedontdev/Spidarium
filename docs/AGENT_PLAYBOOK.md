@@ -113,7 +113,7 @@ all pass, soak `VERDICT: PASS` with zero faults, `largest >= 51200`, and
 python tools/package_release.py --version X.Y.Z
 git tag -a vX.Y.Z -m "..."
 git push origin main; git push origin vX.Y.Z
-gh release create vX.Y.Z release/spidarium-vX.Y.Z.zip --notes-file docs/RELEASE_vX.Y.Z.md
+gh release create vX.Y.Z release/spidarium-vX.Y.Z.zip release/spidarium-vX.Y.Z/spidarium.bin release/spidarium-vX.Y.Z/spidarium-ota.json --notes-file docs/RELEASE_vX.Y.Z.md
 ```
 
 The `Publish website` workflow runs on `release: published`. **The

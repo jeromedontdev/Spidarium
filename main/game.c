@@ -509,6 +509,17 @@ static bool on_ota_url(const char *url)
     return true;
 }
 
+static void on_ota_pick(uint8_t id)
+{
+    if (id == 1) {
+        ui_menu_open_input("Update URL (HTTPS)", "", false, 255, on_ota_url);
+        ui_menu_set_back(back_to_wifi);
+        return;
+    }
+    if (!net_ota_latest()) ui_hud_bubble("Update Rejected; Save a Network", 0xf5c86b, 2200);
+    menu_open(MENU_WIFI);
+}
+
 static void on_saved_network(uint8_t id)
 {
     s_saved_network = id;
@@ -873,7 +884,7 @@ static void on_power_pick(uint8_t id)
     }
     game_save_now();
     menu_open(MENU_POWER);
-    if (id >= 3) ui_menu_set_page(1);
+    if (id >= 4) ui_menu_set_page(1);
 }
 
 static void on_display_pick(uint8_t id)
@@ -1008,7 +1019,7 @@ static void menu_open(int which)
                                        true, false, true, 1 };
         items[n++] = (ui_menu_item_t){ "Saved Networks", "Join or Forget",
                                        true, false, true, 2 };
-        items[n++] = (ui_menu_item_t){ "Firmware Update", net_has_credentials() ? "Download Over HTTPS" : "Save a Network First",
+        items[n++] = (ui_menu_item_t){ "Firmware Update", net_has_credentials() ? "GitHub Latest Release" : "Save a Network First",
                                        net_has_credentials(), false, true, 3 };
         static char details[12][32];
         int found = net_scan_count();
@@ -1048,7 +1059,11 @@ static void menu_open(int which)
         ui_menu_set_back(back_to_wifi);
         break;
     case MENU_OTA:
-        ui_menu_open_input("Update URL (HTTPS)", "", false, 255, on_ota_url);
+        items[0] = (ui_menu_item_t){ "Update From GitHub", "Latest Stable Release / Preserves Pet", net_has_credentials(), false, false, 0 };
+        items[1] = (ui_menu_item_t){ "Advanced HTTPS URL", "Application Binary / Trusted Host Only", net_has_credentials(), false, true, 1 };
+        items[2] = (ui_menu_item_t){ "Update Status", net_status_text(), false, false, false, 2 };
+        items[3] = (ui_menu_item_t){ "After Installation", "Press RESET to Apply / Art Changes Need USB", false, false, false, 3 };
+        ui_menu_open("Firmware Update", items, 4, on_ota_pick);
         ui_menu_set_back(back_to_wifi);
         break;
 
@@ -1180,7 +1195,7 @@ static void menu_open(int which)
             items[i].is_submenu = false;
             items[i].id        = (uint8_t)i;
         }
-        ui_menu_open("Achievements", items, 10, NULL);
+        ui_menu_open_grid("Achievements", items, 10, NULL);
         for (int i = 0; i < 10; i++) ui_menu_set_item_icon(i, sprite_achievement_index(bits[i]));
         ui_menu_set_back(back_to_main);
         break;
@@ -1203,7 +1218,7 @@ static void menu_open(int which)
         }
         static char species_title[48];
         snprintf(species_title, sizeof species_title, "Prey / Lv %lu", (unsigned long)g.level);
-        ui_menu_open(species_title, items, PREY_SPECIES_COUNT, NULL);
+        ui_menu_open_grid(species_title, items, PREY_SPECIES_COUNT, NULL);
         for (int i = 0; i < PREY_SPECIES_COUNT; i++)
             ui_menu_set_item_icon(i, sprite_prey_index(i, false, false, 0));
         ui_menu_set_back(back_to_main);

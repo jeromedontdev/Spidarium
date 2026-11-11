@@ -37,7 +37,8 @@ static lv_obj_t *s_icons[GRID_ITEMS];
 static lv_obj_t *s_checks[GRID_ITEMS];
 static lv_obj_t *s_sliders[GRID_ITEMS];
 static bool s_grid;
-static int page_size(void) { return s_grid ? GRID_ITEMS : PAGE_ROWS; }
+static int s_columns;
+static int page_size(void) { return s_grid ? s_columns * 2 : PAGE_ROWS; }
 static ui_menu_slider_cb s_slider_cb[MENU_ITEMS];
 static bool s_check_items[MENU_ITEMS];
 static int s_icon_indices[MENU_ITEMS];
@@ -267,7 +268,9 @@ static void refresh_page(void)
         lv_obj_set_hidden(s_icons[i], !icon);
         if (icon) {
             lv_image_set_src(s_icons[i], icon);
-            lv_obj_set_size(s_icons[i], 48, 48);
+            int icon_size = s_grid && s_columns == 2 ? 32 : 48;
+            lv_obj_set_size(s_icons[i], icon_size, icon_size);
+            if (s_grid) lv_obj_set_x(s_icons[i], (lv_obj_get_width(s_row[i]) - icon_size) / 2);
             lv_image_set_inner_align(s_icons[i], LV_IMAGE_ALIGN_CONTAIN);
             lv_image_set_antialias(s_icons[i], false);
         }
@@ -285,7 +288,7 @@ static void refresh_page(void)
         char detail[256];
         if (slider) snprintf(detail, sizeof detail, "%u%%", (unsigned)it->id);
         else snprintf(detail, sizeof detail, "%s", it->detail ? it->detail : "");
-        if (s_grid) {
+        if (s_grid && s_columns == 3) {
             char *newline = strchr(detail, '\n');
             if (newline) *newline = '\0';
         }
@@ -293,8 +296,8 @@ static void refresh_page(void)
         lv_label_set_text(s_detail[i], detail);
         bool multiline = strchr(detail, '\n') != NULL;
         lv_label_set_long_mode(s_detail[i], multiline ? LV_LABEL_LONG_WRAP : LV_LABEL_LONG_DOT);
-        lv_obj_set_height(s_detail[i], s_grid ? 28 : multiline ? 45 : LV_SIZE_CONTENT);
-        lv_obj_set_y(s_detail[i], s_grid ? 84 : multiline ? 26 : 48);
+        lv_obj_set_height(s_detail[i], s_grid ? s_columns == 2 ? 44 : 28 : multiline ? 45 : LV_SIZE_CONTENT);
+        lv_obj_set_y(s_detail[i], s_grid ? s_columns == 2 ? 66 : 84 : multiline ? 26 : 48);
         lv_obj_set_style_text_color(s_label[i],
             lv_color_hex(it->id == s_destructive_id ? 0xff7777 : it->enabled ? COL_TEXT : COL_DIM), 0);
         lv_obj_set_style_bg_color(s_row[i],
@@ -310,11 +313,16 @@ static void refresh_page(void)
             else lv_obj_remove_state(s_checks[i], LV_STATE_CHECKED);
         }
         lv_obj_set_hidden(s_sliders[i], !slider);
+        if (s_grid && slider) {
+            lv_obj_set_y(s_label[i], 36);
+            lv_obj_set_y(s_detail[i], 66);
+            lv_obj_set_height(s_detail[i], 16);
+        }
         if (slider) lv_slider_set_value(s_sliders[i], it->id, LV_ANIM_OFF);
         lv_label_set_text(s_marker[i], s_check_items[index] || slider ? "" : it->selected ? LV_SYMBOL_OK :
             it->enabled && it->is_submenu ? LV_SYMBOL_RIGHT : "");
         lv_obj_set_hidden(s_detail[i], !detail[0]);
-        lv_obj_set_pos(s_label[i], text_x, s_grid ? 52 : detail[0] ? multiline ? 2 : 16 : 30);
+        lv_obj_set_pos(s_label[i], text_x, s_grid ? s_columns == 2 ? 36 : 52 : detail[0] ? multiline ? 2 : 16 : 30);
     }
     char text[32];
     snprintf(text, sizeof text, "%d / %d", s_page + 1, pages);
@@ -671,9 +679,8 @@ static void on_slider(lv_event_t *e)
     int index = s_page * page_size() + row;
     if (index >= s_count || !s_slider_cb[index]) return;
     ui_menu_slider_cb cb = s_slider_cb[index];
-    uint8_t id = s_items[index].id;
     uint8_t value = (uint8_t)lv_slider_get_value(s_sliders[row]);
-    cb(id, value);
+    cb((uint8_t)index, value);
     /* Keep the row's stored value in step with the drag, so a later
      * refresh_page() (the physical volume buttons) does not snap the slider
      * back to the value the menu was opened with. */
@@ -688,14 +695,17 @@ static void on_slider(lv_event_t *e)
 }
 
 static void open_items(const char *title, const ui_menu_item_t *items, int count,
-                       ui_menu_pick_cb cb, bool grid)
+                       ui_menu_pick_cb cb, int columns)
 {
+    bool grid = columns != 0;
+    if (!grid) columns = 1;
     if (!items || count <= 0 || count > MENU_ITEMS) {
         ESP_LOGE("spidarium.menu", "menu rejected: no items");
         return;
     }
     open_panel(title);
     s_grid = grid;
+    s_columns = columns;
     s_items = items;
     s_count = count;
     for (int i = 0; i < MENU_ITEMS; i++) {
@@ -707,10 +717,10 @@ static void open_items(const char *title, const ui_menu_item_t *items, int count
     for (int i = 0; i < count; i++)
         if (items[i].selected) { s_page = i / page_size(); break; }
     int w = MENU_WIDTH;
-    int tile_w = (w - 40) / 3;
+    int tile_w = grid ? (w - 24 - (columns - 1) * 8) / columns : w - 24;
     for (int i = 0; i < page_size(); i++) {
-        s_row[i] = button(s_menu, grid ? 12 + i % 3 * (tile_w + 8) : 12,
-                          grid ? 76 + i / 3 * 124 : 76 + i * 84,
+        s_row[i] = button(s_menu, grid ? 12 + i % columns * (tile_w + 8) : 12,
+                          grid ? 76 + i / columns * 124 : 76 + i * 84,
                           grid ? tile_w : w - 24, grid ? 116 : 76, NULL,
                           on_row, (void *)(uintptr_t)i);
         /* A lit bar down the left edge marks the selected row. It is a child of
@@ -752,11 +762,16 @@ static void open_items(const char *title, const ui_menu_item_t *items, int count
                                   LV_PART_INDICATOR | LV_STATE_CHECKED);
         lv_obj_set_style_border_color(s_checks[i], lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
         lv_obj_align(s_checks[i], LV_ALIGN_RIGHT_MID, -14, 0);
+        if (grid) lv_obj_align(s_checks[i], LV_ALIGN_TOP_RIGHT, -4, 4);
         lv_obj_set_clickable(s_checks[i], false);
         lv_obj_set_hidden(s_checks[i], true);
         s_sliders[i] = lv_slider_create(s_row[i]);
         lv_obj_set_size(s_sliders[i], 132, 12);
         lv_obj_align(s_sliders[i], LV_ALIGN_RIGHT_MID, -14, 0);
+        if (grid) {
+            lv_obj_set_size(s_sliders[i], tile_w - 28, 12);
+            lv_obj_align(s_sliders[i], LV_ALIGN_TOP_LEFT, 12, 94);
+        }
         lv_slider_set_range(s_sliders[i], 0, 100);
         lv_obj_set_style_bg_color(s_sliders[i], lv_color_hex(0x30404b), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(s_sliders[i], LV_OPA_COVER, LV_PART_MAIN);
@@ -795,15 +810,20 @@ static void open_items(const char *title, const ui_menu_item_t *items, int count
 void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
                   ui_menu_pick_cb cb)
 {
-    open_items(title, items, count, cb, false);
+    open_items(title, items, count, cb, 2);
 }
 
 void ui_menu_open_grid(const char *title, const ui_menu_item_t *items, int count,
                        ui_menu_pick_cb cb)
 {
-    open_items(title, items, count, cb, true);
+    open_items(title, items, count, cb, 3);
 }
 
+void ui_menu_open_detail(const char *title, const ui_menu_item_t *items, int count,
+                         ui_menu_pick_cb cb)
+{
+    open_items(title, items, count, cb, 0);
+}
 static void on_input_submit(lv_event_t *e)
 {
     (void)e;
@@ -904,6 +924,12 @@ void ui_menu_open_input(const char *title, const char *initial, bool password,
 
 static int s_test_pick;
 static void test_pick(uint8_t id) { s_test_pick = id; }
+static int s_test_slider_id, s_test_slider_value;
+static void test_slider(uint8_t id, uint8_t value)
+{
+    s_test_slider_id = id;
+    s_test_slider_value = value;
+}
 static int s_test_rewards;
 static uint8_t s_test_score;
 static uint32_t test_reward(uint8_t score)
@@ -1025,7 +1051,7 @@ bool ui_menu_test(void)
         {"Seven",NULL,true,false,false,6}, {"Eight",NULL,true,false,false,7},
         {"Nine",NULL,true,false,false,8}
     };
-    ui_menu_open("Test pages", items, 9, test_pick);
+    ui_menu_open_detail("Test pages", items, 9, test_pick);
     lv_obj_update_layout(s_menu);
     bool targets_ok = lv_obj_get_height(s_row[0]) >= 76 &&
         lv_obj_get_width(lv_obj_get_child(s_menu, 0)) >= 96 &&
@@ -1052,7 +1078,7 @@ bool ui_menu_test(void)
     s_test_pick = -1;
     lv_obj_send_event(s_row[0], LV_EVENT_CLICKED, NULL);
     ok = ok && s_test_pick == 6 && !ui_menu_visible();
-    ui_menu_open("Test pages", items, 9, NULL);
+    ui_menu_open_detail("Test pages", items, 9, NULL);
     lv_obj_send_event(s_backdrop, LV_EVENT_CLICKED, NULL);
     lv_obj_send_event(s_menu, LV_EVENT_CLICKED, NULL);
     ok = ok && ui_menu_visible() && s_page == 0;
@@ -1076,7 +1102,7 @@ bool ui_menu_test(void)
         {"Royal Perch", "Level 40 / 172 Silk\nA Habitat Care Bonus\nSpider Visits This Item",
          false, false, false, 0}
     };
-    ui_menu_open("Test Gift Details", gift_detail, 1, NULL);
+    ui_menu_open_detail("Test Gift Details", gift_detail, 1, NULL);
     lv_obj_update_layout(s_menu);
     lv_point_t last_letter;
     lv_label_get_letter_pos(s_detail[0], strlen(lv_label_get_text(s_detail[0])) - 1, &last_letter);
@@ -1099,6 +1125,33 @@ bool ui_menu_test(void)
     ok = ok && s_test_pick == 8 && !ui_menu_visible();
     ui_menu_open_grid("Test Gift Grid", gift_detail, 1, NULL);
     ok = ok && !strcmp(lv_label_get_text(s_detail[0]), "Level 40 / 172 Silk");
+    ESP_LOGI("spidarium.menu", "list/catalogue diagnostics: %d", ok);
+    static ui_menu_item_t controls[] = {
+        {"Volume",NULL,true,false,false,0}, {"Sound","On",true,true,false,1},
+        {"Music","On",true,true,false,2}, {"Music Volume",NULL,true,false,false,3},
+        {"Soundtrack","Choose",true,false,true,4}
+    };
+    ui_menu_open("Test Controls", controls, 5, test_pick);
+    ui_menu_set_item_checkbox(1);
+    ui_menu_set_item_slider(3, 70, test_slider);
+    lv_obj_update_layout(s_menu);
+    ESP_LOGI("spidarium.menu", "control geometry: tile=%ld slider=%ld,%ld/%ld detail=%ld/%ld",
+        (long)lv_obj_get_width(s_row[0]), (long)lv_obj_get_x(s_sliders[3]),
+        (long)lv_obj_get_y(s_sliders[3]), (long)lv_obj_get_width(s_sliders[3]),
+        (long)lv_obj_get_y(s_detail[3]), (long)lv_obj_get_height(s_detail[3]));
+    ok = ok && page_size() == 4 && lv_obj_get_width(s_row[0]) == 184 &&
+        lv_obj_get_x(s_row[1]) + lv_obj_get_width(s_row[1]) <= MENU_WIDTH - 12 &&
+        lv_obj_get_y(s_row[3]) + lv_obj_get_height(s_row[3]) < lv_obj_get_y(s_next) &&
+        lv_obj_get_x(s_sliders[3]) >= 0 &&
+        lv_obj_get_x(s_sliders[3]) + lv_obj_get_width(s_sliders[3]) <= lv_obj_get_width(s_row[3]) &&
+        lv_obj_get_y(s_sliders[3]) > lv_obj_get_y(s_detail[3]) + lv_obj_get_height(s_detail[3]);
+    lv_slider_set_value(s_sliders[3], 35, LV_ANIM_OFF);
+    lv_obj_send_event(s_sliders[3], LV_EVENT_VALUE_CHANGED, NULL);
+    ok = ok && s_test_slider_id == 3 && s_test_slider_value == 35 &&
+        !strcmp(lv_label_get_text(s_detail[3]), "35%");
+    lv_obj_send_event(s_next, LV_EVENT_CLICKED, NULL);
+    ok = ok && s_page == 1 && !strcmp(lv_label_get_text(s_label[0]), "Soundtrack") &&
+        lv_obj_is_hidden(s_row[1]) && lv_obj_has_state(s_next, LV_STATE_DISABLED);
     ui_menu_open_input("Test password", "", true, 63, NULL);
     ok = ok && s_password && lv_textarea_get_password_mode(s_input);
     ok = ok && lv_obj_get_style_radius(s_input, 0) == UI_PIXEL_RADIUS &&
