@@ -7828,3 +7828,18 @@ evidence proves delivery and continuity, not that the player likes the sound.
   drift0, internal/DMA largest63,488. Exact original pet restored before reboot.
   Forty-second clean-boot soak PASS, zero faults/errors.
 - Publication and independent production verification follow below.
+
+### Publication evidence
+
+- Source9a339cc committed/pushed; v1.1.26 published with ZIP, standalone app and
+  OTA descriptor. ZIP SHA256:
+  0373aafd2d9cce5d286f44c8a23b011954351bee47d2614e95f6c0d639f26003.
+  Independently downloaded public ZIP/app/descriptor match exactly.
+- Pages43120655943 succeeds. Live1.1.26 full manifest, five firmware hashes/
+  sizes, seven changed web files, full save schema and all337 PNG bytes match
+  local production output. GitHub latest descriptor resolves exact1.1.26.
+- Actual production mouse hold/drag changes15 to85 before release, including
+  outside the track, without replacing the input; original gain restored.
+  Main tiles show zero submenu markers and Sound retains four single-slot tiles.
+  Browser flasher verifies all five1.1.26 hashes. Hosted OTA verification gap
+  remains unchanged and is explicit in the published release notes.
