@@ -7371,3 +7371,18 @@ No subjective speaker/touchscreen approval, battery current/runtime,
 physical-button wake, SD media, authorized association/NTP, hosted HTTPS OTA
 installation or RTC backup-battery retention is claimed. Waveform/playback
 evidence proves delivery and continuity, not that the player likes the sound.
+
+### Publication evidence
+
+- Published [v1.1.19](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.19)
+  from commit `8ab0313`; downloaded public ZIP has the exact SHA-256 above.
+- Added only the `v1.1.19` tag to the existing Pages environment allowlist,
+  preserving every previous protection.
+- [Pages run 43092437964](https://github.com/jeromedontdev/Spidarium/actions/runs/43092437964)
+  built and deployed successfully. Production serves v1.1.19; all five image
+  hashes/sizes, the actual v10 schema, all 201 PNGs and every browser library
+  source match the local verified release bytes.
+- Actual production browser clicks confirm exactly one Sound master row,
+  false/true toggle, music still enabled, and three distinct volume/speaker/
+  music-note icons. All 158 previous PNGs, native spider logic/direct renderer
+  and browser spider renderer remain byte-identical to v1.1.18.
