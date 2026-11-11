@@ -31,7 +31,7 @@
 - [Serial commands and automated tests](serial_console.md).
 - [Memory budget](memory_budget.md).
 - [Development history](../PROGRESS.md).
-- [Release notes](RELEASE_v1.1.14.md), [v1.1.13](RELEASE_v1.1.13.md), [v1.1.12](RELEASE_v1.1.12.md),
+- [Release notes](RELEASE_v1.1.14.md), [v1.1.12](RELEASE_v1.1.12.md),
   [v1.1.11](RELEASE_v1.1.11.md), [v1.1.0](RELEASE_v1.1.0.md),
   [v1.0.0](RELEASE_v1.0.0.md).
 
