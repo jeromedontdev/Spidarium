@@ -6839,3 +6839,42 @@ change.
 the sick path can only be exercised by actually starving the pet and can only be
 left by feeding it. That is correct behaviour, but it makes the console command
 misleading.
+
+### Round 67 addendum - the export was still two pixels wrong
+
+The first pass at "make the PNGs an export of the renderer" was close but not
+exact: 132 pixels across the 39 frames still differed between the PNG and the
+browser port. Two independent causes, both invisible in a screenshot.
+
+**The device computes in `float`, both ports used `double`.** `cosf(PI_F / 2)` is
+`-4.37e-8`; `Math.cos(Math.PI / 2)` is `+6.12e-17`. A coordinate that lands
+exactly on an integer therefore truncates one pixel apart. Both ports now round
+every intermediate to binary32 -- `_f32()` in the generator, `Math.fround` in the
+browser -- and the generator uses C integer division (`_idiv`) instead of
+Python's floor division, which disagrees for negative operands. Verified against
+the hardcoded reference values in `cspider_gait_test()`: both ports now reproduce
+all 48 of them to within 0.001.
+
+**The browser port interleaved eye and pupil drawing.** `cspider_render()` draws
+both eyes, then both pupils, then both fangs. The port drew eye/pupil/glint/fang
+per side, so the second eye overwrote the first pupil's inner edge -- a 2-pixel
+notch on every frame, 12 on the pounce frames where the eyes are scaled.
+
+After both fixes the PNG and the browser renderer agree on **all 39 frames, all
+9216 pixels each, zero differences**. A new browser test decodes the PNGs with a
+minimal inflate + unfilter and compares them to the renderer, so this cannot
+silently drift again. Verified the test fails when it should: flipping one pixel
+in `spider_s_walk_0.png` produces
+`spider_s_walk_0.png differs at (50,62) channel 3: png=0 renderer=255`.
+
+### Evidence (addendum)
+
+- `asset_build.py`: 158 MMAP entries verified, 158 PNGs valid, deterministic,
+  84 preserved PNGs byte-identical.
+- `build.ps1` exit 0, zero `main/` warnings. `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **47 passed, 0 failed**.
+- `stability_check.py COM7 40`: `VERDICT: PASS`, 0 faults.
+- Browser suite **101/101** (was 100; the parity test is new).
+- `screenshot spider` on the device: healthy canvas body `#8B95A4`, sick canvas
+  body `#7B818B` -- dulled, and both fully opaque with 8 distinct colours.
+- Pet restored to `hunger=90 mood=63 energy=80 sick=0` after testing.

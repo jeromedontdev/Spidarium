@@ -3,23 +3,32 @@ export const BODY_COLOURS = [0x2b3138, 0x45454b, 0x4d2c1e, 0x27402c, 0x272e4d, 0
 export const ACCENT_COLOURS = [0x000000, 0xf7f9ff, 0x8a94a6, 0xf5b342, 0xe06c6c, 0x58d68d, 0x7c9cff, 0x4fd1c5, 0xb07cff];
 const PI = Math.PI;
 const trunc = Math.trunc;
+// cspider.c computes in `float`, not `double`. The difference is not academic:
+// cosf(PI_F / 2) is -4.37e-8 while Math.cos(Math.PI / 2) is +6.12e-17, so a
+// coordinate landing exactly on an integer truncates one pixel apart. Rounding
+// every intermediate through Math.fround keeps this port pixel-identical to the
+// panel instead of merely close.
+const f = Math.fround;
+const PI_F = f(3.14159265);
+const fsin = (x) => f(Math.sin(f(x)));
+const fcos = (x) => f(Math.cos(f(x)));
 export function legPose(k, side, phase = 0, walking = false, emote = 'none', now = 0) {
-  const base = side * (PI * .5 + (k - 1.5) * .42);
-  const gait = phase + k * (PI * .5) + (side < 0 ? 0 : PI);
+  const base = f(side * f(f(PI_F * f(.5)) + f(f(k - f(1.5)) * f(.42))));
+  const gait = f(f(phase + f(k * f(PI_F * f(.5)))) + (side < 0 ? f(0) : PI_F));
   // The front pair leads the walk, matching main/cspider.c leg_pose().
-  const lead = k === 0 ? 1.55 : k === 1 ? 1.15 : 1;
-  let swing = walking ? .42 * lead * Math.sin(gait) : 0;
-  let bend = .55 + (walking ? .30 * lead * Math.sin(gait + PI * .5) : 0);
-  const wave = Math.sin((now % 1200) * (2 * PI / 1200));
-  if (emote === 'happy' && k === 0) { swing += 1.10 * wave; bend -= .55 + .35 * wave; }
-  else if (emote === 'sad') { bend += .60; swing *= .35; }
-  else if (emote === 'alert') { bend -= .45 + .10 * wave; swing *= .25; }
-  else if (emote === 'sleepy') { bend -= .30 + .05 * wave; swing *= .15; }
-  const angle = Math.max(.15, Math.min(1.25, swing + bend));
-  const dir1 = base + side * angle, dir2 = base - side * angle;
-  const hf = 16 * Math.cos(base), hr = 16 * Math.sin(base);
-  const kf = hf + 22 * .58 * Math.cos(dir1), kr = hr + 22 * .58 * Math.sin(dir1);
-  return { hf, hr, kf, kr, ff: kf + 22 * .72 * Math.cos(dir2), fr: kr + 22 * .72 * Math.sin(dir2) };
+  const lead = k === 0 ? f(1.55) : k === 1 ? f(1.15) : f(1);
+  let swing = walking ? f(f(f(.42) * lead) * fsin(gait)) : f(0);
+  let bend = f(f(.55) + (walking ? f(f(f(.30) * lead) * fsin(f(gait + f(PI_F * f(.5))))) : f(0)));
+  const wave = fsin(f(f(now % 1200) * f(f(2 * PI_F) / f(1200))));
+  if (emote === 'happy' && k === 0) { swing = f(swing + f(f(1.10) * wave)); bend = f(bend - f(f(.55) + f(f(.35) * wave))); }
+  else if (emote === 'sad') { bend = f(bend + f(.60)); swing = f(swing * f(.35)); }
+  else if (emote === 'alert') { bend = f(bend - f(f(.45) + f(f(.10) * wave))); swing = f(swing * f(.25)); }
+  else if (emote === 'sleepy') { bend = f(bend - f(f(.30) + f(f(.05) * wave))); swing = f(swing * f(.15)); }
+  const angle = Math.max(f(.15), Math.min(f(1.25), f(swing + bend)));
+  const dir1 = f(base + f(side * angle)), dir2 = f(base - f(side * angle));
+  const hf = f(16 * fcos(base)), hr = f(16 * fsin(base));
+  const kf = f(hf + f(f(22 * f(.58)) * fcos(dir1))), kr = f(hr + f(f(22 * f(.58)) * fsin(dir1)));
+  return { hf, hr, kf, kr, ff: f(kf + f(f(22 * f(.72)) * fcos(dir2))), fr: f(kr + f(f(22 * f(.72)) * fsin(dir2))) };
 }
 export function rgb565Channels(rgb) {
   const r = (rgb >> 19) & 31, g = (rgb >> 10) & 63, b = (rgb >> 3) & 31;
@@ -51,10 +60,14 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
   };
   const mid = dull(lighten(base, 4)), hi = dull(lighten(lighten(base, 4), 3)), body = dull(base);
   const pupil = dull(ACCENT_COLOURS[pupilColour % 9]), leg = dull(ACCENT_COLOURS[legColour % 9]), fang = dull(ACCENT_COLOURS[fangColour % 9]);
-  const toCanvas = (fwd, right, sf = scaleF, sr = scaleR) => [
-    48 + trunc(Math.cos(heading) * fwd * sf - Math.sin(heading) * right * sr),
-    48 + trunc(Math.sin(heading) * fwd * sf + Math.cos(heading) * right * sr),
-  ];
+  const toCanvas = (fwd, right, sf = scaleF, sr = scaleR) => {
+    const fx = fcos(heading), fy = fsin(heading), rx = f(-fy), ry = fx;
+    const fw = f(f(fwd) * f(sf)), rt = f(f(right) * f(sr));
+    return [
+      48 + trunc(f(f(fx * fw) + f(rx * rt))),
+      48 + trunc(f(f(fy * fw) + f(ry * rt))),
+    ];
+  };
   const put = (x, y, channels) => {
     if (x < 0 || y < 0 || x >= 96 || y >= 96) return;
     const i = (y * 96 + x) * 4;
@@ -67,6 +80,8 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
       for (let x = cx - width; x <= cx + width; x++) put(x, cy + dy, channels);
     }
   };
+  // C integer division truncates toward zero; JS `/` then trunc() matches, but
+  // the products must stay exact, so keep them in integer arithmetic.
   const line = (start, end, width, rgb) => {
     const channels = rgb565Channels(rgb), dx = end[0] - start[0], dy = end[1] - start[1];
     const steps = Math.max(Math.abs(dx), Math.abs(dy)), half = trunc(width / 2);
@@ -100,22 +115,27 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
   }
   for (const [forward, radius] of [[-13, 13], [8, 11]]) {
     circle(...toCanvas(forward, 0), radius, body);
-    circle(...toCanvas(forward - 1.5, -1.5), radius - 3, mid);
-    circle(...toCanvas(forward - 3, -3), radius - (radius === 13 ? 7 : 6), hi);
+    circle(...toCanvas(f(forward - 1.5), f(-1.5)), radius - 3, mid);
+    circle(...toCanvas(f(forward - 3), f(-3)), radius - (radius === 13 ? 7 : 6), hi);
     for (let i = 0; i < 14; i++) {
-      const angle = i * 2 * PI / 14;
-      circle(...toCanvas(forward + Math.cos(angle) * (radius + 2), Math.sin(angle) * (radius + 2)), 3 - (i % 2), mid);
+      const angle = f(f(f(i) * f(2 * PI_F)) / f(14));
+      circle(...toCanvas(f(forward + f(fcos(angle) * f(radius + 2))),
+        f(fsin(angle) * f(radius + 2))), 3 - (i % 2), mid);
     }
   }
   for (const [forward, right] of [[4, -8], [4, 8], [0, -4], [0, 4]]) circle(...toCanvas(forward, right), 2, dull(0x6b7280));
   const asleep = state === 'sleep';
-  for (const side of [-1, 1]) {
-    circle(...toCanvas(14, side * 5.5), 7, asleep ? 0 : dull(0xf7f9ff));
-    if (!asleep) {
-      circle(...toCanvas(15, side * 5.5), 4, pupil);
-      circle(...toCanvas(16, side * 5.5 - 2), 1, dull(0xffffff));
-      triangle([toCanvas(8 + 15.5 - 4.5 * .5, side * 4 - 3),
-        toCanvas(8 + 15.5 - 4.5 * .5, side * 4 + 3), toCanvas(8 + 15.5 + 4.5 * .5, side * 4)], fang);
+  // Both eyes first, then both pupils, then both fangs -- the same order as
+  // cspider_render(). Interleaving them lets the second eye overwrite the first
+  // pupil's inner edge, which is a visible notch at this size.
+  for (const side of [-1, 1]) circle(...toCanvas(14, f(side * 5.5)), 7, asleep ? 0 : dull(0xf7f9ff));
+  if (!asleep) {
+    for (const side of [-1, 1]) circle(...toCanvas(15, f(side * 5.5)), 4, pupil);
+    for (const side of [-1, 1]) circle(...toCanvas(16, f(f(side * 5.5) - 2)), 1, dull(0xffffff));
+    for (const side of [-1, 1]) {
+      triangle([toCanvas(f(8 + 15.5 - f(4.5 * .5)), f(f(side * 4) - 3)),
+        toCanvas(f(8 + 15.5 - f(4.5 * .5)), f(f(side * 4) + 3)),
+        toCanvas(f(8 + 15.5 + f(4.5 * .5)), f(side * 4))], fang);
     }
   }
   return pixels;

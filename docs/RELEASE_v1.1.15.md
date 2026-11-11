@@ -35,6 +35,16 @@ same leg-pose maths, the same draw order, the same RGB565 quantisation, the same
 highlight ramp. The PNGs are generated output, so they cannot drift again — if
 the renderer changes, the export changes with it.
 
+Getting there took two fixes that are invisible in a screenshot and obvious in a
+diff. The device computes in `float`, so both ports now round every intermediate
+to binary32 (`_f32()` in the generator, `Math.fround` in the browser):
+`cosf(PI_F / 2)` is `-4.37e-8` while `Math.cos(Math.PI / 2)` is `+6.12e-17`, and
+a coordinate landing exactly on an integer truncates one pixel apart. The browser
+port also interleaved eye and pupil drawing per side, where `cspider_render()`
+draws both eyes, then both pupils — the second eye was overwriting the first
+pupil's inner edge. A new browser test decodes all 39 exported PNGs and compares
+them to the renderer pixel for pixel, so neither mistake can return silently.
+
 The 39 spider frames also leave the byte-for-byte preservation set. They are
 still validated for binary alpha, determinism and the 12-colour cap, and they are
 exempt from the 2×2 uniform-block rule because they are single-pixel exports
@@ -52,10 +62,14 @@ browser renderer for the same reason.
 - `stability_check.py COM7 40`: `VERDICT: PASS`, 0 faults.
 - `scanloop 5`: `largest_drift=0`. `render 500`: `largest_drift=0`.
 - Internal DMA largest 63,488 bytes, above the 51,200 floor.
-- Browser suite **100/100**. The sickness test asserts alpha `[0,255]` rather
-  than `153`, and a new test asserts every drawn pixel stays opaque and more
-  than 90% of them desaturate.
+- Browser suite **101/101**. The sickness test asserts alpha `[0,255]` rather
+  than `153`, a new test asserts every drawn pixel stays opaque and more than 90%
+  of them desaturate, and a new parity test decodes all 39 exported PNGs and
+  compares them to the renderer pixel for pixel.
 - Captured on hardware with the pet healthy: body mean `(80,83,88)`, opaque.
 - Captured on hardware with the pet forced sick (`state=9 sick=1`): body mean
   `(82,85,90)` — darker and desaturated, **still opaque**. The floor does not
   show through.
+- `screenshot spider` on the device reports the same 8-colour palette as the
+  exported PNG, and the sick canvas (`#7B818B` body) is a dulled version of the
+  healthy one (`#8B95A4`) at identical opacity.

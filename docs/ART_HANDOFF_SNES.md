@@ -299,6 +299,20 @@ sick; against the pale floors that shipped in v1.1.13 the ground showed straight
 through the body and read as a rendering bug. `sick_aware()` now blends each
 colour 45% toward its own luma and darkens 12%, so every pixel stays opaque.
 
+**Both ports must compute in binary32.** `cspider.c` uses `float`, so the
+generator rounds every intermediate through `_f32()` and the browser port through
+`Math.fround`. This is not pedantry: `cosf(PI_F / 2)` is `-4.37e-8` while
+`Math.cos(Math.PI / 2)` is `+6.12e-17`, and a coordinate that lands exactly on an
+integer truncates one pixel apart between the two. The generator also uses C
+integer division (`_idiv`) rather than Python's floor division, because the two
+disagree for negative operands.
+
+Draw order matters as much as arithmetic. `cspider_render()` draws **both** eyes,
+then **both** pupils, then **both** fangs. Interleaving them per side lets the
+second eye overwrite the first pupil's inner edge, which is a visible notch at
+this size. A browser test decodes all 39 exported PNGs and compares them to the
+renderer pixel for pixel, so neither mistake can return silently.
+
 ---
 
 ## 5. What "16-bit SNES-era" means concretely

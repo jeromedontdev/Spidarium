@@ -164,5 +164,19 @@ the creature the panel actually draws. Keep the two in step: if you change the
 renderer, regenerate the spider frames. Do not restyle the spider — the player
 has explicitly approved how it looks.
 
+**Both ports must compute in binary32.** `cspider.c` uses `float`, so the
+generator rounds every intermediate through `_f32()` and the browser port through
+`Math.fround`. This is not pedantry: `cosf(PI_F / 2)` is `-4.37e-8` while
+`Math.cos(Math.PI / 2)` is `+6.12e-17`, and a coordinate that lands exactly on an
+integer truncates one pixel apart between the two. The generator also uses C
+integer division (`_idiv`) rather than Python's floor division, because the two
+disagree for negative operands.
+
+Draw order matters as much as arithmetic. `cspider_render()` draws **both** eyes,
+then **both** pupils, then **both** fangs. Interleaving them per side lets the
+second eye overwrite the first pupil's inner edge, which is a visible notch at
+this size. A browser test decodes all 39 exported PNGs and compares them to the
+renderer pixel for pixel, so neither mistake can return silently.
+
 The checked asset set currently contains 158 PNGs (119 non-spider); the runtime
 descriptor table is sized from the generated asset count.

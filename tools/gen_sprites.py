@@ -13,6 +13,7 @@ import colorsys
 import io
 import math
 import os
+import struct
 import sys
 
 try:
@@ -158,6 +159,30 @@ def _rgb565(rgb):
     return ((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2))
 
 
+def _f32(x):
+    """Round to IEEE-754 binary32.
+
+    cspider.c computes the spider in `float`, not `double`. The difference is
+    not academic: cosf(PI_F / 2) is -4.37e-8 while cos(pi / 2) is +6.12e-17, so
+    a coordinate that lands exactly on an integer truncates one pixel apart
+    between the two. Emulating binary32 keeps this export pixel-identical to
+    the panel instead of merely close.
+    """
+    return struct.unpack("f", struct.pack("f", float(x)))[0]
+
+
+def _f32_sin(x):
+    return _f32(math.sin(_f32(x)))
+
+
+def _f32_cos(x):
+    return _f32(math.cos(_f32(x)))
+
+
+# cspider.c uses PI_F, a binary32 approximation of pi, not math.pi.
+PI_F = _f32(3.14159265)
+
+
 def _lighten(rgb, divisor):
     r, g, b = (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF
     r += (255 - r) // divisor
@@ -167,34 +192,49 @@ def _lighten(rgb, divisor):
 
 
 def _leg_pose(k, side, phase, walking, emote, now):
-    """Port of leg_pose() in cspider.c: (hf, hr, kf, kr, ff, fr)."""
-    base = side * (math.pi * 0.5 + (k - 1.5) * 0.42)
-    gait = phase + k * (math.pi * 0.5) + (0.0 if side < 0 else math.pi)
-    lead = 1.55 if k == 0 else 1.15 if k == 1 else 1.0
-    swing = 0.42 * lead * math.sin(gait) if walking else 0.0
-    bend = 0.55 + (0.30 * lead * math.sin(gait + math.pi * 0.5) if walking else 0.0)
-    wave = math.sin((now % 1200) * (2 * math.pi / 1200))
+    """Port of leg_pose() in cspider.c: (hf, hr, kf, kr, ff, fr).
+
+    Every intermediate is rounded to binary32 because the device computes in
+    `float`. See _f32() for why that changes pixels.
+    """
+    base = _f32(side * _f32(_f32(PI_F * _f32(0.5)) + _f32(_f32(k - _f32(1.5)) * _f32(0.42))))
+    gait = _f32(_f32(phase + _f32(k * _f32(PI_F * _f32(0.5)))) +
+                (_f32(0.0) if side < 0 else PI_F))
+    lead = _f32(1.55) if k == 0 else _f32(1.15) if k == 1 else _f32(1.0)
+    swing = _f32(_f32(_f32(0.42) * lead) * _f32_sin(gait)) if walking else _f32(0.0)
+    bend = _f32(_f32(0.55) + (_f32(_f32(_f32(0.30) * lead) *
+                                  _f32_sin(_f32(gait + _f32(PI_F * _f32(0.5)))))
+                             if walking else _f32(0.0)))
+    wave = _f32_sin(_f32(_f32(now % 1200) * _f32(_f32(2 * PI_F) / _f32(1200))))
     if emote == "happy":
         if k == 0:
-            swing += 1.10 * wave
-            bend -= 0.55 + 0.35 * wave
+            swing = _f32(swing + _f32(_f32(1.10) * wave))
+            bend = _f32(bend - _f32(_f32(0.55) + _f32(_f32(0.35) * wave)))
     elif emote == "sad":
-        bend += 0.60
-        swing *= 0.35
+        bend = _f32(bend + _f32(0.60))
+        swing = _f32(swing * _f32(0.35))
     elif emote == "alert":
-        bend -= 0.45 + 0.10 * wave
-        swing *= 0.25
+        bend = _f32(bend - _f32(_f32(0.45) + _f32(_f32(0.10) * wave)))
+        swing = _f32(swing * _f32(0.25))
     elif emote == "sleepy":
-        bend -= 0.30 + 0.05 * wave
-        swing *= 0.15
-    angle = max(0.15, min(1.25, swing + bend))
-    dir1, dir2 = base + side * angle, base - side * angle
-    hf, hr = BODY_R * math.cos(base), BODY_R * math.sin(base)
-    kf = hf + LEG_LEN * LEG_SEG1 * math.cos(dir1)
-    kr = hr + LEG_LEN * LEG_SEG1 * math.sin(dir1)
-    ff = kf + LEG_LEN * LEG_SEG2 * math.cos(dir2)
-    fr = kr + LEG_LEN * LEG_SEG2 * math.sin(dir2)
+        bend = _f32(bend - _f32(_f32(0.30) + _f32(_f32(0.05) * wave)))
+        swing = _f32(swing * _f32(0.15))
+    angle = max(_f32(0.15), min(_f32(1.25), _f32(swing + bend)))
+    dir1 = _f32(base + _f32(side * angle))
+    dir2 = _f32(base - _f32(side * angle))
+    hf = _f32(BODY_R * _f32_cos(base))
+    hr = _f32(BODY_R * _f32_sin(base))
+    kf = _f32(hf + _f32(_f32(LEG_LEN * LEG_SEG1) * _f32_cos(dir1)))
+    kr = _f32(hr + _f32(_f32(LEG_LEN * LEG_SEG1) * _f32_sin(dir1)))
+    ff = _f32(kf + _f32(_f32(LEG_LEN * LEG_SEG2) * _f32_cos(dir2)))
+    fr = _f32(kr + _f32(_f32(LEG_LEN * LEG_SEG2) * _f32_sin(dir2)))
     return hf, hr, kf, kr, ff, fr
+
+
+def _idiv(a, b):
+    """C integer division: truncates toward zero, unlike Python's //."""
+    q = abs(a) // abs(b)
+    return q if (a < 0) == (b < 0) else -q
 
 
 class _Canvas:
@@ -229,8 +269,8 @@ class _Canvas:
             return
         half = width // 2
         for i in range(steps + 1):
-            x = x1 + int(dx * i / steps)
-            y = y1 + int(dy * i / steps)
+            x = x1 + _idiv(dx * i, steps)
+            y = y1 + _idiv(dy * i, steps)
             for oy in range(-half, half + 1):
                 for ox in range(-half, half + 1):
                     if ox * ox + oy * oy <= half * half + half:
@@ -252,7 +292,7 @@ class _Canvas:
                     continue
                 if (y < ay and y < by) or (y > ay and y > by):
                     continue
-                x = ax + int((bx - ax) * (y - ay) / (by - ay))
+                x = ax + _idiv((bx - ax) * (y - ay), by - ay)
                 lo, hi = min(lo, x), max(hi, x)
             if hi < lo:
                 continue
@@ -271,18 +311,18 @@ def _spider_emote(anim):
 
 def draw_spider(theta, anim, frame):
     canvas = _Canvas()
-    heading = theta
+    heading = _f32(theta)
 
-    sx, sy = 1.0, 1.0
+    sx, sy = _f32(1.0), _f32(1.0)
     if anim == "pounce":
-        sx, sy = 1.17, 0.82
+        sx, sy = _f32(1.17), _f32(0.82)
     elif anim == "sleep":
-        sx, sy = 1.05, 0.95
+        sx, sy = _f32(1.05), _f32(0.95)
 
     asleep = anim == "sleep"
     emote = _spider_emote(anim)
     walking = anim == "walk"
-    phase = frame / 4.0 * 2.0 * math.pi if walking else 0.0
+    phase = _f32(_f32(frame / 4.0) * _f32(2.0 * PI_F)) if walking else _f32(0.0)
     now = frame * 110
 
     col_base = COL_BASE
@@ -291,10 +331,13 @@ def draw_spider(theta, anim, frame):
     col_fuzz = col_mid
 
     def to_canvas(fwd, right, sf=1.0, sr=1.0):
-        fx, fy = math.cos(heading), math.sin(heading)
-        rx, ry = -fy, fx
-        return (SPIDER_CENTRE + int(fx * fwd * sf + rx * right * sr),
-                SPIDER_CENTRE + int(fy * fwd * sf + ry * right * sr))
+        """Port of to_canvas() in cspider.c, in binary32."""
+        fx, fy = _f32_cos(heading), _f32_sin(heading)
+        rx, ry = _f32(-fy), fx
+        f = _f32(_f32(fwd) * _f32(sf))
+        r = _f32(_f32(right) * _f32(sr))
+        return (SPIDER_CENTRE + int(_f32(_f32(fx * f) + _f32(rx * r))),
+                SPIDER_CENTRE + int(_f32(_f32(fy * f) + _f32(ry * r))))
 
     # --- legs, drawn first so the body covers the hips --------------------
     for i in range(NUM_LEGS):
@@ -311,9 +354,9 @@ def draw_spider(theta, anim, frame):
     canvas.circle(*to_canvas(ABD_FWD - 1.5, -1.5, sx, sy), ABD_R - 3, col_mid)
     canvas.circle(*to_canvas(ABD_FWD - 3.0, -3.0, sx, sy), ABD_R - 7, col_hi)
     for i in range(FUZZ_COUNT):
-        a = i * 2.0 * math.pi / FUZZ_COUNT
-        canvas.circle(*to_canvas(ABD_FWD + math.cos(a) * (ABD_R + FUZZ_OUT),
-                                 math.sin(a) * (ABD_R + FUZZ_OUT), sx, sy),
+        a = _f32(_f32(_f32(i) * _f32(2.0 * PI_F)) / _f32(FUZZ_COUNT))
+        canvas.circle(*to_canvas(_f32(ABD_FWD + _f32(_f32_cos(a) * _f32(ABD_R + FUZZ_OUT))),
+                                 _f32(_f32_sin(a) * _f32(ABD_R + FUZZ_OUT)), sx, sy),
                       FUZZ_R - (i % 2), col_fuzz)
 
     # --- cephalothorax ----------------------------------------------------
@@ -321,36 +364,38 @@ def draw_spider(theta, anim, frame):
     canvas.circle(*to_canvas(CEPH_FWD - 1.5, -1.5, sx, sy), CEPH_R - 3, col_mid)
     canvas.circle(*to_canvas(CEPH_FWD - 3.0, -3.0, sx, sy), CEPH_R - 6, col_hi)
     for i in range(FUZZ_COUNT):
-        a = i * 2.0 * math.pi / FUZZ_COUNT
-        canvas.circle(*to_canvas(CEPH_FWD + math.cos(a) * (CEPH_R + FUZZ_OUT),
-                                 math.sin(a) * (CEPH_R + FUZZ_OUT), sx, sy),
+        a = _f32(_f32(_f32(i) * _f32(2.0 * PI_F)) / _f32(FUZZ_COUNT))
+        canvas.circle(*to_canvas(_f32(CEPH_FWD + _f32(_f32_cos(a) * _f32(CEPH_R + FUZZ_OUT))),
+                                 _f32(_f32_sin(a) * _f32(CEPH_R + FUZZ_OUT)), sx, sy),
                       FUZZ_R - (i % 2), col_fuzz)
 
     # --- secondary eyes ---------------------------------------------------
     for fwd, dx in ((EYE_MID_FWD, EYE_MID_DX), (EYE_REAR_FWD, EYE_REAR_DX)):
         for side in (-1, 1):
-            canvas.circle(*to_canvas(CEPH_FWD + fwd, side * dx, sx, sy),
+            canvas.circle(*to_canvas(_f32(CEPH_FWD + fwd), _f32(side * dx), sx, sy),
                           EYE_SMALL_R, COL_SECONDARY)
 
     # --- primary eyes -----------------------------------------------------
     col_eye = 0x000000 if asleep else COL_EYE
     for side in (-1, 1):
-        canvas.circle(*to_canvas(CEPH_FWD + EYE_FWD, side * EYE_DX, sx, sy),
+        canvas.circle(*to_canvas(_f32(CEPH_FWD + EYE_FWD), _f32(side * EYE_DX), sx, sy),
                       EYE_R, col_eye)
 
     if not asleep:
         for side in (-1, 1):
-            canvas.circle(*to_canvas(CEPH_FWD + EYE_FWD + 1.0, side * EYE_DX, sx, sy),
+            canvas.circle(*to_canvas(_f32(CEPH_FWD + EYE_FWD + 1.0),
+                                     _f32(side * EYE_DX), sx, sy),
                           PUPIL_R, COL_PUPIL)
-            canvas.circle(*to_canvas(CEPH_FWD + EYE_FWD + 2.0, side * EYE_DX - 2.0, sx, sy),
+            canvas.circle(*to_canvas(_f32(CEPH_FWD + EYE_FWD + 2.0),
+                                     _f32(_f32(side * EYE_DX) - 2.0), sx, sy),
                           1, COL_GLINT)
         for side in (-1.0, 1.0):
-            bx0, by0 = to_canvas(CEPH_FWD + FANG_FWD - FANG_LEN * 0.5,
-                                 side * FANG_DX - FANG_HALF_W, sx, sy)
-            bx1, by1 = to_canvas(CEPH_FWD + FANG_FWD - FANG_LEN * 0.5,
-                                 side * FANG_DX + FANG_HALF_W, sx, sy)
-            ax, ay = to_canvas(CEPH_FWD + FANG_FWD + FANG_LEN * 0.5,
-                               side * FANG_DX, sx, sy)
+            bx0, by0 = to_canvas(_f32(CEPH_FWD + FANG_FWD - _f32(FANG_LEN * 0.5)),
+                                 _f32(_f32(side * FANG_DX) - FANG_HALF_W), sx, sy)
+            bx1, by1 = to_canvas(_f32(CEPH_FWD + FANG_FWD - _f32(FANG_LEN * 0.5)),
+                                 _f32(_f32(side * FANG_DX) + FANG_HALF_W), sx, sy)
+            ax, ay = to_canvas(_f32(CEPH_FWD + FANG_FWD + _f32(FANG_LEN * 0.5)),
+                               _f32(side * FANG_DX), sx, sy)
             canvas.triangle(bx0, by0, bx1, by1, ax, ay, COL_FANG)
 
     img = Image.new("RGBA", (SPIDER_CANVAS, SPIDER_CANVAS), (0, 0, 0, 0))

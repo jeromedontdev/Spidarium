@@ -62,3 +62,73 @@ test('happy/alert gait never inverts knees and all animated frames remain within
     }
   }
 });
+
+// The published PNGs are an export of this renderer, so the two must agree
+// pixel for pixel. They drifted once already: the generator used doubles while
+// the device uses float, and the browser port interleaved eye/pupil drawing
+// where cspider.c draws both eyes then both pupils. Both bugs are invisible in
+// a screenshot and obvious in a diff, so pin the diff.
+test('exported spider PNGs match this renderer pixel for pixel', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { inflateSync } = await import('node:zlib');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, join } = await import('node:path');
+  const assets = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
+  // Minimal PNG reader: these files are 8-bit RGBA, non-interlaced, one IDAT.
+  const decode = (file) => {
+    const buf = readFileSync(file);
+    let pos = 8, width = 0, height = 0;
+    const idat = [];
+    while (pos < buf.length) {
+      const len = buf.readUInt32BE(pos), type = buf.toString('ascii', pos + 4, pos + 8);
+      const data = buf.subarray(pos + 8, pos + 8 + len);
+      if (type === 'IHDR') { width = data.readUInt32BE(0); height = data.readUInt32BE(4); }
+      else if (type === 'IDAT') idat.push(data);
+      else if (type === 'IEND') break;
+      pos += 12 + len;
+    }
+    const raw = inflateSync(Buffer.concat(idat));
+    const out = new Uint8ClampedArray(width * height * 4);
+    const stride = width * 4;
+    for (let y = 0; y < height; y++) {
+      const filter = raw[y * (stride + 1)];
+      const row = raw.subarray(y * (stride + 1) + 1, y * (stride + 1) + 1 + stride);
+      for (let x = 0; x < stride; x++) {
+        const a = x >= 4 ? out[y * stride + x - 4] : 0;
+        const b = y > 0 ? out[(y - 1) * stride + x] : 0;
+        const c = x >= 4 && y > 0 ? out[(y - 1) * stride + x - 4] : 0;
+        let v = row[x];
+        if (filter === 1) v += a;
+        else if (filter === 2) v += b;
+        else if (filter === 3) v += (a + b) >> 1;
+        else if (filter === 4) {
+          const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+          v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+        }
+        out[y * stride + x] = v & 255;
+      }
+    }
+    return out;
+  };
+  const views = [['n', -Math.PI / 2], ['e', 0], ['s', Math.PI / 2]];
+  const anims = [['walk', 4], ['idle', 2], ['eat', 2], ['sleep', 1], ['molt', 2], ['pounce', 2]];
+  const emoteFor = (a) => a === 'sleep' ? 'sleepy' : a === 'eat' ? 'happy' : 'none';
+  let checked = 0;
+  for (const [view, heading] of views) for (const [anim, frames] of anims) for (let frame = 0; frame < frames; frame++) {
+    const walking = anim === 'walk';
+    const pixels = new Uint8ClampedArray(96 * 96 * 4);
+    renderSpider(pixels, {
+      heading, state: anim, emote: emoteFor(anim), walking,
+      phase: walking ? frame / 4 * 2 * Math.PI : 0, now: frame * 110,
+    });
+    const png = decode(join(assets, `spider_${view}_${anim}_${frame}.png`));
+    for (let i = 0; i < pixels.length; i++) {
+      if (pixels[i] !== png[i]) {
+        const px = (i >> 2) % 96, py = (i >> 2) / 96 | 0;
+        assert.fail(`spider_${view}_${anim}_${frame}.png differs at (${px},${py}) channel ${i & 3}: png=${png[i]} renderer=${pixels[i]}`);
+      }
+    }
+    checked++;
+  }
+  assert.equal(checked, 39);
+});
