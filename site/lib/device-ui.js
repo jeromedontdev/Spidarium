@@ -1,8 +1,8 @@
-import * as E from './sim.js?v=1.1.25';
+import * as E from './sim.js?v=1.1.26';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.25';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.26';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -463,9 +463,42 @@ export class DeviceGame {
           if (detail) detail.textContent = `${input.value}%`;
           if (grid) button.setAttribute('aria-label', `${item.label}: ${input.value}%`);
         });
+        const drag = event => {
+          const rect = input.getBoundingClientRect(), rotation = (this.rotation ?? 0) & 3;
+          const vertical = rotation % 2 !== 0;
+          const length = vertical ? rect.height : rect.width;
+          const scale = length / input.offsetWidth;
+          const inset = 8 * scale;
+          let position = vertical ? event.clientY - rect.top : event.clientX - rect.left;
+          if (rotation === 2 || rotation === 3) position = length - position;
+          const fraction = clamp((position - inset) / (length - 2 * inset), 0, 1);
+          const next = clamp(min + Math.round(fraction * (max - min) / step) * step, min, max);
+          if (Number(input.value) !== next) {
+            input.value = String(next);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        };
+        input.addEventListener('pointerdown', event => {
+          if (!event.isPrimary || event.button !== 0) return;
+          event.preventDefault(); event.stopPropagation();
+          input.focus({ preventScroll: true });
+          input.setPointerCapture(event.pointerId);
+          drag(event);
+        });
+        input.addEventListener('pointermove', event => {
+          if (input.hasPointerCapture(event.pointerId)) drag(event);
+        });
+        input.addEventListener('pointerup', event => {
+          if (!input.hasPointerCapture(event.pointerId)) return;
+          drag(event); input.releasePointerCapture(event.pointerId);
+        });
+        input.addEventListener('pointercancel', event => {
+          if (input.hasPointerCapture(event.pointerId)) input.releasePointerCapture(event.pointerId);
+        });
+        input.addEventListener('click', event => event.stopPropagation());
         button.append(input);
         button.disabled = false;
-      } else if (item.selected || item.submenu) button.append(element('span', 'row-marker', item.selected ? '✓' : '›'));
+      } else if (item.selected) button.append(element('span', 'row-marker', '✓'));
     });
     const name = this.modal.name;
     // Arrow buttons, matching the corner Back control. Text labels made the

@@ -77,6 +77,7 @@ test('grid pagination fits six non-overlapping targets and maps final IDs exactl
     DeviceGame.prototype.list.call(ui,rows,last,3);
     const final=calls.filter(c=>c.button.classList.values.includes('d-shop-tile'));
     assert.equal(final.length,count-last*6);
+    assert.equal(final.at(-1).button.children.find(child=>child.className==='row-marker').textContent,'✓');
     final.at(-1).click();assert.deepEqual(picked,[count-1]);
     assert.equal(calls.at(-1).button.disabled,true);
   }
@@ -95,7 +96,7 @@ test('four-tile settings keep sliders, switches and final-page routing usable',t
     {label:'Sound',detail:'On',checkbox:true,selected:true,click(){}},
     {label:'Background Music',detail:'On',checkbox:true,selected:true,click(){}},
     {label:'Music Volume',detail:'35%',icon:'ui_volume',slider:{value:35,min:0,max:100,step:5,change(){}}},
-    {label:'Soundtrack',detail:'Moonlit Hollow',click(){}},
+    {label:'Soundtrack',detail:'Moonlit Hollow',submenu:true,click(){}},
   ];
   DeviceGame.prototype.list.call(ui,rows,0,2);
   const tiles=calls.filter(c=>c.button.classList.values.includes('d-menu-tile'));
@@ -110,7 +111,47 @@ test('four-tile settings keep sliders, switches and final-page routing usable',t
   assert.equal(tiles[1].button.attributes['aria-checked'],'true');
   calls.length=0;DeviceGame.prototype.list.call(ui,rows,1,2);
   assert.equal(calls.filter(c=>c.button.classList.values.includes('d-menu-tile')).length,1);
+  assert.equal(calls[0].button.children.some(child=>child.className==='row-marker'),false);
   assert.equal(calls.at(-1).button.disabled,true);
+});
+
+test('sliders capture held drags, respect rotation, and release on cancellation',t=>{
+  globalThis.document={createElement:node};t.after(()=>{delete globalThis.document;});
+  for(const rotation of [0,1,2,3]){
+    const panel=node(),values=[];
+    const ui={rotation,modal:{name:'Sound',panel},open(){},
+      button(parent){const button=node('button');parent.append(button);return button;}};
+    DeviceGame.prototype.list.call(ui,[{label:'Volume',detail:'50%',
+      slider:{value:50,min:0,max:100,step:5,change:value=>values.push(value)}}],0,2);
+    const input=panel.children[0].children.find(child=>child.type==='range');
+    let captured=null;
+    input.offsetWidth=156;
+    input.getBoundingClientRect=()=>({left:10,top:20,width:rotation%2?20:156,height:rotation%2?156:20});
+    input.focus=()=>{};
+    input.setPointerCapture=id=>{captured=id;};
+    input.hasPointerCapture=id=>captured===id;
+    input.releasePointerCapture=()=>{captured=null;};
+    input.dispatchEvent=event=>input.listeners[event.type](event);
+    const point=fraction=>{
+      let position=8+140*fraction;
+      if(rotation===2||rotation===3)position=156-position;
+      return {pointerId:1,isPrimary:true,button:0,clientX:10+(rotation%2?10:position),
+        clientY:20+(rotation%2?position:10),preventDefault(){},stopPropagation(){}};
+    };
+    input.listeners.pointerdown({...point(.1),button:2});
+    input.listeners.pointerdown({...point(.1),isPrimary:false});
+    assert.equal(captured,null);assert.deepEqual(values,[]);
+    input.listeners.pointerdown(point(.2));assert.equal(captured,1);
+    input.listeners.pointermove(point(.8));
+    assert.deepEqual(values,[20,80]);
+    assert.equal(panel.children[0].attributes['aria-label'],'Volume: 80%');
+    input.listeners.pointerup(point(.65));assert.equal(captured,null);
+    assert.equal(values.at(-1),65);
+    input.listeners.pointermove(point(.1));assert.equal(values.at(-1),65);
+    input.listeners.pointerdown(point(.4));input.listeners.pointercancel(point(.4));
+    assert.equal(captured,null);
+    input.value='30';input.listeners.input();assert.equal(values.at(-1),30);
+  }
 });
 
 test('fold is inside the rounded screen; hero preserves spider with one small bug',async()=>{

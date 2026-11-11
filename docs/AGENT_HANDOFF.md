@@ -13,6 +13,12 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.26 keeps single-slot sliders, explicitly captures held browser pointer
+  drags (including rotation/scale and cancellation), and removes submenu
+  chevrons from both UIs. Keep selected checkmarks and footer paging arrows.
+  Native UI tests inject actual held/moving pointer input, not only synthetic
+  VALUE_CHANGED events. Spider/art/save format and OTA limitations are unchanged.
+
 - v1.1.25 retries transient manifest reads and resumes stalled application
   downloads only after verifying HTTP206 Content-Range start/end/total, with
   at most16 reconnects inside a five-minute deadline. Full size/hash/project/

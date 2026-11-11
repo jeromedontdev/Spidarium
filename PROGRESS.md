@@ -7770,3 +7770,61 @@ evidence proves delivery and continuity, not that the player likes the sound.
   stalls on the current hardware connection. All concrete implementation,
   documentation, ordinary USB verification and publication work is complete;
   no further speculative tuning or longer unbounded transfer is claimed.
+
+## Round 80 - Held slider drags and cleaner tiles
+
+### Decisions made
+
+- Keep each slider in one grid slot, following the revised request. Do not
+  change grid geometry, paging, save format, artwork or the spider.
+- Browser sliders explicitly capture the primary pointer on press and update
+  throughout the held drag, even outside the thin track. Suppress competing
+  browser gestures and parent-tile clicks, retain keyboard range controls,
+  release on pointer-up/cancel, and map scaled/rotated coordinates correctly.
+- Remove submenu chevrons from native and browser cards. Keep selected
+  checkmarks, checkboxes, Back and footer paging arrows.
+- Native held input already passes in the baseline build; do not claim a
+  reproduced firmware dragging failure or change proven LVGL behavior. Add a
+  real input-device regression instead of only setting the slider value and
+  sending VALUE_CHANGED, which does not prove a held drag.
+
+### Verification
+
+- Browser165/165 and production web build pass. New regressions cover held
+  pointer movement, primary-button filtering, release/cancel, four rotations,
+  keyboard input, no submenu chevrons and retained selected checkmarks.
+- Actual browser mouse drags on both master/music sliders change15 to85 while
+  still held, including outside the track; ArrowLeft changes85 to80. Touch
+  input at a340px viewport also changes15 to85 before release. Original browser
+  volume preferences restored afterward. Main tiles have no arrow markers and
+  the Sound page still occupies four single-slot tiles.
+- Wrapper build/full flash exit0, no warnings. Native input injection holds
+  the slider at60, moves outside its track to84 before release, and retains
+  the menu/callback. All uitest flags1, including no submenu marker on the
+  final Soundtrack tile. Exact original pet restored after diagnostics.
+  An initial comparison against stale stored bytes was not used as evidence
+  of unchanged pet data; the final run checks live habitat/ownership and
+  explicitly verifies exact restored stored bytes.
+- Radio active0/busy0, internal/DMA largest63,488. Forty-second clean-boot
+  soak PASS, zero faults/errors. render500 and scanloop5 largest-block drift0.
+  Native changes are flashed; these source
+  changes have not been committed or published as a new release.
+
+## Round 81 - Publishing slider and menu improvements (v1.1.26)
+
+### Decisions made
+
+- Publish the tested single-slot held-drag sliders and no-chevron menu tiles
+  as a new immutable firmware release. Align native/browser versions and module/
+  CSS cache keys; preserve original art, save v12 and catalogue IDs.
+- Carry forward the explicit hosted OTA verification gap; a USB-flashed build
+  and latest-release metadata are not evidence of hosted new-slot boot.
+
+### Final release verification
+
+- Versioned1.1.26 wrapper build/full flash exit0, no warnings. Native running
+  descriptor reports1.1.26/factory; native UI/drag and manifest/range tests PASS.
+- Browser165/165; package/art/capture44/44. render500 and scanloop5 largest-block
+  drift0, internal/DMA largest63,488. Exact original pet restored before reboot.
+  Forty-second clean-boot soak PASS, zero faults/errors.
+- Publication and independent production verification follow below.

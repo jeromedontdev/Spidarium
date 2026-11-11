@@ -319,8 +319,7 @@ static void refresh_page(void)
             lv_obj_set_height(s_detail[i], 16);
         }
         if (slider) lv_slider_set_value(s_sliders[i], it->id, LV_ANIM_OFF);
-        lv_label_set_text(s_marker[i], s_check_items[index] || slider ? "" : it->selected ? LV_SYMBOL_OK :
-            it->enabled && it->is_submenu ? LV_SYMBOL_RIGHT : "");
+        lv_label_set_text(s_marker[i], s_check_items[index] || slider ? "" : it->selected ? LV_SYMBOL_OK : "");
         lv_obj_set_hidden(s_detail[i], !detail[0]);
         lv_obj_set_pos(s_label[i], text_x, s_grid ? s_columns == 2 ? 36 : 52 : detail[0] ? multiline ? 2 : 16 : 30);
     }
@@ -930,6 +929,49 @@ static void test_slider(uint8_t id, uint8_t value)
     s_test_slider_id = id;
     s_test_slider_value = value;
 }
+
+static void test_slider_read(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    const lv_indev_data_t *pointer = lv_indev_get_user_data(indev);
+    data->point = pointer->point;
+    data->state = pointer->state;
+}
+
+static bool test_slider_drag(int row)
+{
+    lv_indev_t *indev = lv_indev_create();
+    if (!indev) {
+        ESP_LOGE("spidarium.menu", "slider drag test: pointer allocation failed");
+        return false;
+    }
+    lv_indev_data_t pointer = {0};
+    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(indev, test_slider_read);
+    lv_indev_set_user_data(indev, &pointer);
+    lv_indev_set_mode(indev, LV_INDEV_MODE_EVENT);
+    lv_obj_update_layout(s_menu);
+    lv_area_t area;
+    lv_obj_get_coords(s_sliders[row], &area);
+    pointer.point = (lv_point_t){area.x1 + (area.x2 - area.x1) * 35 / 100,
+                                (area.y1 + area.y2) / 2};
+    pointer.state = LV_INDEV_STATE_PRESSED;
+    lv_indev_read(indev);
+    pointer.point.x = area.x1 + (area.x2 - area.x1) * 60 / 100;
+    lv_indev_read(indev);
+    int held = lv_slider_get_value(s_sliders[row]);
+    pointer.point.x = area.x1 + (area.x2 - area.x1) * 85 / 100;
+    pointer.point.y = area.y1 - 24;
+    lv_indev_read(indev);
+    int moved = lv_slider_get_value(s_sliders[row]);
+    pointer.state = LV_INDEV_STATE_RELEASED;
+    lv_indev_read(indev);
+    bool ok = ui_menu_visible() && held >= 55 && held <= 65 &&
+        moved >= 80 && moved <= 90 && s_test_slider_value == moved;
+    ESP_LOGI("spidarium.menu", "slider drag: held=%d moved=%d retained=%d",
+             held, moved, ok);
+    lv_indev_delete(indev);
+    return ok;
+}
 static int s_test_rewards;
 static uint8_t s_test_score;
 static uint32_t test_reward(uint8_t score)
@@ -1149,8 +1191,11 @@ bool ui_menu_test(void)
     lv_obj_send_event(s_sliders[3], LV_EVENT_VALUE_CHANGED, NULL);
     ok = ok && s_test_slider_id == 3 && s_test_slider_value == 35 &&
         !strcmp(lv_label_get_text(s_detail[3]), "35%");
+    bool drag_ok = test_slider_drag(3);
+    ok = ok && drag_ok;
     lv_obj_send_event(s_next, LV_EVENT_CLICKED, NULL);
     ok = ok && s_page == 1 && !strcmp(lv_label_get_text(s_label[0]), "Soundtrack") &&
+        !strcmp(lv_label_get_text(s_marker[0]), "") &&
         lv_obj_is_hidden(s_row[1]) && lv_obj_has_state(s_next, LV_STATE_DISABLED);
     ui_menu_open_input("Test password", "", true, 63, NULL);
     ok = ok && s_password && lv_textarea_get_password_mode(s_input);

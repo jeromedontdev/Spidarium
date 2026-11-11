@@ -59,7 +59,10 @@ absorbed without navigating; disabled cards do not dismiss the menu.
 Soundtrack offers Silk Garden, Moonlit Hollow and Rainy Canopy, with distinct
 habitat thumbnails; Back returns to Sound page 2. Music gain is relative to
 master, never an effects gain. Browser slider input updates text in place to
-retain keyboard focus. Browser storage progress/results also appear as a
+retain keyboard focus. Sliders remain single grid tiles. Browser pointer capture
+keeps mouse/touch/pen drags live until release/cancel, including outside the
+track and at all four screen rotations; keyboard range controls remain native.
+Browser storage progress/results also appear as a
 pixel-style in-screen notice, including over the modal/fullscreen playfield.
 
 Hold the actual decor/gift in the enclosure to move or put it away. Decor also
@@ -86,8 +89,9 @@ edge is y316, clear of the footer at y332. Names and status use 12px text;
 full gift effects remain in the preview rather than being squeezed into tiles.
 Detail previews retain a full-width card for complete effect text.
 There is no scrolling, momentum or scroll animation. Selected entries open
-on their page. Cards show press feedback, selected tint, disabled styling and
-chevrons on actionable submenus. Read-only/disabled cards have no dash marker.
+on their page. Cards show press feedback, selected tint and disabled styling,
+without submenu chevrons. Selected checkmarks and footer paging arrows remain.
+Read-only/disabled cards have no dash marker.
 Achievements use ten distinct authored 48px badges, including Perfect Hunt;
 the retired First Pet badge remains mapped for legacy data but is not earnable.
 `ui_menu_set_item_icon(item, asset_index)` attaches an icon without changing

@@ -63,7 +63,7 @@
 .d-shop-tile.has-icon .row-detail { left:2px; right:2px; top:82px; height:28px; font-size:12px; line-height:14px; overflow:hidden; }
 .d-shop-tile .row-marker { top:3px; right:4px; font-size:12px; }
 .d-row input[type=checkbox] { position:absolute; right:14px; top:25px; width:24px; height:24px; accent-color:#76d6b1; pointer-events:none; }
-.d-row input[type=range].d-slider { position:absolute; left:14px; right:14px; bottom:8px; width:calc(100% - 28px); height:20px; accent-color:#76d6b1; pointer-events:auto; }
+.d-row input[type=range].d-slider { position:absolute; left:14px; right:14px; bottom:8px; width:calc(100% - 28px); height:20px; accent-color:#76d6b1; pointer-events:auto; touch-action:none; }
 .d-row.has-slider .row-label { top:10px; right:84px; }
 .d-row.has-slider .row-detail { top:10px; left:auto; right:14px; width:60px; text-align:right; }
 .d-row.has-slider input[type=range].d-slider { bottom:12px; margin:0; }
