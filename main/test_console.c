@@ -143,7 +143,8 @@ static void cmd_help(void)
     printf("  screenshot [menu|playfield|spider|sd] capture screen or save playfield to SD\n");
     printf("  capturetest          pixel-compare capture restoration (open a menu first)\n");
     printf("  sd backup|status     verified SD backup or card probe\n");
-    printf("  sound N              play effect 0..9 (7..9 ambient)\n");
+    printf("  sound N              effect 0..9 (7=air, 8=pet chirp, 9=leaves)\n");
+    printf("  audiotest            check environmental PCM hashes/envelopes\n");
     printf("  battery              report PMIC charge and power policy\n");
     printf("  wake                 wake idle display without a gameplay tap\n");
     printf("  reset                erase the save\n");
@@ -1043,6 +1044,9 @@ static void run_line(char *line)
     else if (!strcmp(line, "screenshot")) cmd_screenshot(arg);
     else if (!strcmp(line, "capturetest")) {
         printf("%s capturetest\n", game_ui_call(GAME_UI_SCREEN_TEST) ? "OK" : "ERR");
+    }
+    else if (!strcmp(line, "audiotest")) {
+        printf("%s audiotest\n", audio_test() ? "OK" : "ERR");
     }
     else if (!strcmp(line, "sound")) {
         char *end = NULL;

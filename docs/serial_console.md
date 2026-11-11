@@ -358,11 +358,33 @@ backup filename. Never format or erase the card as a workaround.
 
 ### `sound N`
 
-Queue one synthesized effect, obeying mute. IDs 0..6 are existing gameplay
-effects; 7 is soft foliage rustle, 8 an insect chirp, 9 a water-drop tone.
+Queue one synthesized effect, obeying mute. IDs 0..6 are gameplay effects
+(pounce is now a soft noise whoosh, not a rising laser tone); 7 is eight seconds
+of air, 8 a quiet 160 ms pet chirp, 9 ten seconds of leaves. IDs are unchanged.
 Muted output explicitly says `OK sound muted`; unavailable/full queues return
-`ERR`. During gameplay the new ambience is scheduled every 12-25 seconds on
-the existing audio worker, suppressed during active hunting and network work.
+`ERR`. Queue acceptance is not playback completion: the worker logs written
+foreground sample counts and `ambience ... complete/interrupted/codec error`
+with actual written/total samples.
+
+Automatic ambience considers only air/leaves every 14-20 seconds after the
+first 12 seconds, skips busy audio, and is suppressed during active hunting
+and network work. The existing worker streams 100 ms chunks with slow
+attack/release envelopes, fading over 20 ms for foreground sound, mute or
+radio work. Long ambience must not block the radio's three-second drain.
+
+### `audiotest`
+
+Non-playing deterministic PCM self-test on the console worker, with no shared
+buffer or pet-state changes. Air: 128,000 samples, FNV-1a `02c0ba3f`, peak 1083;
+leaves: 160,000 samples, `096a6969`, peak 1345. Both endpoints must be zero.
+These little-endian 16-bit hashes are also asserted by the browser tests,
+covering every sample rather than just duration. `OK audiotest` requires both
+checks to pass; it does not prove speaker response or subjective sound quality.
+
+Run `python audio_check.py COM7` for actual 8/10-second codec writes plus
+foreground/radio interruption checks (requires sound enabled). It opens/closes
+the Sound menu to hold gameplay still, but does not change pet fields or audio
+preferences. Run it alone on the port, not alongside another serial client.
 
 ### `battery`, `wake`
 

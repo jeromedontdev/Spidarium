@@ -51,7 +51,11 @@ export class DeviceGame {
     this.screen.addEventListener('keydown', event => this.key(event));
     root.querySelector('#browser-save-file').onchange = () => this.importProgress();
     window.addEventListener('pagehide', () => this.persist());
-    document.addEventListener('visibilitychange', () => { if (document.hidden) this.persist(); this.last = performance.now(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.persist();
+      this.audio.settings(this.state.sound && !document.hidden, this.state.volume);
+      this.last = performance.now();
+    });
     this.last = performance.now(); this.accumulator = 0; this.lastSave = this.last;
     requestAnimationFrame(now => this.frame(now));
   }
@@ -673,7 +677,8 @@ export class DeviceGame {
       this.accumulator += elapsed; while (this.accumulator >= .05) { E.tick(this.state, .05); this.accumulator -= .05; }
     } else this.accumulator = 0;
     if (this.game) this.gameFrame(now);
-    if (this.started && !this.hud && !this.modal && !this.game) this.audio.tick(E.STATE_NAMES[this.state.state], now, this.state.sound);
+    if (this.started) this.audio.tick(E.STATE_NAMES[this.state.state], now, this.state.sound && !document.hidden,
+      this.state.volume, !this.hud && !this.modal && !this.game);
     this.draw(); this.refreshHUD();
     if (now - this.lastSave >= 5000) { this.persist(); this.lastSave = now; }
     requestAnimationFrame(time => this.frame(time));

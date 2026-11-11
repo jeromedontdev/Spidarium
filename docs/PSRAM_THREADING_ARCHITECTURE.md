@@ -82,8 +82,15 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   codec writes use a reusable PSRAM PCM buffer and a 4 KB PSRAM stack. Muting is
   atomically published. Active playback drains before radio startup; pending
   effects wait until the network job finishes.
-  Quiet rustle/chirp/drop ambience is scheduled by the logic timer every 12-25
-  seconds, but synthesis and codec writes remain entirely on this worker.
+  Quiet filtered air (8 seconds) / leaves (10 seconds) are considered every
+  14-20 seconds after the first 12 seconds, only when audio is idle. No automatic
+  chirps, pitched drops or sweeps. Two-second attacks and three-second releases
+  prevent abrupt entrances/exits. Stream 100 ms chunks in the existing PCM
+  buffer; pending foreground effects, mute or radio work interrupt with a
+  20 ms fade instead of holding the network drain for the whole texture.
+  Recheck volume between chunks. All synthesis/codec writes stay on this worker.
+  `audiotest` runs pure deterministic synthesis on the console worker, without
+  touching the speaker, live audio state or PCM buffer.
 - **IDF system workers:** retain essential driver/event/network responsibilities.
 - **Battery worker:** AXP2101 reads and brightness changes; atomic telemetry
   consumed by LVGL. Brightness changes pause/resume the display off-thread.

@@ -7115,3 +7115,64 @@ No artwork, renderer or firmware image changed in this follow-up.
 - Live browser computed styles confirm navy `rgb(10,18,32)`, local Montserrat
   and no filter on the promotional spider. Temporary preview server stopped;
   read-only raw-save verification scratch data deleted.
+
+## Round 71 - Sustained environmental audio (v1.1.17)
+
+### Decisions made
+
+- Replace randomly scheduled short chirps/downward sweeps with eight-second
+  air and ten-second leaf textures: integer filtered noise, a gentle
+  seven-second swell, two-second attack and three-second release. Automatic
+  selection is only air/leaves, considered every 14-20 seconds after the
+  first twelve seconds, skipping busy audio and active hunting. Explicit
+  petting retains its soft short chirp.
+- Pounce is a filtered noise whoosh instead of a rising laser tone. Lower
+  foreground gains leave the environmental layer quiet, not a notification.
+- Stream 100 ms chunks using the existing 12,800-byte PSRAM PCM buffer and
+  audio worker. Fade over 20 ms for pending foreground sound, mute or radio
+  work. No new native allocation, LVGL blocking or save-format change.
+- Browser master gain finally applies volume; mute fades/stops live sources
+  while menus are open. Hidden tabs silence sound; finished nodes disconnect.
+- Added `audiotest` and `audio_check.py`: distinguish queue acceptance, actual
+  codec-write completion and real radio interruption. A compiled host harness
+  was blocked by Application Control and discarded without bypassing policy;
+  the native PCM checks instead ran on the authorized ESP32 itself.
+- Keep v1.1.16 immutable; ship these follow-up changes as v1.1.17. Spider
+  renderers, all source artwork, decor, games and pet-save layout are unchanged.
+
+### Verification
+
+- Final `build.ps1`: exit **0**, zero compiler warning/error matches.
+  Final `flash.ps1 COM7`: exit **0**.
+- Browser suite: **116 passed, 0 failed**. Six new tests cover quiet slow
+  envelopes, waveform headroom/discontinuities, seeded PCM hashes, softer
+  pounce, foreground preemption, live menu volume/mute and automatic selection.
+  Release/package regressions: **9/9**; art regressions: **13/13**.
+- Native `audiotest` and browser hashes match every seeded 16-bit PCM sample:
+  air **128000**, FNV-1a **02c0ba3f**, peak **1083**; leaves **160000**,
+  **096a6969**, peak **1345**. Both endpoints zero. Whole-clip RMS is
+  **0.006379 / 0.007505**; largest adjacent change **0.004974 / 0.010559**.
+- `audio_check.py COM7`: **VERDICT: PASS**. Full air write **128000/128000**
+  over **7.969 s**; leaves **160000/160000** over **9.984 s**. Foreground
+  interruption **0.046 s**, followed by actual pounce write **1440 samples**.
+  Scan interruption **0.062 s**, successful scan and full radio teardown.
+  Both interrupted leaf streams wrote **13120/160000** samples; neither held
+  the three-second network drain until the ten-second texture ended.
+- Final `run_tests.py COM7`: **48 passed, 0 failed**.
+  `render 500`: **largest_drift=0**. `scanloop 5`: **ok=5 failed=0
+  largest_drift=0**. Internal/DMA largest **63,488 bytes** exceeds **51,200**;
+  final console stack free **4,596 bytes**.
+- Final 40-second soak: **VERDICT: PASS**, **0 faults/errors**; captured actual
+  completed ambience, not only a silent console.
+- Website built with the verified v1.1.17 five-image package; NVS excluded.
+  ZIP **1,744,758 bytes**, SHA-256
+  `0f604d737631d42c54d4f4dcdca045125b75183832ea7233f0992a6cf7111a0f`.
+  Publication evidence follows after HTTPS checks.
+
+### Verification boundaries
+
+The source-level WAV preview contains eight seconds of air, one second of
+silence and ten seconds of leaves, without loudness normalization. No physical
+speaker/headphone listening or user approval is claimed from sample hashes,
+envelope metrics or successful codec writes. No new claims of authorized
+association/SNTP, hosted OTA installation, SD media or RTC backup retention.

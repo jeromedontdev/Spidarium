@@ -13,6 +13,15 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.17: [quiet environmental audio](BROWSER_PARITY.md#v1117-quiet-environmental-audio).
+  Replace intermittent pitch sweeps with slow air/leaf textures, not louder
+  melodic effects. Native/browser seeded PCM matches `audiotest`; the short pet
+  chirp is explicit, never automatically scheduled. Stream through the existing
+  audio worker/PSRAM buffer; long ambience must fade promptly for queued
+  foreground sound, mute and radio drains. Browser mute/volume applies while
+  menus are open. See the latest progress round for measured evidence; speaker
+  listening approval is not inferred from waveform or codec-write checks.
+
 - v1.1.16: [complete SNES art/chrome release](RELEASE_v1.1.16.md).
   All 119 non-spider assets now share the [style contract](ART_STYLE.md):
   quiet terrain, shaded decor/gifts, material-lit prey, splatters, icons and

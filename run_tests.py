@@ -23,6 +23,7 @@ COMMANDS = [
     ("mem", 10, "OK"),
     ("stat", 10, "OK"),
     ("radio", 10, "OK"),
+    ("audiotest", 20, "OK"),
     ("wifi saved", 10, "OK"),
     ("render 500", 40, "OK"),
     ("play", 10, "OK"),

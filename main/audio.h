@@ -1,8 +1,8 @@
 /*
  * Spidarium — synthesized sound effects.
  *
- * No audio assets: every SFX is a short PCM envelope generated in C and
- * pushed to the ES8311 speaker through esp_codec_dev.
+ * No audio assets: effects and long, softly faded air/leaf ambience are
+ * synthesized on the worker and pushed to the ES8311 speaker.
  */
 #pragma once
 
@@ -14,11 +14,13 @@
  * calls then become no-ops. */
 bool audio_init(void);
 
-/* Play a sound effect. Non-blocking. */
+/* Queue an effect without blocking. Foreground requests fade out ambience. */
 bool audio_play(sfx_t sfx);
 
 /* Active playback, used by the network worker's exclusive-operation drain. */
 bool audio_playing(void);
+/* Deterministic PCM self-test; call only from the console worker, not LVGL. */
+bool audio_test(void);
 
 /* Mute state, persisted in game_state_t. */
 void audio_set_muted(bool muted);

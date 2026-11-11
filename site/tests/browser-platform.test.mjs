@@ -6,7 +6,7 @@ import { soundSamples } from '../lib/device-audio.js';
 import { readFile } from 'node:fs/promises';
 
 test('native sound durations, deterministic noise and PCM range match', () => {
-  for (const [name, duration] of [['eat', 140], ['pounce', 90], ['molt', 260], ['tap', 60], ['rustle', 280], ['chirp', 160], ['drop', 220]]) {
+  for (const [name, duration] of [['eat', 140], ['pounce', 90], ['molt', 260], ['tap', 60], ['rustle', 8000], ['chirp', 160], ['drop', 10000]]) {
     const pcm = soundSamples(name);
     assert.equal(pcm.length, duration * 16);
     assert.equal(Math.abs(pcm[0]), 0);

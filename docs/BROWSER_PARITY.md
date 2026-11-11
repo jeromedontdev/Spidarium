@@ -1,5 +1,25 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.17: quiet environmental audio
+
+Native/browser synthesis now shares eight-second filtered air and ten-second
+leaf textures: no automatic chirp, downward plop or pitch sweep. Stateful
+integer noise filters, two-second attacks, three-second releases and a gentle
+seven-second swell keep the background quiet. Scheduling considers ambience
+after twelve seconds, then every 14-20 seconds, skipping busy audio; active
+hunting suppresses ambience. Seeded samples match native `audiotest` hashes.
+
+Pounce is a filtered noise whoosh; other foreground effects are quieter and
+petting retains a short, soft chirp. Foreground audio fades existing ambience
+over 20 ms. Browser volume now controls a master gain; muting fades/stops
+already-playing sources, including when Sound settings are open. Hidden tabs
+also silence existing sound. Source nodes are disconnected on completion.
+Native ambience reuses its PSRAM buffer, yields to pending effects/mute/radio
+between 100 ms chunks, and reports actual codec-write results.
+
+Matching PCM does not promise identical speaker/headphone loudness or
+subjective atmosphere. Listening approval remains with the player.
+
 ## v1.1.16: shared SNES artwork and chrome
 
 All 119 non-spider PNGs now use the same finite, crisp material ramps: sixteen

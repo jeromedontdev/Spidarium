@@ -2,6 +2,7 @@
  * Spidarium — synthesized sound effects implementation.
  */
 #include "audio.h"
+#include "audio_ambience.h"
 
 #include "game_config.h"
 #include "net.h"
@@ -26,6 +27,7 @@ static const char *TAG = "spidarium.audio";
 
 /* Longest SFX we synthesize, in samples. */
 #define MAX_SAMPLES (AUDIO_SAMPLE_RATE * 400 / 1000)
+_Static_assert(AUDIO_SAMPLE_RATE == AMBIENCE_RATE, "ambience sample rate mismatch");
 
 static esp_codec_dev_handle_t s_spk;
 static bool                   s_ready;
@@ -39,6 +41,19 @@ static atomic_int  s_volume = AUDIO_VOLUME;
 static atomic_int  s_volume_applied = -1;
 
 static void play_sfx(sfx_t sfx);
+
+static bool apply_volume(void)
+{
+    int volume = atomic_load(&s_volume);
+    if (volume == atomic_load(&s_volume_applied)) return true;
+    int err = esp_codec_dev_set_out_vol(s_spk, volume);
+    if (err != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "audio volume write failed (%d)", err);
+        return false;
+    }
+    atomic_store(&s_volume_applied, volume);
+    return true;
+}
 
 static void audio_worker(void *arg)
 {
@@ -54,12 +69,7 @@ static void audio_worker(void *arg)
         }
         /* Volume changes are codec writes, so they belong here and never on
          * the LVGL task. */
-        int volume = atomic_load(&s_volume);
-        if (volume != atomic_load(&s_volume_applied)) {
-            esp_codec_dev_set_out_vol(s_spk, volume);
-            atomic_store(&s_volume_applied, volume);
-        }
-        if (!atomic_load(&s_muted)) play_sfx(sfx);
+        if (apply_volume() && !atomic_load(&s_muted)) play_sfx(sfx);
         atomic_store(&s_playing, false);
     }
 }
@@ -131,6 +141,44 @@ static int render_noise(uint32_t ms, float gain)
     return n;
 }
 
+static bool write_pcm(int samples)
+{
+    int err = esp_codec_dev_write(s_spk, s_buf, samples * (int)sizeof *s_buf);
+    if (err != ESP_CODEC_DEV_OK) ESP_LOGE(TAG, "audio write failed (%d)", err);
+    return err == ESP_CODEC_DEV_OK;
+}
+
+static void play_ambience(bool leafy)
+{
+    ambience_t sound;
+    ambience_init(&sound, leafy, esp_random());
+    uint32_t written = 0;
+    const char *reason = "complete";
+    while (sound.position < sound.length) {
+        bool stopping = atomic_load(&s_muted) || net_busy() ||
+                        uxQueueMessagesWaiting(s_queue) != 0;
+        int samples = stopping ? AMBIENCE_FADE : AMBIENCE_CHUNK;
+        if ((uint32_t)samples > sound.length - sound.position)
+            samples = (int)(sound.length - sound.position);
+        for (int i = 0; i < samples; i++) {
+            int16_t value = ambience_sample(&sound);
+            s_buf[i] = stopping ? (int16_t)((int32_t)value * (samples - 1 - i) / samples) : value;
+        }
+        if (!apply_volume() || !write_pcm(samples)) {
+            reason = "codec error";
+            break;
+        }
+        written += samples;
+        if (stopping) {
+            reason = "interrupted";
+            break;
+        }
+    }
+    ESP_LOGI(TAG, "ambience %s: %s samples=%lu/%lu",
+             leafy ? "leaves" : "air", reason,
+             (unsigned long)written, (unsigned long)sound.length);
+}
+
 /* ------------------------------------------------------------------ */
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
@@ -161,9 +209,11 @@ bool audio_init(void)
         return false;
     }
 
-    esp_codec_dev_set_out_vol(s_spk, g.volume <= 100 ? g.volume : AUDIO_VOLUME);
     atomic_store(&s_volume, g.volume <= 100 ? g.volume : AUDIO_VOLUME);
-    atomic_store(&s_volume_applied, atomic_load(&s_volume));
+    if (!apply_volume()) {
+        esp_codec_dev_close(s_spk);
+        return false;
+    }
 
     s_buf = heap_caps_malloc(MAX_SAMPLES * sizeof *s_buf,
                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -228,16 +278,44 @@ bool audio_play(sfx_t sfx)
 
 bool audio_playing(void) { return atomic_load(&s_playing); }
 
+bool audio_test(void)
+{
+    bool ok = true;
+    const uint32_t expected[] = {0x02c0ba3fu, 0x096a6969u};
+    for (int leafy = 0; leafy < 2; leafy++) {
+        ambience_t sound;
+        ambience_init(&sound, leafy, 0x12345678u);
+        uint32_t hash = 2166136261u;
+        int peak = 0, first = 0, last = 0;
+        while (sound.position < sound.length) {
+            int sample = ambience_sample(&sound);
+            if (sound.position == 1) first = sample;
+            last = sample;
+            int magnitude = sample < 0 ? -sample : sample;
+            if (magnitude > peak) peak = magnitude;
+            uint16_t bits = (uint16_t)sample;
+            hash = (hash ^ (bits & 255u)) * 16777619u;
+            hash = (hash ^ (bits >> 8)) * 16777619u;
+        }
+        bool valid = hash == expected[leafy] && first == 0 && last == 0 && peak < 2000;
+        ok = valid && ok;
+        ESP_LOGI(TAG, "PCM %s samples=%lu hash=%08lx peak=%d endpoints=%d/%d %s",
+                 leafy ? "leaves" : "air", (unsigned long)sound.length,
+                 (unsigned long)hash, peak, first, last, valid ? "PASS" : "FAIL");
+    }
+    return ok;
+}
+
 void audio_tick(uint32_t now_ms)
 {
     static uint32_t next;
     if (!s_ready || audio_muted() || net_busy()) return;
     if (!next) next = now_ms + 12000;
     if ((int32_t)(now_ms - next) < 0) return;
-    next = now_ms + 12000 + esp_random() % 13000;
+    next = now_ms + 14000 + esp_random() % 6000;
     if (!audio_playing() && uxQueueMessagesWaiting(s_queue) == 0 &&
         g.state != SPIDER_AIM && g.state != SPIDER_POUNCE && g.state != SPIDER_EAT)
-        audio_play((sfx_t)(SFX_RUSTLE + esp_random() % 3));
+        audio_play(esp_random() % 2 ? SFX_RUSTLE : SFX_DROP);
 }
 
 static void play_sfx(sfx_t sfx)
@@ -247,48 +325,47 @@ static void play_sfx(sfx_t sfx)
     switch (sfx) {
     case SFX_EAT:
         /* Two quick descending chirps: chewing. */
-        n = render_sweep(880.0f, 520.0f, SFX_MS_EAT, 0.35f);
+        n = render_sweep(880.0f, 520.0f, SFX_MS_EAT, 0.16f);
         break;
 
     case SFX_POUNCE:
-        /* Rising whoosh. */
-        n = render_sweep(320.0f, 1100.0f, SFX_MS_POUNCE, 0.40f);
+        n = render_noise(SFX_MS_POUNCE, 0.12f);
+        for (int i = 1; i < n; i++) s_buf[i] = (s_buf[i] + 3 * s_buf[i - 1]) / 4;
         break;
 
     case SFX_MOLT:
         /* Slow shimmer. */
-        n = render_sweep(440.0f, 1320.0f, SFX_MS_MOLT, 0.30f);
+        n = render_sweep(440.0f, 1320.0f, SFX_MS_MOLT, 0.12f);
         break;
 
     case SFX_TAP:
         /* Soft click. */
-        n = render_noise(SFX_MS_TAP, 0.25f);
+        n = render_noise(SFX_MS_TAP, 0.08f);
         break;
 
     case SFX_ALERT:
         /* Two-tone warning. */
-        n = render_sweep(660.0f, 440.0f, SFX_MS_ALERT, 0.35f);
+        n = render_sweep(660.0f, 440.0f, SFX_MS_ALERT, 0.18f);
         break;
 
     case SFX_AIM:
         /* Soft rising tick: the window is open. */
-        n = render_sweep(520.0f, 760.0f, SFX_MS_AIM, 0.22f);
+        n = render_sweep(520.0f, 760.0f, SFX_MS_AIM, 0.08f);
         break;
 
     case SFX_PERFECT:
         /* Bright chime: a perfect catch. */
-        n = render_sweep(880.0f, 1760.0f, SFX_MS_PERFECT, 0.30f);
+        n = render_sweep(880.0f, 1760.0f, SFX_MS_PERFECT, 0.18f);
         break;
     case SFX_RUSTLE:
-        n = render_noise(280, 0.035f);
-        for (int i = 1; i < n; i++) s_buf[i] = (s_buf[i] + 3 * s_buf[i - 1]) / 4;
-        break;
+        play_ambience(false);
+        return;
     case SFX_CHIRP:
-        n = render_sweep(1600, 2200, 160, 0.045f);
+        n = render_sweep(1800, 1800, 160, 0.025f);
         break;
     case SFX_DROP:
-        n = render_sweep(900, 280, 220, 0.055f);
-        break;
+        play_ambience(true);
+        return;
 
     default:
         return;
@@ -296,6 +373,6 @@ static void play_sfx(sfx_t sfx)
 
     if (n <= 0) return;
 
-    int err = esp_codec_dev_write(s_spk, s_buf, n * (int)sizeof(int16_t));
-    if (err != ESP_CODEC_DEV_OK) ESP_LOGE(TAG, "audio write failed (%d)", err);
+    if (write_pcm(n))
+        ESP_LOGI(TAG, "effect %d: written samples=%d", (int)sfx, n);
 }
