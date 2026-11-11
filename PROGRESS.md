@@ -7282,3 +7282,18 @@ No claim of physical-button wake, unplugged current/runtime, complete peripheral
 rail shutdown, physical touchscreen appearance or subjective sound approval.
 No new claim of authorized association/SNTP, hosted HTTPS OTA installation,
 SD media or external RTC backup-battery retention.
+
+### Publication evidence
+
+- Release commit **67e08d5**, immutable tag **v1.1.18**, pushed to origin/main:
+  <https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.18>.
+  Downloaded official ZIP matches the exact local SHA-256 above.
+- Added only v1.1.18 to the protected Pages tag allowlist; existing branch/tag
+  protections retained. Release-triggered
+  <https://github.com/jeromedontdev/Spidarium/actions/runs/43085418879>
+  completed **successfully**, including Linux art/browser gates and deployment.
+- HTTPS production reports firmware **1.1.18**, **five** images with actual
+  byte counts/hashes verified and NVS excluded; schema **v9 / 41 fields /
+  248-byte current payload**. Live HTML, device CSS, engine, UI, audio, decoder
+  and unchanged spider renderer match source bytes exactly. All **32 living
+  prey PNGs** match the redesigned source files over HTTPS.
