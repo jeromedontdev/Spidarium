@@ -1,8 +1,8 @@
-import * as E from './sim.js?v=1.1.22';
+import * as E from './sim.js?v=1.1.23';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.22';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.23';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -141,6 +141,8 @@ export class DeviceGame {
       this.careButtons[name].classList.add('d-care');
     });
     this.ear = element('button', 'd-ear'); this.ear.type = 'button'; this.ear.setAttribute('aria-label', 'Show or Hide Care HUD');
+    this.ear.title = 'Care and Menu (M)';
+    this.ear.setAttribute('aria-keyshortcuts', 'M');
     this.earMark = element('span', ''); this.ear.append(this.earMark);
     this.ear.onclick = () => {
       if (this.decorMoveSlot !== null) { this.decorMoveSlot = null; this.report('Decor Move Cancelled.'); }
@@ -160,6 +162,7 @@ export class DeviceGame {
     const placing = this.giftKind !== null || this.decorKind !== null || this.decorMoveSlot !== null;
     this.earMark.textContent = placing ? '×' : '';
     this.ear.setAttribute('aria-label', placing ? 'Cancel Placement' : 'Show or Hide Care HUD');
+    this.ear.setAttribute('aria-expanded', String(this.hud));
     this.stats.forEach(({ key, bar, value }, i) => {
       const number = Math.round(this.state[key]); value.textContent = number;
       bar.firstChild.style.width = `${number}%`;
@@ -335,7 +338,7 @@ export class DeviceGame {
           'Remove Frame / Free',{selected:this.state.border_id===255,icon:'border_minimal_0'}),
         ...E.BACKGROUNDS.map((key,id)=>row(title(key),()=>{
           if(!E.buyBorder(this.state,id)){this.report('Not enough Silk for this frame.',true);return;}
-          this.persist();this.open('Borders',Math.floor((id+1)/3));
+          this.persist();this.open('Borders',Math.floor((id+1)/6));
         },this.state.border_id===id?'In Use':E.borderOwned(this.state,id)?'Owned / Apply Free':
           `${E.borderCost(id)} Silk / Buy Frame`,
         {selected:this.state.border_id===id,icon:`border_${key}_0`}))
@@ -352,7 +355,7 @@ export class DeviceGame {
         const status = this.state.level < item.level ? `Level ${item.level} / ${item.cost} Silk`
           : current ? 'In Tank / Move Free' : owned ? 'Owned / Place Free'
             : `${item.cost} Silk / ${this.state.silk >= item.cost ? 'Buy' : 'Earn More Silk'}`;
-        return row(item.name, () => this.chooseGift(item.id), `${status}\n${item.effect}`, { enabled: available, selected: current, icon: item.asset });
+        return row(item.name, () => this.previewGift(item.id, status, page), `${status}\n${item.effect}`, { enabled: available, selected: current, icon: item.asset });
       }); break;
       case 'Gift Item': rows = [
         row('Move Gift', () => this.beginGiftMove(), 'No Silk Cost / Bonus Stays', { icon: E.GIFTS[this.state.gift.kind].asset, enabled: !!this.state.gift.used }),
@@ -387,7 +390,16 @@ export class DeviceGame {
       ]; break;      case 'About': this.copy('Spidarium / Browser Edition\n\nDevice-coordinate UI and native game rules.\n480 × 480, scaled without changing targets.\nProgress stays in this browser.\n\nHardware: Waveshare ESP32-S3\nESP-IDF 5.5.6 / LVGL 9.6\n\nPersonal, Non-Commercial License.'); return;
       default: throw new Error(`Unknown menu: ${name}`);
     }
-    this.list(rows, page);
+    this.list(rows, page, ['Treats', 'Backgrounds', 'Borders', 'Decor', 'Gifts'].includes(name));
+  }
+  previewGift(id, status, page) {
+    const item = E.GIFTS[id];
+    this.close();
+    this.modal = this.panel(item.name, () => this.open('Gifts', page));
+    this.modal.name = 'Gift Preview';
+    this.refreshHUD();
+    this.list([{label:item.name, detail:`${status}\n${item.effect}`, icon:item.asset,
+      click:()=>this.chooseGift(id)}], 0);
   }
   back(name) {
     if (name === 'Menu' || name === 'Gifts') this.close();
@@ -415,11 +427,18 @@ export class DeviceGame {
     this.modal.panel.append(element('div', 'd-copy', text));
     this.button(this.modal.panel, label, 60, 308, 280, 64, action ?? (() => this.back(this.modal.name)));
   }
-  list(rows, page) {
-    const pages = Math.max(1, Math.ceil(rows.length / 3));
-    rows.slice(page * 3, page * 3 + 3).forEach((item, i) => {
-      const button = this.button(this.modal.panel, '', 12, 76 + i * 84, 376, 76, item.click ?? (() => {}));
+  list(rows, page, grid = false) {
+    const size = grid ? 6 : 3;
+    const pages = Math.max(1, Math.ceil(rows.length / size));
+    rows.slice(page * size, page * size + size).forEach((item, i) => {
+      const button = this.button(this.modal.panel, '', grid ? 12 + i % 3 * 128 : 12,
+        grid ? 76 + Math.floor(i / 3) * 124 : 76 + i * 84,
+        grid ? 120 : 376, grid ? 116 : 76, item.click ?? (() => {}));
       button.replaceChildren(); button.classList.add('d-row');
+      if (grid) {
+        button.classList.add('d-shop-tile');
+        button.setAttribute('aria-label', `${item.label}${item.detail ? `: ${item.detail}` : ''}`);
+      }
       button.disabled = item.enabled === false || (!item.click && !item.slider);
       if (item.selected) button.classList.add('selected');
       if (item.destructive) button.classList.add('destructive');
@@ -427,7 +446,7 @@ export class DeviceGame {
       if (item.detail?.includes('\n')) button.classList.add('multi');
       if (item.icon) { button.classList.add('has-icon'); const img = element('img', ''); img.src = asset(item.icon); img.alt = ''; button.append(img); }
       button.append(element('span', 'row-label', item.label));
-      if (item.detail) button.append(element('span', 'row-detail', item.detail));
+      if (item.detail) button.append(element('span', 'row-detail', grid ? item.detail.split('\n')[0] : item.detail));
       if (item.checkbox) {
         const check = element('input', ''); check.type = 'checkbox'; check.checked = item.selected; check.tabIndex = -1; check.setAttribute('aria-hidden', 'true');
         button.setAttribute('role', 'checkbox'); button.setAttribute('aria-checked', String(item.selected)); button.append(check);

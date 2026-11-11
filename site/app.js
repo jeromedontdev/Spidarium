@@ -1,11 +1,11 @@
 import { SerialConsole } from './lib/protocol.js';
-import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.22';
+import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.23';
 import { loadFirmware, flashFirmware } from './lib/flasher.js';
-import { DeviceGame } from './lib/device-ui.js?v=1.1.22';
+import { DeviceGame } from './lib/device-ui.js?v=1.1.23';
 import { renderSpider } from './lib/spider-renderer.js';
 
 const $ = selector => document.querySelector(selector);
-for (const [id, state, emote] of [['hero-spider', 'idle', 'none'], ['sleeping-spider', 'sleep', 'sleepy']]) {
+for (const [id, state, emote] of [['sleeping-spider', 'sleep', 'sleepy']]) {
   const ctx = $(`#${id}`).getContext('2d'), frame = ctx.createImageData(96, 96);
   renderSpider(frame.data, { state, emote, fangColour: 7 });
   ctx.putImageData(frame, 0, 0);

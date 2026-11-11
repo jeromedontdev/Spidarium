@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.22](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.22)**
+| **[Download v1.1.23](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.23)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -26,11 +26,12 @@ mix them with any background, or remove the frame for free. Themes include
 woodland fairy, gothic, academia, household, witchy, prehistoric, cyberpunk,
 sci-fi, fantasy, lost civilizations and Japanese zen. Placement grows beyond twelve;
 hold decor/gifts to move them for free and double tap to dim the enclosure.
-Distinct pixel icons and gold menu ornaments
+Six-item shop grids fit twice as many purchases on screen, with individual
+pixel icons and a full-effect gift preview. Gold menu ornaments
 leave Back clear. Prey have thorax-attached legs, alternating tripod steps,
 travel-driven ground animation and heading-aware sprites; the spider is unchanged.
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
-See [v1.1.22 release notes](docs/RELEASE_v1.1.22.md).
+See [v1.1.23 release notes](docs/RELEASE_v1.1.23.md).
 
 **The spider is one canvas, not a scene graph.** It is drawn from scratch into a
 single 96×96 RGB565A8 buffer every frame — legs, body, fuzz, eyes, fangs, gait,
@@ -47,12 +48,12 @@ or downloads an update, then stops and deinitializes WiFi on every exit.
 Boot sync happens only with saved credentials. Fresh NTP UTC sets the external
 RTC; its backup power keeps time while the device is off.
 
-**Eighteen gifts and consistent artwork.** All gift bonuses have gameplay
+**Thirty-six gifts and consistent artwork.** All gift bonuses have gameplay
 consumers. Non-spider art follows a deterministic pixel-art generator and
 [style contract](docs/ART_STYLE.md); existing spider art is preserved.
 See [asset maintenance](assets/README.md).
 
-**Hunting gets the whole enclosure.** A translucent top-left page ear reveals
+**Hunting gets the whole enclosure.** A small paper/gold top-left page fold reveals
 centered compact status boxes along the top row, plus Feed/Clean/Play/Sleep/Gift/Menu
 actions. Tapping the ear again or an empty tank tap closes the overlay without firing;
 choosing a gift exposes placement with an X icon to cancel.
@@ -60,13 +61,12 @@ Sleep is a real toggle: the button reads **Wake** while the spider is asleep, an
 a sleep you asked for holds until energy is actually full rather than ending at a
 fixed threshold, so pressing it always has a visible payoff.
 Drag toward a bug to jump; AI and prey hold still during the gesture.
-Rounded silk-bordered cards use visibly disabled Prev/Next paging rather than
-slow scrolling. Only Back navigates back; blank taps are ignored. The QWERTY
+Flat pixel-framed lists and six-tile shops use visibly disabled Prev/Next paging
+rather than slow scrolling. Only Back navigates back; blank taps are ignored. The QWERTY
 keyboard includes WiFi Show/Hide
-password. Sixteen authored top-down enclosure scenes are **ground texture only**:
-an earth, stone or gravel substrate with a worn trail and fine grit, composed at
-the panel's native 240x240 with a full colour ramp rather than quantised to a
-retro palette. Everything that sits on the floor is placeable decor instead.
+password. Forty-eight authored top-down enclosure scenes use quiet SNES-style
+ground textures, composed at 240x240 and scaled with crisp pixels.
+Everything that sits on the floor is placeable decor instead.
 Bent legs have visible knee joints.
 The selected enclosure survives reboot. Eight prey species unlock at levels
 1/2/4/6/10/13/16/20; existing pet progress is preserved. Distance-driven,
@@ -87,7 +87,7 @@ purposes, unlocks through level 40 and visible spider visits. Existing placed
 gifts and pet progress survive the save migration.
 See [the gift shop](docs/GIFTS_CATALOG.md).
 
-**Decor is the enclosure you arrange.** Thirty-four kinds include rocks,
+**Decor is the enclosure you arrange.** Sixty-eight kinds include rocks,
 plants, hides, arches, a hammock, pools, a tent, a lantern and a bridge.
 They cost 12–120 Silk and unlock from level 1 to 18. Pick one in the Decor menu,
 then tap the tank to place it. Storage grows beyond twelve items, subject to

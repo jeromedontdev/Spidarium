@@ -87,20 +87,26 @@ static void care_fold_draw(lv_event_t *e)
     lv_layer_t *layer = lv_event_get_layer(e);
     lv_draw_triangle_dsc_t triangle;
     lv_draw_triangle_dsc_init(&triangle);
-    triangle.color = lv_color_hex(0x000000);
-    triangle.opa = LV_OPA_60;
-    triangle.p[0] = (lv_point_precise_t){area.x2, area.y2};
-    triangle.p[1] = (lv_point_precise_t){area.x2, area.y1};
-    triangle.p[2] = (lv_point_precise_t){area.x1, area.y2};
+    triangle.color = lv_color_hex(0x0a1220);
+    triangle.opa = LV_OPA_COVER;
+    triangle.p[0] = (lv_point_precise_t){area.x1 + 4, area.y1 + 4};
+    triangle.p[1] = (lv_point_precise_t){area.x1 + 38, area.y1 + 4};
+    triangle.p[2] = (lv_point_precise_t){area.x1 + 4, area.y1 + 38};
     lv_draw_triangle(layer, &triangle);
-    triangle.color = lv_color_hex(0x203044);
-    triangle.opa = LV_OPA_60;
-    triangle.p[1].y += 4;
-    triangle.p[2].x += 4;
+    triangle.color = lv_color_hex(0xb99b67);
+    triangle.p[0] = (lv_point_precise_t){area.x1, area.y1};
+    triangle.p[1] = (lv_point_precise_t){area.x1 + 34, area.y1};
+    triangle.p[2] = (lv_point_precise_t){area.x1, area.y1 + 34};
     lv_draw_triangle(layer, &triangle);
-    triangle.color = lv_color_hex(COL_DIM);
-    triangle.opa = LV_OPA_20;
-    triangle.p[1] = (lv_point_precise_t){area.x2 - 18, area.y2 - 18};
+    triangle.color = lv_color_hex(0xe4c990);
+    triangle.p[0] = (lv_point_precise_t){area.x1 + 2, area.y1 + 2};
+    triangle.p[1] = (lv_point_precise_t){area.x1 + 30, area.y1 + 2};
+    triangle.p[2] = (lv_point_precise_t){area.x1 + 2, area.y1 + 30};
+    lv_draw_triangle(layer, &triangle);
+    triangle.color = lv_color_hex(0x64776f);
+    triangle.p[0] = (lv_point_precise_t){area.x1 + 2, area.y1 + 30};
+    triangle.p[1] = (lv_point_precise_t){area.x1 + 30, area.y1 + 2};
+    triangle.p[2] = (lv_point_precise_t){area.x1 + 12, area.y1 + 12};
     lv_draw_triangle(layer, &triangle);
 }
 
@@ -143,7 +149,19 @@ static lv_obj_t *make_action(lv_obj_t *parent, int x, int y, int w,
     return obj;
 }
 
-static void on_gift_pick(uint8_t id) { game_gift_chosen(id); }
+static uint8_t s_gift_preview;
+static void back_to_gifts(void)
+{
+    ui_hud_gift_menu_show();
+    ui_menu_set_page(s_gift_preview / 6);
+}
+static void on_gift_pick(uint8_t id)
+{
+    s_gift_preview = id;
+    ui_menu_open(s_gift_name[id], &s_gifts[id], 1, game_gift_chosen);
+    ui_menu_set_item_icon(0, sprite_gift_index(id));
+    ui_menu_set_back(back_to_gifts);
+}
 
 void ui_hud_gift_menu_show(void)
 {
@@ -167,7 +185,8 @@ void ui_hud_gift_menu_show(void)
     }
     static char title[48];
     snprintf(title, sizeof title, "Gifts / %lu Silk", (unsigned long)g.silk);
-    ui_menu_open(title, s_gifts, GIFT_KINDS, on_gift_pick);
+    ui_menu_open_grid(title, s_gifts, GIFT_KINDS, on_gift_pick);
+    for (int i = 0; i < GIFT_KINDS; i++) ui_menu_set_item_icon(i, sprite_gift_index(i));
 }
 
 void ui_hud_gift_menu_hide(void)
@@ -281,16 +300,15 @@ void ui_hud_init(lv_obj_t *parent)
 
     s_care_button = lv_button_create(parent);
     lv_obj_remove_style_all(s_care_button);
-    lv_obj_set_size(s_care_button, 44, 44);
-    lv_obj_set_ext_click_area(s_care_button, 12);
-    lv_obj_set_pos(s_care_button, -1, -1);
+    lv_obj_set_size(s_care_button, 56, 56);
+    lv_obj_set_pos(s_care_button, 12, 12);
     lv_obj_set_style_bg_opa(s_care_button, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_care_button, 0, 0);
     lv_obj_set_scrollable(s_care_button, false);
     lv_obj_add_event_cb(s_care_button, on_care, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(s_care_button, care_fold_draw, LV_EVENT_DRAW_MAIN, NULL);
     s_care_label = make_label(s_care_button, LV_SYMBOL_CLOSE, &lv_font_montserrat_14, COL_TEXT);
-    lv_obj_align(s_care_label, LV_ALIGN_BOTTOM_RIGHT, -6, -6);
+    lv_obj_align(s_care_label, LV_ALIGN_TOP_LEFT, 12, 12);
     ui_hud_set_chrome(false);
     s_hint = make_label(parent, "Tap to place; X cancels",
                          &lv_font_montserrat_12, 0xf5c86b);
@@ -378,7 +396,7 @@ bool ui_hud_test(void)
         lv_obj_is_hidden(s_care_label) && lv_obj_is_hidden(s_battery) &&
         lv_obj_get_style_bg_opa(s_care_button, 0) == LV_OPA_TRANSP &&
         lv_obj_get_child_count(s_care_button) == 1 &&
-        lv_obj_get_x(s_care_button) <= 0 && lv_obj_get_y(s_care_button) <= 0;
+        lv_obj_get_x(s_care_button) == 12 && lv_obj_get_y(s_care_button) == 12;
     lv_obj_send_event(s_care_button, LV_EVENT_CLICKED, NULL);
     ok = ok && ui_hud_chrome_visible();
     ok = ok && ui.creature_layer && lv_obj_get_parent(ui.creature_layer) == lv_obj_get_parent(ui.tap_layer) &&
@@ -387,7 +405,8 @@ bool ui_hud_test(void)
     for (int i = 0; i < 6; i++)
         ok = ok && buttons[i] && !lv_obj_is_hidden(buttons[i]) &&
              lv_obj_get_height(buttons[i]) >= 64;
-    ok = ok && lv_obj_get_width(s_care_button) == 44 &&
+    ok = ok && lv_obj_get_width(s_care_button) == 56 &&
+        lv_obj_get_height(s_care_button) == 56 &&
         !strcmp(lv_label_get_text(s_care_label), LV_SYMBOL_CLOSE);
     int row_left = lv_obj_get_x(s_stats[0]);
     int row_right = lv_obj_get_x(s_stats[NUM_STATS - 1]) +
@@ -405,7 +424,7 @@ bool ui_hud_test(void)
     for (int i = 0; i < NUM_STATS; i++)
         ok = ok && !lv_obj_is_hidden(s_stats[i]) &&
             lv_obj_get_y(s_stats[i]) == 8 &&
-            lv_obj_get_height(s_stats[i]) == lv_obj_get_height(s_care_button) &&
+            lv_obj_get_height(s_stats[i]) == 44 &&
             lv_obj_get_width(lv_obj_get_child(s_stats[i], 0)) + 8 <= lv_obj_get_width(s_stats[i]) &&
             lv_obj_get_width(s_values[i]) + 8 <= lv_obj_get_width(s_stats[i]);
     lv_obj_send_event(s_battery, LV_EVENT_CLICKED, NULL);

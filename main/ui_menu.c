@@ -23,18 +23,21 @@
 #define COL_RULE      0x76d6b1
 #define COL_GOLD      0xb99b67
 #define PAGE_ROWS 3
+#define GRID_ITEMS 6
 #define MENU_WIDTH (ui.W - 2 * UI_CORNER)
 #define MENU_HEIGHT (ui.H - 2 * UI_CORNER)
 #define PLAY_ROUNDS 8
 #define MENU_ITEMS DECOR_COUNT
 
 static lv_obj_t *s_menu, *s_backdrop, *s_page_label, *s_prev, *s_next;
-static lv_obj_t *s_row[PAGE_ROWS], *s_label[PAGE_ROWS], *s_detail[PAGE_ROWS];
-static lv_obj_t *s_marker[PAGE_ROWS];
-static lv_obj_t *s_accent[PAGE_ROWS];
-static lv_obj_t *s_icons[PAGE_ROWS];
-static lv_obj_t *s_checks[PAGE_ROWS];
-static lv_obj_t *s_sliders[PAGE_ROWS];
+static lv_obj_t *s_row[GRID_ITEMS], *s_label[GRID_ITEMS], *s_detail[GRID_ITEMS];
+static lv_obj_t *s_marker[GRID_ITEMS];
+static lv_obj_t *s_accent[GRID_ITEMS];
+static lv_obj_t *s_icons[GRID_ITEMS];
+static lv_obj_t *s_checks[GRID_ITEMS];
+static lv_obj_t *s_sliders[GRID_ITEMS];
+static bool s_grid;
+static int page_size(void) { return s_grid ? GRID_ITEMS : PAGE_ROWS; }
 static ui_menu_slider_cb s_slider_cb[MENU_ITEMS];
 static bool s_check_items[MENU_ITEMS];
 static int s_icon_indices[MENU_ITEMS];
@@ -179,6 +182,7 @@ void ui_menu_close(void)
     s_count = s_page = 0;
     s_destructive_id = -1;
     s_password = false;
+    s_grid = false;
 }
 
 bool ui_menu_visible(void) { return s_menu != NULL; }
@@ -251,9 +255,10 @@ void ui_menu_refresh(void)
 
 static void refresh_page(void)
 {
-    int pages = (s_count + PAGE_ROWS - 1) / PAGE_ROWS;
-    for (int i = 0; i < PAGE_ROWS; i++) {
-        int index = s_page * PAGE_ROWS + i;
+    int size = page_size();
+    int pages = (s_count + size - 1) / size;
+    for (int i = 0; i < size; i++) {
+        int index = s_page * size + i;
         lv_obj_set_hidden(s_row[i], index >= s_count);
         if (index >= s_count) continue;
         const ui_menu_item_t *it = &s_items[index];
@@ -266,9 +271,10 @@ static void refresh_page(void)
             lv_image_set_inner_align(s_icons[i], LV_IMAGE_ALIGN_CONTAIN);
             lv_image_set_antialias(s_icons[i], false);
         }
-        int text_x = icon ? 72 : 14;
-        lv_obj_set_width(s_label[i], MENU_WIDTH - text_x - 68);
-        lv_obj_set_width(s_detail[i], MENU_WIDTH - text_x - 68);
+        int text_x = s_grid ? 4 : icon ? 72 : 14;
+        int text_width = s_grid ? lv_obj_get_width(s_row[i]) - 8 : MENU_WIDTH - text_x - 68;
+        lv_obj_set_width(s_label[i], text_width);
+        lv_obj_set_width(s_detail[i], text_width);
         lv_obj_set_x(s_detail[i], text_x);
         lv_label_set_text(s_label[i], it->label ? it->label : "");
         /* A slider row's readout is its value, not the caller's detail string.
@@ -279,12 +285,16 @@ static void refresh_page(void)
         char detail[256];
         if (slider) snprintf(detail, sizeof detail, "%u%%", (unsigned)it->id);
         else snprintf(detail, sizeof detail, "%s", it->detail ? it->detail : "");
+        if (s_grid) {
+            char *newline = strchr(detail, '\n');
+            if (newline) *newline = '\0';
+        }
         if (detail[0] && !slider) detail[0] = (char)toupper((unsigned char)detail[0]);
         lv_label_set_text(s_detail[i], detail);
         bool multiline = strchr(detail, '\n') != NULL;
         lv_label_set_long_mode(s_detail[i], multiline ? LV_LABEL_LONG_WRAP : LV_LABEL_LONG_DOT);
-        lv_obj_set_height(s_detail[i], multiline ? 45 : LV_SIZE_CONTENT);
-        lv_obj_set_y(s_detail[i], multiline ? 26 : 48);
+        lv_obj_set_height(s_detail[i], s_grid ? 28 : multiline ? 45 : LV_SIZE_CONTENT);
+        lv_obj_set_y(s_detail[i], s_grid ? 84 : multiline ? 26 : 48);
         lv_obj_set_style_text_color(s_label[i],
             lv_color_hex(it->id == s_destructive_id ? 0xff7777 : it->enabled ? COL_TEXT : COL_DIM), 0);
         lv_obj_set_style_bg_color(s_row[i],
@@ -304,7 +314,7 @@ static void refresh_page(void)
         lv_label_set_text(s_marker[i], s_check_items[index] || slider ? "" : it->selected ? LV_SYMBOL_OK :
             it->enabled && it->is_submenu ? LV_SYMBOL_RIGHT : "");
         lv_obj_set_hidden(s_detail[i], !detail[0]);
-        lv_obj_set_pos(s_label[i], text_x, detail[0] ? multiline ? 2 : 16 : 30);
+        lv_obj_set_pos(s_label[i], text_x, s_grid ? 52 : detail[0] ? multiline ? 2 : 16 : 30);
     }
     char text[32];
     snprintf(text, sizeof text, "%d / %d", s_page + 1, pages);
@@ -376,7 +386,7 @@ void ui_menu_capture_hide(bool hidden)
 
 void ui_menu_set_page(int page)
 {
-    if (!s_items || page < 0 || page >= (s_count + PAGE_ROWS - 1) / PAGE_ROWS) {
+    if (!s_items || page < 0 || page >= (s_count + page_size() - 1) / page_size()) {
         ESP_LOGE("spidarium.menu", "page rejected: %d", page);
         return;
     }
@@ -637,7 +647,7 @@ static void on_page(lv_event_t *e)
 {
     int delta = (int)(intptr_t)lv_event_get_user_data(e);
     int page = s_page + delta;
-    if (page >= 0 && page * PAGE_ROWS < s_count) {
+    if (page >= 0 && page * page_size() < s_count) {
         s_page = page;
         refresh_page();
     }
@@ -646,7 +656,7 @@ static void on_page(lv_event_t *e)
 static void on_row(lv_event_t *e)
 {
     int row = (int)(uintptr_t)lv_event_get_user_data(e);
-    const ui_menu_item_t *it = &s_items[s_page * PAGE_ROWS + row];
+    const ui_menu_item_t *it = &s_items[s_page * page_size() + row];
     if (!it->enabled) return;
     uint8_t id = it->id;
     ui_menu_pick_cb cb = s_cb;
@@ -658,7 +668,7 @@ static void on_row(lv_event_t *e)
 static void on_slider(lv_event_t *e)
 {
     int row = (int)(uintptr_t)lv_event_get_user_data(e);
-    int index = s_page * PAGE_ROWS + row;
+    int index = s_page * page_size() + row;
     if (index >= s_count || !s_slider_cb[index]) return;
     ui_menu_slider_cb cb = s_slider_cb[index];
     uint8_t id = s_items[index].id;
@@ -677,14 +687,15 @@ static void on_slider(lv_event_t *e)
     }
 }
 
-void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
-                  ui_menu_pick_cb cb)
+static void open_items(const char *title, const ui_menu_item_t *items, int count,
+                       ui_menu_pick_cb cb, bool grid)
 {
     if (!items || count <= 0 || count > MENU_ITEMS) {
         ESP_LOGE("spidarium.menu", "menu rejected: no items");
         return;
     }
     open_panel(title);
+    s_grid = grid;
     s_items = items;
     s_count = count;
     for (int i = 0; i < MENU_ITEMS; i++) {
@@ -694,10 +705,13 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
     }
     s_cb = cb;
     for (int i = 0; i < count; i++)
-        if (items[i].selected) { s_page = i / PAGE_ROWS; break; }
+        if (items[i].selected) { s_page = i / page_size(); break; }
     int w = MENU_WIDTH;
-    for (int i = 0; i < PAGE_ROWS; i++) {
-        s_row[i] = button(s_menu, 12, 76 + i * 84, w - 24, 76, NULL,
+    int tile_w = (w - 40) / 3;
+    for (int i = 0; i < page_size(); i++) {
+        s_row[i] = button(s_menu, grid ? 12 + i % 3 * (tile_w + 8) : 12,
+                          grid ? 76 + i / 3 * 124 : 76 + i * 84,
+                          grid ? tile_w : w - 24, grid ? 116 : 76, NULL,
                           on_row, (void *)(uintptr_t)i);
         /* A lit bar down the left edge marks the selected row. It is a child of
          * the row so it moves and clips with it. */
@@ -711,19 +725,25 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
         lv_obj_set_clickable(s_accent[i], false);
         lv_obj_set_hidden(s_accent[i], true);
         s_icons[i] = lv_image_create(s_row[i]);
-        lv_obj_set_pos(s_icons[i], 12, 12);
+        lv_obj_set_pos(s_icons[i], grid ? (tile_w - 48) / 2 : 12, grid ? 2 : 12);
         lv_obj_set_clickable(s_icons[i], false);
         lv_obj_set_hidden(s_icons[i], true);
-        s_label[i] = label(s_row[i], "", &lv_font_montserrat_18);
+        s_label[i] = label(s_row[i], "", grid ? &lv_font_montserrat_12 : &lv_font_montserrat_18);
         lv_obj_set_width(s_label[i], w - 82);
         lv_label_set_long_mode(s_label[i], LV_LABEL_LONG_DOT);
+        if (grid) {
+            lv_obj_set_height(s_label[i], 30);
+            lv_obj_set_style_text_align(s_label[i], LV_TEXT_ALIGN_CENTER, 0);
+        }
         s_detail[i] = label(s_row[i], "", &lv_font_montserrat_12);
         lv_obj_set_pos(s_detail[i], 14, 48);
         lv_obj_set_width(s_detail[i], w - 82);
         lv_label_set_long_mode(s_detail[i], LV_LABEL_LONG_DOT);
         lv_obj_set_style_text_color(s_detail[i], lv_color_hex(COL_DIM), 0);
+        if (grid) lv_obj_set_style_text_align(s_detail[i], LV_TEXT_ALIGN_CENTER, 0);
         s_marker[i] = label(s_row[i], "", &lv_font_montserrat_14);
         lv_obj_align(s_marker[i], LV_ALIGN_RIGHT_MID, -14, 0);
+        if (grid) lv_obj_align(s_marker[i], LV_ALIGN_TOP_RIGHT, -4, 4);
         s_checks[i] = lv_checkbox_create(s_row[i]);
         lv_checkbox_set_text(s_checks[i], "");
         lv_obj_set_style_radius(s_checks[i], UI_PIXEL_RADIUS, LV_PART_INDICATOR);
@@ -770,6 +790,18 @@ void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
     lv_obj_align(s_page_label, LV_ALIGN_BOTTOM_MID, 0, -24);
     lv_obj_set_style_text_color(s_page_label, lv_color_hex(COL_DIM), 0);
     refresh_page();
+}
+
+void ui_menu_open(const char *title, const ui_menu_item_t *items, int count,
+                  ui_menu_pick_cb cb)
+{
+    open_items(title, items, count, cb, false);
+}
+
+void ui_menu_open_grid(const char *title, const ui_menu_item_t *items, int count,
+                       ui_menu_pick_cb cb)
+{
+    open_items(title, items, count, cb, true);
 }
 
 static void on_input_submit(lv_event_t *e)
@@ -1052,6 +1084,21 @@ bool ui_menu_test(void)
          last_letter.y + lv_font_montserrat_12.line_height <= lv_obj_get_height(s_detail[0]) &&
          lv_obj_get_y(s_detail[0]) + lv_obj_get_height(s_detail[0]) <=
          lv_obj_get_content_height(s_row[0]);
+    ui_menu_open_grid("Test Shop", items, 9, test_pick);
+    lv_obj_update_layout(s_menu);
+    ok = ok && page_size() == 6 && lv_obj_get_width(s_row[0]) == 120 &&
+        lv_obj_get_height(s_row[0]) == 116 &&
+        lv_obj_get_x(s_row[2]) + lv_obj_get_width(s_row[2]) <= MENU_WIDTH - 12 &&
+        lv_obj_get_y(s_row[5]) + lv_obj_get_height(s_row[5]) < lv_obj_get_y(s_next) &&
+        !lv_obj_is_hidden(s_row[5]) && !strcmp(lv_label_get_text(s_label[5]), "Six");
+    lv_obj_send_event(s_next, LV_EVENT_CLICKED, NULL);
+    ok = ok && s_page == 1 && !strcmp(lv_label_get_text(s_label[0]), "Seven") &&
+        lv_obj_is_hidden(s_row[3]) && lv_obj_has_state(s_next, LV_STATE_DISABLED);
+    s_test_pick = -1;
+    lv_obj_send_event(s_row[2], LV_EVENT_CLICKED, NULL);
+    ok = ok && s_test_pick == 8 && !ui_menu_visible();
+    ui_menu_open_grid("Test Gift Grid", gift_detail, 1, NULL);
+    ok = ok && !strcmp(lv_label_get_text(s_detail[0]), "Level 40 / 172 Silk");
     ui_menu_open_input("Test password", "", true, 63, NULL);
     ok = ok && s_password && lv_textarea_get_password_mode(s_input);
     ok = ok && lv_obj_get_style_radius(s_input, 0) == UI_PIXEL_RADIUS &&

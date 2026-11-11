@@ -1,5 +1,21 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.23: shop grids and discreet HUD entry
+
+Treats, Backgrounds, Borders, Decor and Gifts show six tiles per page in a
+matching three-column, two-row grid. Prices, ownership, selection, purchase
+rules and stable IDs are unchanged. Gifts preview their complete effects
+before placement; Back preserves the grid page without charging.
+
+Native/browser share a 34px paper/gold page fold inside a transparent 56x56
+target at x12/y12. It stays inside the rounded screen and toggles the care HUD;
+Menu remains a care action. Browser M, accessible label and expanded state
+provide an additional unobtrusive route.
+
+The landing-page emblem is a static blue-green woodland beetle on Fairy Glade,
+not the floating spider. Gameplay and the sleeping preview still use the
+unchanged native spider renderer. No asset PNG or save-format change is needed.
+
 ## Expanded habitat and ambient music
 
 The current catalogue is twelve treats, sixty-eight decor kinds, thirty-six

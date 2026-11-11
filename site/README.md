@@ -15,6 +15,13 @@ shell remains rounded; spider and terrain pixels have no CSS filter effects.
 The existing local Montserrat font is shared with the landing page.
 v1.1.18 adds framed row icons, pixel rivets and a gold header ornament clear
 of Back. Daily actions use care glyphs; backgrounds use real thumbnails.
+Treats, Backgrounds, Borders, Decor and Gifts now use six-item 3x2 shop grids;
+navigation/settings remain three-card lists. Gifts open a full-effect preview
+before placement, with Back restoring the same shop page without a purchase.
+The care HUD opens from a small paper/gold fold with a transparent 56px target
+inside the top-left corner; M is the keyboard equivalent.
+The landing-page emblem is a static blue-green beetle against Fairy Glade,
+separate from the unchanged in-game spider.
 
 Disabled controls have dim text and dashed borders; destructive actions use
 red, selection uses mint with an inset marker, and keyboard focus uses a light
@@ -65,7 +72,8 @@ Set-Location site
 The portable files are only a local convenience; CI uses ordinary Node/npm.
 `native-spider.png` is the published promotional preview, generated directly from
 `lib/spider-renderer.js` so it matches the spider the device draws.
-Hero and gameplay render the native spider directly through `lib/spider-renderer.js`.
+Gameplay and the sleeping preview render the native spider directly through
+`lib/spider-renderer.js`; the hero uses the existing woodland beetle artwork.
 The source simulator works without an npm install; device flashing requires
 the production bundle. `node serve.mjs` alone serves the source.
 

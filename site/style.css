@@ -49,6 +49,8 @@ button:disabled, .button:disabled {
   background:var(--panel);
 }
 .hero-moss, .hero-spider { filter:none; }
+.hero-moss { background:url("../assets/background_fairy_glade_0.png") center/cover; }
+.hero-beetle { position:absolute; width:192px; height:192px; left:calc(50% - 96px); top:calc(50% - 96px); image-rendering:pixelated; pointer-events:none; }
 .hero-name, .tank-bottom { background:var(--panel); color:var(--ink); }
 .device-preview { background:var(--panel); border:2px solid var(--line); border-radius:2px; box-shadow:6px 6px 0 var(--bg); }
 .canvas-shell { border-color:var(--panel2); box-shadow:0 0 0 2px var(--line); }

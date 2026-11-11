@@ -1101,7 +1101,7 @@ static void menu_open(int which)
             items[i].is_submenu = false;
             items[i].id        = (uint8_t)i;
         }
-        ui_menu_open("Backgrounds", items, THEME_COUNT, on_theme_pick);
+        ui_menu_open_grid("Backgrounds", items, THEME_COUNT, on_theme_pick);
         for (int i = 0; i < THEME_COUNT; i++)
             ui_menu_set_item_icon(i, sprite_background_index(i));
         ui_menu_set_back(back_to_main);
@@ -1120,7 +1120,7 @@ static void menu_open(int which)
             items[i + 1] = (ui_menu_item_t){ names[i], details[i], true,
                                             g.border_id == i, false, i };
         }
-        ui_menu_open("Borders", items, THEME_COUNT + 1, on_border_pick);
+        ui_menu_open_grid("Borders", items, THEME_COUNT + 1, on_border_pick);
         for (int i = 0; i < THEME_COUNT; i++) ui_menu_set_item_icon(i + 1, sprite_border_index(i));
         ui_menu_set_back(back_to_main);
         break;
@@ -1263,7 +1263,7 @@ static void menu_open(int which)
         static char shop_title[48];
         snprintf(shop_title, sizeof shop_title, "Treats / %lu Silk",
                  (unsigned long)g.silk);
-        ui_menu_open(shop_title, items, TREAT_COUNT, on_shop_pick);
+        ui_menu_open_grid(shop_title, items, TREAT_COUNT, on_shop_pick);
         for (int i = 0; i < TREAT_COUNT; i++) ui_menu_set_item_icon(i, sprite_treat_index(i));
         ui_menu_set_back(back_to_main);
         break;
@@ -1295,7 +1295,7 @@ static void menu_open(int which)
         static char decor_title[48];
         snprintf(decor_title, sizeof decor_title, "Decor / %lu Silk",
                  (unsigned long)g.silk);
-        ui_menu_open(decor_title, items, DECOR_COUNT, on_decor_pick);
+        ui_menu_open_grid(decor_title, items, DECOR_COUNT, on_decor_pick);
         /* Every row gets its own sprite, so the shop reads as a catalogue of
          * things rather than a list of names. */
         for (int i = 0; i < DECOR_COUNT; i++)

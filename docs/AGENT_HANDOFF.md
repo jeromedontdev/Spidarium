@@ -13,6 +13,17 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.23 uses six-tile (3x2) grids for Treats/Backgrounds/Borders/Decor/Gifts;
+  other menus remain three-card lists. Use explicit `ui_menu_open_grid()`.
+  Reuse at most six tile objects per open, never create objects per frame.
+  Gifts have individual thumbnails and a full-effect preview; Back restores
+  the grid page without spending Silk. The care entry is a 34px folded corner
+  in a transparent 56x56 target at12/12, native and browser; browser M still
+  works and exposes expanded state. Website hero is a static woodland beetle
+  over Fairy Glade; both spider renderers and all 337 PNGs remain unchanged.
+  Save v12 and catalogue IDs/prices are unchanged. See
+  [release evidence](RELEASE_v1.1.23.md) and the latest progress round.
+
 - v1.1.22 doubles to 68 decor, 12 treats, 36 gifts and 48 backgrounds; all old
   IDs/art remain unchanged. Borders offers 48 independently purchased matching
   frames plus free None; owned frames reapply free with any floor.

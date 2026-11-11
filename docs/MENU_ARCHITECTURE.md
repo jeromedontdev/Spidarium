@@ -1,6 +1,6 @@
 # Menu implementation
 
-`ui_menu.c/h` owns one three-card paged modal, a text editor and short minigames.
+`ui_menu.c/h` owns one paged list/grid modal, a text editor and short minigames.
 `game.c` owns navigation and callbacks. This is not the previously proposed
 menu-stack/slider architecture; use the implemented API.
 
@@ -40,7 +40,15 @@ redundant full-width Back row because the corner Back button already exists.
 Gifts has thirty-six furnishings, one active at a time. Borders are independent
 of backgrounds: buying a frame does not buy/change its floor. Owned frames
 reapply free, No Border removes one free without losing ownership. Native menu
-metadata capacity follows DECOR_COUNT (68); visible objects remain three cards.
+metadata capacity follows DECOR_COUNT (68); visible objects are three list cards
+or six shop tiles.
+
+Treats, Backgrounds, Borders, Decor and Gifts use a three-column, two-row grid.
+`ui_menu_open_grid()` explicitly selects this layout; navigation, settings and
+read-only catalogues retain `ui_menu_open()` lists. Each tile has a real 48px
+icon, name, price/status and selected marker. Gift tiles open a full-effect
+preview before the original placement flow; Back returns to the same grid page
+without spending Silk.
 
 Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Back from saved network/editor
 returns to WiFi. Other submenus return to the root; root Back closes.
@@ -68,7 +76,10 @@ Use static tables/detail buffers for menu definitions. The callback is captured
 before closing, so selecting a row can safely open its destination.
 
 The corner-safe 400x400 panel and backdrop are opaque. Three 76-pixel-high
-cards are reused on each page, with 96x56 Back and 120x56 Prev/Next controls.
+cards are reused on each list page, with 96x56 Back and 120x56 Prev/Next controls.
+Shop pages reuse six 120x116 tiles at x12/140/268 and y76/200. Their bottom
+edge is y316, clear of the footer at y332. Names and status use 12px text;
+full gift effects remain in the preview rather than being squeezed into tiles.
 There is no scrolling, momentum or scroll animation. Selected entries open
 on their page. Cards show press feedback, selected tint, disabled styling and
 chevrons on actionable submenus. Read-only/disabled cards have no dash marker.
@@ -92,6 +103,12 @@ square slider/bar tracks, keyboard keys and minigame tiles share this language.
 The browser and website follow it with visible focus and hard inset highlights.
 HUD fill translucency and the folded ear are intentional exceptions, not
 permission to smooth the artwork. See [the full style contract](ART_STYLE.md).
+
+The HUD entry is a 34px paper/gold folded corner inside a transparent 56x56
+target at x12/y12, not an opaque square or an off-screen triangle. Tap it to
+show/hide care controls, then choose Menu. The browser also supports M and
+reports the expanded state to assistive technology. The placement X uses the
+same target while placing an item.
 Prev/Next
 remain visible, gray and inert at both page boundaries, including single pages.
 Routine WiFi actions have no explanatory subtext; status/errors, scan security

@@ -7569,3 +7569,49 @@ evidence proves delivery and continuity, not that the player likes the sound.
   free No Border, no granted border ownership and the old floor intact.
   The new 17-page Borders menu opens and returns to root Menu correctly.
   The older queued v1.1.21 deployment is superseded by this verified release.
+
+## Round 77 - Six-tile shops, folded HUD corner and woodland beetle (v1.1.23)
+
+### Decisions made
+
+- Use 3x2 grids for Treats, Backgrounds, Borders, Decor and Gifts: six items
+  rather than three per page, retaining readable names/prices and large targets.
+  Navigation/settings/read-only catalogues remain lists. Reuse six tile slots
+  on explicit navigation, with no per-frame allocation or worker LVGL calls.
+- Keep catalogue IDs, prices, ownership and save v12 unchanged. Give every gift
+  its real thumbnail and a full-effect preview before placement. Back restores
+  the shop page without spending Silk.
+- Replace the clipped square HUD entry with a 34px paper/gold page fold inside
+  a transparent 56x56 target at12/12. Tap toggles care controls, then Menu;
+  browser M, accessible label and expanded state remain available.
+- Replace only the website hero with a static blue-green woodland beetle on
+  Fairy Glade. Preserve both pet spider renderers and all 337 PNG bytes.
+- Update native/browser geometry, tests, cache versions, current documentation
+  and release packaging together.
+
+### Verification
+
+- Wrapper build/full flash exit 0, zero main-source warnings; firmware 1.1.23.
+- Browser 162/162; package/art/capture suites 42/42 (13/22/7).
+  Initial root-level unittest invocation failed on local tool imports; rerunning
+  from the tools directory passed without dependency/source changes.
+- Hardware 48/48. Native diagnostics cover six-tile geometry, footer clearance,
+  final-page hidden slots, exact selected ID and compact gift status.
+  Actual 480x480 LVGL screenshots show the shop grid and folded HUD corner.
+- render 500 and scanloop 5: largest-block drift 0; internal/DMA largest 63,488.
+  Original hardware pet restored after the regression suite. Final 40-second
+  soak: VERDICT PASS, zero faults/errors.
+- Real browser normal pointer clicks open the fold, HUD and Menu. All five
+  final pages reached: Treats 2, Backgrounds 8, Decor 12, Borders 9, Gifts 6.
+  A 340px-wide enclosure keeps all six targets about 84x81 CSS pixels.
+  Gift 35 opens its preview, Back returns to page6/6 and Silk stays10,000;
+  original browser progress restored after the funded test.
+- Browser screenshots reviewed for six-item shops, folded corner and the static
+  beetle/Fairy Glade emblem. Browser automation needed its viewport coordinates
+  aligned with the actual embedded pane; no force-click workaround was used.
+- Local website build succeeds with all 337 PNGs and five verified images.
+  v1.1.23 ZIP SHA256:
+  77ba7378829a390d466eb846695eac5f660cd893034adb74d57b14c3b18212b8.
+- Physical touchscreen aesthetic approval, speaker approval, battery current,
+  hosted HTTPS OTA and RTC backup-battery retention remain separate evidence.
+  Publication/production parity must be verified after uploading the release.
