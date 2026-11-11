@@ -42,6 +42,9 @@ See [asset maintenance](assets/README.md).
 centered compact status boxes along the top row, plus Feed/Clean/Play/Sleep/Gift/Menu
 actions. Tapping the ear again or an empty tank tap closes the overlay without firing;
 choosing a gift exposes placement with an X icon to cancel.
+Sleep is a real toggle: the button reads **Wake** while the spider is asleep, and
+a sleep you asked for holds until energy is actually full rather than ending at a
+fixed threshold, so pressing it always has a visible payoff.
 Drag toward a bug to jump; AI and prey hold still during the gesture.
 Rounded silk-bordered cards use visibly disabled Prev/Next paging rather than
 slow scrolling. Only Back navigates back; blank taps are ignored. The QWERTY
@@ -78,8 +81,9 @@ and twelve slots hold the result. Each item is either **blocking** or
 **non-blocking**: the spider steers around a blocking item before it reaches it,
 and walks straight over a non-blocking one. Blocking is a steering input, not a
 positional shove, so the spider turns away instead of grinding against a rock.
-Tap a placed item in the Placed Items list to flip its flag. The catalogue order
-is shared with the browser port and checked by a test that parses the C table.
+**Hold a finger on a placed item** to open its menu, where you can flip the
+blocking flag, move it, or put it away. The catalogue order is shared with the
+browser port and checked by a test that parses the C table.
 
 **A daily loop, and treats to spend Silk on.** Each in-game day offers a check-in
 whose reward grows with a consecutive-day streak (6 XP / 4 Silk on day one, up to

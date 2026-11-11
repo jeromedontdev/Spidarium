@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {SPECIES,GIFTS,TEMPERAMENTS,CONFIG,freshState,tick,spawnPrey,placeGift,giftBonus,aimWindow,restoreSim,minigameReward,
   DECOR_KINDS,DECOR_SLOTS,DECOR_EMPTY,decorSprite,decorUnlocked,decorOwned,buyDecor,decorPlacedCount,placeDecor,
-  removeDecor,toggleDecorBlocking,decorHitTest,decorBlocksPoint,decorNearestBlocking} from '../lib/sim.js';
+  removeDecor,toggleDecorBlocking,decorHitTest,decorBlocksPoint,decorNearestBlocking,moveDecor,care} from '../lib/sim.js';
 const native=name=>readFile(new URL(`../../main/${name}`,import.meta.url),'utf8');
 const neutral=()=>freshState({random:()=>.5,temperament:0});
 const keys=['energy_regen_mult','hygiene_decay_mult','pounce_range_mult','aim_window_mult','wild_spawn_bonus',
@@ -208,4 +208,38 @@ test('a blocking item stops the spider walking through it',()=>{
   for(let i=0;i<200;i++)tick(s,.05);
   assert.equal(decorBlocksPoint(s,s.spider_x,s.spider_y),false,
     'the spider must never end a tick inside a blocking item');
+});
+
+test('decor can be moved without losing its slot, kind or blocking flag',()=>{
+  const s=neutral();
+  s.level=9;s.silk=1000;
+  assert.equal(buyDecor(s,1),true);
+  const slot=placeDecor(s,1,150,200);
+  assert.ok(slot>=0);
+  assert.equal(s.decor[slot].blocking,1);
+  assert.equal(moveDecor(s,slot,300,120),true);
+  assert.equal(s.decor[slot].x,300);
+  assert.equal(s.decor[slot].y,120);
+  assert.equal(s.decor[slot].kind,1);
+  assert.equal(s.decor[slot].blocking,1);
+  assert.equal(decorHitTest(s,300,120),slot);
+  assert.equal(decorHitTest(s,150,200),-1);
+  // Clamped inside the playfield.
+  assert.equal(moveDecor(s,slot,-900,-900),true);
+  assert.ok(s.decor[slot].x>=34&&s.decor[slot].y>=34);
+  assert.equal(moveDecor(s,DECOR_SLOTS,100,100),false);
+});
+
+test('a player-initiated sleep holds until energy is full, not at 95',()=>{
+  const s=neutral();
+  s.energy=80;
+  care(s,'sleep');
+  assert.equal(s.state,6);
+  // Six seconds is the floor, but 80 energy is not rested.
+  tick(s,6);
+  assert.equal(s.state,6,'a forced sleep must not end at 95 energy');
+  // Sleep regenerates 6/min, so 80 -> 100 takes about 3.3 minutes.
+  for(let i=0;i<80;i++)tick(s,3);
+  assert.equal(s.energy,100);
+  assert.notEqual(s.state,6,'a forced sleep ends once energy is full');
 });

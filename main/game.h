@@ -255,6 +255,8 @@ extern playfield_t  g_play;
  * never changes the save payload. */
 extern uint8_t g_decor_mode;      /* 1 while placing decor */
 extern uint8_t g_decor_selected;  /* chosen decor kind in placement mode */
+/* Slot being repositioned, or 0xFF when not moving. */
+extern uint8_t g_decor_move_slot;
 void game_add_silk(uint32_t amount);
 
 void game_init(void);
@@ -278,6 +280,8 @@ void game_on_play(lv_event_t *e);
 void game_on_sleep(lv_event_t *e);
 void game_on_gift(lv_event_t *e);
 void game_on_menu(lv_event_t *e);
+/* Hold on a placed decor item to open its move/blocking menu. */
+void game_on_terrarium_long_press(lv_event_t *e);
 
 /* Open a menu by name, for the serial console. Returns false if the name is
  * unknown. Calls the same menu_open() the UI calls, so a test through here
@@ -337,6 +341,9 @@ bool game_ui_call_value(game_ui_action_t action, int value);
 /* Open a menu by name from the console, marshalled onto the LVGL task.
  * Returns false if the name is unknown. */
 bool game_ui_open_menu(const char *name);
+/* Open the per-item decor menu for a slot. Returns false when the slot is
+ * empty. Used by the serial console. */
+bool game_ui_open_decor_item(uint8_t slot);
 
 /* Called by the HUD gift picker when the player chooses a kind. */
 void game_gift_chosen(uint8_t kind);

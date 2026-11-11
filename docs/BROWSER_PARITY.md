@@ -1,5 +1,30 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## v1.1.14 follow-up: moving decor, shop icons, and sleep
+
+Decor can now be moved on both targets. The device adds `decor_move()` and a
+per-item menu (Blocking / Move / Put Away) opened by a long press on the item;
+the browser adds `moveDecor()` and the same panel opened by a 550 ms pointer
+hold. Moving keeps the slot, the kind and the blocking flag, and clamps inside
+the playfield on both.
+
+The shop no longer jumps pages. `ui_menu_open()` jumps to the page of the first
+`selected` row, and the decor shop was marking owned kinds selected, so buying
+anything past the third row yanked the player to page 2. The browser panel has
+the same rule and had the same bug. Owned state is already in the subtext, so
+the flag is gone on both.
+
+Every decor row carries its sprite on both targets, in the shop, the Placed Items
+list and the per-item menu.
+
+Sleep is a real toggle on both. A player-initiated sleep holds until energy is
+full rather than ending at a fixed threshold, with a six-second floor so the
+button always visibly works, and the device's button label flips to **Wake**
+while the spider is asleep.
+
+Browser suite 99/99 (was 97). Two new tests cover moving decor without losing its
+slot/kind/blocking flag, and a forced sleep holding until energy is full.
+
 ## v1.1.13 follow-up: placeable decor
 
 Backgrounds became ground texture only on both targets, and everything that sits

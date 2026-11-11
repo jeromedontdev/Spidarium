@@ -139,6 +139,19 @@ int decor_place(uint8_t kind, int16_t x, int16_t y)
     return slot;
 }
 
+bool decor_move(int slot, int16_t x, int16_t y)
+{
+    if (slot < 0 || slot >= DECOR_SLOTS) return false;
+    if (g.decor[slot].kind == 0xFF) return false;
+    const decor_def_t *def = decor_def(g.decor[slot].kind);
+    if (!def) return false;
+    clamp_to_playfield(&x, &y, def->radius);
+    g.decor[slot].x = x;
+    g.decor[slot].y = y;
+    ESP_LOGI(TAG, "moved slot %d to (%d,%d)", slot, x, y);
+    return true;
+}
+
 bool decor_remove(int slot)
 {
     if (slot < 0 || slot >= DECOR_SLOTS) return false;
@@ -274,6 +287,18 @@ bool decor_test(void)
     /* Hit testing finds the item, and removal frees the slot. */
     ok = ok && decor_hit_test(100, 100) == slot;
     ok = ok && decor_hit_test(100 + k_decor_kinds[DECOR_ROCK_SMALL].radius + 6, 100) < 0;
+
+    /* Moving keeps the slot, the kind and the blocking flag, and clamps. */
+    ok = ok && decor_move(slot, 200, 150);
+    ok = ok && decor_at(slot)->x == 200 && decor_at(slot)->y == 150;
+    ok = ok && decor_at(slot)->kind == DECOR_ROCK_SMALL;
+    ok = ok && decor_at(slot)->blocking == 1;
+    ok = ok && decor_hit_test(200, 150) == slot;
+    ok = ok && decor_hit_test(100, 100) < 0;
+    ok = ok && decor_move(slot, -900, -900);
+    ok = ok && decor_at(slot)->x >= g_play.left && decor_at(slot)->y >= g_play.top;
+    ok = ok && !decor_move(DECOR_SLOTS, 100, 100);
+
     ok = ok && decor_remove(slot);
     ok = ok && decor_placed_count() == 0;
     ok = ok && !decor_blocks_point(100, 100);

@@ -165,8 +165,16 @@
 #define PET_MS                 900
 
 /* Minimum duration of a player-initiated sleep. Without this, pressing SLEEP
- * at high energy bounced straight back to IDLE and the button looked broken. */
+ * at high energy bounced straight back to IDLE and the button looked broken.
+ *
+ * The minimum is a floor, not the whole rule: a player-initiated sleep also
+ * holds until energy is FULL, because that is the only reason to press the
+ * button. Waking at 95 meant a spider at 80 energy slept for six seconds and
+ * then stood up, which is why the button read as pointless. */
 #define SLEEP_MIN_MS           6000u
+/* Energy at which a player-initiated sleep ends. Full, so the button always
+ * has a visible payoff: press it and the spider sleeps until it is rested. */
+#define SLEEP_WAKE_ENERGY      100
 
 /* How long the auto-hiding HUD chrome stays up after being revealed. */
 #define CHROME_HOLD_MS         5000u

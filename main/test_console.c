@@ -117,7 +117,7 @@ static void cmd_help(void)
     printf("  gaittest             cadence and bounded leg geometry checks\n");
     printf("  preytest             eight level gates, restore pet level\n");
     printf("  decortest            place every decor kind, verify the layer\n");
-    printf("  decor [place K X Y|block SLOT|clear]  inspect or edit placed decor\n");
+    printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
     printf("  setupdone            finish the naming screen without tapping\n");
     printf("  background [0-7]     show/set persistent pixel-art background\n");
     printf("  scan                 run a WiFi scan\n");
@@ -790,6 +790,37 @@ static void cmd_decor(const char *arg)
         printf("OK decor clear placed=%d\n", decor_placed_count());
         return;
     }
+    if (!strncmp(arg, "item ", 5)) {
+        int slot = atoi(arg + 5);
+        if (!decor_at(slot)) {
+            printf("ERR decor item %d: empty or out of range\n", slot);
+            return;
+        }
+        char name[16];
+        snprintf(name, sizeof name, "item %d", slot);
+        if (!game_ui_open_menu(name)) {
+            printf("ERR decor item %d: menu request failed\n", slot);
+            return;
+        }
+        printf("OK decor item slot=%d\n", slot);
+        return;
+    }
+    if (!strncmp(arg, "move ", 5)) {
+        int slot = 0, x = 0, y = 0;
+        if (sscanf(arg + 5, "%d %d %d", &slot, &x, &y) != 3) {
+            printf("ERR usage: decor move SLOT X Y\n");
+            return;
+        }
+        if (!decor_move(slot, (int16_t)x, (int16_t)y)) {
+            printf("ERR decor move %d: empty or out of range\n", slot);
+            return;
+        }
+        game_save_now();
+        game_ui_call(GAME_UI_REFRESH);
+        printf("OK decor move slot=%d at=%d,%d\n", slot, decor_at(slot)->x,
+               decor_at(slot)->y);
+        return;
+    }
     if (!strncmp(arg, "block ", 6)) {
         int slot = atoi(arg + 6);
         if (!decor_toggle_blocking(slot)) {
@@ -835,7 +866,7 @@ static void cmd_decor(const char *arg)
                decor_at(slot)->blocking);
         return;
     }
-    printf("ERR usage: decor [place KIND X Y | block SLOT | clear]\n");
+    printf("ERR usage: decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]\n");
 }
 
 static void cmd_play(void)

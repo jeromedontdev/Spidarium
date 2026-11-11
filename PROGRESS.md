@@ -6695,3 +6695,62 @@ across all assets and reflected in the documentation.
 - Browser suite **97/97** (was 93). Four new tests cover the catalogue against
   the native table, purchase/placement/blocking/hit-testing, the empty-slot
   default and save round trip, and a blocking item stopping the spider.
+
+## Round 66 - Moving decor, a shop that shows what it sells, and a sleep button that does something
+
+Three reports from the player, plus one they raised while the round was open.
+
+### Decisions made
+
+- **Decor could not be moved once placed.** There was no move path at all: the
+  only way to reposition an item was to put it away and buy it again. Added
+  `decor_move()` (keeps the slot, kind and blocking flag; clamps to the
+  playfield), a `MENU_DECOR_ITEM` per-item menu with Blocking / Move / Put Away,
+  and a `LV_EVENT_LONG_PRESSED` handler on the tank that opens that menu for the
+  item under the finger. A long press rather than a tap because a tap on the tank
+  is already the pounce and a tap on the spider is a pet. The handler cancels the
+  aim so a hold does not also fire a shot on release.
+- **The shop jumped to page 2 after a purchase.** `ui_menu_open()` jumps to the
+  page of the first `selected` row, and the decor shop was marking owned kinds
+  `selected`. Buying anything past the third row therefore yanked the player to
+  page 2. Owned state is already in the subtext, so the flag is gone. The Placed
+  Items list had the same bug via `item->blocking`; that is gone too.
+- **The shop had no icon previews.** Every row now gets its own sprite through
+  `ui_menu_set_item_icon()`, and so do the Placed Items list and the per-item
+  menu. The menu already supported icons; the decor pages simply were not using
+  them.
+- **The Sleep button was close to pointless.** A player-initiated sleep held for
+  a fixed `SLEEP_MIN_MS` (6 s) and then woke, so pressing it at 80 energy put the
+  spider to sleep and stood it up again almost immediately. It now holds until
+  energy is actually full (`SLEEP_WAKE_ENERGY`), with the six-second minimum kept
+  as a floor so the button always visibly works even at 100 energy. The button
+  label also flips to **Wake** while the spider is asleep, so it says what the
+  next press does.
+- **The browser port got all four.** `moveDecor()` in the engine, a `Decor Item`
+  panel, a 550 ms pointer-hold that opens it, the same `selected` fix, icons on
+  every decor row, and the same sleep rule.
+
+### Evidence
+
+- `build.ps1` exit 0, zero `main/` warnings.
+- `flash.ps1 COM7` exit 0.
+- `run_tests.py COM7`: **47 passed, 0 failed**.
+- `uitest`: `OK uitest pages=1 keyboard=1 ****** hud=1 backgrounds=1`.
+- `decortest`: `OK decortest placed=12 slots=12`.
+- `stability_check.py COM7 40`: `VERDICT: PASS`, 0 faults.
+- `scanloop 5`: `largest_drift=0`. `render 500`: `largest_drift=0`.
+- Internal DMA largest 63,488 bytes, above the 51,200 floor.
+- Sleep verified on hardware in one console session: `set energy 80` then
+  `sleep` reports `state=6`, and 12 s later it is still `state=6` with energy
+  climbing 80 -> 81. Before this round it would have woken after 6 s.
+- Move verified on hardware: `decor move 0 340 150` reports
+  `OK decor move slot=0 at=340,150` and the captured panel shows the log at its
+  new position.
+- Page-jump fix verified on hardware: after buying a kind on page 2, `open decor`
+  captures at `1 / 6`.
+- Captured from the panel: the Decor shop with a sprite on every row, the Placed
+  Items list with its sprite, and the per-item menu showing Blocking (checked),
+  Move and Put Away.
+- Browser suite **99/99** (was 97). Two new tests cover moving decor without
+  losing its slot/kind/blocking flag, and a forced sleep holding until energy is
+  full rather than ending at 95.

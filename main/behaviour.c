@@ -802,8 +802,13 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
          * asleep regen rate, during which mood sits at 0 and it cannot feed
          * itself, which would make SICK permanent. */
         if (s_sleep_forced) {
-            /* Player asked for this. Honour it for at least SLEEP_MIN_MS. */
-            if ((now_ms - s_sleep_start) >= SLEEP_MIN_MS) {
+            /* Player asked for this. Hold until the spider is actually rested,
+             * with SLEEP_MIN_MS as a floor so the button always visibly works
+             * even at full energy. Waking at a fixed 95 meant a spider at 80
+             * energy slept for six seconds and stood up again, which is why
+             * the button read as pointless. */
+            if ((now_ms - s_sleep_start) >= SLEEP_MIN_MS &&
+                g.energy >= SLEEP_WAKE_ENERGY) {
                 s_sleep_forced = false;
                 behaviour_set_state(SPIDER_IDLE);
             }

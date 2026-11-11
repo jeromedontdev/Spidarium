@@ -285,8 +285,11 @@ test('sleep is held 6000ms even at full energy and regenerates 6/min (gift 1.5x)
   const s=state();s.energy=100;care(s,'sleep');tick(s,5.95);assert.equal(s.state,6);
   tick(s,.05);assert.equal(s.state,0);
   care(s,'sleep');care(s,'sleep');assert.equal(s.state,0);
+  // A forced sleep now holds until energy is FULL, not for a fixed 6 s: waking
+  // at 95 meant a spider at 80 energy slept six seconds and stood up, which is
+  // why the button read as pointless.
   const t=state();t.energy=10;placeGift(t,0);care(t,'sleep');tick(t,6);
-  assert.equal(t.energy,10);assert.equal(t.state,0);
+  assert.equal(t.energy,10);assert.equal(t.state,6);
   tick(t,3);assert.equal(t.energy,11);
 });
 test('mood truncates toward zero, low-stat penalty halves while sick',()=>{

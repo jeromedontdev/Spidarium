@@ -24,7 +24,7 @@ export class DeviceGame {
     this.ctx = this.canvas.getContext('2d'); this.ctx.imageSmoothingEnabled = false;
     this.spiderCanvas = document.createElement('canvas'); this.spiderCanvas.width = this.spiderCanvas.height = 96;
     this.spiderCtx = this.spiderCanvas.getContext('2d'); this.spiderPixels = this.spiderCtx.createImageData(96, 96);
-    this.images = new Map(); this.hud = false; this.modal = null; this.game = null; this.giftKind = null; this.decorKind = null; this.aiming = false; this.lastGame = -1;
+    this.images = new Map(); this.hud = false; this.modal = null; this.game = null; this.giftKind = null; this.decorKind = null; this.decorMoveSlot = null; this.decorSlot = null; this.aiming = false; this.lastGame = -1;
     this.error = false;
     this.audio = new DeviceAudio((message, error) => this.report(message, error));
     let storage;
@@ -44,7 +44,10 @@ export class DeviceGame {
     this.canvas.addEventListener('pointerdown', event => this.pointerDown(event));
     this.canvas.addEventListener('pointermove', event => this.pointerMove(event));
     this.canvas.addEventListener('pointerup', event => this.pointerUp(event));
-    this.canvas.addEventListener('pointercancel', () => { this.aiming = false; E.cancelAim(this.state); });
+    this.canvas.addEventListener('pointercancel', () => {
+      this.aiming = false; this.cancelLongPress(); E.cancelAim(this.state);
+    });
+    this.canvas.addEventListener('pointerleave', () => this.cancelLongPress());
     this.screen.addEventListener('keydown', event => this.key(event));
     root.querySelector('#browser-save-file').onchange = () => this.importProgress();
     window.addEventListener('pagehide', () => this.persist());
@@ -104,7 +107,8 @@ export class DeviceGame {
     this.ear = element('button', 'd-ear'); this.ear.type = 'button'; this.ear.setAttribute('aria-label', 'Show or Hide Care HUD');
     this.earMark = element('span', ''); this.ear.append(this.earMark);
     this.ear.onclick = () => {
-      if (this.decorKind !== null) { this.decorKind = null; this.report('Decor Placement Cancelled.'); }
+      if (this.decorMoveSlot !== null) { this.decorMoveSlot = null; this.report('Decor Move Cancelled.'); }
+      else if (this.decorKind !== null) { this.decorKind = null; this.report('Decor Placement Cancelled.'); }
       else if (this.giftKind !== null) { this.giftKind = null; this.report('Gift Placement Cancelled.'); }
       else { E.cancelAim(this.state); this.hud = !this.hud; }
       this.refreshHUD();
@@ -117,7 +121,7 @@ export class DeviceGame {
   refreshHUD() {
     this.hudLayer.hidden = !this.hud;
     this.ear.hidden = Boolean(this.modal || this.game || !this.started);
-    const placing = this.giftKind !== null || this.decorKind !== null;
+    const placing = this.giftKind !== null || this.decorKind !== null || this.decorMoveSlot !== null;
     this.earMark.textContent = placing ? '×' : '';
     this.ear.setAttribute('aria-label', placing ? 'Cancel Placement' : 'Show or Hide Care HUD');
     this.stats.forEach(({ key, bar, value }, i) => {
@@ -159,8 +163,9 @@ export class DeviceGame {
     if (this.game) { this.game.engine.cancel(); this.game.overlay.remove(); this.game = null; }
     this.refreshHUD();
   }
-  open(name, page = 0) {
+  open(name, page = 0, slot = null) {
     this.close(); this.modal = this.panel(name === 'Gifts' ? `Gifts / ${this.state.silk} Silk` : name, () => this.back(name)); this.modal.name = name; this.modal.page = page;
+    if (slot !== null) this.decorSlot = slot;
     this.refreshHUD();
     const toggle = field => {
       this.state[field] = !this.state[field];
@@ -222,12 +227,16 @@ export class DeviceGame {
           const detail = !unlocked ? `Level ${item.level} / ${item.cost} Silk`
             : owned ? `Owned / ${item.blocking ? 'Blocks' : 'Walk Over'}`
             : `${item.cost} Silk / ${item.blocking ? 'Blocks' : 'Walk Over'}`;
+          /* `selected` is deliberately NOT "owned": the panel jumps to the page
+           * of the first selected row, so marking owned kinds selected yanked
+           * the player to page 2 the moment they bought anything past the third
+           * row. The owned state is already in the detail line. */
           return row(item.name, () => {
             if (!unlocked) return;
             if (!owned && !E.buyDecor(this.state, id)) return;
             this.persist();
             this.beginDecorPlacement(id);
-          }, detail, { selected: owned, enabled: unlocked });
+          }, detail, { icon: E.decorSprite(id), enabled: unlocked });
         });
         rows.push(row('Placed Items', () => this.open('Placed Decor'),
           `${E.decorPlacedCount(this.state)} of ${E.DECOR_SLOTS} Placed`, { submenu: true }));
@@ -239,10 +248,26 @@ export class DeviceGame {
           .filter(({ item }) => item.kind !== E.DECOR_EMPTY);
         rows = placed.length ? placed.map(({ item, slot }) => row(
           E.DECOR_KINDS[item.kind].name,
-          () => { E.toggleDecorBlocking(this.state, slot); this.persist(); this.open('Placed Decor'); },
+          () => this.open('Decor Item', 0, slot),
           `${item.blocking ? 'Blocks' : 'Walk Over'} / Tap to Change`,
-          { selected: !!item.blocking }))
+          { icon: E.decorSprite(item.kind) }))
           : [row('Nothing Placed', null, 'Pick an Item First', { enabled: false })];
+        break;
+      }
+      case 'Decor Item': {
+        const slot = this.decorSlot;
+        const item = this.state.decor[slot];
+        if (!item || item.kind === E.DECOR_EMPTY) { this.open('Placed Decor'); return; }
+        rows = [
+          row('Blocking', () => {
+            E.toggleDecorBlocking(this.state, slot); this.persist(); this.open('Decor Item', 0, slot);
+          }, `${item.blocking ? 'Blocks' : 'Walk Over'} / Tap to Change`,
+          { icon: E.decorSprite(item.kind), selected: !!item.blocking }),
+          row('Move', () => this.beginDecorMove(slot), `At ${item.x}, ${item.y}`, { submenu: true }),
+          row('Put Away', () => {
+            E.removeDecor(this.state, slot); this.persist(); this.open('Placed Decor');
+          }, 'Returns It to the Shop', { destructive: true }),
+        ];
         break;
       }
       case 'Settings': rows = [
@@ -296,7 +321,9 @@ export class DeviceGame {
   back(name) {
     if (name === 'Menu' || name === 'Gifts') this.close();
     else if (name === 'Daily' || name === 'Treats') this.open('Menu');
-    else this.open(['Backgrounds', 'Achievements', 'Prey Species'].includes(name) ? 'Menu' : 'Settings');
+    else if (name === 'Decor Item') this.open('Placed Decor');
+    else if (name === 'Placed Decor') this.open('Decor');
+    else this.open(['Backgrounds', 'Achievements', 'Prey Species', 'Decor'].includes(name) ? 'Menu' : 'Settings');
   }
   /** The Daily row's subtitle: what is waiting for the player right now. */
   dailyDetail() {
@@ -420,8 +447,13 @@ export class DeviceGame {
     this.report('Tap the tank to place the gift. X cancels placement.'); this.persist();
   }
   beginDecorPlacement(id) {
-    this.close(); this.decorKind = id; this.hud = false; this.refreshHUD();
+    this.close(); this.decorKind = id; this.decorMoveSlot = null; this.hud = false; this.refreshHUD();
     this.report('Tap the tank to place the decor. X cancels placement.');
+  }
+  beginDecorMove(slot) {
+    if (!this.state.decor[slot] || this.state.decor[slot].kind === E.DECOR_EMPTY) return;
+    this.close(); this.decorKind = null; this.decorMoveSlot = slot; this.hud = false; this.refreshHUD();
+    this.report('Tap the tank to move the decor. X cancels placement.');
   }
   play() {
     this.close(); let kind = Math.floor(Math.random() * 3);
@@ -484,6 +516,23 @@ export class DeviceGame {
     if (!this.started || this.modal || this.game || this.hud) return;
     const p = this.point(event);
     void this.audio.unlock(this.state.sound);
+    /* Hold on a placed decor item to open its move/blocking menu. A tap on the
+     * tank is already the pounce gesture, so this has to be a long press. */
+    if (this.decorKind === null && this.decorMoveSlot === null && this.giftKind === null) {
+      const slot = E.decorHitTest(this.state, p.x, p.y);
+      if (slot >= 0) {
+        this.longPress = setTimeout(() => {
+          this.longPress = null; this.aiming = false; E.cancelAim(this.state);
+          this.open('Decor Item', 0, slot);
+        }, 550);
+      }
+    }
+    if (this.decorMoveSlot !== null) {
+      if (!E.moveDecor(this.state, this.decorMoveSlot, p.x, p.y)) {
+        this.report('That decor cannot be moved.', true); return;
+      }
+      this.decorMoveSlot = null; this.refreshHUD(); this.persist(); this.report('Decor Moved.'); return;
+    }
     if (this.decorKind !== null) {
       const slot = E.placeDecor(this.state, this.decorKind, p.x, p.y);
       if (slot < 0) { this.report('No room left for decor.', true); return; }
@@ -497,8 +546,16 @@ export class DeviceGame {
     this.aiming = E.beginAim(this.state, p.x, p.y) !== false;
     if (this.aiming) this.canvas.setPointerCapture(event.pointerId);
   }
-  pointerMove(event) { if (this.aiming) { const p = this.point(event); E.moveAim(this.state, p.x, p.y); } }
+  cancelLongPress() {
+    if (this.longPress) { clearTimeout(this.longPress); this.longPress = null; }
+  }
+  pointerMove(event) {
+    /* A drag is an aim, not a hold, so it cancels the pending long press. */
+    this.cancelLongPress();
+    if (this.aiming) { const p = this.point(event); E.moveAim(this.state, p.x, p.y); }
+  }
   pointerUp(event) {
+    this.cancelLongPress();
     if (!this.aiming) {
       /* A tap that did not start an aim is a pet if it landed on the spider.
        * The engine enforces the hit radius and the cooldown. */
@@ -612,7 +669,7 @@ export class DeviceGame {
   frame(now) {
     const elapsed = Math.min(.15, Math.max(0, (now - this.last) / 1000)); this.last = now;
     if (!document.hidden && this.started && !this.hud && !this.modal && !this.game &&
-        this.giftKind === null && this.decorKind === null) {
+        this.giftKind === null && this.decorKind === null && this.decorMoveSlot === null) {
       this.accumulator += elapsed; while (this.accumulator >= .05) { E.tick(this.state, .05); this.accumulator -= .05; }
     } else this.accumulator = 0;
     if (this.game) this.gameFrame(now);

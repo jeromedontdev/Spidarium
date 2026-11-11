@@ -1,4 +1,4 @@
-# Spidarium v1.1.13 — Ground textures and placeable decor
+# Spidarium v1.1.14 — Ground textures, placeable decor, and a sleep button that works
 
 ## The enclosure is now something you arrange
 
@@ -52,7 +52,35 @@ spider could never turn around.
 Non-blocking decor is ignored by steering entirely. That is the point of the
 flag: the spider is meant to walk over a leaf pile.
 
-Tap a placed item in **Placed Items** to flip its flag. The choice is saved.
+## Hold an item to move it
+
+**Hold a finger on a placed item** and its menu opens: flip the blocking flag,
+move it, or put it away. Moving keeps the slot, the kind and the blocking flag —
+only the position changes, clamped inside the playfield.
+
+The gesture is a long press rather than a tap because a tap on the tank is
+already the pounce and a tap on the spider is a pet. The same menu is reachable
+from **Decor → Placed Items** for anyone who would rather not hold.
+
+## The shop shows what it sells
+
+Every row in the Decor shop carries its own sprite, so the list reads as a
+catalogue of things rather than a list of names. The Placed Items list and the
+per-item menu carry the sprite too.
+
+A bug is also fixed here: the shop used to jump to page 2 the moment you bought
+anything past the third row. `ui_menu_open()` jumps to the page of the first
+`selected` row, and the shop was marking owned kinds selected. Owned state is
+already in the subtext, so the flag is gone.
+
+## Sleep is a real toggle
+
+The Sleep button used to be close to pointless. A player-initiated sleep held for
+a fixed six seconds and then woke, so pressing it at 80 energy put the spider to
+sleep and stood it up again almost immediately. It now holds until energy is
+actually **full**, with the six-second minimum kept as a floor so the button
+always visibly works even at 100 energy. The button also reads **Wake** while the
+spider is asleep, so it says what the next press does.
 
 ## 16-bit SNES-era art direction
 

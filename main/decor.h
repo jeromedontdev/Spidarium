@@ -83,6 +83,9 @@ const decor_item_t *decor_at(int slot);
 /* Place an owned kind at a playfield position. Returns the slot, or -1. */
 int decor_place(uint8_t kind, int16_t x, int16_t y);
 
+/* Move a placed item to a new playfield position, clamped to the field. */
+bool decor_move(int slot, int16_t x, int16_t y);
+
 /* Remove the item in a slot. */
 bool decor_remove(int slot);
 

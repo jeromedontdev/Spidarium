@@ -590,6 +590,17 @@ export function placeDecor(s,kind,x,y){
     x:round(clamp(x,34+r,446-r)),y:round(clamp(y,34+r,446-r))};
   return slot;
 }
+/** Move a placed item. Keeps its slot, kind and blocking flag; only the
+ * position changes, clamped inside the playfield. */
+export function moveDecor(s,slot,x,y){
+  if(slot<0||slot>=DECOR_SLOTS||s.decor[slot].kind===DECOR_EMPTY)return false;
+  const d=DECOR_KINDS[s.decor[slot].kind];
+  if(!d)return false;
+  const r=d.radius;
+  s.decor[slot].x=round(clamp(x,34+r,446-r));
+  s.decor[slot].y=round(clamp(y,34+r,446-r));
+  return true;
+}
 export function removeDecor(s,slot){
   if(slot<0||slot>=DECOR_SLOTS||s.decor[slot].kind===DECOR_EMPTY)return false;
   s.decor[slot]={kind:DECOR_EMPTY,blocking:0,x:0,y:0};
@@ -917,7 +928,13 @@ function behaviourTick(s,dt){
   }
   switch(s.state){
     case 6:
-      if(r.sleep_forced){if(now-r.sleep_start>=6000){r.sleep_forced=false;setState(s,0);}}
+      /* A player-initiated sleep holds until the spider is actually rested,
+       * with a 6 s floor so the button always visibly works. Waking at a fixed
+       * 95 meant a spider at 80 energy slept for six seconds and stood up
+       * again, which is why the button read as pointless. */
+      if(r.sleep_forced){
+        if(now-r.sleep_start>=6000&&s.energy>=100){r.sleep_forced=false;setState(s,0);}
+      }
       else if(s.sick?s.energy>=30:s.energy>=95||s.hunger<25)setState(s,0);
       break;
     case 5:if(now>=s.eat_until_ms)setState(s,0);break;

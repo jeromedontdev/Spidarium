@@ -493,6 +493,13 @@ void ui_hud_tick(uint32_t now_ms)
         /* Clean is never disabled: it always works, and pays in proportion to
          * the mess it removed. Gating the button looked broken and could be
          * bypassed by dropping a bug in and tapping repeatedly. */
+        /* Sleep is a toggle, so the label has to say what the next press does.
+         * A button that always reads "Sleep" while the spider is asleep reads
+         * as broken. */
+        lv_obj_t *sleep_text = lv_obj_get_child(ui.btn_sleep, -1);
+        const char *sleep_label = g.state == SPIDER_SLEEP ? "Wake" : "Sleep";
+        if (sleep_text && strcmp(lv_label_get_text(sleep_text), sleep_label))
+            lv_label_set_text(sleep_text, sleep_label);
         if (strcmp(lv_label_get_text(s_resources), text)) lv_label_set_text(s_resources, text);
     }
     cspider_emote_t emote = CSP_EMOTE_NONE;

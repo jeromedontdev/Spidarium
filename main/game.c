@@ -53,6 +53,7 @@ game_ui_t    ui;
 playfield_t  g_play;
 uint8_t      g_decor_mode;
 uint8_t      g_decor_selected;
+uint8_t      g_decor_move_slot = 0xFF;
 
 static uint32_t s_last_logic;
 static uint32_t s_last_save;
@@ -356,6 +357,7 @@ void game_cancel_decor_placement(void)
 {
     if (!g_decor_mode) return;
     g_decor_mode = 0;
+    g_decor_move_slot = 0xFF;
     ui_hud_set_place_mode(false, NULL);
     ESP_LOGI(TAG, "decor placement cancelled");
 }
@@ -408,6 +410,7 @@ enum {
     MENU_SHOP,
     MENU_DECOR,
     MENU_DECOR_PLACED,
+    MENU_DECOR_ITEM,
 };
 
 static void menu_open(int which);
@@ -420,12 +423,15 @@ static int s_open_menu = -1;
  * outside the menu (the physical volume buttons) can be pushed into the open
  * panel without rebuilding it. */
 static ui_menu_item_t s_menu_items[20];
+/* Slot whose per-item decor menu is open. */
+static uint8_t s_decor_item_slot = 0xFF;
 static int s_saved_network;
 static char s_join_ssid[33];
 static char s_wifi_message[80];
 
 static void back_to_wifi(void) { menu_open(MENU_WIFI); }
 static void back_to_settings(void) { menu_open(MENU_SETTINGS); }
+static void back_to_placed(void) { menu_open(MENU_DECOR_PLACED); }
 
 static bool on_password(const char *password)
 {
@@ -589,9 +595,22 @@ static void decor_begin_placement(uint8_t kind)
     }
     g_decor_selected = kind;
     g_decor_mode = 1;
+    g_decor_move_slot = 0xFF;
     ui_menu_close();
     ui_hud_set_chrome(false);
     ui_hud_set_place_mode(true, "Tap to place; X cancels");
+}
+
+/* Reposition an item that is already in the tank. The item keeps its slot,
+ * blocking flag and ownership; only its position changes. */
+static void decor_begin_move(uint8_t slot)
+{
+    if (!decor_at(slot)) return;
+    g_decor_move_slot = slot;
+    g_decor_mode = 1;
+    ui_menu_close();
+    ui_hud_set_chrome(false);
+    ui_hud_set_place_mode(true, "Tap to move; X cancels");
 }
 
 static void on_decor_pick(uint8_t id)
@@ -618,15 +637,41 @@ static void on_decor_pick(uint8_t id)
     decor_begin_placement(id);
 }
 
-/* Placed-item rows: tap toggles blocking, the destructive row removes. */
+/* Placed-item rows open the per-item menu, where blocking can be flipped and
+ * the item can be moved or put away. */
 static void on_decor_placed_pick(uint8_t id)
 {
     if (id >= DECOR_SLOTS) { menu_open(MENU_DECOR); return; }
     if (!decor_at(id)) { menu_open(MENU_DECOR_PLACED); return; }
-    decor_toggle_blocking(id);
-    terrarium_refresh_decor();
-    game_save_now();
-    menu_open(MENU_DECOR_PLACED);
+    s_decor_item_slot = id;
+    menu_open(MENU_DECOR_ITEM);
+}
+
+/* Per-item actions. Row 0 flips blocking, row 1 starts a move, row 2 removes. */
+static void on_decor_item_pick(uint8_t id)
+{
+    uint8_t slot = s_decor_item_slot;
+    if (!decor_at(slot)) { menu_open(MENU_DECOR_PLACED); return; }
+    switch (id) {
+    case 0:
+        decor_toggle_blocking(slot);
+        terrarium_refresh_decor();
+        game_save_now();
+        menu_open(MENU_DECOR_ITEM);
+        break;
+    case 1:
+        decor_begin_move(slot);
+        break;
+    case 2:
+        decor_remove(slot);
+        terrarium_refresh_decor();
+        game_save_now();
+        menu_open(MENU_DECOR_PLACED);
+        break;
+    default:
+        menu_open(MENU_DECOR_PLACED);
+        break;
+    }
 }
 
 /* Settings submenu: connectivity and storage. Both are infrastructure for OTA
@@ -1076,9 +1121,13 @@ static void menu_open(int which)
                 snprintf(decor_sub[i], sizeof decor_sub[i], "%u Silk / %s",
                          def->cost, def->blocking ? "Blocks" : "Walk Over");
             }
+            /* `selected` is deliberately NOT "owned". ui_menu_open() jumps to
+             * the page of the first selected row, so marking owned kinds
+             * selected yanked the player to page 2 the moment they bought
+             * anything past the third row. The owned state is already in the
+             * subtext and the checkmark is not needed here. */
             items[i] = (ui_menu_item_t){ decor_name[i], decor_sub[i], true,
-                                         decor_owned((uint8_t)i), true,
-                                         (uint8_t)i };
+                                         false, true, (uint8_t)i };
         }
         static char decor_title[48];
         snprintf(decor_title, sizeof decor_title, "Decor / %lu Silk",
@@ -1091,6 +1140,10 @@ static void menu_open(int which)
                                                true, false, true,
                                                (uint8_t)DECOR_COUNT };
         ui_menu_open(decor_title, items, DECOR_COUNT + 1, on_decor_pick);
+        /* Every row gets its own sprite, so the shop reads as a catalogue of
+         * things rather than a list of names. */
+        for (int i = 0; i < DECOR_COUNT; i++)
+            ui_menu_set_item_icon((uint8_t)i, sprite_decor_item_index((uint8_t)i));
         ui_menu_set_back(back_to_main);
         break;
     }
@@ -1107,7 +1160,7 @@ static void menu_open(int which)
             snprintf(placed_sub[n], sizeof placed_sub[n], "%s / Tap to Change",
                      item->blocking ? "Blocks" : "Walk Over");
             items[n] = (ui_menu_item_t){ placed_name[n], placed_sub[n], true,
-                                         item->blocking, false, (uint8_t)i };
+                                         false, false, (uint8_t)i };
             n++;
         }
         if (n == 0) {
@@ -1116,7 +1169,33 @@ static void menu_open(int which)
             n = 1;
         }
         ui_menu_open("Placed Decor", items, n, on_decor_placed_pick);
+        for (int i = 0; i < n; i++) {
+            const decor_item_t *item = decor_at(items[i].id);
+            if (item) ui_menu_set_item_icon((uint8_t)i,
+                                            sprite_decor_item_index(item->kind));
+        }
         ui_menu_set_back(back_to_main);
+        break;
+    }
+    case MENU_DECOR_ITEM: {
+        const decor_item_t *item = decor_at(s_decor_item_slot);
+        if (!item) { menu_open(MENU_DECOR_PLACED); break; }
+        const decor_def_t *def = decor_def(item->kind);
+        if (!def) { menu_open(MENU_DECOR_PLACED); break; }
+        static char item_name[32], block_sub[48], move_sub[48];
+        ui_menu_format_name(item_name, sizeof item_name, def->name);
+        snprintf(block_sub, sizeof block_sub, "%s / Tap to Change",
+                 item->blocking ? "Blocks" : "Walk Over");
+        snprintf(move_sub, sizeof move_sub, "At %d, %d", item->x, item->y);
+        items[0] = (ui_menu_item_t){ "Blocking", block_sub, true,
+                                     item->blocking, false, 0 };
+        items[1] = (ui_menu_item_t){ "Move", move_sub, true, false, true, 1 };
+        items[2] = (ui_menu_item_t){ "Put Away", "Returns It to the Shop", true,
+                                     false, false, 2 };
+        ui_menu_open(item_name, items, 3, on_decor_item_pick);
+        ui_menu_set_item_icon(0, sprite_decor_item_index(item->kind));
+        ui_menu_set_destructive(2);
+        ui_menu_set_back(back_to_placed);
         break;
     }
     case MENU_ABOUT:
@@ -1178,6 +1257,15 @@ void game_on_menu(lv_event_t *e)
     menu_open(MENU_MAIN);
 }
 
+/* Open the per-item decor menu for a slot, for the serial console. */
+bool game_ui_open_decor_item(uint8_t slot)
+{
+    if (!decor_at(slot)) return false;
+    s_decor_item_slot = slot;
+    menu_open(MENU_DECOR_ITEM);
+    return true;
+}
+
 /* Open a menu by name, for the serial console.
  *
  * This calls the same menu_open() the UI calls, so a test through here exercises
@@ -1204,6 +1292,7 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "shop")) menu_open(MENU_SHOP);
     else if (!strcmp(name, "decor")) menu_open(MENU_DECOR);
     else if (!strcmp(name, "placed")) menu_open(MENU_DECOR_PLACED);
+    else if (!strcmp(name, "decoritem")) menu_open(MENU_DECOR_ITEM);
     else return false;
     return true;
 }
@@ -1707,6 +1796,10 @@ static void ui_service_menu_request(void)
     } else if (!strcmp(name, "nochrome")) {
         ui_hud_set_chrome(false);
         s_ui_menu_ok = true;
+    } else if (!strncmp(name, "item", 4)) {
+        /* "item N" opens the per-item decor menu for slot N. */
+        int slot = atoi(name + 4);
+        s_ui_menu_ok = game_ui_open_decor_item((uint8_t)slot);
     } else {
         s_ui_menu_ok = game_open_menu(name);
     }
@@ -1744,7 +1837,6 @@ void game_on_terrarium_pressing(lv_event_t *e)
         return;
     }
     if (!behaviour_aim_dragging()) return;
-
     lv_indev_t *indev = lv_indev_active();
     lv_point_t p = {0, 0};
     if (indev) lv_indev_get_point(indev, &p);
@@ -1766,6 +1858,33 @@ void game_on_terrarium_release(lv_event_t *e)
     }
 }
 
+/* Long-press on a placed decor item opens its menu, so the player can move it,
+ * flip its blocking flag or put it away without hunting through the shop.
+ *
+ * This is the gesture the player asked for: hold a finger on the item and
+ * eventually a menu appears. It is deliberately a LONG press rather than a tap,
+ * because a tap on the tank is already the pounce gesture and a tap on the
+ * spider is a pet. */
+void game_on_terrarium_long_press(lv_event_t *e)
+{
+    (void)e;
+    if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused() ||
+        g.gift_mode || g_decor_mode) return;
+
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev) return;
+    lv_point_t p = {0, 0};
+    lv_indev_get_point(indev, &p);
+
+    int slot = decor_hit_test((int16_t)p.x, (int16_t)p.y);
+    if (slot < 0) return;
+
+    /* A long press must not also fire the pounce on release. */
+    behaviour_aim_cancel();
+    s_decor_item_slot = (uint8_t)slot;
+    menu_open(MENU_DECOR_ITEM);
+}
+
 void game_on_terrarium_tap(lv_event_t *e)
 {
     lv_indev_t *indev = lv_indev_active();
@@ -1778,10 +1897,22 @@ void game_on_terrarium_tap(lv_event_t *e)
      * the placement. The old two-tap confirm existed because the kind was
      * chosen by blind cycling; now that the player has explicitly picked what
      * to give, asking them to confirm the spot as well is just friction. */
-    /* 0. Decor placement. The item was already bought in the shop, so a tap
-     * only decides where it goes. */
+    /* 0. Decor placement or move. The item was already bought in the shop, so
+     * a tap only decides where it goes. */
     if (g_decor_mode) {
         if (indev) {
+            if (g_decor_move_slot != 0xFF) {
+                if (!decor_move(g_decor_move_slot, (int16_t)p.x, (int16_t)p.y)) {
+                    ui_hud_bubble("Cannot Move", 0xf5c86b, 1800);
+                    return;
+                }
+                terrarium_refresh_decor();
+                game_save_now();
+                g_decor_mode = 0;
+                g_decor_move_slot = 0xFF;
+                ui_hud_set_place_mode(false, NULL);
+                return;
+            }
             int slot = decor_place(g_decor_selected, (int16_t)p.x, (int16_t)p.y);
             if (slot < 0) {
                 ui_hud_bubble("No Room Left", 0xf5c86b, 1800);
@@ -2129,6 +2260,9 @@ void game_init(void)
                         LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_release,
                         LV_EVENT_RELEASED, NULL);
+    /* Hold on a placed decor item to open its move/blocking menu. */
+    lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_long_press,
+                        LV_EVENT_LONG_PRESSED, NULL);
 
     terrarium_init(root);
     ui.creature_layer = lv_obj_create(root);

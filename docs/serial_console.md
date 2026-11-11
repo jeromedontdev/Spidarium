@@ -427,7 +427,7 @@ cancellation.
 `preytest` verifies all eight level thresholds, random eligibility and rejected
 locked/invalid explicit spawns, restoring the original level/prey count.
 
-### `decortest`, `decor [place K X Y | block SLOT | clear]`
+### `decortest`, `decor [place K X Y | move S X Y | block SLOT | item SLOT | clear]`
 
 `decortest` places one of every decor kind through the real placement path,
 refreshes the decor layer, and asserts that every placed item has a visible
@@ -439,8 +439,11 @@ run on a live pet.
 footprint radius, blocking flag and whether the kind is owned, then reports the
 Silk balance and how many of the twelve slots are filled. `decor place KIND X Y`
 grants the Silk and level needed for the kind (test-only), buys it if it is not
-owned, and places it. `decor block SLOT` flips the blocking flag. `decor clear`
-empties the enclosure. All three persist and refresh the layer.
+owned, and places it. `decor move SLOT X Y` repositions a placed item, keeping
+its slot, kind and blocking flag. `decor block SLOT` flips the blocking flag.
+`decor item SLOT` opens the per-item menu (Blocking / Move / Put Away) for that
+slot, which is the same menu a long press on the item opens. `decor clear` empties
+the enclosure. All of them persist and refresh the layer.
 
 ### `setupdone`
 
