@@ -5,6 +5,18 @@ import { readFile } from 'node:fs/promises';
 const landing = await readFile(new URL('../style.css', import.meta.url), 'utf8');
 const device = await readFile(new URL('../device.css', import.meta.url), 'utf8');
 
+test('changed UI code, stylesheet and icons share the current release cache revision', async () => {
+  const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../app.js', import.meta.url), 'utf8');
+  const ui = await readFile(new URL('../lib/device-ui.js', import.meta.url), 'utf8');
+  assert.ok(html.includes(`./device.css?v=${version}`));
+  assert.ok(html.includes(`./app.js?v=${version}`));
+  assert.ok(app.includes(`./lib/device-ui.js?v=${version}`));
+  assert.ok(ui.includes('const assetRevision = new URL(import.meta.url).search;'));
+  assert.ok(ui.includes('${name}.png${assetRevision}'));
+});
+
 // Inspect declarations from the real stylesheets, merging repeated exact rules.
 function declarations(css, selector) {
   const result = {};

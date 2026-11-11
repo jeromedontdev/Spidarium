@@ -4,7 +4,9 @@ import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
 import { DeviceAudio } from './device-audio.js';
 
-const asset = name => new URL(`../../assets/${name}.png`, import.meta.url).href;
+// Carry the UI revision to its artwork so returning players cannot mix releases.
+const assetRevision = new URL(import.meta.url).search;
+const asset = name => new URL(`../../assets/${name}.png${assetRevision}`, import.meta.url).href;
 // Splat colours per prey species, matching the native dead-sprite tints.
 const SPLAT_COLOURS = ['#8a6a3a', '#4f6b2f', '#8a7a5a', '#3f3a2a', '#5a3a2a', '#a08a5a', '#6a5a3a', '#8a5a4a'];
 const title = name => name.split(/[ _]+/).map(word => word[0].toUpperCase() + word.slice(1)).join(' ');

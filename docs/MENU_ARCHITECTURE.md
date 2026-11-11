@@ -299,3 +299,6 @@ Volume is a three-fader mixer, Sound is a speaker, Background Music is beamed
 notes, and Play remains a ball. Icon tests compare alpha silhouettes and
 source PNG pixels. Browser slider rows reserve the left thumbnail column,
 put the label/value above the track, and keep percentage text out of its hit area.
+When releasing changed browser UI resources, keep the entry-script, device
+stylesheet and UI import query revisions aligned with the package version.
+The UI propagates its revision to icon URLs so cached artwork cannot hide fixes.

@@ -7420,3 +7420,7 @@ evidence proves delivery and continuity, not that the player likes the sound.
   Forty-second hardware soak: **VERDICT: PASS**, **0 faults/errors**.
 - Build/artwork tests establish native data delivery, not physical-screen
   aesthetic approval. No new battery, association, SD or OTA-install claim.
+- Production follow-up reproduced a returning browser mixing cached old UI/CSS
+  with freshly published files. Version the entry script, UI module and device
+  stylesheet; propagate that module revision to icon URLs. A regression enforces
+  package-version alignment, rather than relying on a player clearing cache.
