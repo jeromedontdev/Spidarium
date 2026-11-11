@@ -7407,7 +7407,7 @@ evidence proves delivery and continuity, not that the player likes the sound.
 
 ### Exact verification evidence
 
-- Browser **139/139**, art **16/16**; deterministic regeneration preserves all
+- Browser **140/140**, art **16/16**, packaging **11/11**; deterministic regeneration preserves all
   **201** resulting PNGs. Packed validation checks every QOI opcode and pixel.
 - Real browser Volume bounding rectangles at viewport widths **400, 800,
   1280** prove the slider intersects neither icon, label nor percentage.
@@ -7424,3 +7424,18 @@ evidence proves delivery and continuity, not that the player likes the sound.
   with freshly published files. Version the entry script, UI module and device
   stylesheet; propagate that module revision to icon URLs. A regression enforces
   package-version alignment, rather than relying on a player clearing cache.
+
+### Publication evidence
+
+- Published [v1.1.20](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.20),
+  source `d7e4f45`, browser cache follow-up `4ccfac6`. Downloaded release ZIP
+  SHA-256 **04111bf1b8f53c1ce79d1c1391b555543047e72c5f633aba6f8803995541550b**.
+- [Release deployment](https://github.com/jeromedontdev/Spidarium/actions/runs/43093691512)
+  and [cache-safe website deployment](https://github.com/jeromedontdev/Spidarium/actions/runs/43093947224)
+  succeeded. Production five-image hashes, all 201 PNGs and updated UI/CSS match.
+  Exactly two PNGs differ from v1.1.19; all other 199, including spider, remain
+  byte-identical.
+- A normal reload of the same production browser that reproduced stale overlap
+  now loads versioned UI/icon URLs. Bounding rectangles prove no overlap;
+  ArrowRight changes 70 to 75. Actual production screenshot shows mixer faders,
+  speaker, beamed notes and a clear slider with a separate percentage.
