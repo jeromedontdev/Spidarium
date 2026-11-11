@@ -7198,3 +7198,9 @@ association/SNTP, hosted OTA installation, SD media or RTC backup retention.
   preserving a new event for a mute transition. Final browser suite
   **117 passed, 0 failed**; website build passed. Firmware, artwork and the
   immutable release tag/package are unchanged by this website-only follow-up.
+- Follow-up commit **1a6cae4** deployed successfully through
+  <https://github.com/jeromedontdev/Spidarium/actions/runs/43078525298>.
+  Final HTTPS audio/UI/HTML match source bytes; the verified five-image
+  v1.1.17 manifest is unchanged. Real production Web Audio confirms one gain
+  automation call across 3,600 unchanged frames, one additional mute call,
+  **zero remaining sources after mute** and **zero reported errors**.
