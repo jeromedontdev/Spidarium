@@ -7615,3 +7615,17 @@ evidence proves delivery and continuity, not that the player likes the sound.
 - Physical touchscreen aesthetic approval, speaker approval, battery current,
   hosted HTTPS OTA and RTC backup-battery retention remain separate evidence.
   Publication/production parity must be verified after uploading the release.
+
+### Publication evidence
+
+- Source commit 799eecb, published
+  [v1.1.23](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.23).
+  Independently downloaded ZIP matches the SHA256 above.
+- [Pages run 43105990231](https://github.com/jeromedontdev/Spidarium/actions/runs/43105990231)
+  succeeded, including Linux art/browser tests and deployment.
+  Public manifest is 1.1.23; all five firmware image sizes/hashes match the
+  package and preserve NVS. Complete v12/52-field schema metadata, six changed
+  website entry/style/module files and all 337 PNGs match source bytes.
+- Normal production-browser navigation confirms the folded corner opens care,
+  Menu opens six-tile Backgrounds, cache revision is1.1.23, existing progress
+  remains v12 and the emblem uses the beetle plus Fairy Glade.
