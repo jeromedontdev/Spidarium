@@ -782,7 +782,7 @@ python cmd.py COM7 "wifi saved"
 python cmd.py COM7 "wifi add My Network|my-passphrase" 40
 python cmd.py COM7 "wifi sync 0" 40
 python cmd.py COM7 "wifi forget 0"
-python cmd.py COM7 "wifi ota latest" 150
+python cmd.py COM7 "wifi ota latest" 430
 python cmd.py COM7 "wifi ota https://your-server/firmware.bin" 150
 python cmd.py COM7 "otatest"
 python cmd.py COM7 "rtc"

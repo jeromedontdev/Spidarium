@@ -13,6 +13,15 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- v1.1.25 retries transient manifest reads and resumes stalled application
+  downloads only after verifying HTTP206 Content-Range start/end/total, with
+  at most16 reconnects inside a five-minute deadline. Full size/hash/project/
+  version/art checks remain mandatory before boot selection. Parser/range
+  diagnostics pass and failed real transfers preserve exact pet bytes, stop/
+  deinit WiFi and recover the memory floor. Full hosted OTA boot is not yet
+  proven: transfers stalled on the current link. Do not equate manifest fetch,
+  a partial download or the ordinary USB flash with OTA success.
+
 - v1.1.24 restores the website hero spider with one small beetle on plain moss.
   All browse/navigation menus are grids: six catalogue tiles, including
   Achievements/Prey/Borders, or four wider settings/control tiles. Keep full

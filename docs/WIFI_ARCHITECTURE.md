@@ -40,9 +40,26 @@ calls. Event handlers only publish connection/IP flags, not UI mutations.
 Station netif and handler registrations are created once and reused.
 
 Bounds: display pause 3 seconds; association/IP 15 seconds; fresh NTP callback
-10 seconds; OTA download 120 seconds with individual HTTP timeout 10 seconds.
+10 seconds; latest-release OTA download 300 seconds, descriptor reads 30 seconds,
+with individual HTTP timeout 10 seconds. Temporary descriptor `ESP_ERR_HTTP_EAGAIN`
+reads retry within that deadline. Application stalls reopen a verified HTTP206
+range at the received offset (up to16 reconnects within the download deadline);
+the exact Content-Range start/end/total and final full-image hash must match.
+The deadline is checked between individually bounded HTTP calls, not by
+interrupting an in-flight TLS operation.
+Closed, truncated and corrupt transfers still fail before boot selection. Download
+progress and exact received/expected byte counts are logged. The advanced URL
+path retains its 120-second download bound. Console waits up to420 seconds for
+the complete request, including association, redirects and teardown.
 Scans use ESP-IDF's blocking scan only on the worker. Failure text is logged
 and published; a generation counter tells the UI to rebuild.
+
+Real-device verification currently reaches GitHub discovery and validated
+partial-image recovery, not a complete hosted installation/reboot. Repeated
+streams stalled on the tested connection; standard HTTPS OTA against the
+official Pages image also timed out. Radio teardown, memory recovery and exact
+stored-pet preservation passed after each failure. Use USB until an actual
+hosted download and new-slot boot are demonstrated; see the latest progress.
 
 ## Credentials and persistence
 

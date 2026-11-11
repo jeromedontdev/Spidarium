@@ -1,8 +1,8 @@
-import * as E from './sim.js?v=1.1.24';
+import * as E from './sim.js?v=1.1.25';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.24';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.25';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;

@@ -227,7 +227,7 @@ static void cmd_wifi(char *arg)
     else { printf("ERR unknown wifi action\n"); return; }
     if (!accepted) { printf("ERR wifi request rejected\n"); return; }
     int waited = 0;
-    while (net_busy() && waited < 150000) {
+    while (net_busy() && waited < 420000) {
         vTaskDelay(pdMS_TO_TICKS(100));
         waited += 100;
     }

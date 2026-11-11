@@ -77,6 +77,12 @@ Gameplay and the sleeping preview render the native spider directly through
 The source simulator works without an npm install; device flashing requires
 the production bundle. `node serve.mjs` alone serves the source.
 
+The v1.1.25 device OTA implementation validates latest-release metadata and
+partial-download ranges, but a complete hosted OTA reboot has not passed on the
+current hardware connection. Use USB for a verified installation; browser
+transport mocks are not proof of physical flashing. See the
+[release verification boundary](../docs/RELEASE_v1.1.25.md).
+
 Build output is **`site/dist/site/`**, including a local
 `vendor/esptool.js` bundle. Deploy `site/dist` as the public root after copying
 the project's PNG artwork into **`site/dist/assets/`**. The website is then at

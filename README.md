@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.24](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.24)**
+| **[Download v1.1.25](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.25)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -34,7 +34,11 @@ travel-driven ground animation and heading-aware sprites; the spider is unchange
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
 The web updater preserves and verifies the save region. On-device updates
 resolve GitHub's latest stable release, verify the image and require matching
-artwork; art changes use USB. See [v1.1.24 release notes](docs/RELEASE_v1.1.24.md).
+artwork; art changes use USB. Slow HTTPS reads retry within a five-minute
+download limit. See [v1.1.25 release notes](docs/RELEASE_v1.1.25.md).
+**OTA verification boundary:** GitHub discovery and safe partial-download
+recovery are tested, but a complete hosted download/reboot has not passed on
+the current hardware connection. Use USB for a verified installation.
 
 **The spider is one canvas, not a scene graph.** It is drawn from scratch into a
 single 96×96 RGB565A8 buffer every frame — legs, body, fuzz, eyes, fangs, gait,

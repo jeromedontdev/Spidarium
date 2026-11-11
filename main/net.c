@@ -33,6 +33,7 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 #define SCAN_MAX 12
@@ -378,16 +379,45 @@ static bool parse_release(const char *text, ota_release_t *release)
     return ok;
 }
 
-static esp_http_client_handle_t open_release_url(const char *url)
+typedef struct {
+    size_t offset, size;
+    bool valid;
+} release_range_t;
+
+static esp_err_t release_headers(esp_http_client_event_t *event)
+{
+    release_range_t *range = event->user_data;
+    if (range && event->event_id == HTTP_EVENT_ON_HEADER &&
+        !strcasecmp(event->header_key, "Content-Range")) {
+        unsigned start, end, size;
+        char extra;
+        range->valid = sscanf(event->header_value, "bytes %u-%u/%u%c",
+            &start, &end, &size, &extra) == 3 && start == range->offset &&
+            size == range->size && end == size - 1;
+    }
+    return ESP_OK;
+}
+
+static esp_http_client_handle_t open_release_url(const char *url, release_range_t *range)
 {
     esp_http_client_config_t config = {
         .url = url, .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = 10000, .buffer_size = 2048, .buffer_size_tx = 1024,
         .user_agent = "Spidarium-updater", .disable_auto_redirect = true,
+        .event_handler = release_headers, .user_data = range,
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) { fail("update HTTP allocation", ESP_ERR_NO_MEM); return NULL; }
+    if (range && range->offset) {
+        char value[40];
+        snprintf(value, sizeof value, "bytes=%u-", (unsigned)range->offset);
+        esp_err_t err = esp_http_client_set_header(client, "Range", value);
+        if (err != ESP_OK) {
+            fail("update range request", err); esp_http_client_cleanup(client); return NULL;
+        }
+    }
     for (int redirects = 0; redirects <= 5; redirects++) {
+        if (range) range->valid = false;
         esp_err_t err = esp_http_client_open(client, 0);
         if (err != ESP_OK) { fail("update HTTPS connect", err); break; }
         int64_t length = esp_http_client_fetch_headers(client);
@@ -395,7 +425,8 @@ static esp_http_client_handle_t open_release_url(const char *url)
             fail("update HTTPS headers", ESP_FAIL); break;
         }
         int status = esp_http_client_get_status_code(client);
-        if (status == 200) return client;
+        if (range && range->offset && status == 206 && range->valid) return client;
+        if ((!range || !range->offset) && status == 200) return client;
         if (redirects == 5 || (status != 301 && status != 302 && status != 303 &&
                               status != 307 && status != 308)) {
             ESP_LOGE(TAG, "update HTTP status %d", status);
@@ -411,14 +442,27 @@ static esp_http_client_handle_t open_release_url(const char *url)
     return NULL;
 }
 
+static int release_read(esp_http_client_handle_t client, char *buffer, int size,
+                        TickType_t deadline)
+{
+    for (;;) {
+        if ((int32_t)(deadline - xTaskGetTickCount()) <= 0) return -ESP_ERR_TIMEOUT;
+        int got = esp_http_client_read(client, buffer, size);
+        if (got != -ESP_ERR_HTTP_EAGAIN) return got;
+        ESP_LOGW(TAG, "update receive timeout; retrying within deadline");
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
 static bool ota_latest(void)
 {
     char *text = heap_caps_calloc(1, 4097, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!text) return fail("update manifest allocation", ESP_ERR_NO_MEM);
-    esp_http_client_handle_t client = open_release_url(LATEST_OTA);
+    esp_http_client_handle_t client = open_release_url(LATEST_OTA, NULL);
     if (!client) { free(text); return false; }
     int used = 0, got = 0;
-    while (used < 4096 && (got = esp_http_client_read(client, text + used, 4096 - used)) > 0)
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(30000);
+    while (used < 4096 && (got = release_read(client, text + used, 4096 - used, deadline)) > 0)
         used += got;
     bool complete = got >= 0 && used < 4096 && esp_http_client_is_complete_data_received(client);
     esp_http_client_cleanup(client);
@@ -463,30 +507,52 @@ static bool ota_latest(void)
         mbedtls_sha256_free(&sha); free(buffer);
         return fail("art differs; use USB updater", err);
     }
-    client = open_release_url(release.url);
+    release_range_t range = { .size = release.size };
+    client = open_release_url(release.url, &range);
     if (!client) { mbedtls_sha256_free(&sha); free(buffer); return false; }
     esp_ota_handle_t handle = 0;
     bool started = false;
     size_t received = 0;
     err = mbedtls_sha256_starts(&sha, 0) == 0 ? ESP_OK : ESP_FAIL;
-    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(120000);
+    deadline = xTaskGetTickCount() + pdMS_TO_TICKS(300000);
     if (err == ESP_OK) {
         err = esp_ota_begin(target, release.size, &handle);
         started = err == ESP_OK;
     }
-    while (err == ESP_OK && (got = esp_http_client_read(client, (char *)buffer, 4096)) > 0) {
-        if (received + got > release.size || (int32_t)(deadline - xTaskGetTickCount()) <= 0) {
+    size_t reported = 0;
+    unsigned reconnects = 0;
+    while (err == ESP_OK && received < release.size) {
+        if ((int32_t)(deadline - xTaskGetTickCount()) <= 0) { err = ESP_ERR_TIMEOUT; break; }
+        got = esp_http_client_read(client, (char *)buffer, 4096);
+        if (got == -ESP_ERR_HTTP_EAGAIN && reconnects++ < 16) {
+            ESP_LOGW(TAG, "update stalled at %u; reopening verified range", (unsigned)received);
+            esp_http_client_cleanup(client);
+            range.offset = received;
+            client = open_release_url(release.url, &range);
+            if (!client) { err = ESP_FAIL; break; }
+            continue;
+        }
+        if (got <= 0) { err = got < 0 ? (esp_err_t)-got : ESP_ERR_INVALID_SIZE; break; }
+        if (received + got > release.size) {
             err = ESP_ERR_INVALID_SIZE; break;
         }
         if (mbedtls_sha256_update(&sha, buffer, got) != 0) { err = ESP_FAIL; break; }
         err = esp_ota_write(handle, buffer, got);
         received += got;
+        if (received - reported >= 131072 || received == release.size) {
+            ESP_LOGI(TAG, "update received %u/%u bytes", (unsigned)received, (unsigned)release.size);
+            reported = received;
+        }
         vTaskDelay(pdMS_TO_TICKS(1));
     }
-    if (err == ESP_OK && (got < 0 || received != release.size ||
+    if (err == ESP_OK && (received != release.size ||
                           !esp_http_client_is_complete_data_received(client)))
         err = ESP_ERR_INVALID_SIZE;
-    esp_http_client_cleanup(client);
+    if (err != ESP_OK)
+        ESP_LOGE(TAG, "update transfer stopped at %u/%u bytes; read=%d complete=%d",
+                 (unsigned)received, (unsigned)release.size, got,
+                 client && esp_http_client_is_complete_data_received(client));
+    if (client) esp_http_client_cleanup(client);
     if (err == ESP_OK && mbedtls_sha256_finish(&sha, digest) != 0) err = ESP_FAIL;
     if (err == ESP_OK && memcmp(digest, release.hash, sizeof digest)) err = ESP_ERR_INVALID_CRC;
     mbedtls_sha256_free(&sha);
@@ -519,6 +585,16 @@ bool net_ota_test(void)
     bool ok = parse_release(valid, &release) && release.size == 1024 &&
         release.storage_size == 2048 && release.storage_hash[0] == 0xaa;
     ok = ok && !parse_release("{}", &release) && !parse_release("{", &release);
+    release_range_t range = { .offset = 128, .size = 1024 };
+    char values[][40] = { "bytes 128-1023/1024", "bytes 0-1023/1024",
+        "bytes 128-1022/1024", "bytes 128-1023/2048", "bytes 128-1023/1024x" };
+    esp_http_client_event_t event = { .event_id = HTTP_EVENT_ON_HEADER,
+        .user_data = &range, .header_key = "content-range" };
+    for (unsigned i = 0; i < sizeof values / sizeof values[0]; i++) {
+        event.header_value = values[i];
+        release_headers(&event);
+        ok = ok && range.valid == (i == 0);
+    }
     const esp_partition_t *running = esp_ota_get_running_partition();
     ESP_LOGI(TAG, "OTA running version=%s partition=%s",
              esp_app_get_description()->version, running ? running->label : "missing");
@@ -598,6 +674,9 @@ static void worker(void *arg)
                     }
                     if (saved) {
                         if (job.kind == JOB_OTA) {
+                            wifi_ap_record_t ap;
+                            if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
+                                ESP_LOGI(TAG, "OTA link RSSI=%d channel=%u", ap.rssi, ap.primary);
                             if (time(NULL) >= 1577836800 || sync_time()) {
                                 if (job.url[0]) ota(job.url);
                                 else ota_latest();

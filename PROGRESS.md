@@ -7692,3 +7692,60 @@ evidence proves delivery and continuity, not that the player likes the sound.
   0822363f8aa4ee86536f73928d73edd535a6df495500fdcb6b9916d4e5015934.
   Final local website build includes five verified images and all337 PNGs;
   the independently published OTA descriptor/application must match this ZIP.
+
+### v1.1.24 publication
+
+- Source6a3d6d4 published as v1.1.24 with ZIP, standalone app and descriptor.
+  Pages43109881286 succeeds, including independent OTA asset/ZIP validation.
+  Independently downloaded ZIP matches the recorded SHA256, and standalone
+  app/descriptor match its manifest. Production browser loads all five verified
+  image hashes, defaults to Update with consent required, displays four main
+  tiles and six Achievement/Border tiles. Original spider plus one small beetle
+  and the Moss image are confirmed in the actual production DOM.
+- All337 live PNG bytes and complete live save-schema JSON match local source.
+
+## Round 79 - Bounded stalled-download recovery and honest OTA limits (v1.1.25)
+
+### Decisions made
+
+- Do not accept the hosted manifest or queued request as OTA success. Actual
+  GitHub application streams repeatedly stall, despite successful certificates,
+  redirects and metadata. Preserve published1.1.24 assets; fix forward instead
+  of silently replacing the release binary or claiming successful OTA.
+- Match IDF's treatment of transient ESP_ERR_HTTP_EAGAIN for descriptor reads,
+  with a30-second deadline. Give applications a five-minute deadline checked
+  between bounded HTTP calls, report exact transport errors/progress/byte counts
+  and allow16 reconnects. A resumed request must return206 with an exact
+  Content-Range start/end/total; retain flash position and running SHA-256.
+  Full app size/hash/project/version and current art checks remain mandatory.
+  No new boot selection occurs on failure; no NVS/art writes occur in OTA.
+- Add native range-header regressions (valid offset, wrong offset/end/total,
+  trailing data), alongside the existing descriptor tests. Console waits420
+  seconds to include association/redirects/download/teardown.
+- Test rather than retain speculative network tuning: active-radio power mode
+  and larger TCP receive window/mailbox did not fix the transfer stalls. Both
+  experiments are reverted; active/default/generated network configuration stays
+  aligned with the established memory policy.
+
+### Actual hosted-transfer evidence and remaining boundary
+
+- Original120-second stream aborted safely. A bounded same-connection retry
+  reached593,198 of2,030,944 bytes before timeout. Active radio mode reached
+  49,152; a larger TCP receive window reached35,578; neither proved a fix.
+- Exact-range recovery reached556,334 of2,030,944 bytes and then timed out.
+  Link diagnostic RSSI was-72 on channel1; this is evidence, not proof of the
+  root cause. Standard IDF HTTPS OTA against the official Pages app also timed
+  out after120 seconds, so the limitation is not isolated to our custom GitHub
+  alias handling. No repeated test is represented as successful installation.
+- Every attempt preserves exact stored-pet bytes and fully stops/deinitializes
+  WiFi, resumes the display/audio and returns internal/DMA largest63,488.
+  No failed attempt selects the incomplete slot. A complete hosted OTA download
+  and new-slot reboot remain UNVERIFIED. Documentation prominently says to use
+  USB; physical browser flashing is also unverified without a granted port.
+- Final browser164/164; packaging/art/capture44/44. Stable1.1.25 wrapper build
+  exits0 with zero warnings. Final hardware/flash evidence follows below.
+- Final stable1.1.25 full flash exits0; native running-version/factory-slot and
+  manifest/range diagnostics pass. Hardware48/48, exact original habitat/
+  ownership restored, radio active0/busy0. render500 and scanloop5 drift0;
+  internal/DMA largest63,488. Forty-second soak PASS, zero faults/errors.
+  This installation used USB, not OTA, and does not close the hosted-OTA gap.
