@@ -113,6 +113,15 @@ typedef enum {
 #define ACH_LEVEL_5         (1u << 8)
 #define ACH_SURVIVED_SICK   (1u << 9)
 #define ACH_FIRST_PERFECT   (1u << 10)
+#define ACH_TEN_CLEANS      (1u << 11)
+#define ACH_TEN_PLAYS       (1u << 12)
+#define ACH_TWENTY_FIVE_MEALS (1u << 13)
+#define ACH_BOND_50         (1u << 14)
+#define ACH_STREAK_3        (1u << 15)
+#define ACH_DECOR_3         (1u << 16)
+#define ACH_BACKGROUNDS_4   (1u << 17)
+#define ACH_FIRST_BORDER    (1u << 18)
+#define ACH_FIRST_GIFT      (1u << 19)
 
 /* The single gift the spider has been given. */
 typedef struct {
@@ -390,6 +399,12 @@ void game_gift_chosen(uint8_t kind);
 
 /* Leave decor placement mode without placing anything. */
 void game_cancel_decor_placement(void);
+void game_on_placement_done(lv_event_t *e);
+void game_on_placement_cancel(lv_event_t *e);
+void game_on_placement_put_away(lv_event_t *e);
+void game_on_placement_blocking(lv_event_t *e);
+bool game_placement_blocking(void);
+bool game_placement_existing(void);
 
 /* WiFi menu actions, marshalled from menu callbacks onto the LVGL task. */
 void game_ui_start_wifi_scan(void);
@@ -406,6 +421,7 @@ void game_on_terrarium_release(lv_event_t *e);
 uint32_t game_now(void);
 void game_add_xp(uint32_t amount);
 void game_award(uint32_t achievement);
+void game_check_achievements(void);
 bool game_save_now(void);
 
 /* ------------------------------------------------------------------ */

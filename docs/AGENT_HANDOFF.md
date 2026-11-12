@@ -13,6 +13,27 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- Help now appears only in the root Menu on native/browser. Decor/gifts and
+  their hold-to-edit action use draggable artwork previews: release does
+  not commit, Done saves once, Cancel keeps the previous placement. Preserve
+  existing purchase timing and the original gift variant when moving. Native
+  preview artwork/ring/Done/Cancel controls are retained objects, not recreated
+  while dragging. See the latest progress round for pointer/memory evidence.
+  Holding furniture opens inline Put Away/Blocking/Done/Cancel controls, not a
+  submenu. Blocking is staged until Done; Cancel discards it. Gifts omit
+  Blocking. All exits remain in the enclosure, with no Back-to-Settings route.
+
+- Current working changes add seventeen help topics in the native/browser game
+  and website, simplify WiFi, move Firmware Update into About, center grid art,
+  enlarge/inset slider targets, gate affordability and fix the missing native
+  Borders route. Keep Wipe Spider last in Settings. Achievements now show all
+  twenty goals, including First Pet, and pay 15 XP +20 Silk exactly once using
+  the existing uint32 bits. Molting was reachable but its state never exited;
+  it now completes after 800ms. Moon/Rain use distinct plucked/mallet scores.
+  Audio's bounded PSRAM producer runs at priority7 above LVGL6; inspect its
+  explicit refill counters, not just missing crash logs. Source changes are
+  not a new public release; use the newest progress evidence for validation.
+
 - v1.1.26 keeps single-slot sliders, explicitly captures held browser pointer
   drags (including rotation/scale and cancellation), and removes submenu
   chevrons from both UIs. Keep selected checkmarks and footer paging arrows.

@@ -2,7 +2,7 @@
  * Spidarium — canvas spider renderer.
  *
  * Draws the spider into a single LVGL canvas instead of composing it from ~46
- * separate lv_obj widgets. This is the architecture Pocket Tank uses, adapted:
+ * separate lv_obj widgets. In this canvas architecture,
  * the creature is a picture, not a scene graph.
  *
  * Why this is better than the widget approach it replaces:

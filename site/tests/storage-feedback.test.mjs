@@ -5,7 +5,7 @@ import { freshState, restoreSim } from '../lib/device-engine.js';
 
 test('storage feedback appears inside the game and survives menu overlays', t => {
   t.mock.timers.enable({ apis:['setTimeout'] });
-  const notice={setAttribute(){},classList:{toggle(){}},hidden:true};
+  const notice={setAttribute(){},classList:{toggle(){}},style:{},hidden:true};
   globalThis.document={createElement:()=>notice};
   t.after(()=>delete globalThis.document);
   const status={classList:{toggle(){}}},children=[];
@@ -13,11 +13,15 @@ test('storage feedback appears inside the game and survives menu overlays', t =>
   DeviceGame.prototype.report.call(ui,'Backup Saved and Verified');
   assert.equal(children.length,1);assert.equal(notice.hidden,false);
   assert.equal(notice.textContent,status.textContent);
+  assert.equal(notice.style.bottom,'');
   t.mock.timers.tick(6000);assert.equal(notice.hidden,true);
   DeviceGame.prototype.report.call(ui,'Card write failed',true);
   assert.equal(children.length,1);assert.equal(notice.hidden,false);
   t.mock.timers.tick(6000);assert.equal(notice.hidden,false);
   t.mock.timers.tick(4000);assert.equal(notice.hidden,true);
+  ui.placement={};
+  DeviceGame.prototype.report.call(ui,'Placement failed',true);
+  assert.equal(notice.style.bottom,'112px','keep errors clear of Done/Cancel');
 });
 
 test('browser backup visibly reports download request and click failure', t => {

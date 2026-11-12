@@ -196,8 +196,28 @@ const giftEffects=[
 export const GIFTS = giftRows.map(([key,name,level,effect,bonuses],id)=>Object.freeze({
   id,key,name,level,unlock_level:level,effect:giftEffects[id],cost:12+level*4,asset:`gift_${key}`,interaction:interactions[id],bonuses:Object.freeze(bonuses),
 }));
-export const ACHIEVEMENTS = ['first_meal','first_pet','first_clean','first_play','first_hunt','first_molt','ten_meals','adult','level_5','survived_sick','first_perfect']
-  .map((id,index)=>Object.freeze({id,bit:1<<index,name:id.split('_').map(w=>w[0].toUpperCase()+w.slice(1)).join(' '),asset:`achievement_${id}`,xp:15}));
+export const ACHIEVEMENTS = [
+  ['first_meal','First Meal','Catch and eat one prey'],
+  ['first_pet','First Pet','Tap the spider gently'],
+  ['first_clean','First Clean','Clean a dirty enclosure'],
+  ['first_play','First Play','Finish one minigame'],
+  ['first_hunt','First Hunt','Land a successful pounce'],
+  ['first_molt','First Molt','Reach age two days'],
+  ['ten_meals','Ten Meals','Eat ten prey'],
+  ['adult','Adulthood','Reach age five days'],
+  ['level_5','Level 5','Earn 200 total XP'],
+  ['survived_sick','Survived Sickness','Recover with food and mood'],
+  ['first_perfect','Perfect Hunt','Catch prey inside the aim ring'],
+  ['ten_cleans','Tidy Keeper','Clean ten dirty enclosures','ui_clean'],
+  ['ten_plays','Playmate','Finish ten minigames','ui_play'],
+  ['twenty_five_meals','Hungry Hunter','Eat twenty-five prey','ui_feed'],
+  ['bond_50','Trusted Friend','Reach bond fifty','ui_mood'],
+  ['streak_3','Regular Visitor','Claim three days in a row','ui_daily'],
+  ['decor_3','Interior Designer','Place three decorations','ui_decor'],
+  ['backgrounds_4','Scene Collector','Own four backgrounds','ui_backgrounds'],
+  ['first_border','Framed','Buy an enclosure border','ui_display'],
+  ['first_gift','Gift Giver','Place a gift in the enclosure','ui_treats'],
+].map(([id,name,goal,asset],index)=>Object.freeze({id,bit:1<<index,name,goal,asset:asset??`achievement_${id}`,xp:15,silk:20}));
 export const MIND_RULES = [
   ['starving','food',100,25,-1,-1,-1,-1,-1],['exhausted','rest',90,-1,20,-1,-1,-1,-1],
   ['hungry','food',70,60,-1,-1,-1,-1,1],['peckish','explore',50,60,-1,-1,-1,-1,0],
@@ -315,7 +335,7 @@ export function validateProgress(raw) {
   for(const key of ['xp','silk','age_ticks','days_lived','last_molt_day','meals','pets','cleans','plays','taps','seed',
     'visits','cleanCount','catches','games','bestGame'])number(key,0,U32);
   number('level',1,U32);number('stage',0,2);number('temperament',0,3);number('bond',0,100);
-  number('achievements',0,(1<<11)-1);number('gifts_owned',0,raw.version>=12?U32:(1<<18)-1);
+  number('achievements',0,(1<<ACHIEVEMENTS.length)-1);number('gifts_owned',0,raw.version>=12?U32:(1<<18)-1);
   number('streak',0,65535);number('best_streak',0,65535);
   for(const key of ['colour','bodyColour'])number(key,0,5);
   for(const key of ['pupil_colour','leg_colour','fang_colour','eyeColour','legColour','fangColour'])number(key,0,8);
@@ -478,7 +498,7 @@ export function restoreSim(raw,options={}) {
   if(!(raw.version<3)&&Array.isArray(raw.poop))
     s.poop=raw.poop.slice(0,C.MAX_POOP).map(p=>({x:round(clamp(p.x,34,446)),y:round(clamp(p.y,34,446)),
       expires:p.expires,dirt:Number.isFinite(p.dirt)?p.dirt:C.POOP_DIRT_SPIDER,bug:p.bug===true}));
-  s.gifts_owned>>>=0;s.achievements&=(1<<11)-1;
+  s.gifts_owned>>>=0;s.achievements&=(1<<ACHIEVEMENTS.length)-1;
   s.level=Math.floor(s.xp/50)+1;
   s.days_lived=Math.floor(s.age_ticks/2880);
   s.stage=s.days_lived>=5?2:s.days_lived>=2?1:s.stage;
@@ -498,7 +518,14 @@ export function addXP(s,n){
 export function awardAchievement(s,id){
   const a=typeof id==='number'?ACHIEVEMENTS.find(a=>a.bit===id):ACHIEVEMENTS.find(a=>a.id===id);
   if(!a||s.achievements&a.bit)return false;
-  s.achievements|=a.bit;addXP(s,15);return true;
+  s.achievements|=a.bit;addXP(s,a.xp);addSilk(s,a.silk);return true;
+}
+export function checkAchievements(s){
+  const conditions={ten_cleans:s.cleans>=10,ten_plays:s.plays>=10,twenty_five_meals:s.meals>=25,
+    bond_50:s.bond>=50,streak_3:s.daily_streak>=3,decor_3:decorPlacedCount(s)>=3,
+    backgrounds_4:BACKGROUNDS.filter((_,id)=>backgroundOwned(s,id)).length>=4,
+    first_border:BACKGROUNDS.some((_,id)=>borderOwned(s,id)),first_gift:!!s.gift.used};
+  for(const [id,ready] of Object.entries(conditions))if(ready)awardAchievement(s,id);
 }
 // Generic native reward helpers, not achievement name dispatch.
 export function award(s,xp,silk=0){addXP(s,xp);addSilk(s,silk);}
@@ -1005,6 +1032,7 @@ export function recomputeMood(s) {
   s.mood=clamp(s.mood+Math.trunc((base-s.mood)/4));
 }
 function needsTick(s) {
+  checkAchievements(s);
   const r=runtime(s),now=r.now_ms,b=giftBonus(s);
   // Establish the task baseline for the current day. A no-op once the day
   // matches, and it covers a migrated or restored save that has no baseline.
@@ -1133,7 +1161,7 @@ function behaviourTick(s,dt){
       else if(s.sick?s.energy>=30:s.energy>=95||s.hunger<25)setState(s,0);
       break;
     case 5:if(now>=s.eat_until_ms)setState(s,0);break;
-    case 8:break;
+    case 8:if(now>=r.oneshot_until)setState(s,0);break;
     case 7:if(now>=r.oneshot_until&&now>r.idle_until)setState(s,0);break;
     case 4:{
       const p=r.pounce;if(!p){setState(s,0);break;}

@@ -36,7 +36,6 @@ be read as an input the module logs it and carries on with the others.
   both the device and the browser.
 - **Browser splat on a catch**, and the care button matches the device's 44px
   target.
-- **"Pocket Tank"** appears only in the README credit, as inspiration.
 
 ## Verification
 

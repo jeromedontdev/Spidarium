@@ -1,8 +1,9 @@
-import * as E from './sim.js?v=1.1.26';
+import * as E from './sim.js?v=1.1.27';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.26';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.27';
+import { HELP_TOPICS } from './help.js';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -15,13 +16,17 @@ const MENU_ICONS = {
   Daily:'daily', 'Check In':'daily', Treats:'treats', Backgrounds:'backgrounds', Achievements:'achievements',
   'Prey Species':'prey', Decor:'decor', 'Placed Items':'decor',
   Settings:'settings', WiFi:'wifi', 'SD Card':'sd', About:'about',
-  Battery:'battery', Runtime:'battery', Display:'display', Brightness:'energy',
+  Battery:'battery', Runtime:'daily', Display:'display', Brightness:'energy',
   Sound:'sound', Volume:'volume', 'Background Music':'music',
   'Auto Feed':'auto_feed', 'Save Screenshot':'screenshot', 'Wipe Spider':'reset',
   'Catch 3 Prey':'feed', 'Clean 2 Times':'clean', 'Play 3 Times':'play', 'Pet 4 Times':'mood',
   Move:'decor', 'Move Gift':'decor', 'Put Away':'back', 'Put Gift Away':'back', Blocking:'lock',
-  'Power Mode':'energy', 'Screen Timeout':'sleep', 'Deep Sleep After':'sleep', 'RTC Wake Interval':'energy',
-  'Deep Sleep Now':'sleep',
+  'Power Mode':'energy', 'Screen Timeout':'display', 'Deep Sleep After':'sleep', 'RTC Wake Interval':'daily',
+  'Deep Sleep Now':'lock',
+  'Help Guide':'about', 'Screen Rotation':'display', Mute:'sound', Soundtrack:'backgrounds',
+  'Music Volume':'music', 'Back Up Save':'sd', 'Restore Save':'back', 'SD Status':'status',
+  'Firmware Update':'wifi', 'Browser Edition':'about',
+  'Hardware':'settings', 'License':'xp',
 };
 const POWER_MODES = ['Balanced','Battery Saver','RTC Sleep'];
 const SCREEN_TIMEOUTS = ['30 Seconds','1 Minute','2 Minutes','5 Minutes','Never'];
@@ -46,6 +51,7 @@ export class DeviceGame {
     this.spiderCtx = this.spiderCanvas.getContext('2d'); this.spiderPixels = this.spiderCtx.createImageData(96, 96);
     this.images = new Map(); this.hud = false; this.modal = null; this.game = null; this.giftKind = null; this.decorKind = null; this.decorMoveSlot = null; this.decorSlot = null; this.aiming = false; this.lastGame = -1;
     this.error = false;
+    this.placement = null; this.placementPointer = null;
     this.audio = new DeviceAudio((message, error) => this.report(message, error));
     let storage;
     try { storage = window.localStorage; }
@@ -64,7 +70,8 @@ export class DeviceGame {
     this.canvas.addEventListener('pointerdown', event => this.pointerDown(event));
     this.canvas.addEventListener('pointermove', event => this.pointerMove(event));
     this.canvas.addEventListener('pointerup', event => this.pointerUp(event));
-    this.canvas.addEventListener('pointercancel', () => {
+    this.canvas.addEventListener('pointercancel', event => {
+      this.releasePlacementPointer(event.pointerId);
       this.aiming = false; this.cancelLongPress(); E.cancelAim(this.state);
     });
     this.canvas.addEventListener('pointerleave', () => this.cancelLongPress());
@@ -91,6 +98,7 @@ export class DeviceGame {
       this.screen.append(this.notice);
     }
     this.notice.textContent = message;
+    this.notice.style.bottom = this.placement ? '112px' : '';
     this.notice.classList.toggle('error', error);
     this.notice.hidden = false;
     clearTimeout(this.noticeTimer);
@@ -145,13 +153,19 @@ export class DeviceGame {
     this.ear.setAttribute('aria-keyshortcuts', 'M');
     this.earMark = element('span', ''); this.ear.append(this.earMark);
     this.ear.onclick = () => {
-      if (this.decorMoveSlot !== null) { this.decorMoveSlot = null; this.report('Decor Move Cancelled.'); }
-      else if (this.decorKind !== null) { this.decorKind = null; this.report('Decor Placement Cancelled.'); }
-      else if (this.giftKind !== null) { this.giftKind = null; this.giftMoving = false; this.report('Gift Placement Cancelled.'); }
+      if (this.placement) { this.cancelPlacement(); return; }
       else { E.cancelAim(this.state); this.hud = !this.hud; }
       this.refreshHUD();
     };
     this.controls.append(this.ear);
+    this.placementControls=element('div','d-placement-controls');
+    this.controls.append(this.placementControls);
+    this.placementHint=box(element('div','d-placement-hint','Slide to position; Done saves'),80,340,320,36);
+    this.placementControls.append(this.placementHint);
+    this.placementAway=this.button(this.placementControls,'Put Away',80,316,148,64,()=>this.putAwayPlacement(),'ui_decor');
+    this.placementBlocking=this.button(this.placementControls,'Blocking: Off',252,316,148,64,()=>this.togglePlacementBlocking(),'ui_lock');
+    this.button(this.placementControls,'Cancel',80,388,148,64,()=>this.cancelPlacement(),'ui_back');
+    this.button(this.placementControls,'Done',252,388,148,64,()=>this.commitPlacement(),'ui_decor');
     const battery = this.button(this.hudLayer, '', 412, 8, 52, 44, () => this.open('Battery'));
     battery.classList.add('d-battery'); battery.setAttribute('aria-label', 'Battery: Hardware Telemetry Unavailable');
     this.refreshHUD();
@@ -160,6 +174,12 @@ export class DeviceGame {
     this.hudLayer.hidden = !this.hud;
     this.ear.hidden = Boolean(this.modal || this.game || !this.started);
     const placing = this.giftKind !== null || this.decorKind !== null || this.decorMoveSlot !== null;
+    this.placementControls.hidden = !this.placement;
+    const editing=this.placement&&(this.placement.slot!==null||this.giftMoving);
+    this.placementAway.hidden=!editing;
+    this.placementBlocking.hidden=!editing||this.placement.gift;
+    this.placementBlocking.lastChild.textContent=this.placement?.blocking?'Blocking: On':'Blocking: Off';
+    this.placementHint.style.top=editing?'272px':'340px';
     this.earMark.textContent = placing ? '×' : '';
     this.ear.setAttribute('aria-label', placing ? 'Cancel Placement' : 'Show or Hide Care HUD');
     this.ear.setAttribute('aria-expanded', String(this.hud));
@@ -227,6 +247,7 @@ export class DeviceGame {
         row('Borders', () => this.open('Borders'), 'Mix and Match Frames',
           { submenu: true,icon:`border_${this.state.background}_0` }),
         /* Settings is always the last row: it is the least-used entry. */
+        row('Help Guide',()=>this.open('Help Guide'),'All Features and Controls'),
         row('Settings', () => this.open('Settings'), 'Sound, Display, WiFi', { submenu: true }),
       ]; break;
       case 'Daily': {
@@ -258,7 +279,7 @@ export class DeviceGame {
       }
       case 'Treats': rows = [
         ...E.TREATS.map((item, id) => row(item.name,
-          () => { E.buyTreat(this.state, id); this.persist(); this.open('Treats'); },
+          () => { E.buyTreat(this.state, id); this.persist(); this.open('Treats',page); },
           `${item.cost} Silk${this.state.silk < item.cost ? ' / Need More' : ''}`,
           { enabled: this.state.silk >= item.cost,
             icon:item.asset })),
@@ -279,26 +300,11 @@ export class DeviceGame {
             if (!owned && !E.buyDecor(this.state, id)) return;
             this.persist();
             this.beginDecorPlacement(id);
-          }, detail, { icon: E.decorSprite(id), enabled: unlocked });
+          }, detail, { icon: E.decorSprite(id), enabled: unlocked && (owned || this.state.silk >= item.cost) });
         });
         break;
       }
-      case 'Decor Item': {
-        const slot = this.decorSlot;
-        const item = this.state.decor[slot];
-        if (!item || item.kind === E.DECOR_EMPTY) { this.open('Decor'); return; }
-        rows = [
-          row('Blocking', () => {
-            E.toggleDecorBlocking(this.state, slot); this.persist(); this.open('Decor Item', 0, slot);
-          }, `${item.blocking ? 'Blocks' : 'Walk Over'} / Tap to Change`,
-          { icon: E.decorSprite(item.kind), selected: !!item.blocking }),
-          row('Move', () => this.beginDecorMove(slot), `At ${item.x}, ${item.y}`, { submenu: true }),
-          row('Put Away', () => {
-            E.removeDecor(this.state, slot); this.persist(); this.open('Decor');
-          }, 'Returns It to the Shop', { destructive: true }),
-        ];
-        break;
-      }
+      case 'Decor Item': this.beginDecorMove(this.decorSlot); return;
       case 'Settings': rows = [
         row('WiFi', () => this.open('WiFi'), 'Networks and Time Sync', { submenu: true }),
         row('SD Card', () => this.open('SD Card'), 'Back Up and Restore', { submenu: true }),
@@ -317,7 +323,7 @@ export class DeviceGame {
           { checkbox:true, selected:this.state.sound }),
         row('Background Music', () => { this.state.music_enabled = this.state.music_enabled ? 0 : 1; this.persist(); this.open(name); },
           'Gentle Ambient Score', { checkbox:true, selected:!!this.state.music_enabled }),
-        row('Music Volume', null, `${this.state.music_volume}%`, { icon:'ui_volume',
+        row('Music Volume', null, `${this.state.music_volume}%`, { icon:'ui_energy',
           slider:{value:this.state.music_volume,min:0,max:100,step:5,change:value=>{
             this.state.music_volume=value;this.persist();
           }} }),
@@ -332,7 +338,8 @@ export class DeviceGame {
         if (!E.buyBackground(this.state,id)) { this.report('Not enough Silk for that background.',true); return; }
         this.persist(); this.open(name, page);
       }, this.state.theme === key ? 'In Use' : E.backgroundOwned(this.state,id) ? 'Owned / Apply Free' : `${E.BACKGROUND_COSTS[id]} Silk / Buy`,
-      { selected: this.state.theme === key, icon: `background_${key}_0` })); break;
+      { selected: this.state.theme === key, enabled:E.backgroundOwned(this.state,id) || this.state.silk>=E.BACKGROUND_COSTS[id],
+        icon: `background_${key}_0` })); break;
       case 'Borders': rows = [
         row('No Border',()=>{E.buyBorder(this.state,255);this.persist();this.open('Borders');},
           'Remove Frame / Free',{selected:this.state.border_id===255,icon:'border_minimal_0'}),
@@ -341,10 +348,14 @@ export class DeviceGame {
           this.persist();this.open('Borders',Math.floor((id+1)/6));
         },this.state.border_id===id?'In Use':E.borderOwned(this.state,id)?'Owned / Apply Free':
           `${E.borderCost(id)} Silk / Buy Frame`,
-        {selected:this.state.border_id===id,icon:`border_${key}_0`}))
+        {selected:this.state.border_id===id,enabled:E.borderOwned(this.state,id)||this.state.silk>=E.borderCost(id),icon:`border_${key}_0`}))
       ];break;
-      case 'Achievements': rows = E.ACHIEVEMENTS.filter(item => item.id !== 'first_pet').map(item => row(item.name, null,
-        this.state.achievements & item.bit ? 'Earned' : 'Not Yet', { selected: Boolean(this.state.achievements & item.bit), icon: item.asset })); break;
+      case 'Achievements': rows = E.ACHIEVEMENTS.map(item => row(item.name,
+        () => {this.close();this.modal=this.panel(item.name,()=>this.open('Achievements',page));
+          this.modal.name='Achievement';this.copy(`${item.goal}.\n\nReward: +${item.xp} XP and +${item.silk} Silk, paid automatically once.\n\n${this.state.achievements&item.bit?'Earned. Existing earned achievements are not paid twice.':'Keep caring for your spider to unlock this milestone.'}`,
+            ()=>this.open('Achievements',page),'Back to Achievements');},
+        `${this.state.achievements & item.bit ? 'Earned' : 'Goal'} / +${item.xp} XP +${item.silk} Silk`,
+        { selected: Boolean(this.state.achievements & item.bit), icon: item.asset })); break;
       case 'Prey Species': rows = E.SPECIES.map(item => row(title(item.name), null,
         `${this.state.level >= item.unlock_level ? 'Available' : 'Locked'} / Level ${item.unlock_level} / Food x${item.hunger_mult.toFixed(1)}`,
         { icon: `prey_${item.key}_walk_0` })); break;
@@ -357,10 +368,7 @@ export class DeviceGame {
             : `${item.cost} Silk / ${this.state.silk >= item.cost ? 'Buy' : 'Earn More Silk'}`;
         return row(item.name, () => this.previewGift(item.id, status, page), `${status}\n${item.effect}`, { enabled: available, selected: current, icon: item.asset });
       }); break;
-      case 'Gift Item': rows = [
-        row('Move Gift', () => this.beginGiftMove(), 'No Silk Cost / Bonus Stays', { icon: E.GIFTS[this.state.gift.kind].asset, enabled: !!this.state.gift.used }),
-        row('Put Gift Away', () => { E.removeGift(this.state); this.persist(); this.open('Menu'); }, 'Keep Ownership', { destructive:true, enabled:!!this.state.gift.used }),
-      ]; break;
+      case 'Gift Item': this.beginGiftMove(); return;
       case 'WiFi': this.copy('WiFi, time sync and OTA use the board’s radio.\n\nThis browser has no ESP32 radio. Use Your Device → WiFi Setup below to set real credentials over local USB. The game never sends WiFi credentials or makes a simulated connection.', () => { this.close(); document.querySelector('[data-hardware="wifi"]').click(); document.querySelector('#device').scrollIntoView(); }, 'Open Device Tools'); return;
       case 'SD Card': rows = [
         row('Back Up Save', () => this.download(), 'Download Browser JSON / Not Device SD'),
@@ -384,10 +392,23 @@ export class DeviceGame {
         row('Deep Sleep Now', null, 'Device Only / Right Button Wakes'),
         row('Automatic Sleep', null, 'RTC Mode / Battery Only; Browser Stays Awake'),
       ]; break;
+      case 'Help Guide': rows=HELP_TOPICS.map((topic,index)=>row(topic.name,()=>{
+        this.close();this.modal=this.panel(topic.name,()=>this.open('Help Guide',Math.floor(index/4)));
+        this.modal.name='Help Topic';this.copy(topic.text,()=>this.open('Help Guide',Math.floor(index/4)),'Back to Help');
+      },'Tap to Read',{icon:`ui_${topic.icon}`}));break;
+      case 'Firmware Update':this.copy('Browser progress updates with this website.\n\nTo update a real board, use Your Device below. Choose Update to preserve the pet, and export a backup first.\n\nOn the device: Settings > About > Firmware Update checks GitHub Latest. Failed downloads do not select an incomplete application.',()=>{
+        this.close();document.querySelector('[data-hardware="flash"]').click();document.querySelector('#device').scrollIntoView();
+      },'Open USB Updater');return;
       case 'Display': rows = [
         row('Brightness', null, 'Controlled by Your Screen'),
         row('Screen Rotation', () => this.rotate(), this.rotationName(), { submenu: true }),
-      ]; break;      case 'About': this.copy('Spidarium / Browser Edition\n\nDevice-coordinate UI and native game rules.\n480 × 480, scaled without changing targets.\nProgress stays in this browser.\n\nHardware: Waveshare ESP32-S3\nESP-IDF 5.5.6 / LVGL 9.6\n\nPersonal, Non-Commercial License.'); return;
+      ]; break;
+      case 'About': rows=[
+        row('Browser Edition',null,'Spidarium / Local Progress'),
+        row('Hardware',null,'Waveshare ESP32-S3 / 480x480'),
+        row('License',null,'Personal, Non-Commercial'),
+        row('Firmware Update',()=>this.open('Firmware Update'),'USB Updater / Real Device'),
+      ];break;
       default: throw new Error(`Unknown menu: ${name}`);
     }
     this.list(rows, page, ['Treats', 'Backgrounds', 'Borders', 'Decor', 'Gifts', 'Achievements', 'Prey Species'].includes(name) ? 3 : 2);
@@ -404,6 +425,8 @@ export class DeviceGame {
   back(name) {
     if (name === 'Menu' || name === 'Gifts') this.close();
     else if (name === 'Soundtrack') this.open('Sound', 1);
+    else if (name === 'Firmware Update') this.open('About');
+    else if (name === 'Help Guide') this.open('Menu');
     else if (name === 'Daily' || name === 'Treats') this.open('Menu');
     else if (name === 'Decor Item') this.open('Decor');
     else this.open(['Backgrounds', 'Borders', 'Achievements', 'Prey Species', 'Decor', 'Settings'].includes(name) ? 'Menu' : 'Settings');
@@ -415,9 +438,8 @@ export class DeviceGame {
     return `Streak ${this.state.daily_streak}`;
   }
   achievementDetail() {
-    const earned = E.ACHIEVEMENTS.filter(item => item.id !== 'first_pet' &&
-      (this.state.achievements & item.bit)).length;
-    return `${earned} of ${E.ACHIEVEMENTS.filter(item => item.id !== 'first_pet').length} Earned`;
+    const earned = E.ACHIEVEMENTS.filter(item => this.state.achievements & item.bit).length;
+    return `${earned} of ${E.ACHIEVEMENTS.length} Earned`;
   }
   speciesDetail() {
     const unlocked = E.SPECIES.filter(item => this.state.level >= item.unlock_level).length;
@@ -572,22 +594,68 @@ export class DeviceGame {
   chooseGift(id) {
     const result = E.purchaseGift(this.state, id);
     if (!result) { this.report('Gift purchase is unavailable: check its level and Silk cost.', true); return; }
-    this.close(); this.giftMoving = false; this.giftKind = id; this.hud = false; this.refreshHUD();
-    this.report('Tap the tank to place the gift. X cancels placement.'); this.persist();
+    this.close(); this.giftMoving = false; this.giftKind = id;
+    this.startPlacement(true,id,null,240,240);this.persist();
   }
   beginGiftMove() {
     if (!this.state.gift.used) { this.report('No gift is placed.',true); return; }
     this.close(); this.giftKind = this.state.gift.kind; this.giftMoving = true;
-    this.hud = false; this.refreshHUD(); this.report('Tap to move your gift. X cancels; no Silk cost.');
+    this.startPlacement(true,this.giftKind,null,this.state.gift.x,this.state.gift.y);
   }
   beginDecorPlacement(id) {
-    this.close(); this.decorKind = id; this.decorMoveSlot = null; this.hud = false; this.refreshHUD();
-    this.report('Tap the tank to place the decor. X cancels placement.');
+    this.close(); this.decorKind = id; this.decorMoveSlot = null;
+    this.startPlacement(false,id,null,240,240);
   }
   beginDecorMove(slot) {
-    if (!this.state.decor[slot] || this.state.decor[slot].kind === E.DECOR_EMPTY) return;
-    this.close(); this.decorKind = null; this.decorMoveSlot = slot; this.hud = false; this.refreshHUD();
-    this.report('Tap the tank to move the decor. X cancels placement.');
+    const item=this.state.decor[slot];
+    if (!item || item.kind === E.DECOR_EMPTY) {this.report('That decor is no longer placed.',true);return;}
+    this.close(); this.decorKind = null; this.decorMoveSlot = slot;
+    this.startPlacement(false,item.kind,slot,item.x,item.y);
+  }
+  startPlacement(gift,kind,slot,x,y){
+    this.cancelLongPress();clearTimeout(this.petTapTimer);this.petTapTimer=null;
+    this.aiming=false;E.cancelAim(this.state);this.lastTap=null;this.hud=false;
+    this.placement={gift,kind,slot,x,y};this.placementPointer=null;
+    if(!gift&&slot!==null)this.placement.blocking=!!this.state.decor[slot].blocking;
+    this.refreshHUD();this.report('Slide to position. Done saves; Cancel leaves placement unchanged.');
+    if(this.notice)this.notice.hidden=true;
+  }
+  positionPlacement(x,y){
+    const p=this.placement;
+    const radius=p.gift?0:E.DECOR_KINDS[p.kind].radius;
+    p.x=Math.round(clamp(x,34+radius,446-radius));
+    p.y=Math.round(clamp(y,34+radius,446-radius));
+  }
+  releasePlacementPointer(id){
+    if(this.placementPointer!==id)return;
+    if(this.canvas.hasPointerCapture(id))this.canvas.releasePointerCapture(id);
+    this.placementPointer=null;
+  }
+  cancelPlacement(notify=true){
+    if(this.placementPointer!==null)this.releasePlacementPointer(this.placementPointer);
+    this.placement=null;this.giftKind=null;this.giftMoving=false;this.decorKind=null;this.decorMoveSlot=null;
+    this.refreshHUD();
+    if(notify)this.report('Placement Cancelled.');
+  }
+  commitPlacement(){
+    const p=this.placement;if(!p)return;
+    const ok=p.gift?(this.giftMoving?E.moveGift(this.state,p.x,p.y):E.placeGift(this.state,p.kind,p.x,p.y)):
+      p.slot!==null?E.moveDecor(this.state,p.slot,p.x,p.y):E.placeDecor(this.state,p.kind,p.x,p.y)>=0;
+    if(!ok){this.report('Placement could not be saved. Check ownership and available space.',true);return;}
+    if(!p.gift&&p.slot!==null)this.state.decor[p.slot].blocking=p.blocking?1:0;
+    this.cancelPlacement(false);this.persist();this.report('Placement Saved.');
+  }
+  togglePlacementBlocking(){
+    const p=this.placement;
+    if(!p||p.gift||p.slot===null)return;
+    p.blocking=!p.blocking;this.refreshHUD();
+  }
+  putAwayPlacement(){
+    const p=this.placement;
+    if(!p||(!this.giftMoving&&p.slot===null))return;
+    const ok=p.gift?E.removeGift(this.state):E.removeDecor(this.state,p.slot);
+    if(!ok){this.report('Item could not be put away.',true);return;}
+    this.cancelPlacement(false);this.persist();this.report('Item Put Away / Ownership Kept.');
   }
   play() {
     this.close(); let kind = Math.floor(Math.random() * 3);
@@ -651,8 +719,17 @@ export class DeviceGame {
     const p = this.point(event);
     this.pointerOrigin = p; this.pointerConsumed = false;
     void this.audio.unlock(this.state.sound);
-    /* Hold on a placed decor item to open its move/blocking menu. A tap on the
-     * tank is already the pounce gesture, so this has to be a long press. */
+    if(this.placement){
+      if(this.placementPointer!==null)return;
+      this.pointerConsumed=true;this.placementPointer=event.pointerId;
+      const preview=this.placement,reach=preview.gift?40:E.DECOR_KINDS[preview.kind].radius*2+12;
+      const grabbed=Math.abs(p.x-preview.x)<=reach&&Math.abs(p.y-preview.y)<=reach;
+      this.placementOffset={x:grabbed?preview.x-p.x:0,y:grabbed?preview.y-p.y:0};
+      this.positionPlacement(p.x+this.placementOffset.x,p.y+this.placementOffset.y);
+      this.canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+    /* Hold furniture to edit directly over the playfield. */
     if (this.decorKind === null && this.decorMoveSlot === null && this.giftKind === null) {
       const slot = E.decorHitTest(this.state, p.x, p.y);
       const gift = E.giftHitTest(this.state,p.x,p.y);
@@ -660,29 +737,12 @@ export class DeviceGame {
         this.longPress = setTimeout(() => {
           this.longPress = null; this.aiming = false; E.cancelAim(this.state);
           this.pointerConsumed = true;
-          this.open(gift ? 'Gift Item' : 'Decor Item', 0, gift ? null : slot);
+          if(gift)this.beginGiftMove();else this.beginDecorMove(slot);
+          this.placementPointer=event.pointerId;
+          this.placementOffset={x:this.placement.x-p.x,y:this.placement.y-p.y};
+          this.canvas.setPointerCapture(event.pointerId);
         }, 550);
       }
-    }
-    if (this.decorMoveSlot !== null) {
-      this.pointerConsumed = true;
-      if (!E.moveDecor(this.state, this.decorMoveSlot, p.x, p.y)) {
-        this.report('That decor cannot be moved.', true); return;
-      }
-      this.decorMoveSlot = null; this.refreshHUD(); this.persist(); this.report('Decor Moved.'); return;
-    }
-    if (this.decorKind !== null) {
-      this.pointerConsumed = true;
-      const slot = E.placeDecor(this.state, this.decorKind, p.x, p.y);
-      if (slot < 0) { this.report('No room left for decor.', true); return; }
-      this.decorKind = null; this.refreshHUD(); this.persist(); this.report('Decor Placed.'); return;
-    }
-    if (this.giftKind !== null) {
-      this.pointerConsumed = true;
-      const moving = this.giftMoving;
-      const result = moving ? E.moveGift(this.state,p.x,p.y) : E.placeGift(this.state, this.giftKind, p.x, p.y);
-      if (!result) { this.report('Gift cannot be placed here.', true); return; }
-      this.giftKind = null; this.giftMoving = false; this.refreshHUD(); this.persist(); this.report(moving ? 'Gift Moved.' : 'Gift Placed.'); return;
     }
     this.aiming = E.beginAim(this.state, p.x, p.y) !== false;
     if (this.aiming) this.canvas.setPointerCapture(event.pointerId);
@@ -692,12 +752,22 @@ export class DeviceGame {
   }
   pointerMove(event) {
     const p = this.point(event);
+    if(this.placement){
+      if(this.placementPointer===event.pointerId)
+        this.positionPlacement(p.x+this.placementOffset.x,p.y+this.placementOffset.y);
+      return;
+    }
     if (this.pointerOrigin && Math.hypot(p.x-this.pointerOrigin.x,p.y-this.pointerOrigin.y) > 12)
       this.cancelLongPress();
     if (this.aiming) { const p = this.point(event); E.moveAim(this.state, p.x, p.y); }
   }
   pointerUp(event) {
     this.cancelLongPress();
+    if(this.placement){
+      this.pointerMove(event);
+      this.releasePlacementPointer(event.pointerId);
+      return;
+    }
     if (this.pointerConsumed || this.modal || this.game || this.hud) return;
     const point = this.point(event), now = performance.now();
     const tapping = this.pointerOrigin &&
@@ -731,6 +801,13 @@ export class DeviceGame {
   }
   key(event) {
     if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) return;
+    if(this.placement){
+      const step={ArrowLeft:[-10,0],ArrowRight:[10,0],ArrowUp:[0,-10],ArrowDown:[0,10]}[event.key];
+      if(step){event.preventDefault();this.positionPlacement(this.placement.x+step[0],this.placement.y+step[1]);}
+      else if(event.key==='Enter'){event.preventDefault();this.commitPlacement();}
+      else if(event.key==='Escape'){event.preventDefault();this.cancelPlacement();}
+      return;
+    }
     if (event.key.toLowerCase() === 'm' && this.started && !this.modal && !this.game) { event.preventDefault(); this.hud = !this.hud; this.refreshHUD(); return; }
     if (this.modal || this.game || !this.started || this.hud) return;
     const s = this.state;
@@ -766,7 +843,8 @@ export class DeviceGame {
     // Decor is part of the floor, so it draws under the gift and the droppings.
     // The source is 64x64 and the footprint radius is in playfield pixels, so
     // the drawn size is radius*4 -- the same ratio the device uses.
-    for (const item of s.decor ?? []) {
+    for (const [slot,item] of (s.decor ?? []).entries()) {
+      if(this.placement&&!this.placement.gift&&this.placement.slot===slot)continue;
       if (item.kind === E.DECOR_EMPTY) continue;
       const def = E.DECOR_KINDS[item.kind];
       if (!def) continue;
@@ -775,9 +853,15 @@ export class DeviceGame {
       const size = def.radius * 4;
       ctx.drawImage(image, item.x - size / 2, item.y - size / 2, size, size);
     }
-    if (s.gift?.used) {
+    if (s.gift?.used && !this.placement?.gift) {
       const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
       if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
+    }
+    if(this.placement){
+      const p=this.placement,size=p.gift?64:E.DECOR_KINDS[p.kind].radius*4;
+      const image=this.image(p.gift?E.GIFTS[p.kind].asset:E.decorSprite(p.kind));
+      if(image.complete&&image.naturalWidth)ctx.drawImage(image,p.x-size/2,p.y-size/2,size,size);
+      ctx.strokeStyle='#f5c86b';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2-2,p.y-size/2-2,size+4,size+4);
     }
     for (const poop of s.poop ?? []) {
       if (poop.bug) {

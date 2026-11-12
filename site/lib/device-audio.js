@@ -1,6 +1,6 @@
 const EFFECTS = {
   eat: [880, 520, 140, .16], pounce: [0, 0, 90, .12],
-  molt: [440, 1320, 260, .12], tap: [0, 0, 60, .08],
+  molt: [440, 1320, 260, .12], tap: [392, 330, 60, .04],
   alert: [660, 440, 180, .18], aim: [520, 760, 90, .08],
   perfect: [880, 1760, 160, .18],
 };
@@ -102,8 +102,15 @@ function extraMusicSample(position, id) {
   const chord = Math.floor(p / track.chord), local = p - chord * track.chord;
   let value = extraPad(track, id, chord, local);
   if (local < track.overlap) value += extraPad(track, id, (chord + 3) & 3, local + track.chord);
-  const note = Math.floor(p / track.note);
-  return value + bell(track.melody[note], p - note * track.note, track.note, track.attack, track.melodyGain);
+  value=Math.trunc(value/4);
+  if(id===1){
+    const beat=local%20000;
+    return value+bell(track.pad[chord*6]>>>1,beat,20000,240,1850)+
+      bell(track.melody[Math.floor(p/20000)%16],beat,16000,160,1500);
+  }
+  const beat=local%6000,voice=Math.floor(local/6000)%3;
+  return value+bell(track.pad[chord*6+voice*2]*2,beat,6000,96,2100)+
+    bell(track.melody[Math.floor(p/24000)%16],local%24000,18000,320,700);
 }
 export function petSample(i) {
   return bell(PET_NOTES[0], i, PET_SAMPLES, 160, 1500) +

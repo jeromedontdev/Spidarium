@@ -7,6 +7,8 @@
  * (screens), audio (SFX), save (persistence).
  */
 #include "game.h"
+#include "achievements.h"
+#include "help_content.h"
 
 #include "assets.h"
 #include "audio.h"
@@ -130,6 +132,27 @@ void game_award(uint32_t achievement)
     /* Achievements used to be inert flags. They now pay XP, so progression
      * has teeth. */
     game_add_xp(XP_ACHIEVEMENT);
+    game_add_silk(ACHIEVEMENT_SILK);
+    ESP_LOGI(TAG, "achievement reward +%u XP +%u Silk", XP_ACHIEVEMENT, ACHIEVEMENT_SILK);
+}
+
+void game_check_achievements(void)
+{
+    uint32_t before = g.achievements;
+    if (g.cleans >= 10) game_award(ACH_TEN_CLEANS);
+    if (g.plays >= 10) game_award(ACH_TEN_PLAYS);
+    if (g.meals >= 25) game_award(ACH_TWENTY_FIVE_MEALS);
+    if (g.bond >= 50) game_award(ACH_BOND_50);
+    if (g.daily_streak >= 3) game_award(ACH_STREAK_3);
+    if (decor_placed_count() >= 3) game_award(ACH_DECOR_3);
+    int backgrounds = 0;
+    for (int i = 0; i < THEME_COUNT; i++) {
+        if (theme_owned(i)) backgrounds++;
+        if (border_owned(i)) game_award(ACH_FIRST_BORDER);
+    }
+    if (backgrounds >= 4) game_award(ACH_BACKGROUNDS_4);
+    if (g.gift.used) game_award(ACH_FIRST_GIFT);
+    if (g.achievements != before) game_save_now();
 }
 
 bool game_save_now(void)
@@ -341,6 +364,100 @@ void game_on_sleep(lv_event_t *e)
     needs_sleep();
 }
 
+static int16_t s_place_x, s_place_y, s_place_dx, s_place_dy;
+static bool s_place_dragging;
+static bool s_place_blocking;
+
+bool game_placement_blocking(void) { return s_place_blocking; }
+bool game_placement_existing(void)
+{
+    return (g_decor_mode && g_decor_move_slot >= 0) || (g.gift_mode && s_gift_moving);
+}
+
+void game_on_placement_blocking(lv_event_t *e)
+{
+    (void)e;
+    if (!g_decor_mode || g_decor_move_slot < 0) return;
+    s_place_blocking = !s_place_blocking;
+    ui_hud_set_place_mode(true, NULL);
+}
+
+void game_on_placement_put_away(lv_event_t *e)
+{
+    (void)e;
+    if (g_decor_mode && g_decor_move_slot >= 0) {
+        if (!decor_remove(g_decor_move_slot)) {
+            ESP_LOGW(TAG, "put away rejected: decor missing");
+            ui_hud_bubble("Cannot Put Away", 0xf5c86b, 1800);
+            return;
+        }
+        terrarium_refresh_decor();
+    } else if (g.gift_mode && s_gift_moving) {
+        g.gift.used = 0;
+        terrarium_refresh_gift();
+    } else return;
+    game_on_placement_cancel(NULL);
+    if (!game_save_now()) ui_hud_bubble("Save Not Queued / See Log", 0xf5c86b, 2200);
+}
+
+static void placement_position(int32_t x, int32_t y)
+{
+    uint8_t kind = g.gift_mode ? g.gift_selected : g_decor_selected;
+    int radius = g.gift_mode ? 0 : decor_def(kind)->radius;
+    int left = g_play.left + radius, right = g_play.right - radius;
+    int top = g_play.top + radius, bottom = g_play.bottom - radius;
+    s_place_x = x < left ? left : x > right ? right : x;
+    s_place_y = y < top ? top : y > bottom ? bottom : y;
+    terrarium_preview_item(g.gift_mode != 0, kind, g_decor_mode ? g_decor_move_slot : -1,
+                           s_place_x, s_place_y);
+}
+
+void game_on_placement_cancel(lv_event_t *e)
+{
+    (void)e;
+    g.gift_mode = 0;
+    g_decor_mode = 0;
+    g_decor_move_slot = -1;
+    s_gift_moving = false;
+    s_place_dragging = false;
+    terrarium_preview_hide();
+    ui_hud_set_place_mode(false, NULL);
+}
+
+void game_on_placement_done(lv_event_t *e)
+{
+    (void)e;
+    if (!g.gift_mode && !g_decor_mode) return;
+    if (g_decor_mode) {
+        bool ok = g_decor_move_slot >= 0 ? decor_move(g_decor_move_slot, s_place_x, s_place_y) :
+                  decor_place(g_decor_selected, s_place_x, s_place_y) >= 0;
+        if (!ok) {
+            ESP_LOGW(TAG, "decor placement commit failed");
+            ui_hud_bubble("Cannot Place / See Log", 0xf5c86b, 1800);
+            return;
+        }
+        if (g_decor_move_slot >= 0 &&
+            (decor_at(g_decor_move_slot)->blocking != s_place_blocking))
+            decor_toggle_blocking(g_decor_move_slot);
+        terrarium_refresh_decor();
+    } else {
+        if (!s_gift_moving && !gift_purchase(g.gift_selected)) {
+            ui_hud_bubble("Not Enough Silk", 0xf5c86b, 1800);
+            return;
+        }
+        if (!s_gift_moving) {
+            g.gift.kind = g.gift_selected;
+            g.gift.variant = (uint8_t)(rand() % 3);
+        }
+        g.gift.used = 1;
+        g.gift.x = s_place_x;
+        g.gift.y = s_place_y;
+        terrarium_refresh_gift();
+    }
+    game_on_placement_cancel(NULL);
+    if (!game_save_now()) ui_hud_bubble("Save Not Queued / See Log", 0xf5c86b, 2200);
+}
+
 void game_on_gift(lv_event_t *e)
 {
     (void)e;
@@ -352,9 +469,7 @@ void game_on_gift(lv_event_t *e)
      * meant you could not see the options or go back to one you had passed. */
     if (g.gift_mode) {
         /* Cancel placement. */
-        g.gift_mode = 0;
-        terrarium_preview_hide();
-        ui_hud_set_gift_mode(false);
+        game_on_placement_cancel(NULL);
         return;
     }
 
@@ -371,9 +486,7 @@ void game_on_gift(lv_event_t *e)
 void game_cancel_decor_placement(void)
 {
     if (!g_decor_mode) return;
-    g_decor_mode = 0;
-    g_decor_move_slot = -1;
-    ui_hud_set_place_mode(false, NULL);
+    game_on_placement_cancel(NULL);
     ESP_LOGI(TAG, "decor placement cancelled");
 }
 
@@ -393,8 +506,10 @@ void game_gift_chosen(uint8_t kind)
     ui_hud_gift_menu_hide();
     ui_hud_set_chrome(false);
 
-    /* Enter placement mode: the next tank tap decides where it goes. */
     g.gift_mode = 1;
+    behaviour_aim_cancel();
+    s_place_dragging = false;
+    placement_position(ui.W / 2, ui.H / 2);
     ui_hud_set_gift_mode(true);
 
 }
@@ -430,6 +545,8 @@ enum {
     MENU_POWER_CONFIRM,
     MENU_SOUNDTRACK,
     MENU_BORDERS,
+    MENU_WIFI_SCAN,
+    MENU_HELP,
 };
 
 static void menu_open(int which);
@@ -483,8 +600,31 @@ static char s_wifi_message[80];
 
 static void back_to_wifi(void) { menu_open(MENU_WIFI); }
 static void back_to_settings(void) { menu_open(MENU_SETTINGS); }
-static void back_to_decor(void) { menu_open(MENU_DECOR); }
 static void back_to_sound(void) { menu_open(MENU_SOUND); ui_menu_set_page(1); }
+static void back_to_about(void) { menu_open(MENU_ABOUT); }
+static void back_to_ota(void) { menu_open(MENU_OTA); }
+static uint8_t s_help_topic, s_achievement;
+static void back_to_help(void) { menu_open(MENU_HELP); ui_menu_set_page(s_help_topic / 4); }
+static void on_help_pick(uint8_t id)
+{
+    if (id >= HELP_TOPIC_COUNT) { ESP_LOGE(TAG, "invalid help topic %u", id); return; }
+    s_help_topic = id;
+    ui_menu_open_text(HELP_TOPICS[id].name, HELP_TOPICS[id].text);
+    ui_menu_set_back(back_to_help);
+}
+static void back_to_achievements(void) { menu_open(MENU_ACHIEVEMENTS); ui_menu_set_page(s_achievement / 6); }
+static void on_achievement_pick(uint8_t id)
+{
+    if (id >= ACHIEVEMENT_COUNT) { ESP_LOGE(TAG, "invalid achievement %u", id); return; }
+    s_achievement = id;
+    char text[256];
+    snprintf(text, sizeof text, "%s.\n\nReward: +15 XP and +20 Silk, paid automatically once.\n\n%s",
+             ACHIEVEMENTS[id].goal, g.achievements & ACHIEVEMENTS[id].bit ?
+             "Earned. Existing earned achievements are not paid twice." : "Keep caring for your spider to unlock this milestone.");
+    ui_menu_open_text(ACHIEVEMENTS[id].name, text);
+    ui_menu_set_back(back_to_achievements);
+}
+static void on_about_pick(uint8_t id) { if (id == 3) menu_open(MENU_OTA); }
 
 static bool on_password(const char *password)
 {
@@ -505,7 +645,7 @@ static bool on_ssid(const char *ssid)
 static bool on_ota_url(const char *url)
 {
     if (!net_ota_start(url)) return false;
-    menu_open(MENU_WIFI);
+    menu_open(MENU_OTA);
     return true;
 }
 
@@ -513,11 +653,11 @@ static void on_ota_pick(uint8_t id)
 {
     if (id == 1) {
         ui_menu_open_input("Update URL (HTTPS)", "", false, 255, on_ota_url);
-        ui_menu_set_back(back_to_wifi);
+        ui_menu_set_back(back_to_ota);
         return;
     }
     if (!net_ota_latest()) ui_hud_bubble("Update Rejected; Save a Network", 0xf5c86b, 2200);
-    menu_open(MENU_WIFI);
+    menu_open(MENU_OTA);
 }
 
 static void on_saved_network(uint8_t id)
@@ -560,6 +700,7 @@ static void on_theme_pick(uint8_t id)
     if (!theme_set(id)) {
         ui_hud_bubble("Not Enough Silk", 0xf5c86b, 1800);
         menu_open(MENU_THEME);
+        ui_menu_set_page(id / 6);
         return;
     }
     terrarium_rebuild();
@@ -571,6 +712,7 @@ static void on_border_pick(uint8_t id)
     if (border_set(id)) terrarium_rebuild();
     else ui_hud_bubble("Border Purchase Failed", 0xf5c86b, 1800);
     menu_open(MENU_BORDERS);
+    ui_menu_set_page(id == 255 ? 0 : (id + 1) / 6);
 }
 
 static void on_sound_pick(uint8_t id)
@@ -638,6 +780,8 @@ static void on_main_pick(uint8_t id)
     case MENU_SETTINGS:     menu_open(MENU_SETTINGS);     break;
     case MENU_SPECIES:      menu_open(MENU_SPECIES);      break;
     case MENU_DECOR:        menu_open(MENU_DECOR);        break;
+    case MENU_BORDERS:      menu_open(MENU_BORDERS);      break;
+    case MENU_HELP:         menu_open(MENU_HELP);         break;
     case MENU_GIFT_ITEM:    menu_open(MENU_GIFT_ITEM);    break;
     default: break;
     }
@@ -673,13 +817,13 @@ static void on_shop_pick(uint8_t id)
         treat_buy((treat_t)id);
         game_save_now();
         menu_open(MENU_SHOP);
+        ui_menu_set_page(id / 6);
         return;
     }
     back_to_main();
 }
 
-/* Enter decor placement mode: the next tank tap decides where the item goes.
- * Mirrors the gift flow so the two placement gestures feel identical. */
+/* Stage the visible position until the player explicitly commits it. */
 static void decor_begin_placement(uint8_t kind)
 {
     const decor_def_t *def = decor_def(kind);
@@ -689,7 +833,10 @@ static void decor_begin_placement(uint8_t kind)
     g_decor_move_slot = -1;
     ui_menu_close();
     ui_hud_set_chrome(false);
-    ui_hud_set_place_mode(true, "Tap to place; X cancels");
+    behaviour_aim_cancel();
+    s_place_dragging = false;
+    placement_position(ui.W / 2, ui.H / 2);
+    ui_hud_set_place_mode(true, "Slide to position; Done saves");
 }
 
 /* Reposition an item that is already in the tank. The item keeps its slot,
@@ -698,15 +845,21 @@ static void decor_begin_move(int slot)
 {
     if (!decor_at(slot)) return;
     g_decor_move_slot = slot;
+    s_place_blocking = decor_at(slot)->blocking;
+    g_decor_selected = decor_at(slot)->kind;
     g_decor_mode = 1;
     ui_menu_close();
     ui_hud_set_chrome(false);
-    ui_hud_set_place_mode(true, "Tap to move; X cancels");
+    behaviour_aim_cancel();
+    s_place_dragging = false;
+    placement_position(decor_at(slot)->x, decor_at(slot)->y);
+    ui_hud_set_place_mode(true, "Slide to move; Done saves");
 }
 
 static void on_decor_pick(uint8_t id)
 {
     if (id >= DECOR_COUNT) {
+        ESP_LOGW(TAG, "decor menu rejected invalid id %u", id);
         menu_open(MENU_DECOR);
         return;
     }
@@ -715,6 +868,7 @@ static void on_decor_pick(uint8_t id)
     if (!decor_unlocked(id)) {
         ui_hud_bubble("Level Too Low", 0xf5c86b, 1800);
         menu_open(MENU_DECOR);
+        ui_menu_set_page(id / 6);
         return;
     }
     /* Buying and placing are one action: the player picked the item because
@@ -722,37 +876,11 @@ static void on_decor_pick(uint8_t id)
     if (!decor_owned(id) && !decor_buy(id)) {
         ui_hud_bubble("Not Enough Silk", 0xf5c86b, 1800);
         menu_open(MENU_DECOR);
+        ui_menu_set_page(id / 6);
         return;
     }
     game_save_now();
     decor_begin_placement(id);
-}
-
-/* Per-item actions. Row 0 flips blocking, row 1 starts a move, row 2 removes. */
-static void on_decor_item_pick(uint8_t id)
-{
-    int slot = s_decor_item_slot;
-    if (!decor_at(slot)) { menu_open(MENU_DECOR); return; }
-    switch (id) {
-    case 0:
-        decor_toggle_blocking(slot);
-        terrarium_refresh_decor();
-        game_save_now();
-        menu_open(MENU_DECOR_ITEM);
-        break;
-    case 1:
-        decor_begin_move(slot);
-        break;
-    case 2:
-        decor_remove(slot);
-        terrarium_refresh_decor();
-        game_save_now();
-        menu_open(MENU_DECOR);
-        break;
-    default:
-        menu_open(MENU_DECOR);
-        break;
-    }
 }
 
 static void on_gift_item_pick(uint8_t id)
@@ -761,9 +889,13 @@ static void on_gift_item_pick(uint8_t id)
     if (id == 0) {
         s_gift_moving = true;
         g.gift_mode = 1;
+        g.gift_selected = g.gift.kind;
         ui_menu_close();
         ui_hud_set_chrome(false);
-        ui_hud_set_place_mode(true, "Tap to move gift; X cancels");
+        behaviour_aim_cancel();
+        s_place_dragging = false;
+        placement_position(g.gift.x, g.gift.y);
+        ui_hud_set_place_mode(true, "Slide to move; Done saves");
     } else {
         g.gift.used = 0;
         terrarium_refresh_gift();
@@ -822,7 +954,7 @@ static void on_wifi_pick(uint8_t id)
     if (id == 0) {
         if (!net_scan_start())
             snprintf(s_wifi_message, sizeof s_wifi_message, "Scan rejected: worker unavailable or busy");
-        menu_open(MENU_WIFI);
+        menu_open(MENU_WIFI_SCAN);
         return;
     }
     if (id == 1) {
@@ -831,7 +963,6 @@ static void on_wifi_pick(uint8_t id)
         return;
     }
     if (id == 2) { menu_open(MENU_WIFI_SAVED); return; }
-    if (id == 3) { menu_open(MENU_OTA); return; }
     int i = (int)id - 4;
     if (i >= 0 && i < net_scan_count()) {
         snprintf(s_join_ssid, sizeof s_join_ssid, "%s", net_scan_ssid(i));
@@ -922,10 +1053,10 @@ static void menu_open(int which)
             snprintf(daily_sub, sizeof daily_sub, "Streak %u", (unsigned)g.daily_streak);
         }
         int earned = 0;
-        for (int i = 0; i < 10; i++) {
-            if (g.achievements & (1u << i)) earned++;
+        for (int i = 0; i < ACHIEVEMENT_COUNT; i++) {
+            if (g.achievements & ACHIEVEMENTS[i].bit) earned++;
         }
-        snprintf(ach_sub, sizeof ach_sub, "%d of 10 Earned", earned);
+        snprintf(ach_sub, sizeof ach_sub, "%d of %d Earned", earned, ACHIEVEMENT_COUNT);
         int unlocked = 0;
         for (int i = 0; i < PREY_SPECIES_COUNT; i++) {
             if (species_unlocked((prey_species_t)i)) unlocked++;
@@ -944,8 +1075,9 @@ static void menu_open(int which)
          * one the player reaches for least often, so it belongs at the bottom
          * of the list rather than in the middle. */
         items[6] = (ui_menu_item_t){ "Borders", "Mix and Match Frames", true, false, true, MENU_BORDERS };
-        items[7] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
-        ui_menu_open("Spidarium", items, 8, on_main_pick);
+        items[7] = (ui_menu_item_t){ "Help Guide", "All Features and Controls", true, false, true, MENU_HELP };
+        items[8] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
+        ui_menu_open("Spidarium", items, 9, on_main_pick);
         ui_menu_set_item_icon(6, sprite_border_index(g.border_id == 255 ? g.background_id : g.border_id));
         break;
     }
@@ -1019,8 +1151,14 @@ static void menu_open(int which)
                                        true, false, true, 1 };
         items[n++] = (ui_menu_item_t){ "Saved Networks", "Join or Forget",
                                        true, false, true, 2 };
-        items[n++] = (ui_menu_item_t){ "Firmware Update", net_has_credentials() ? "GitHub Latest Release" : "Save a Network First",
-                                       net_has_credentials(), false, true, 3 };
+        ui_menu_open("WiFi", items, n, on_wifi_pick);
+        ui_menu_set_back(back_to_settings);
+        break;
+    }
+    case MENU_WIFI_SCAN: {
+        int n = 0;
+        items[n++] = (ui_menu_item_t){ "Scan Status", s_wifi_message[0] ? s_wifi_message : net_status_text(),
+                                       false, false, false, 0 };
         static char details[12][32];
         int found = net_scan_count();
         for (int i = 0; i < found && n < 20; i++) {
@@ -1037,8 +1175,9 @@ static void menu_open(int which)
             items[n].id         = (uint8_t)(i + 4);
             n++;
         }
-        ui_menu_open("WiFi", items, n, on_wifi_pick);
-        ui_menu_set_back(back_to_settings);
+        ui_menu_open("Nearby Networks", items, n, on_wifi_pick);
+        for (int i = 0; i < n; i++) ui_menu_set_item_icon(i, sprite_icon_index(i ? "wifi" : "status"));
+        ui_menu_set_back(back_to_wifi);
         break;
     }
     case MENU_WIFI_SAVED: {
@@ -1064,7 +1203,7 @@ static void menu_open(int which)
         items[2] = (ui_menu_item_t){ "Update Status", net_status_text(), false, false, false, 2 };
         items[3] = (ui_menu_item_t){ "After Installation", "Press RESET to Apply / Art Changes Need USB", false, false, false, 3 };
         ui_menu_open("Firmware Update", items, 4, on_ota_pick);
-        ui_menu_set_back(back_to_wifi);
+        ui_menu_set_back(back_to_about);
         break;
 
     case MENU_SD: {
@@ -1111,7 +1250,8 @@ static void menu_open(int which)
             }
             items[i].label     = names[i];
             items[i].detail    = theme_sub[i];
-            items[i].enabled   = theme_unlocked((uint8_t)i);
+            items[i].enabled   = theme_unlocked((uint8_t)i) &&
+                (theme_owned(i) || g.silk >= theme_cost(i));
             items[i].selected  = (theme_current() == t);
             items[i].is_submenu = false;
             items[i].id        = (uint8_t)i;
@@ -1132,7 +1272,7 @@ static void menu_open(int which)
             if (g.border_id == i) snprintf(details[i], sizeof details[i], "In Use");
             else if (border_owned(i)) snprintf(details[i], sizeof details[i], "Owned / Apply Free");
             else snprintf(details[i], sizeof details[i], "%u Silk / Buy Frame", border_cost(i));
-            items[i + 1] = (ui_menu_item_t){ names[i], details[i], true,
+            items[i + 1] = (ui_menu_item_t){ names[i], details[i], border_owned(i) || g.silk >= border_cost(i),
                                             g.border_id == i, false, i };
         }
         ui_menu_open_grid("Borders", items, THEME_COUNT + 1, on_border_pick);
@@ -1155,7 +1295,7 @@ static void menu_open(int which)
         ui_menu_set_item_checkbox(2);
         ui_menu_set_item_slider(0, audio_volume(), on_volume_slider);
         ui_menu_set_item_slider(3, g.music_volume, on_volume_slider);
-        ui_menu_set_item_icon(3, sprite_icon_index("volume"));
+        ui_menu_set_item_icon(3, sprite_icon_index("energy"));
         ui_menu_set_item_icon(4, sprite_background_index(g.music_track == 0 ? 2 : g.music_track == 1 ? 18 : 6));
         ui_menu_set_back(back_to_settings);
         break;
@@ -1172,31 +1312,17 @@ static void menu_open(int which)
         break;
 
     case MENU_ACHIEVEMENTS: {
-        /* Read-only list: the achievements are shown, not toggled. */
-        /* "first pet" is gone: the pet mechanic was removed, so the
-         * achievement could never be earned again. */
-        static const char *const names[10] = {
-            "First Meal", "First Clean", "First Play", "First Hunt",
-            "First Molt", "Ten Meals", "Adulthood", "Level 5",
-            "Survived Sickness", "Perfect Hunt",
-        };
-        static const uint32_t bits[10] = {
-            ACH_FIRST_MEAL, ACH_FIRST_CLEAN, ACH_FIRST_PLAY,
-            ACH_FIRST_HUNT, ACH_FIRST_MOLT, ACH_TEN_MEALS, ACH_ADULT,
-            ACH_LEVEL_5, ACH_SURVIVED_SICK, ACH_FIRST_PERFECT,
-        };
-        for (int i = 0; i < 10; i++) {
-            bool got = (g.achievements & bits[i]) != 0;
-            items[i].label     = names[i];
-            /* Every row carries a subtext, so the list scans as one column. */
-            items[i].detail    = got ? "Earned" : "Not Yet";
-            items[i].enabled   = false;   /* read-only */
+        for (int i = 0; i < ACHIEVEMENT_COUNT; i++) {
+            bool got = (g.achievements & ACHIEVEMENTS[i].bit) != 0;
+            items[i].label     = ACHIEVEMENTS[i].name;
+            items[i].detail    = got ? "Earned / +15 XP +20 Silk" : "Goal / +15 XP +20 Silk";
+            items[i].enabled   = true;
             items[i].selected  = got;
             items[i].is_submenu = false;
             items[i].id        = (uint8_t)i;
         }
-        ui_menu_open_grid("Achievements", items, 10, NULL);
-        for (int i = 0; i < 10; i++) ui_menu_set_item_icon(i, sprite_achievement_index(bits[i]));
+        ui_menu_open_grid("Achievements", items, ACHIEVEMENT_COUNT, on_achievement_pick);
+        for (int i = 0; i < ACHIEVEMENT_COUNT; i++) ui_menu_set_item_icon(i, sprite_achievement_index(ACHIEVEMENTS[i].bit));
         ui_menu_set_back(back_to_main);
         break;
     }
@@ -1273,7 +1399,7 @@ static void menu_open(int which)
             snprintf(shop_sub[i], sizeof shop_sub[i], "%lu Silk%s",
                      (unsigned long)cost, g.silk < cost ? " / Need More" : "");
             items[i] = (ui_menu_item_t){ shop_name[i], shop_sub[i],
-                                         true, false, true, (uint8_t)i };
+                                         g.silk >= cost, false, true, (uint8_t)i };
         }
         static char shop_title[48];
         snprintf(shop_title, sizeof shop_title, "Treats / %lu Silk",
@@ -1304,7 +1430,8 @@ static void menu_open(int which)
              * selected yanked the player to page 2 the moment they bought
              * anything past the third row. The owned state is already in the
              * subtext and the checkmark is not needed here. */
-            items[i] = (ui_menu_item_t){ decor_name[i], decor_sub[i], true,
+            items[i] = (ui_menu_item_t){ decor_name[i], decor_sub[i],
+                                         decor_unlocked(i) && (decor_owned(i) || g.silk >= def->cost),
                                          false, true, (uint8_t)i };
         }
         static char decor_title[48];
@@ -1318,34 +1445,11 @@ static void menu_open(int which)
         ui_menu_set_back(back_to_main);
         break;
     }
-    case MENU_DECOR_ITEM: {
-        const decor_item_t *item = decor_at(s_decor_item_slot);
-        if (!item) { menu_open(MENU_DECOR); break; }
-        const decor_def_t *def = decor_def(item->kind);
-        if (!def) { menu_open(MENU_DECOR); break; }
-        static char item_name[32], block_sub[48], move_sub[48];
-        ui_menu_format_name(item_name, sizeof item_name, def->name);
-        snprintf(block_sub, sizeof block_sub, "%s / Tap to Change",
-                 item->blocking ? "Blocks" : "Walk Over");
-        snprintf(move_sub, sizeof move_sub, "At %d, %d", item->x, item->y);
-        items[0] = (ui_menu_item_t){ "Blocking", block_sub, true,
-                                     item->blocking, false, 0 };
-        items[1] = (ui_menu_item_t){ "Move", move_sub, true, false, true, 1 };
-        items[2] = (ui_menu_item_t){ "Put Away", "Returns It to the Shop", true,
-                                     false, false, 2 };
-        ui_menu_open(item_name, items, 3, on_decor_item_pick);
-        ui_menu_set_item_icon(0, sprite_decor_item_index(item->kind));
-        ui_menu_set_destructive(2);
-        ui_menu_set_back(back_to_decor);
+    case MENU_DECOR_ITEM:
+        decor_begin_move(s_decor_item_slot);
         break;
-    }
     case MENU_GIFT_ITEM:
-        items[0] = (ui_menu_item_t){ "Move Gift", "No Silk Cost / Bonus Stays", g.gift.used, false, true, 0 };
-        items[1] = (ui_menu_item_t){ "Put Gift Away", "Keep Ownership", g.gift.used, false, false, 1 };
-        ui_menu_open("Placed Gift", items, 2, on_gift_item_pick);
-        if (g.gift.used) ui_menu_set_item_icon(0, sprite_gift_index(g.gift.kind));
-        ui_menu_set_destructive(1);
-        ui_menu_set_back(back_to_main);
+        on_gift_item_pick(0);
         break;
     case MENU_ABOUT:
         items[0] = (ui_menu_item_t){ "Spidarium", esp_app_get_description()->version,
@@ -1354,8 +1458,16 @@ static void menu_open(int which)
                                      false, false, false, 0 };
         items[2] = (ui_menu_item_t){ "Personal, Non-Commercial", "See LICENSE",
                                      false, false, false, 0 };
-        ui_menu_open("About", items, 3, NULL);
+        items[3] = (ui_menu_item_t){ "Firmware Update", "GitHub Latest Release", true, false, true, 3 };
+        ui_menu_open("About", items, 4, on_about_pick);
         ui_menu_set_back(back_to_settings);
+        break;
+    case MENU_HELP:
+        for (int i = 0; i < HELP_TOPIC_COUNT; i++)
+            items[i] = (ui_menu_item_t){ HELP_TOPICS[i].name, "Tap to Read", true, false, true, i };
+        ui_menu_open("Help Guide", items, HELP_TOPIC_COUNT, on_help_pick);
+        for (int i = 0; i < HELP_TOPIC_COUNT; i++) ui_menu_set_item_icon(i, sprite_icon_index(HELP_TOPICS[i].icon));
+        ui_menu_set_back(back_to_main);
         break;
 
     default:
@@ -1429,6 +1541,7 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "password")) game_ui_open_wifi_password_entry();
     else if (!strcmp(name, "species"))  menu_open(MENU_SPECIES);
     else if (!strcmp(name, "about"))    menu_open(MENU_ABOUT);
+    else if (!strcmp(name, "help"))     menu_open(MENU_HELP);
     else if (!strcmp(name, "sd"))       on_settings_pick(1);
     else if (!strcmp(name, "theme"))    menu_open(MENU_THEME);
     else if (!strcmp(name, "borders"))  menu_open(MENU_BORDERS);
@@ -1598,7 +1711,7 @@ bool game_ui_call_value(game_ui_action_t action, int value)
 
     /* Wait for the render tick to pick it up. Bounded, so a stalled render
      * timer cannot hang the console forever. */
-    int attempts = action == GAME_UI_TEST_UI || action == GAME_UI_DECOR_TEST ? 500 : 100;
+    int attempts = action == GAME_UI_TEST_UI ? 1000 : action == GAME_UI_DECOR_TEST ? 500 : 100;
     for (int i = 0; i < attempts && s_ui_req != GAME_UI_NONE; i++) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -1671,22 +1784,80 @@ static bool test_furniture_pointer(void)
     lv_obj_update_layout(ui.screen);
     test_pointer_send(indev, &pointer, 110, 150, LV_INDEV_STATE_PRESSED);
     test_pointer_send(indev, &pointer, 110, 150, LV_INDEV_STATE_PRESSED);
-    bool held = ui_menu_visible() && s_open_menu == MENU_DECOR_ITEM;
+    bool held = !ui_menu_visible() && g_decor_mode && g_decor_move_slot == slot;
     test_pointer_send(indev, &pointer, 110, 150, LV_INDEV_STATE_RELEASED);
     s_decor_item_slot = slot;
-    on_decor_item_pick(1);
+    decor_begin_move(slot);
+    test_pointer_send(indev, &pointer, 110, 150, LV_INDEV_STATE_PRESSED);
     test_pointer_send(indev, &pointer, 330, 350, LV_INDEV_STATE_PRESSED);
+    bool staged = g_decor_mode && s_place_x == 330 && s_place_y == 350 &&
+                  g.decor[slot].x == 110 && g.decor[slot].y == 150;
     test_pointer_send(indev, &pointer, 330, 350, LV_INDEV_STATE_RELEASED);
+    staged = staged && g_decor_mode && g.decor[slot].x == 110;
+    test_pointer_send(indev, &pointer, 326, 420, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 326, 420, LV_INDEV_STATE_RELEASED);
     bool moved = slot >= 0 && g.decor[slot].x == 330 && g.decor[slot].y == 350 &&
                  !g_decor_mode && g.decor_owned == 1;
     g.gift.kind = 0; g.gift.variant = 2; g.gift.used = 1; g.gift.x = 200; g.gift.y = 200;
     terrarium_refresh_gift();
     uint32_t silk = g.silk, owned = g.gifts_owned;
     on_gift_item_pick(0);
+    test_pointer_send(indev, &pointer, 200, 200, LV_INDEV_STATE_PRESSED);
     test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_PRESSED);
+    staged = staged && g.gift_mode && s_place_x == 350 && s_place_y == 180 &&
+             g.gift.x == 200 && g.gift.y == 200;
     test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_RELEASED);
+    staged = staged && g.gift_mode && g.gift.x == 200;
+    test_pointer_send(indev, &pointer, 326, 420, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 326, 420, LV_INDEV_STATE_RELEASED);
     bool gift_moved = !g.gift_mode && g.gift.x == 350 && g.gift.y == 180 &&
                       g.gift.variant == 2 && g.silk == silk && g.gifts_owned == owned;
+    on_gift_item_pick(0);
+    test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 300, 240, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 300, 240, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 154, 420, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 154, 420, LV_INDEV_STATE_RELEASED);
+    bool cancelled = !g.gift_mode && g.gift.x == 350 && g.gift.y == 180 &&
+                     g.gift.variant == 2 && g.silk == silk;
+    decor_begin_move(slot);
+    placement_position(-100, 1000);
+    cancelled = cancelled && g.decor[slot].x == 330 &&
+                s_place_x == g_play.left + decor_def(0)->radius &&
+                s_place_y == g_play.bottom - decor_def(0)->radius;
+    game_on_placement_cancel(NULL);
+    cancelled = cancelled && g.decor[slot].x == 330 && g.decor[slot].y == 350;
+    int count = decor_placed_count();
+    decor_begin_placement(0);
+    placement_position(180, 260);
+    bool created = decor_placed_count() == count;
+    game_on_placement_done(NULL);
+    created = created && decor_placed_count() == count + 1;
+    g.gifts_owned |= 1u;
+    game_gift_chosen(0);
+    placement_position(260, 260);
+    created = created && g.gift.x == 350;
+    game_on_placement_done(NULL);
+    created = created && g.gift.x == 260 && g.gift.y == 260 && g.silk == silk;
+    decor_begin_move(slot);
+    uint8_t blocking = g.decor[slot].blocking;
+    test_pointer_send(indev, &pointer, 326, 344, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 326, 344, LV_INDEV_STATE_RELEASED);
+    bool actions = game_placement_blocking() != blocking && g.decor[slot].blocking == blocking;
+    game_on_placement_cancel(NULL);
+    actions = actions && g.decor[slot].blocking == blocking;
+    decor_begin_move(slot);
+    game_on_placement_blocking(NULL);
+    game_on_placement_done(NULL);
+    actions = actions && g.decor[slot].blocking != blocking;
+    decor_begin_move(slot);
+    test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_RELEASED);
+    actions = actions && !g_decor_mode && !decor_at(slot) && !ui_menu_visible() && decor_owned(0);
+    on_gift_item_pick(0);
+    test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_RELEASED);
+    actions = actions && !g.gift_mode && !g.gift.used && !ui_menu_visible() && g.silk == silk;
     lv_indev_set_long_press_time(indev, 550);
     uint8_t before_lights = g.lights_dimmed;
     for (int i = 0; i < 2; i++) {
@@ -1698,13 +1869,14 @@ static bool test_furniture_pointer(void)
     g = original;
     decor_restore_extra(original_extra);
     apply_enclosure_lights();
-    g_decor_mode = 0; g_decor_move_slot = -1; s_gift_moving = false;
+    game_on_placement_cancel(NULL);
     s_testing_placement = false;
     ui_hud_set_place_mode(false, NULL);
     terrarium_refresh_gift();
     terrarium_refresh_decor();
-    ESP_LOGI(TAG, "furniture pointer: hold=%d decor_move=%d gift_move=%d lights=%d", held, moved, gift_moved, lights);
-    return held && moved && gift_moved && lights;
+    ESP_LOGI(TAG, "furniture pointer: hold=%d staged=%d decor_move=%d gift_move=%d cancel=%d new=%d actions=%d lights=%d",
+             held, staged, moved, gift_moved, cancelled, created, actions, lights);
+    return held && staged && moved && gift_moved && cancelled && created && actions && lights;
 }
 
 static bool test_hunt_pointer(int32_t target_x, int32_t target_y)
@@ -2055,6 +2227,49 @@ static void ui_service_request(void)
         menu_open(MENU_SD);
         bool sd_feedback = !strcmp(s_menu_items[2].label, "SD Status") &&
                            !strcmp(s_menu_items[2].detail, s_sd_message ? s_sd_message : sd_status_text());
+        menu_open(MENU_MAIN);
+        bool borders_route = ui_menu_test_pick(MENU_BORDERS) && ui_menu_visible() &&
+                             s_open_menu == MENU_BORDERS && !strcmp(s_menu_items[0].label, "No Border");
+        uint32_t original_silk = g.silk;
+        g.silk = 0;
+        menu_open(MENU_SHOP);
+        bool shop_gates = !s_menu_items[0].enabled && !ui_menu_test_pick(0);
+        ui_menu_set_page(1);
+        on_shop_pick(TREAT_COUNT - 1);
+        shop_gates = shop_gates && ui_menu_visible() && ui_menu_page() == (TREAT_COUNT - 1) / 6 && g.silk == 0;
+        g.silk = original_silk;
+        menu_open(MENU_ABOUT);
+        bool help_routes = ui_menu_test_pick(3) && s_open_menu == MENU_OTA;
+        menu_open(MENU_MAIN);
+        help_routes = help_routes && ui_menu_test_pick(MENU_HELP) && s_open_menu == MENU_HELP &&
+                      ui_menu_test_pick(0) && ui_menu_visible();
+        back_to_help();
+        for (int i = 0; i < HELP_TOPIC_COUNT; i++) {
+            on_help_pick(i);
+            help_routes = ui_menu_test_text_fits() && help_routes;
+        }
+        game_state_t original_state = g;
+        g.achievements = 0; g.xp = 0; g.level = 1; g.silk = 0;
+        bool rewards = true;
+        for (int i = 0; i < ACHIEVEMENT_COUNT; i++) {
+            uint32_t prior = g.silk;
+            game_award(ACHIEVEMENTS[i].bit);
+            uint32_t paid = g.silk;
+            game_award(ACHIEVEMENTS[i].bit);
+            rewards = rewards && (g.achievements & ACHIEVEMENTS[i].bit) &&
+                      paid >= prior && paid == g.silk;
+        }
+        rewards = rewards && g.silk == ACHIEVEMENT_COUNT * ACHIEVEMENT_SILK &&
+                  g.xp == ACHIEVEMENT_COUNT * XP_ACHIEVEMENT;
+        g.achievements = 0; g.stage = STAGE_SPIDERLING; g.age_ticks = 2 * 2880;
+        needs_update_stage();
+        bool molt = g.stage == STAGE_JUVENILE && g.state == SPIDER_MOLT &&
+                    (g.achievements & ACH_FIRST_MOLT);
+        behaviour_tick(game_now() + 801u, .05f);
+        molt = molt && g.state != SPIDER_MOLT;
+        g = original_state;
+        behaviour_set_state(SPIDER_IDLE);
+        g.state = original_state.state;
         s_testing_placement = false;
         ui_menu_close();
         gift_t original_gift = g.gift;
@@ -2064,11 +2279,13 @@ static void ui_service_request(void)
         keep_gift_in_playfield();
         bool gift_bounds = g.gift.x == g_play.left && g.gift.y == g_play.bottom;
         g.gift = original_gift;
-        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d sound=%d music=%d sd_feedback=%d\n",
+        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d sound=%d music=%d sd_feedback=%d borders=%d shop_gates=%d help=%d rewards=%d molt=%d\n",
                menu_ok && hud_ok && backgrounds_ok && gift_bounds && hunger_ok &&
-               power_ok && save_ok && decor_ok && pointer_ok && sound_ok && music_ok && sd_feedback ? "OK" : "ERR",
+               power_ok && save_ok && decor_ok && pointer_ok && sound_ok && music_ok && sd_feedback &&
+               borders_route && shop_gates && help_routes && rewards && molt ? "OK" : "ERR",
                menu_ok, menu_ok, menu_ok, hud_ok, backgrounds_ok, hunger_ok,
-               power_ok, save_ok, decor_ok, pointer_ok, gift_bounds, sound_ok, music_ok, sd_feedback);
+               power_ok, save_ok, decor_ok, pointer_ok, gift_bounds, sound_ok, music_ok, sd_feedback,
+               borders_route, shop_gates, help_routes, rewards, molt);
         break;
     }
     default: break;
@@ -2148,8 +2365,21 @@ static void ui_service_menu_request(void)
 void game_on_terrarium_press(lv_event_t *e)
 {
     (void)e;
-    if (ui_hud_chrome_visible() || ui_menu_visible() || g.gift_mode || g_decor_mode ||
+    if (ui_hud_chrome_visible() || ui_menu_visible() ||
         game_paused()) return;
+    if (g.gift_mode || g_decor_mode) {
+        lv_indev_t *indev = lv_indev_active();
+        if (!indev) return;
+        lv_point_t p;
+        lv_indev_get_point(indev, &p);
+        int reach = g.gift_mode ? 40 : decor_def(g_decor_selected)->radius * 2 + 12;
+        bool grabbed = abs(p.x - s_place_x) <= reach && abs(p.y - s_place_y) <= reach;
+        s_place_dx = grabbed ? s_place_x - p.x : 0;
+        s_place_dy = grabbed ? s_place_y - p.y : 0;
+        s_place_dragging = true;
+        placement_position(p.x + s_place_dx, p.y + s_place_dy);
+        return;
+    }
     if (!behaviour_aim_active()) return;
 
     lv_indev_t *indev = lv_indev_active();
@@ -2167,6 +2397,15 @@ void game_on_terrarium_pressing(lv_event_t *e)
         behaviour_aim_cancel();
         return;
     }
+    if (g.gift_mode || g_decor_mode) {
+        lv_indev_t *indev = lv_indev_active();
+        if (s_place_dragging && indev) {
+            lv_point_t p;
+            lv_indev_get_point(indev, &p);
+            placement_position(p.x + s_place_dx, p.y + s_place_dy);
+        }
+        return;
+    }
     if (!behaviour_aim_dragging()) return;
     lv_indev_t *indev = lv_indev_active();
     lv_point_t p = {0, 0};
@@ -2178,6 +2417,11 @@ void game_on_terrarium_pressing(lv_event_t *e)
 void game_on_terrarium_release(lv_event_t *e)
 {
     (void)e;
+    if (g.gift_mode || g_decor_mode) {
+        game_on_terrarium_pressing(e);
+        s_place_dragging = false;
+        return;
+    }
     if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused() || g.gift_mode ||
         g_decor_mode || !behaviour_aim_dragging()) {
         behaviour_aim_cancel();
@@ -2189,13 +2433,7 @@ void game_on_terrarium_release(lv_event_t *e)
     }
 }
 
-/* Long-press on a placed decor item opens its menu, so the player can move it,
- * flip its blocking flag or put it away without hunting through the shop.
- *
- * This is the gesture the player asked for: hold a finger on the item and
- * eventually a menu appears. It is deliberately a LONG press rather than a tap,
- * because a tap on the tank is already the pounce gesture and a tap on the
- * spider is a pet. */
+/* Hold an item to edit it directly over the enclosure, without a submenu. */
 void game_on_terrarium_long_press(lv_event_t *e)
 {
     (void)e;
@@ -2209,7 +2447,10 @@ void game_on_terrarium_long_press(lv_event_t *e)
 
     if (g.gift.used && abs(p.x - g.gift.x) <= 32 && abs(p.y - g.gift.y) <= 32) {
         behaviour_aim_cancel();
-        menu_open(MENU_GIFT_ITEM);
+        on_gift_item_pick(0);
+        s_place_dragging = true;
+        s_place_dx = s_place_x - p.x;
+        s_place_dy = s_place_y - p.y;
         return;
     }
     int slot = decor_hit_test((int16_t)p.x, (int16_t)p.y);
@@ -2218,7 +2459,10 @@ void game_on_terrarium_long_press(lv_event_t *e)
     /* A long press must not also fire the pounce on release. */
     behaviour_aim_cancel();
     s_decor_item_slot = slot;
-    menu_open(MENU_DECOR_ITEM);
+    decor_begin_move(slot);
+    s_place_dragging = true;
+    s_place_dx = s_place_x - p.x;
+    s_place_dy = s_place_y - p.y;
 }
 
 void game_on_terrarium_tap(lv_event_t *e)
@@ -2229,66 +2473,7 @@ void game_on_terrarium_tap(lv_event_t *e)
     lv_point_t p = {0, 0};
     if (indev) lv_indev_get_point(indev, &p);
 
-    /* 1. Gift placement keeps priority.
-     *
-     * The kind was already chosen in the picker, so a single tap here commits
-     * the placement. The old two-tap confirm existed because the kind was
-     * chosen by blind cycling; now that the player has explicitly picked what
-     * to give, asking them to confirm the spot as well is just friction. */
-    /* 0. Decor placement or move. The item was already bought in the shop, so
-     * a tap only decides where it goes. */
-    if (g_decor_mode) {
-        if (indev) {
-            if (g_decor_move_slot >= 0) {
-                if (!decor_move(g_decor_move_slot, (int16_t)p.x, (int16_t)p.y)) {
-                    ui_hud_bubble("Cannot Move", 0xf5c86b, 1800);
-                    return;
-                }
-                terrarium_refresh_decor();
-                game_save_now();
-                g_decor_mode = 0;
-                g_decor_move_slot = -1;
-                ui_hud_set_place_mode(false, NULL);
-                return;
-            }
-            int slot = decor_place(g_decor_selected, (int16_t)p.x, (int16_t)p.y);
-            if (slot < 0) {
-                ui_hud_bubble("Storage Full / See Log", 0xf5c86b, 1800);
-                return;
-            }
-            terrarium_refresh_decor();
-            game_save_now();
-            g_decor_mode = 0;
-            ui_hud_set_place_mode(false, NULL);
-        }
-        return;
-    }
-
-    if (g.gift_mode) {
-        if (indev) {
-            if (!s_gift_moving && !gift_purchase(g.gift_selected)) {
-                ui_hud_bubble("Not Enough Silk", 0xf5c86b, 1800);
-                return;
-            }
-            if (!s_gift_moving) {
-                g.gift.kind = g.gift_selected;
-                g.gift.variant = (uint8_t)(rand() % 3);
-            }
-            g.gift.used    = 1;
-            g.gift.x       = (int16_t)p.x;
-            g.gift.y       = (int16_t)p.y;
-            keep_gift_in_playfield();
-
-            terrarium_refresh_gift();
-            game_save_now();
-
-            g.gift_mode = 0;
-            s_gift_moving = false;
-            ui_hud_set_gift_mode(false);
-
-        }
-        return;
-    }
+    if (g_decor_mode || g.gift_mode) return;
     if (ui_hud_chrome_visible()) {
         ui_hud_dismiss_if_visible();
         return;
@@ -2392,6 +2577,7 @@ void game_tick_logic(lv_timer_t *timer)
     }
 
     needs_tick(now, dt);
+    game_check_achievements();
     buttons_tick(now);
     if (!tank_hidden) {
         behaviour_tick(now, dt);
@@ -2471,6 +2657,8 @@ void game_tick_render(lv_timer_t *timer)
         seen_gen = gen;
         /* Preserve navigation while refreshing network-dependent actions. */
         if (s_open_menu == MENU_WIFI) menu_open(MENU_WIFI);
+        else if (s_open_menu == MENU_WIFI_SCAN) menu_open(MENU_WIFI_SCAN);
+        else if (s_open_menu == MENU_OTA) menu_open(MENU_OTA);
         else if (s_open_menu == MENU_SETTINGS) {
             int page = ui_menu_page();
             menu_open(MENU_SETTINGS);
@@ -2609,6 +2797,7 @@ void game_init(void)
     lv_obj_set_style_border_width(ui.tap_layer, 0, 0);
     lv_obj_set_scrollable(ui.tap_layer, false);
     lv_obj_set_clickable(ui.tap_layer, true);
+    lv_obj_add_flag(ui.tap_layer, LV_OBJ_FLAG_PRESS_LOCK);
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_tap, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(ui.tap_layer, enclosure_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
     /* Slingshot needs the raw press/move/release stream, not just clicks. */

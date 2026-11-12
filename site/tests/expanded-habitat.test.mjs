@@ -115,8 +115,8 @@ test('root and species icons are distinct and redundant movement entries are abs
       list:items=>{rows=items;},
     });
     ui.open('Menu');
-    assert.equal(rows.length,8);
-    assert.equal(new Set(rows.map(row=>row.icon)).size,8);
+    assert.equal(rows.length,9);
+    assert.equal(new Set(rows.map(row=>row.icon)).size,9);
     assert.equal(rows.some(row=>['Arrange Decor','Placed Gift','Placed Items'].includes(row.label)),false);
     ui.open('Prey Species');
     assert.deepEqual(rows.map(row=>row.icon),E.SPECIES.map(item=>`prey_${item.key}_walk_0`));

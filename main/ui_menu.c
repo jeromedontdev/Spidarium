@@ -77,11 +77,19 @@ static int menu_icon(const char *text)
         {"Achievements","achievements"}, {"Prey Species","prey"}, {"Decor","decor"},
         {"Settings","settings"}, {"WiFi","wifi"}, {"SD Card","sd"}, {"About","about"},
         {"Catch 3 Prey","feed"}, {"Clean 2 Times","clean"}, {"Play 3 Times","play"},
-        {"Pet 4 Times","mood"}, {"Battery","battery"}, {"Runtime","battery"}, {"Display","display"},
-        {"Power Mode","energy"}, {"Screen Timeout","sleep"}, {"Deep Sleep After","sleep"},
-        {"RTC Wake Interval","energy"}, {"Deep Sleep Now","sleep"}, {"Save and Sleep","sleep"},
+        {"Pet 4 Times","mood"}, {"Battery","battery"}, {"Runtime","daily"}, {"Display","display"},
+        {"Power Mode","energy"}, {"Screen Timeout","display"}, {"Deep Sleep After","sleep"},
+        {"RTC Wake Interval","daily"}, {"Deep Sleep Now","lock"}, {"Save and Sleep","sd"},
         {"Volume","volume"}, {"Sound","sound"},
         {"Background Music","music"},
+        {"Mute","sound"}, {"Soundtrack","backgrounds"}, {"Music Volume","music"},
+        {"Screen Rotation","display"}, {"Help Guide","about"},
+        {"Network Status","status"}, {"Scan Networks","wifi"}, {"Add Network","feed"}, {"Saved Networks","sd"},
+        {"Sync RTC Now","daily"}, {"Forget Network","reset"},
+        {"Update From GitHub","wifi"}, {"Advanced HTTPS URL","settings"}, {"Update Status","status"},
+        {"After Installation","reset"}, {"Firmware Update","wifi"},
+        {"Back Up Save","sd"}, {"Restore Save","back"}, {"SD Status","status"},
+        {"Spidarium","about"}, {"ESP32-S3 / 480x480 AMOLED","settings"}, {"Personal, Non-Commercial","xp"},
         {"Brightness","energy"}, {"Auto Feed","auto_feed"}, {"Move","decor"}, {"Move Gift","decor"},
         {"Blocking","lock"}, {"Put Away","back"}, {"Put Gift Away","back"},
         {"Wipe Spider","reset"}, {"Save Screenshot","screenshot"},
@@ -270,9 +278,10 @@ static void refresh_page(void)
             lv_image_set_src(s_icons[i], icon);
             int icon_size = s_grid && s_columns == 2 ? 32 : 48;
             lv_obj_set_size(s_icons[i], icon_size, icon_size);
-            if (s_grid) lv_obj_set_x(s_icons[i], (lv_obj_get_width(s_row[i]) - icon_size) / 2);
+            if (s_grid) lv_obj_align(s_icons[i], LV_ALIGN_TOP_MID, 0, 0);
             lv_image_set_inner_align(s_icons[i], LV_IMAGE_ALIGN_CONTAIN);
             lv_image_set_antialias(s_icons[i], false);
+            lv_obj_set_style_image_opa(s_icons[i], it->enabled || it->selected ? LV_OPA_COVER : LV_OPA_40, 0);
         }
         int text_x = s_grid ? 4 : icon ? 72 : 14;
         int text_width = s_grid ? lv_obj_get_width(s_row[i]) - 8 : MENU_WIDTH - text_x - 68;
@@ -671,6 +680,17 @@ static void on_row(lv_event_t *e)
     if (cb) cb(id);
 }
 
+bool ui_menu_test_pick(uint8_t id)
+{
+    for (int i = 0; i < s_count; i++) {
+        if (s_items[i].id != id || !s_items[i].enabled) continue;
+        ui_menu_set_page(i / page_size());
+        lv_obj_send_event(s_row[i % page_size()], LV_EVENT_CLICKED, NULL);
+        return true;
+    }
+    return false;
+}
+
 /* Slider rows report live; the menu stays open so the value can be dragged. */
 static void on_slider(lv_event_t *e)
 {
@@ -768,8 +788,8 @@ static void open_items(const char *title, const ui_menu_item_t *items, int count
         lv_obj_set_size(s_sliders[i], 132, 12);
         lv_obj_align(s_sliders[i], LV_ALIGN_RIGHT_MID, -14, 0);
         if (grid) {
-            lv_obj_set_size(s_sliders[i], tile_w - 28, 12);
-            lv_obj_align(s_sliders[i], LV_ALIGN_TOP_LEFT, 12, 94);
+            lv_obj_set_size(s_sliders[i], tile_w - 44, 24);
+            lv_obj_align(s_sliders[i], LV_ALIGN_TOP_LEFT, 20, 86);
         }
         lv_slider_set_range(s_sliders[i], 0, 100);
         lv_obj_set_style_bg_color(s_sliders[i], lv_color_hex(0x30404b), LV_PART_MAIN);
@@ -822,6 +842,23 @@ void ui_menu_open_detail(const char *title, const ui_menu_item_t *items, int cou
                          ui_menu_pick_cb cb)
 {
     open_items(title, items, count, cb, 0);
+}
+
+void ui_menu_open_text(const char *title, const char *text)
+{
+    open_panel(title);
+    lv_obj_t *body = label(s_menu, text, &lv_font_montserrat_14);
+    lv_obj_set_pos(body, 22, 82);
+    lv_obj_set_width(body, MENU_WIDTH - 48);
+    lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+}
+
+bool ui_menu_test_text_fits(void)
+{
+    if (!s_menu) return false;
+    lv_obj_t *body = lv_obj_get_child(s_menu, -1);
+    lv_obj_update_layout(s_menu);
+    return lv_obj_get_y(body) == 82 && lv_obj_get_y(body) + lv_obj_get_height(body) < MENU_HEIGHT - 16;
 }
 static void on_input_submit(lv_event_t *e)
 {

@@ -59,7 +59,7 @@ test('all8 species movement formulas match native styles and scaling',()=>{
   }
 });
 test('level/wild/gift flee modifiers use native radius and burst rhythm',()=>{
-  const s=neutral();s.level=40;s.silk=10000;s.x=200;s.y=240;
+  const s=neutral();s.level=40;s.xp=1950;s.silk=10000;s.x=200;s.y=240;
   placeGift(s,4,400,400);spawnPrey(s,4,true);
   const p=s.prey[0];Object.assign(p,{x:210,y:240,heading:0,wander_dir:0,retarget_at:10000});
   s._engine.idle_until=10000;tick(s);

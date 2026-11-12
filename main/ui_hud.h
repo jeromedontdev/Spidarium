@@ -17,14 +17,13 @@ void ui_hud_tick(uint32_t now_ms);
 /* Show a transient bubble above the spider ("yum!", "happy!"). */
 void ui_hud_bubble(const char *text, uint32_t color, uint32_t ms);
 
-/* Update the gift-placement hint. */
+/* Show/hide the gift-placement hint and Done/Cancel controls. */
 void ui_hud_set_gift_mode(bool on);
 
-/* Placement mode for decor: shows the hint label with `hint` and the cancel
- * affordance. Passing NULL keeps the current hint text. */
+/* Shared placement controls. Passing NULL keeps the current hint text. */
 void ui_hud_set_place_mode(bool on, const char *hint);
 
-/* Gift picker uses the shared four-card paged menu. Picking enters placement. */
+/* Gift picker uses the six-tile catalogue grid. Picking enters placement. */
 void ui_hud_gift_menu_show(void);
 void ui_hud_gift_menu_hide(void);
 bool ui_hud_gift_menu_visible(void);

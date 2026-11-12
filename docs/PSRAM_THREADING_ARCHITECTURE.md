@@ -18,6 +18,7 @@ Choose memory by the consumer's capabilities, not just allocation size.
 | Full background/frame decode workspace | One explicit PSRAM 172,800-byte RGB565A8 capacity; reused on explicit rebuild/test, never per frame |
 | Forty-eight background/frame menu thumbnails each | Explicit PSRAM: 48x48 RGB565 floors (221,184 bytes total), RGB565A8 frames (331,776 total) |
 | Additional decor records / renderer object-pointer pool | Explicit PSRAM; grows on placement/restore, never per frame |
+| Placement preview image/ring and Done/Cancel controls | Retained LVGL objects created at boot; existing decoded art reused, no per-drag object/canvas creation |
 | Save job snapshots and raw/SD transfer buffers | Explicit PSRAM; copied before enqueue, freed after completion/rejection |
 | Audio and serial-worker stacks | `xTaskCreateWithCaps`, SPIRAM + 8BIT |
 | Network and save/SD worker stacks | Explicit internal RAM: flash operations disable caches |
@@ -54,6 +55,12 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
 
 - **LVGL adapter task:** touch dispatch, object tree, 20 Hz logic and 30 Hz
   rendering callbacks. These are two timers on one task, not separate threads.
+- **Audio worker:** priority 7, above the adapter's priority 6, so menu
+  construction cannot starve the bounded 800-sample producer. Codec writes
+  block/yield on this worker only. Its existing 4 KB stack and 12,800-byte PCM
+  stay in PSRAM; no extra internal DMA buffers. `audiotest` reports completed
+  chunks, maximum refill gap and late (>50 ms) refill count. This measures
+  scheduling headroom, not the physical speaker's audible quality.
 - **Network worker:** 12 KB internal stack for credential/OTA flash writes;
   queued scan, join, time-sync, forget, OTA. Notifications
   wake it; atomics publish completion. Passwords never appear in logs.

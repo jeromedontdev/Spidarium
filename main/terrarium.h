@@ -40,9 +40,9 @@ int terrarium_poop_count(void);
  * reward tracks the mess actually removed rather than the tap. */
 int terrarium_dirt(void);
 
-/* Placement preview: a faint ring at the tap point showing where the gift will
- * go before it is committed. The ring object is created once and only
- * shown/hidden -- never created or deleted per frame. */
+/* Retained placement artwork/ring; drag updates never mutate saved furniture
+ * or allocate new LVGL objects. A moving item's original visual is hidden. */
+void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_t y);
 void terrarium_preview_show(int32_t x, int32_t y, int32_t radius);
 void terrarium_preview_hide(void);
 

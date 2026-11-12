@@ -305,6 +305,23 @@ test('music-only gain has exact silence/full scale and symmetric integer scaling
   }
 });
 
+test('scores differ measurably in rhythm and register, not just transposed pad notes',()=>{
+  const features=[];
+  for(let track=0;track<3;track++){
+    const s=musicSamples(track), envelopes=[];
+    let power=0,delta=0;
+    for(let i=1;i<s.length;i++){power+=s[i]**2;delta+=(s[i]-s[i-1])**2;}
+    for(let i=0;i<s.length;i+=1600)envelopes.push(rms(s,i,Math.min(i+1600,s.length)));
+    const mean=envelopes.reduce((a,b)=>a+b)/envelopes.length;
+    const cv=Math.sqrt(envelopes.reduce((a,b)=>a+(b-mean)**2,0)/envelopes.length)/mean;
+    features.push({cv,register:Math.sqrt(delta/power)});
+  }
+  assert.ok(features[1].cv>features[0].cv*1.8,'Moon has distinct plucked beats, not a held garden pad');
+  assert.ok(features[2].cv>features[0].cv*1.3,'Rain has distinct fast mallet attacks');
+  assert.ok(features[2].register>features[1].register*1.8,'Rain mallets occupy a much brighter register than Moon bass');
+  assert.ok(features[0].register>features[1].register*1.5,'Garden has a different register from Moon');
+});
+
 test('music volume controls only the music bus; master volume and mute still win', () => {
   const sound = audio();
   sound.tick('idle', 0, true, 80, true, true, 25, 1);

@@ -1,5 +1,34 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## Current working changes: help, progression and interaction
+
+Both game UIs and the website share seventeen help topics, with parity tests
+against the native text. WiFi scan results are separate from its four-action/
+status page; Firmware Update lives in About. Browser updates route to real USB
+tools, never an emulated radio. The web flasher omits file/hash listings but
+still verifies every image and protects NVS internally.
+
+All twenty achievement goals are visible, including First Pet. New unlocks
+pay 15 XP and 20 Silk once using saved bits 0-19 without changing save layout.
+Existing earned bits do not pay twice. New threshold achievements may award
+existing pets already meeting their requirements. Molting was reachable at
+two days but never exited its state; both FSMs now return to idle after the
+800ms animation. Tests reach every badge through its gameplay event path.
+
+Shops disable unowned unaffordable items and keep owned reusable choices free.
+Treat purchases and native rejection paths retain their catalogue page.
+Native Borders has an explicit root route, exercised by real tile dispatch.
+Icons use content-box centering. Sliders remain one tile, but have inset tracks
+and larger touch targets; held drag, cancellation, rotation and keyboard
+semantics remain supported.
+
+Silk Garden retains its PCM. Moonlit Hollow uses low plucked beats and Rainy
+Canopy uses brighter, faster mallet arpeggios. Exact native/browser hashes,
+seam/peak limits and measurable rhythm/register separation are tested. Menu
+tap effects use a quiet pitch instead of white noise. The native audio producer
+runs above LVGL priority and reports actual refill timing, without new DMA
+allocations. Audible quality still needs human speaker/headphone assessment.
+
 ## v1.1.24: grids throughout, spider hero and safe update modes
 
 The current menus supersede v1.1.23's list exceptions: Achievements and Prey
@@ -33,6 +62,17 @@ unchanged native spider renderer. No asset PNG or save-format change is needed.
 
 ## Expanded habitat and ambient music
 
+Help is available directly in Menu only, matching the device. Decor/gift
+placement and hold-to-edit show draggable artwork and explicit Done/Cancel.
+Editing placed furniture adds inline Put Away and, for decor, Blocking controls.
+No item submenu or Back button is involved. Blocking is staged until Done;
+Cancel discards both position/blocking edits. Put Away returns to the enclosure.
+Release keeps the preview active; saved coordinates change only on Done.
+Cancel preserves the old item and moving never charges Silk or changes a gift's
+variant. Preview positions use the existing placement bounds. Browser capture
+handles mouse/touch/pen and transformed coordinates; arrow keys adjust the
+preview, Enter commits and Escape cancels instead of firing a hunt.
+
 The current catalogue is twelve treats, sixty-eight decor kinds, thirty-six
 gifts and forty-eight backgrounds. Native/browser IDs, costs, unlocks and
 footprints match. Forty-eight theme-matched borders buy once independently
@@ -42,7 +82,7 @@ of shifting a 32-bit mask by high IDs. v12 local/raw saves preserve all records.
 Raw saves keep the legacy twelve-slot prefix and append a counted six-byte tail.
 Browser serial framing/restore pacing and SD transfers support the full tail.
 
-Hold a placed object/gift for its contextual menu; redundant Arrange Decor and
+Hold a placed object/gift for inline editing controls; redundant Arrange Decor and
 Placed Gift navigation is removed. Double tap toggles enclosure-only dimming
 and cannot also pet. Music is original slow consonant ambient scoring, enabled
 by default and separately switchable in Sound. Master mute and hidden-page

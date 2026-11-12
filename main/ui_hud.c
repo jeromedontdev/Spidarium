@@ -24,7 +24,8 @@
 
 static lv_obj_t *s_stats[NUM_STATS], *s_values[NUM_STATS], *s_bars[NUM_STATS];
 static lv_obj_t *s_level, *s_progress, *s_resources, *s_hint, *s_bubble, *s_bubble_label;
-static lv_obj_t *s_care_button, *s_care_label;
+static lv_obj_t *s_care_button, *s_care_label, *s_place_done, *s_place_cancel;
+static lv_obj_t *s_place_away, *s_place_blocking, *s_place_blocking_label;
 static lv_obj_t *s_layer;
 static lv_obj_t *s_identity, *s_battery, *s_battery_fill, *s_battery_text, *s_charge;
 static uint32_t s_battery_key = UINT32_MAX;
@@ -32,9 +33,10 @@ static uint32_t s_bubble_until, s_last_refresh;
 static bool s_top_visible, s_bot_visible;
 void ui_hud_capture_hide(bool hidden)
 {
-    static bool was_hidden[4];
-    lv_obj_t *objects[] = {s_layer, s_battery, s_care_button, s_bubble};
-    for (unsigned i = 0; i < 4; i++) {
+    static bool was_hidden[9];
+    lv_obj_t *objects[] = {s_layer, s_battery, s_care_button, s_bubble, s_place_done, s_place_cancel,
+                          s_place_away, s_place_blocking, s_hint};
+    for (unsigned i = 0; i < 9; i++) {
         if (hidden) was_hidden[i] = lv_obj_is_hidden(objects[i]);
         lv_obj_set_hidden(objects[i], hidden || was_hidden[i]);
     }
@@ -310,7 +312,17 @@ void ui_hud_init(lv_obj_t *parent)
     s_care_label = make_label(s_care_button, LV_SYMBOL_CLOSE, &lv_font_montserrat_14, COL_TEXT);
     lv_obj_align(s_care_label, LV_ALIGN_TOP_LEFT, 12, 12);
     ui_hud_set_chrome(false);
-    s_hint = make_label(parent, "Tap to place; X cancels",
+    s_place_cancel = make_action(parent, 80, 388, 148, "back", "Cancel", game_on_placement_cancel);
+    s_place_done = make_action(parent, 252, 388, 148, "decor", "Done", game_on_placement_done);
+    s_place_away = make_action(parent, 80, 316, 148, "decor", "Put Away", game_on_placement_put_away);
+    s_place_blocking = make_action(parent, 252, 316, 148, "lock", "Blocking: Off", game_on_placement_blocking);
+    s_place_blocking_label = lv_obj_get_child(s_place_blocking, -1);
+    lv_obj_set_style_text_font(s_place_blocking_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_hidden(s_place_away, true);
+    lv_obj_set_hidden(s_place_blocking, true);
+    lv_obj_set_hidden(s_place_done, true);
+    lv_obj_set_hidden(s_place_cancel, true);
+    s_hint = make_label(parent, "Slide to position; Done saves",
                          &lv_font_montserrat_12, 0xf5c86b);
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -HUD_BOTTOM_H - 18);
     lv_obj_set_hidden(s_hint, true);
@@ -338,8 +350,7 @@ void ui_hud_bubble(const char *text, uint32_t color, uint32_t ms)
 
 void ui_hud_set_gift_mode(bool on)
 {
-    lv_obj_set_hidden(s_hint, !on);
-    lv_obj_set_hidden(s_care_label, !on);
+    ui_hud_set_place_mode(on, "Slide to position; Done saves");
 }
 
 void ui_hud_set_place_mode(bool on, const char *hint)
@@ -347,6 +358,13 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     if (on && hint) lv_label_set_text(s_hint, hint);
     lv_obj_set_hidden(s_hint, !on);
     lv_obj_set_hidden(s_care_label, !on);
+    lv_obj_set_hidden(s_place_done, !on);
+    lv_obj_set_hidden(s_place_cancel, !on);
+    bool decor_move = g_decor_mode && g_decor_move_slot >= 0;
+    lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
+    lv_obj_set_hidden(s_place_blocking, !on || !decor_move);
+    lv_label_set_text(s_place_blocking_label, game_placement_blocking() ? "Blocking: On" : "Blocking: Off");
+    lv_obj_align(s_hint, LV_ALIGN_TOP_MID, 0, on && game_placement_existing() ? 286 : 350);
 }
 
 void ui_hud_set_top(bool on)
@@ -378,7 +396,7 @@ void ui_hud_set_chrome(bool on)
     ui_hud_set_top(on);
     ui_hud_set_bot(on);
     if (s_care_label) {
-        lv_obj_set_hidden(s_care_label, !g.gift_mode);
+        lv_obj_set_hidden(s_care_label, !g.gift_mode && !g_decor_mode);
     }
 }
 void ui_hud_reveal_top(void) { ui_hud_set_top(true); }

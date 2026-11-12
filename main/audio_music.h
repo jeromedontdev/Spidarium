@@ -23,8 +23,8 @@
 #define PET_SAMPLES 2560
 #define PET_SECOND 640
 #define MUSIC_TEST_HASH 0x6a09516au
-#define MUSIC_MOON_TEST_HASH 0x5cac77ffu
-#define MUSIC_RAIN_TEST_HASH 0x23a46ff3u
+#define MUSIC_MOON_TEST_HASH 0x28f08634u
+#define MUSIC_RAIN_TEST_HASH 0xfa2bc0bcu
 #define PET_TEST_HASH 0x3e6c27c9u
 #define MUSIC_TRACK_COUNT 3
 
@@ -198,9 +198,16 @@ static inline int16_t music_track_sample(uint8_t id, uint32_t position)
     int32_t value = music_extra_pad(track, id, chord, local);
     if (local < track->overlap)
         value += music_extra_pad(track, id, (chord + 3u) & 3u, local + track->chord);
-    uint32_t note = p / track->note;
-    value += music_bell(track->melody[note], p - note * track->note,
-                        track->note, track->attack, track->melody_gain);
+    value /= 4;
+    if (id == 1) {
+        uint32_t beat = local % 20000u;
+        value += music_bell(track->pad[chord * 6u] >> 1, beat, 20000u, 240u, 1850);
+        value += music_bell(track->melody[(p / 20000u) % 16u], beat, 16000u, 160u, 1500);
+    } else {
+        uint32_t beat = local % 6000u, voice = (local / 6000u) % 3u;
+        value += music_bell(track->pad[chord * 6u + voice * 2u] * 2u, beat, 6000u, 96u, 2100);
+        value += music_bell(track->melody[(p / 24000u) % 16u], local % 24000u, 18000u, 320u, 700);
+    }
     return (int16_t)value;
 }
 

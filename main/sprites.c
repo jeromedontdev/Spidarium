@@ -322,6 +322,15 @@ int sprite_achievement_index(uint32_t bit)
     case ACH_LEVEL_5:       return MMAP_STORAGE_ACHIEVEMENT_LEVEL_5_QOI;
     case ACH_SURVIVED_SICK: return MMAP_STORAGE_ACHIEVEMENT_SURVIVED_SICK_QOI;
     case ACH_FIRST_PERFECT: return MMAP_STORAGE_ACHIEVEMENT_FIRST_PERFECT_QOI;
+    case ACH_TEN_CLEANS: return sprite_icon_index("clean");
+    case ACH_TEN_PLAYS: return sprite_icon_index("play");
+    case ACH_TWENTY_FIVE_MEALS: return sprite_icon_index("feed");
+    case ACH_BOND_50: return sprite_icon_index("mood");
+    case ACH_STREAK_3: return sprite_icon_index("daily");
+    case ACH_DECOR_3: return sprite_icon_index("decor");
+    case ACH_BACKGROUNDS_4: return sprite_icon_index("backgrounds");
+    case ACH_FIRST_BORDER: return sprite_icon_index("display");
+    case ACH_FIRST_GIFT: return sprite_icon_index("treats");
     default:               return -1;
     }
 }

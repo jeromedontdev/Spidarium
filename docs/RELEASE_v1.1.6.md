@@ -25,7 +25,6 @@ when the row was rebuilt.
 - **Life stages change size**: spiderling 75%, juvenile 87.5%, adult 100%.
 - **Browser splat on a catch**, and the care button matches the device's 44px
   target.
-- **"Pocket Tank"** appears only in the README credit, as inspiration.
 
 ## Verification
 

@@ -2776,7 +2776,7 @@ Written from **measured** numbers, not estimates. Covers:
   descending order of size.
 - Five rules that would have prevented all three bugs.
 - A section on where this is heading, comparing the current LVGL scene-graph
-  approach with Pocket Tank's software renderer.
+  approach with a direct-pixel software renderer.
 
 ### `main/meminfo.c` — runtime reporting
 
@@ -2945,7 +2945,7 @@ until it is used:
 
 `main/cspider.c` — the canvas-based spider renderer — is written and compiles
 clean but is **not wired in**. That is the next round: replacing the 46-widget
-spider with a single 96x96 canvas, which is the Pocket Tank architecture the
+spider with a single 96x96 canvas, which is the canvas architecture the
 player asked for.
 
 ---
@@ -3471,14 +3471,14 @@ run_tests.py     -> SUMMARY passed=8 failed=0
 
 **Reported:** "The serial console should be able to test more than wifi scanning.
 The whole device should be controllable via serial... why are there two uart
-drivers? Pocket tank doesnt seem to have this issue? I cant even get into
+drivers? [Comparison omitted.] I cant even get into
 settings, the screen draw immediately messes up."
 
 All three are the same bug, and the question was the right one to ask.
 
 ### Why there were two drivers — my mistake
 
-Pocket Tank uses ESP-IDF's **standard console**: one transport, `fgets()` on
+A standard ESP-IDF **console** uses one transport, `fgets()` on
 stdin, no custom drivers. I installed a UART driver *and* a USB-JTAG driver and
 polled both with `uart_read_bytes()`, because I was reading raw bytes instead of
 using the console properly.
@@ -5729,9 +5729,9 @@ command and the GPIO log, not by pressing the buttons.
   browser scales the `drawImage` rect the same way.
 - **Browser splat.** A catch now bursts a short ring of the species colour,
   fading over 700 ms, using a per-species `SPLAT_COLOURS` table.
-- **"Pocket Tank" is credit only.** Removed from `serial_console.md`; the README
-  credit now says "inspired by" rather than "the architecture follows".
-  `PROGRESS.md` keeps its historical mentions because it is a log.
+- **Documentation ownership clarified.** Architecture and console documentation
+  describe this project's implementation. Historical comparison names were
+  subsequently removed at the owner's request.
 
 ### Evidence
 
@@ -7843,3 +7843,167 @@ evidence proves delivery and continuity, not that the player likes the sound.
   Main tiles show zero submenu markers and Sound retains four single-slot tiles.
   Browser flasher verifies all five1.1.26 hashes. Hosted OTA verification gap
   remains unchanged and is explicit in the published release notes.
+
+## Round 82 - Help, rewarded milestones and menu/audio usability
+
+### Decisions made
+
+- Keep all approved spider artwork/renderers and save v12 offsets intact.
+  Add seventeen readable help topics to the native/browser game and website,
+  with exact text parity tests. Explain setup, care, hunts, health, growth,
+  minigames, rewards, placement, audio, power, buttons, WiFi, updates and backups.
+- WiFi now has status, Scan, Add and Saved Networks; scan results use their own
+  grid. Firmware Update moves to About with correct Back/status refresh.
+  Keep Wipe Spider last. Reuse descriptive existing glyphs, center icons on
+  content boxes and enlarge/inset slider targets without consuming extra tiles.
+- Fix the missing native root Borders route. Gate every shop's unaffordable
+  purchases, preserve owned/free actions and retain catalogue pages on treat
+  purchases and rejected native actions. Keep full achievement goals in a
+  dedicated reading view, not truncated tile text.
+- Preserve original achievement bits and add nine milestones in bits11-19.
+  All twenty unlocks pay15XP +20Silk once; historical earned bits are not repaid.
+  Existing pets can qualify for newly introduced threshold badges. Restore
+  First Pet to the grid. Molting already existed, but its FSM never exited:
+  both targets now finish the existing800ms animation and return to idle.
+- Retain Silk Garden's original PCM. Moonlit Hollow now uses low plucked beats;
+  Rainy Canopy uses quick bright mallet arpeggios. Quiet pitched navigation taps
+  replace white-noise bursts. The bounded PSRAM audio worker moves above LVGL
+  priority, without new internal DMA allocations, and exposes refill counters.
+- Hide filenames/addresses/hashes in the flasher UI only; all image-integrity,
+  partition compatibility and NVS-preservation checks remain active.
+- Preserve the existing device pet around mutating tests, then apply the user's
+  +100Silk once to that pet, not to defaults or every new browser habitat.
+  These are local source/device changes, not a new committed/published release.
+
+### Exact evidence
+
+- Final wrapper build0, no compiler warnings; full wrapper flash0 on COM7.
+  Browser171/171; host/package/art/capture52/52; native suite48/48.
+- Native uitest reports all flags1, including real Borders tile dispatch,
+  affordability/page retention, all seventeen help pages fitting their panel,
+  one-time rewards and molt completion. Actual held LVGL pointer regression
+  remains passing. Browser mouse drag updates85% while held outside the track;
+  hit height32 logical pixels and icon center error below0.001 CSS pixels.
+- Browser clicks open all seventeen help topics without overlapping their Back
+  button and return to the correct help page. About contains Firmware Update.
+  Real local release check reports verified firmware without a file/hash list.
+  Browser tests reach every one of the twenty achievements through its actual
+  gameplay event path; reward recursion/reload and native metadata parity pass.
+- Native/browser PCM hashes: Garden6a09516a, Moon28f08634, Rainfa2bc0bc.
+  Peaks3419/3722/3212, maxsteps695/497/709, RMS706/597/626.
+  100ms envelope CV0.450/0.896/0.653; spectral roughness0.140/0.080/0.159.
+  These enforce distinct rhythms/registers rather than merely different hashes.
+- Final submenu stress streams529 chunks with max refill gap3114us, late0.
+  render500 and scanloop5 both have largest-block drift0; internal/DMA
+  largest63,488. Exact original280-byte pet restored, including habitat tail.
+- Grant stored/reboot PASS:60 ->160Silk, exactly+100; every other byte unchanged
+  by the grant and habitat/ownership tail unchanged after reboot. Prepared/
+  verified grant evidence prevents accidentally applying the credit twice.
+- Final40-second clean-boot soak: VERDICT PASS, faults/errors0. Website production
+  build succeeds. Existing hosted OTA, physical touch/appearance, SD/RTC and
+  subjective speaker-quality verification boundaries remain explicit.
+
+## Round 83 - Main-menu Help and draggable furniture previews
+
+### Decisions made
+
+- Help Guide lives only in the root game Menu, before Settings, on both
+  targets. Removed Settings/About duplicates; topic Back retains its help page
+  and guide Back returns to Menu. The website guide remains directly available.
+- New decor/gifts and contextual Move show the actual item artwork while
+  dragging. Finger release leaves editing active. Done commits once; Cancel
+  leaves saved positions unchanged. Moving preserves ownership, Silk, blocking
+  flags and gift variant. Existing purchase timing is unchanged: decor buys
+  before placement; device gifts buy on Done, browser gifts on selection.
+- Native preview image/ring/Done/Cancel controls are created once at boot.
+  Drags update retained objects without rebuilding the gift canvas or changing
+  game-state coordinates. The original moving item's visual is hidden until
+  commit/cancel. Browser capture preserves grab offsets and ignores other
+  pointers; cancellation releases capture without dropping the item. Arrows
+  move the preview, Enter commits and Escape cancels instead of hunting.
+- Placement instructions sit above, not over, the confirmation controls.
+  Updated feature help, website copy, catalogue and implementation docs.
+  Spider artwork, save layout, versions and published releases are unchanged.
+- Expanded pointer checks pushed uitest slightly beyond its old five-second
+  console acknowledgement deadline. Its test-only bound is now ten seconds,
+  with a twenty-second client deadline. Also made historical save test fixtures
+  independent of the current pet's post-expansion decor/gift IDs: these newer
+  records are not valid v8/v10 fixtures. Production save validation is unchanged.
+
+### Exact evidence
+
+- Wrapper build exit0, zero compiler warnings; full wrapper flash exit0 on
+  COM7. Browser174/174, host/package/art/capture52/52, native48/48.
+  Final production website build succeeds.
+- Actual injected LVGL input reports
+  `hold=1 staged=1 decor_move=1 gift_move=1 cancel=1 new=1 lights=1`.
+  Held movement and release leave original coordinates untouched; actual Done
+  and Cancel button clicks commit/discard previews. Native uitest reports all
+  flags1, including save, pointer, Help routing and all seventeen topic fits.
+- Real browser mouse input stages decor at(300,260), with zero placed records
+  while held and after release; Done creates the record. Contextual Move stages
+  (180,200), Cancel keeps(300,260). Gift release stages(330,210) while the real
+  gift remains(190,180); Done commits with variant0, Silk22 and ownership1
+  unchanged. Main Menu > Help Guide > Back returns to Menu. Inspected a
+  screenshot of the actual gift preview and separated Done/Cancel controls.
+  Unit regressions also cover bounds, grab offset, other pointers, capture
+  cancellation, failed commits, keyboard confirmation and no pet/pounce.
+- render500: largest_drift0. scanloop5: ok5/failed0/largest_drift0.
+  Internal/DMA largest63,488 bytes, above51,200. Forty-second soak:
+  `VERDICT: PASS`, faults/errors0.
+- Captured a fresh280-byte pet before flashing/testing, rather than reusing the
+  old160-Silk grant snapshot. This pet reported24Silk. Restored all stored bytes
+  exactly after tests, reboot-verified its balance/ownership/habitat, then
+  rechecked after the soak:24Silk and the same habitat tail. No second grant.
+  Changes are local and flashed, not committed/published. Physical finger feel,
+  hosted OTA, SD/RTC and subjective audio remain separate verification boundaries.
+
+## Round 84 - Inline furniture actions and v1.1.27 publication
+
+### Decisions made
+
+- Hold furniture to enter editing directly over the enclosure. Put Away,
+  Blocking (decor only), Done and Cancel stay on screen. Removed the per-item
+  submenu and its Back navigation. Existing console/item routes also enter
+  inline editing instead of showing the old submenu.
+- Blocking is staged with position: Done applies both and Cancel discards both.
+  Put Away removes the item, retains ownership, and stays in the enclosure.
+  Holding then sliding continues the same drag; no second press is required.
+  Native controls are retained boot-created objects and included in capture
+  hide/restore. Gifts do not show Blocking; new purchases do not show Put Away.
+- Removed obsolete external-project comparison names/links from current
+  Markdown and source comments, including historical progress/release prose
+  at the owner's explicit request. Updated the three affected GitHub release
+  descriptions. No third-party license notices were removed. Historical Git
+  objects/tags and previously published archives were not rewritten.
+- Publish these changes and the preceding help/gameplay/audio work as1.1.27.
+  Bump firmware/package/browser cache versions together. Keep the existing
+  spider pixels and save ABI. Preserve the current pet rather than restoring
+  an old credited-save snapshot or granting Silk again.
+
+### Exact evidence before publication
+
+- Final versioned wrapper build exit0, no compiler warnings; wrapper flash
+  exit0 on COM7. Browser175/175; host/package/art/capture52/52. Versioned native
+  suite48/48, plus an additional passing uitest. Pointer regression:
+  `hold=1 staged=1 decor_move=1 gift_move=1 cancel=1 new=1 actions=1 lights=1`.
+  The actions test clicks actual LVGL Blocking/Put Away controls, checks
+  Cancel discards blocking, Done commits it, ownership remains and no menu opens.
+- Browser DOM pointer hold enters editing with modal=null. Visible controls
+  are Put Away, Blocking: Off, Cancel and Done; visible Back buttons0.
+  Clicking Blocking stagestrue while savedblocking0; Cancel returns to the
+  enclosure with savedblocking0 and no modal. Unit tests cover the corresponding
+  gift removal, ownership/economy/variant preservation and commit behavior.
+- render500 largest_drift0; scanloop5 ok5/failed0/largest_drift0.
+  Internal/DMA largest63,488. Final versioned40-second soak:
+  `VERDICT: PASS`, faults/errors0.
+- Fresh current280-byte pet captured with24Silk and restored byte-for-byte
+  after each mutating suite; reboot verified balance and habitat/ownership.
+  The earlier+100 credit was not repeated.
+- Packaged five verified firmware images with NVS excluded; generated the
+  version1.1.27 application/OTA manifest and full USB archive. Production site
+  build and preparation pass with337 authentic artwork PNGs.
+- Repository search finds no obsolete comparison-name matches in current
+  source or Markdown. GitHub release-description audit finds0 matching releases;
+  repository metadata, issues/PRs and their comments have no matches, and wiki/
+  discussions are disabled. Immutable historical references remain out of scope.

@@ -14,7 +14,9 @@
 #define PIXEL_GRID 2
 
 static lv_obj_t *s_background, *s_decor_layer, *s_gift_layer, *s_poop_layer,
-                *s_preview_ring;
+                *s_preview_ring, *s_preview_image;
+static int s_preview_slot = -1;
+static bool s_preview_gift;
 static uint16_t *s_pixels;
 static uint8_t *s_gift_pixels;
 /* Grow only on explicit placement/restore; rendering reuses the high-water pool. */
@@ -250,7 +252,36 @@ void terrarium_preview_show(int32_t x, int32_t y, int32_t radius)
     lv_obj_set_hidden(s_preview_ring, false);
 }
 
-void terrarium_preview_hide(void) { lv_obj_set_hidden(s_preview_ring, true); }
+void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_t y)
+{
+    int index = gift ? sprite_gift_index(kind) : sprite_decor_item_index(kind);
+    const lv_image_dsc_t *image = index >= 0 ? assets_image(index) : NULL;
+    if (!image) {
+        ESP_LOGE("spidarium.tank", "placement preview unavailable: gift=%d kind=%u", gift, kind);
+        return;
+    }
+    s_preview_slot = slot;
+    s_preview_gift = gift;
+    if (gift) lv_obj_set_hidden(s_gift_layer, true);
+    else if (slot >= 0 && slot < s_decor_capacity) lv_obj_set_hidden(s_decor_obj[slot], true);
+    lv_image_set_src(s_preview_image, image);
+    lv_image_set_scale(s_preview_image, gift ? 512 : decor_def(kind)->radius * 16);
+    lv_image_set_antialias(s_preview_image, false);
+    lv_obj_set_pos(s_preview_image, x - image->header.w / 2, y - image->header.h / 2);
+    lv_obj_set_hidden(s_preview_image, false);
+    terrarium_preview_show(x, y, gift ? 34 : decor_def(kind)->radius * 2 + 2);
+}
+
+void terrarium_preview_hide(void)
+{
+    lv_obj_set_hidden(s_preview_ring, true);
+    lv_obj_set_hidden(s_preview_image, true);
+    if (s_preview_gift) lv_obj_set_hidden(s_gift_layer, false);
+    if (s_preview_slot >= 0 && s_preview_slot < s_decor_capacity)
+        lv_obj_set_hidden(s_decor_obj[s_preview_slot], decor_at(s_preview_slot) == NULL);
+    s_preview_gift = false;
+    s_preview_slot = -1;
+}
 
 /* A dropping is a small three-lobe mound, not a flat square: a wide base, a
  * narrower middle and a rounded tip, in warm brown with a darker underside.
@@ -379,6 +410,10 @@ void terrarium_init(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_preview_ring, 2, 0);
     lv_obj_set_style_border_color(s_preview_ring, lv_color_hex(0xf5c86b), 0);
     lv_obj_set_hidden(s_preview_ring, true);
+    s_preview_image = lv_image_create(parent);
+    lv_obj_set_clickable(s_preview_image, false);
+    lv_obj_set_scrollable(s_preview_image, false);
+    lv_obj_set_hidden(s_preview_image, true);
     terrarium_refresh_decor();
     terrarium_refresh_gift();
 }

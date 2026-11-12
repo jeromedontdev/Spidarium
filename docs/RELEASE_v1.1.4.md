@@ -51,7 +51,6 @@ was rebuilt, so the slider looked like it was not doing anything.
 
 ## Documentation
 
-"Pocket Tank" is now mentioned only once, in the README credit, as inspiration.
 The architecture and console docs describe this project's own rules.
 
 ## Verification

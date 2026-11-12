@@ -63,6 +63,7 @@ static uint32_t s_stuck_at;
  * always visibly does something, even at full energy. */
 static bool     s_sleep_forced;
 static uint32_t s_sleep_start;
+static uint32_t s_molt_start;
 
 /* Sub-pixel position accumulator. g.spider_x/y are int16_t, so moving at
  * 55 px/s in 50 ms ticks (2.75 px) is fine, but any speed below ~20 px/s
@@ -413,6 +414,7 @@ void behaviour_set_state(spider_state_t state)
     if (g.state == state) return;
 
     g.state = (uint8_t)state;
+    if (state == SPIDER_MOLT) s_molt_start = lv_tick_get();
     s_has_target = false;
     s_pouncing = false;
     s_aim_active = false;
@@ -828,6 +830,7 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
         break;
 
     case SPIDER_MOLT:
+        if (now_ms - s_molt_start >= 800u) behaviour_set_state(SPIDER_IDLE);
         break;
 
     case SPIDER_POUNCE: {

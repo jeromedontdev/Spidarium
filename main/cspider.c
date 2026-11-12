@@ -254,8 +254,8 @@ bool cspider_gait_test(void)
 /* These write straight into the canvas buffer instead of going through
  * lv_draw_rect()/lv_draw_line()/lv_draw_triangle().
  *
- * That is the Pocket Tank approach: render.c is a plain RGB565 software
- * renderer with no LVGL draw layers at all. The reason matters here. Going
+ * This is a plain RGB565 software renderer with no LVGL draw layers.
+ * The reason matters here. Going
  * through LVGL's draw layer made the software renderer allocate temporary
  * blending buffers for every primitive, every frame. Those allocations came out
  * of internal DMA-capable RAM -- the same pool the LCD SPI driver needs -- and

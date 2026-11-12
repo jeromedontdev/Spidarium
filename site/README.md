@@ -23,10 +23,42 @@ inside the top-left corner; M is the keyboard equivalent.
 The landing-page circle shows the unchanged native spider with one small
 beetle against a quiet moss floor, without pink furnishings or floating motion.
 
+The website's Help Guide and the browser/device in-game help cover seventeen
+topics, from first-run controls through care, molting, achievements, placement,
+power, radio, backups and recovery. Help appears only in the main game Menu,
+not in Settings or About. The browser data in `lib/help.js` is checked
+against native `main/help_content.h` to prevent drift. About contains Firmware
+Update; WiFi no longer mixes update actions with network management.
+
+Decor/gift placement and hold-to-edit use a visible artwork preview. Hold and slide
+to adjust it; release keeps editing. Done commits once; Cancel keeps the
+previous position. Purchased ownership is retained. Browser pointer capture
+keeps drags working outside the canvas; arrows move the preview, Enter confirms
+and Escape cancels. No placement release can also pet, pounce or dim the tank.
+Placed-item controls remain over the enclosure: Put Away, Blocking for decor,
+Done and Cancel. No submenu/Back is shown. Done applies position and blocking;
+Cancel discards both; Put Away retains ownership and stays in the enclosure.
+
+Twenty reachable achievements show goals and pay 15 XP plus 20 Silk once.
+First Pet is visible; the existing molt animation now returns to normal care
+after 800ms. Old earned badges are not repaid. Shops disable unaffordable items,
+keep owned reusable items free, and preserve catalogue pages after purchases.
+Centered icons and inset, enlarged slider hit boxes retain the single-tile layout.
+
+Silk Garden retains its soft pads and bell line; Moonlit Hollow uses slower
+low-register plucks and Rainy Canopy uses quick mallet arpeggios. Integer PCM
+matches firmware exactly. Tests enforce rhythmic/register separation as well
+as peak, loop-seam and gain limits. Navigation taps are quiet pitched ticks,
+not bursts of white noise.
+
 Disabled controls have dim text and dashed borders; destructive actions use
 red, selection uses mint with an inset marker, and keyboard focus uses a light
 outline. Slider, checkbox and keyboard geometry and interactions are retained.
 These source changes do not imply that a build has been deployed or published.
+
+The flasher shows a concise version/integrity/save-preservation status, not
+filenames, addresses or hashes. All manifest, binary hash, partition and NVS
+verification remains active internally.
 
 Focused visual CSS regressions (no build, browser or hardware required):
 

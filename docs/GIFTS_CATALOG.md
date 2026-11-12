@@ -30,8 +30,13 @@ items that bypass locks.
 Price = 12 + 4 times the unlock level. Both level and sufficient Silk are
 required for a first purchase. The picker shows the balance, price, purpose,
 locked level or ownership. Selecting an affordable item starts placement.
-Payment happens on the actual placement tap, not selection: cancelling costs
-nothing. The purchased bit is stored; owned items can be selected/repositioned
+Slide the artwork preview to position it, then press Done; releasing a drag
+does not place it. On the device, payment happens on Done, not selection:
+cancelling costs nothing. The browser retains its existing purchase-on-selection
+timing and keeps that ownership on Cancel. Neither changes the placed gift's
+position until Done. Hold a placed gift for inline Put Away/Done/Cancel
+controls with no submenu or Back; Cancel leaves its original position, and movement preserves its variant.
+The purchased bit is stored; owned items can be selected/repositioned
 for free, including replacing another item. There are no duplicate purchases,
 resale, refunds or multiple active gifts. Existing placed gifts are grandfathered
 as owned, even if their new unlock level is higher.

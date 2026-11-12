@@ -11,26 +11,28 @@ Menu
   Daily                  check-in and the rotating task
   Treats                 twelve consumables bought with Silk
   Backgrounds            forty-eight ground textures, buy once with Silk
-  Achievements           read-only, paged
+  Achievements           twenty badges; tap for goal and one-time rewards
   Prey species           read-only unlock grid
   Decor                  sixty-eight kinds; buy, then tap the tank to place
   Borders                No Border + forty-eight theme frames; buy once with Silk
   Settings
     WiFi
       Scan networks      explicit on-demand action
+        Nearby networks  separate result grid; choose -> password if secured
       Add network        SSID -> masked password editor with Show/Hide
       Saved networks
         Selected network -> sync RTC / forget
-      Firmware update    GitHub latest release / advanced HTTPS URL
-      Scanned networks   choose -> password editor if secured
     SD card              backup / restore / persistent status
     About                firmware and hardware information
+      Firmware update    GitHub latest release / advanced HTTPS URL / status
+      Help guide         seventeen readable feature/control topics
     Battery              status, profiles, timeout, RTC sleep delay/wake
     Display              brightness slider, screen rotation
     Sound                volume, Sound checkbox, Background Music switch
                          Music Volume on page 1; Soundtrack on page 2
     Auto Feed            one switch: wild prey and unattended hunting together
     Save Screenshot      verified playfield BMP to SD (PNG in browser)
+    Help Guide           same topics as About and the website
     Wipe Spider          red text; confirmation before reset; always last
 ```
 
@@ -48,11 +50,15 @@ three-column, two-row grid. `ui_menu_open_grid()` selects this layout;
 `ui_menu_open()` uses two columns/two rows for navigation and settings.
 Each catalogue tile has a real 48px
 icon, name, price/status and selected marker. Gift tiles open a full-effect
-preview before the original placement flow; Back returns to the same grid page
+preview before the draggable placement flow; Back returns to the same grid page
 without spending Silk. The gift effect preview uses `ui_menu_open_detail()`;
 it is a detail/confirmation view, not a browsing list.
 
-Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Back from saved network/editor
+Back from WiFi/SD/About/Battery/Display/Sound returns to Settings. Help appears
+only in the root Menu and returns there; a topic returns to the same help grid
+page. Firmware Update
+returns to About, including its advanced URL editor and asynchronous status refresh.
+Back from saved network/editor
 returns to WiFi. Other submenus return to the root; root Back closes.
 Only the explicit Back control navigates back. Blank panel/backdrop taps are
 absorbed without navigating; disabled cards do not dismiss the menu.
@@ -62,12 +68,28 @@ master, never an effects gain. Browser slider input updates text in place to
 retain keyboard focus. Sliders remain single grid tiles. Browser pointer capture
 keeps mouse/touch/pen drags live until release/cancel, including outside the
 track and at all four screen rotations; keyboard range controls remain native.
+Tracks are inset 20 logical pixels inside each tile, with a 32px browser range
+hit box and a 24px native slider plus LVGL's extended hit target. Icons align
+against the actual content box, not an outer-width guess. Settings reuse
+descriptive existing artwork instead of the generic status fallback.
 Browser storage progress/results also appear as a
 pixel-style in-screen notice, including over the modal/fullscreen playfield.
 
-Hold the actual decor/gift in the enclosure to move or put it away. Decor also
-offers blocking/walk-over in that contextual menu; neither movement action has
-a redundant root/shop entry. Placement storage grows beyond the twelve legacy
+Hold the actual decor/gift to edit it directly over the enclosure. Put Away,
+Done and Cancel remain on screen; decor also has a Blocking toggle. There is
+no per-item submenu or Back button. Blocking changes are staged with position:
+Done applies both, Cancel discards both. Put Away immediately removes the
+item, retains ownership, and returns to the enclosure rather than Settings.
+New placement and editing both show the actual item
+artwork as a draggable preview with persistent Done and Cancel controls. Drag
+release leaves editing active, without modifying saved coordinates; Done
+commits once, Cancel restores the original visual/position. Moving preserves
+gift variant, ownership and Silk. Purchased decor remains owned on cancellation.
+Browser gift ownership is purchased on selection; device gift purchase is
+deferred until Done, preserving each target's existing purchase timing.
+Native preview image/ring/buttons are created once; drags only update retained
+object positions and visibility, never rebuild the gift canvas.
+Placement storage grows beyond the twelve legacy
 save slots, subject to available PSRAM and NVS storage, not a twelve-item cap.
 Double tap the enclosure to toggle its dim lighting. The overlay stays below
 HUD/menus and does not change screen brightness or power timeouts. Single-tap
@@ -88,10 +110,26 @@ Catalogues reuse six 120x116 tiles at x12/140/268 and y76/200. Their bottom
 edge is y316, clear of the footer at y332. Names and status use 12px text;
 full gift effects remain in the preview rather than being squeezed into tiles.
 Detail previews retain a full-width card for complete effect text.
+`ui_menu_open_text()` is the wrapped, non-scrolling reading surface for help
+and achievement goals. Native tests measure every help topic's rendered height.
 There is no scrolling, momentum or scroll animation. Selected entries open
 on their page. Cards show press feedback, selected tint and disabled styling,
 without submenu chevrons. Selected checkmarks and footer paging arrows remain.
 Read-only/disabled cards have no dash marker.
+
+All shops gate affordability before selection. Unowned unaffordable items are
+dimmed and unselectable; owned reusable items remain usable free. Treat callbacks
+and rejected decor/background/border actions retain the selected catalogue page.
+The native root routes Borders explicitly, with a real tile-dispatch regression.
+
+Achievement definitions retain bits 0-10 and extend the same saved uint32 to
+bits 11-19: ten cleans, ten plays, twenty-five meals, bond 50, a three-day streak,
+three placed decorations, four owned backgrounds, a border and a placed gift.
+First Pet is visible again. Every new unlock grants 15 XP and 20 Silk once, with
+the bit set before recursive level rewards. Existing earned bits never pay again.
+New threshold badges can unlock for existing pets already meeting their goals.
+No save-layout/version change is required. Molting occurs at the existing two-
+and five-day boundaries; the MOLT state now exits after its 800ms animation.
 Achievements use ten distinct authored 48px badges, including Perfect Hunt;
 the retired First Pet badge remains mapped for legacy data but is not earnable.
 `ui_menu_set_item_icon(item, asset_index)` attaches an icon without changing

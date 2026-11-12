@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.26](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.26)**
+| **[Download v1.1.27](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.27)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -32,11 +32,20 @@ pixel icons and a full-effect gift preview keep purchases clear. Gold menu ornam
 leave Back clear. Prey have thorax-attached legs, alternating tripod steps,
 travel-driven ground animation and heading-aware sprites; the spider is unchanged.
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
+The website and device Help Guide explain all features in seventeen topics.
+In-game Help is directly in Menu, not duplicated in Settings or About.
+Twenty achievements show their goals and automatically pay 15 XP plus 20 Silk
+once; existing earned badges are never paid twice. First Pet is available, and
+the existing molt at age two days now finishes its animation and resumes care.
+Moonlit Hollow has low plucked beats and Rainy Canopy has quick mallet arpeggios,
+rather than three variations of the same pad sound. Unaffordable shop tiles are
+dimmed, Borders stays in its menu, and controls have inset slider grab areas.
+Firmware Update is under Settings > About; WiFi has separate scan results.
 The web updater preserves and verifies the save region. On-device updates
 resolve GitHub's latest stable release, verify the image and require matching
 artwork; art changes use USB. Slow HTTPS reads retry within a five-minute
 download limit. Single-tile sliders support held dragging; menu tiles omit
-submenu arrows. See [v1.1.26 release notes](docs/RELEASE_v1.1.26.md).
+submenu arrows. See [v1.1.27 release notes](docs/RELEASE_v1.1.27.md).
 **OTA verification boundary:** GitHub discovery and safe partial-download
 recovery are tested, but a complete hosted download/reboot has not passed on
 the current hardware connection. Use USB for a verified installation.
@@ -64,7 +73,7 @@ See [asset maintenance](assets/README.md).
 **Hunting gets the whole enclosure.** A small paper/gold top-left page fold reveals
 centered compact status boxes along the top row, plus Feed/Clean/Play/Sleep/Gift/Menu
 actions. Tapping the ear again or an empty tank tap closes the overlay without firing;
-choosing a gift exposes placement with an X icon to cancel.
+choosing a gift exposes a draggable artwork preview with Done and Cancel controls.
 Sleep is a real toggle: the button reads **Wake** while the spider is asleep, and
 a sleep you asked for holds until energy is actually full rather than ending at a
 fixed threshold, so pressing it always has a visible payoff.
@@ -98,14 +107,20 @@ See [the gift shop](docs/GIFTS_CATALOG.md).
 **Decor is the enclosure you arrange.** Sixty-eight kinds include rocks,
 plants, hides, arches, a hammock, pools, a tent, a lantern and a bridge.
 They cost 12–120 Silk and unlock from level 1 to 18. Pick one in the Decor menu,
-then tap the tank to place it. Storage grows beyond twelve items, subject to
+then slide the preview and press **Done** to place it. **Cancel** discards the
+pending position, not purchased decor ownership. Holding a placed decoration
+or gift opens the same drag/Done controls directly over the enclosure, with
+**Put Away**, **Blocking** (decor only), **Done** and **Cancel**. No submenu or
+Back button is involved. Done applies position/blocking; Cancel discards both;
+Put Away retains ownership and stays in the enclosure. Releasing a drag
+does not commit or save. Storage grows beyond twelve items, subject to
 available PSRAM/NVS space rather than an arbitrary twelve-item cap.
 Each item is either **blocking** or
 **non-blocking**: the spider steers around a blocking item before it reaches it,
 and walks straight over a non-blocking one. Blocking is a steering input, not a
 positional shove, so the spider turns away instead of grinding against a rock.
-**Hold a finger on a placed item** to open its menu, where you can flip the
-blocking flag, move it, or put it away. The catalogue order is shared with the
+**Hold a finger on a placed item** to open its on-screen editing controls, where you can flip the
+blocking flag, move it, or put it away without a submenu. The catalogue order is shared with the
 browser port and checked by a test that parses the C table.
 
 **A daily loop, and treats to spend Silk on.** Each in-game day offers a check-in
@@ -234,11 +249,14 @@ OTA metadata and 6 MB assets. Initial migration requires the full flash wrapper,
 not an application-only update. NVS/PHY offsets are preserved.
 
 Settings > WiFi supports scans, secure-network passwords, manual SSID,
-three saved networks, explicit time sync, forget and a manual HTTPS update URL.
+three saved networks, explicit time sync and forget. Scan results have their
+own grid. Settings > About > Firmware Update offers GitHub Latest and an
+advanced HTTPS application URL.
 Credentials are saved after successful association; WiFi does not stay connected.
-No production update server is configured. OTA validates HTTPS, project identity
-and image completion, then requires a reboot to apply. It does not provide a
-signed release manifest, semantic downgrade prevention or functional rollback.
+Latest-release OTA validates the descriptor, application hash/size, project,
+version and matching artwork before selecting a boot slot. Reset after a
+confirmed installation. A complete hosted transfer/reboot remains unproven on
+the current link. Signed firmware and functional rollback are not provisioned.
 See [network details and verification limits](docs/WIFI_ARCHITECTURE.md).
 
 ---
@@ -397,21 +415,17 @@ read and written only by the CPU belongs in PSRAM.
 Working: the spider, the hunt, needs and decay, gifts, achievements, themes,
 first-run setup, save/restore, SD backup, WiFi scan, the serial console.
 
-Planned: 
-- **Menu System Overhaul** — Hierarchical menus with proper scrolling and styling
-- **WiFi Settings** — User control: on/off toggle, multi-network support, manual selection
-- **Gifts Expansion** — 5→18 unique gifts with unlock levels and special effects
-- **Assets Refresh** — Professional-quality UI icons, prey sprites, decorations
-- **Complete Documentation** — All architectural decisions documented for agent handoff
+Current controls use paged grids, not scrolling lists. There are 36 gifts,
+68 decor kinds, 48 backgrounds and 48 borders. The website/device Help Guide
+explains care, progression and hardware tools. Remaining physical verification
+boundaries include a complete hosted OTA reboot, authorized network/SNTP,
+SD media, RTC battery retention and subjective touchscreen/speaker acceptance.
 
 See **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** for the complete overhaul roadmap and [docs/INDEX.md](docs/INDEX.md) for documentation navigation.
 
 ---
 
-## Credit
+## Implementation
 
-Inspired by [Pocket Tank](https://github.com/mediacutlet/pocket-tank) by
-mediacutlet — a virtual pet on a small round display. Spidarium is an
-independent implementation: a different creature, a different renderer, a
-different save format and a different UI. Several of the hard-won lessons in
-`PROGRESS.md` were relearned the slow way rather than copied.
+Spidarium is an independent virtual pet implementation with its own creature,
+renderer, save format and UI. See `PROGRESS.md` for the engineering history.

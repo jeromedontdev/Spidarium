@@ -628,6 +628,9 @@ bool save_format_test(void)
     base.backgrounds_owned = 1;
     base.decor_owned_extra = 0;
     base.border_id = 255;
+    /* Historical fixtures must not inherit newer catalogue IDs from the pet. */
+    for (int i = 0; i < DECOR_SLOTS; i++)
+        base.decor[i] = (decor_item_t){.kind = 0xFF};
     uint8_t blob[sizeof(save_header_t) + sizeof(game_state_t)];
     save_header_t header = { .magic = SAVE_MAGIC, .version = SAVE_VERSION, .size = sizeof g };
     memcpy(blob, &header, sizeof header);
@@ -690,7 +693,7 @@ bool save_format_test(void)
     header.version = 5;
     header.size = SAVE_V5_PAYLOAD;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &g, SAVE_V5_PAYLOAD);
+    memcpy(blob + sizeof header, &base, SAVE_V5_PAYLOAD);
     ok = save_raw_valid(blob, sizeof header + SAVE_V5_PAYLOAD) && ok;
     /* ...but a v5 header with a v6-sized payload is a lie and must be refused. */
     header.size = sizeof(game_state_t);
@@ -709,7 +712,7 @@ bool save_format_test(void)
     header.version = 6;
     header.size = SAVE_V6_PAYLOAD;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &g, SAVE_V6_PAYLOAD);
+    memcpy(blob + sizeof header, &base, SAVE_V6_PAYLOAD);
     ok = save_raw_valid(blob, sizeof header + SAVE_V6_PAYLOAD) && ok;
     /* ...and a v6 header claiming a v7 payload is a lie. */
     header.size = sizeof(game_state_t);
@@ -727,7 +730,7 @@ bool save_format_test(void)
     header.version = 7;
     header.size = SAVE_V7_PAYLOAD;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &g, SAVE_V7_PAYLOAD);
+    memcpy(blob + sizeof header, &base, SAVE_V7_PAYLOAD);
     ok = save_raw_valid(blob, sizeof header + SAVE_V7_PAYLOAD) && ok;
     /* ...and a v7 header claiming a v8 payload is a lie. */
     header.size = sizeof(game_state_t);
@@ -749,7 +752,7 @@ bool save_format_test(void)
     header.version = 8;
     header.size = SAVE_V8_PAYLOAD;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &g, SAVE_V8_PAYLOAD);
+    memcpy(blob + sizeof header, &base, SAVE_V8_PAYLOAD);
     ok = save_raw_valid(blob, sizeof header + SAVE_V8_PAYLOAD) && ok;
     migrated = g;
     migrate_automation(&migrated, 8);

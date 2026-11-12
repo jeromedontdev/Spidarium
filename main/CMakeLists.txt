@@ -28,7 +28,7 @@ idf_component_register(
          "test_console.c"
     INCLUDE_DIRS "."
     REQUIRES esp_mmap_assets esp_lv_fs esp_lv_decoder esp_codec_dev
-    PRIV_REQUIRES nvs_flash esp_lvgl_adapter
+    PRIV_REQUIRES nvs_flash esp_lvgl_adapter esp_timer
                   esp_wifi esp_netif esp_event esp_https_ota mbedtls json
                   sdmmc fatfs app_update
                   driver

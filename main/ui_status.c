@@ -8,6 +8,7 @@
 #include "game_config.h"
 #include "gift.h"
 #include "needs.h"
+#include "achievements.h"
 #include "prey.h"
 #include "sprites.h"
 #include "ui_style.h"
@@ -37,7 +38,7 @@ static lv_obj_t *s_persona;
 static lv_obj_t *s_streak;
 static lv_obj_t *s_unlock;
 static lv_obj_t *s_gift;
-static lv_obj_t *s_ach[10];
+static lv_obj_t *s_ach;
 static lv_obj_t *s_mute_btn;
 static lv_obj_t *s_mute_label;
 
@@ -49,21 +50,6 @@ static const char *k_names[NUM_STATS] = {
     "hunger", "mood", "energy", "hygiene",
 };
 
-/* "first pet" is gone: the pet mechanic was removed, so the achievement could
- * never be earned again. */
-#define ACH_SHOWN 9
-
-static const char *k_ach_names[ACH_SHOWN] = {
-    "first meal", "first clean", "first play", "first hunt",
-    "first molt", "ten meals", "adulthood", "level 5",
-    "survived sickness",
-};
-
-static const uint32_t k_ach_bits[ACH_SHOWN] = {
-    ACH_FIRST_MEAL, ACH_FIRST_CLEAN, ACH_FIRST_PLAY,
-    ACH_FIRST_HUNT, ACH_FIRST_MOLT, ACH_TEN_MEALS, ACH_ADULT,
-    ACH_LEVEL_5, ACH_SURVIVED_SICK,
-};
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -193,14 +179,7 @@ void ui_status_init(void)
     make_label(s_screen, UI_CORNER, y, "ACHIEVEMENTS", 12, COL_DIM);
     y += 16;
 
-    for (int i = 0; i < ACH_SHOWN; i++) {
-        int col = i % 2;
-        int row = i / 2;
-        s_ach[i] = make_label(s_screen,
-                              UI_CORNER + col * ((ui.W - 2 * UI_CORNER) / 2),
-                              y + row * 14,
-                              k_ach_names[i], 12, COL_DIM);
-    }
+    s_ach = make_label(s_screen, UI_CORNER, y, "Menu > Achievements for goals and rewards", 12, COL_DIM);
 
     /* --- settings ----------------------------------------------------- */
     int32_t sy = ui.H - UI_CORNER - 40;
@@ -336,11 +315,11 @@ void ui_status_tick(uint32_t now_ms)
         lv_label_set_text(s_gift, buf);
     }
 
-    for (int i = 0; i < ACH_SHOWN; i++) {
-        if (!s_ach[i]) continue;
-        bool got = (g.achievements & k_ach_bits[i]) != 0;
-        lv_obj_set_style_text_color(s_ach[i],
-                                    lv_color_hex(got ? COL_MOOD : COL_DIM), 0);
+    if (s_ach) {
+        int earned = 0;
+        for (int i = 0; i < ACHIEVEMENT_COUNT; i++) if (g.achievements & ACHIEVEMENTS[i].bit) earned++;
+        snprintf(buf, sizeof buf, "%d/%d earned / +15 XP +20 Silk each", earned, ACHIEVEMENT_COUNT);
+        lv_label_set_text(s_ach, buf);
     }
 
     if (s_mute_label) {

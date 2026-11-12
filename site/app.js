@@ -1,10 +1,16 @@
 import { SerialConsole } from './lib/protocol.js';
-import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.26';
-import { loadFirmware, flashFirmware } from './lib/flasher.js?v=1.1.26';
-import { DeviceGame } from './lib/device-ui.js?v=1.1.26';
+import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.27';
+import { loadFirmware, flashFirmware } from './lib/flasher.js?v=1.1.27';
+import { DeviceGame } from './lib/device-ui.js?v=1.1.27';
 import { renderSpider } from './lib/spider-renderer.js';
+import { HELP_TOPICS } from './lib/help.js';
 
 const $ = selector => document.querySelector(selector);
+for (const topic of HELP_TOPICS) {
+  const entry=document.createElement('details'), summary=document.createElement('summary'), text=document.createElement('p');
+  summary.textContent=topic.name; text.textContent=topic.text;
+  entry.append(summary,text);$('#help-topics').append(entry);
+}
 for (const [id, state, emote] of [['hero-spider', 'idle', 'happy'], ['sleeping-spider', 'sleep', 'sleepy']]) {
   const ctx = $(`#${id}`).getContext('2d'), frame = ctx.createImageData(96, 96);
   renderSpider(frame.data, { state, emote, fangColour: 7 });
@@ -120,13 +126,7 @@ $('#wifi-form').onsubmit = event => {
 };
 $('#check-release').onclick = () => operation(async () => {
   firmware = null; firmware = await loadFirmware(new URL('./firmware/manifest.json', import.meta.url));
-  $('#release-info').textContent = `Spidarium ${firmware.manifest.version} · ESP32-S3 · all five SHA-256 hashes verified · NVS preserved.`;
-  $('#release-files').replaceChildren();
-  firmware.manifest.files.forEach(file => {
-    const row = document.createElement('li'), hash = document.createElement('code');
-    row.textContent = `${file.path} · 0x${file.offset.toString(16)} · ${file.size.toLocaleString()} bytes`;
-    hash.textContent = `SHA-256 ${file.sha256}`; row.append(hash); $('#release-files').append(row);
-  });
+  $('#release-info').textContent = `Spidarium ${firmware.manifest.version} · ESP32-S3 · firmware verified · save-preserving updater.`;
   $('#flash-status').textContent = 'Release verified. No firmware written yet.';
 }, $('#flash-status'));
 $('#flash-consent').onchange = deviceUI;

@@ -25,7 +25,7 @@ typedef struct {
     const char *detail;    /* secondary text, may be NULL */
     bool        enabled;   /* false = greyed and unselectable */
     bool        selected;  /* true = highlighted as the current choice */
-    bool        is_submenu;/* true = show a chevron */
+    bool        is_submenu;/* navigation metadata; no chevron */
     uint8_t     id;        /* passed back to the callback */
 } ui_menu_item_t;
 
@@ -43,6 +43,7 @@ void ui_menu_open_grid(const char *title, const ui_menu_item_t *items, int count
                        ui_menu_pick_cb cb);
 void ui_menu_open_detail(const char *title, const ui_menu_item_t *items, int count,
                          ui_menu_pick_cb cb);
+void ui_menu_open_text(const char *title, const char *text);
 
 /* Set the BACK handler for the currently open menu. Call after ui_menu_open.
  * Without this, BACK simply closes the menu. */
@@ -62,6 +63,8 @@ void ui_menu_open_input(const char *title, const char *initial, bool password,
 
 /* LVGL-task diagnostic exercising paging and password editing without credentials. */
 bool ui_menu_test(void);
+bool ui_menu_test_pick(uint8_t id);
+bool ui_menu_test_text_fits(void);
 void ui_menu_format_name(char *dst, size_t size, const char *name);
 void ui_menu_set_destructive(uint8_t id);
 void ui_menu_set_item_icon(uint8_t item, int asset_index);

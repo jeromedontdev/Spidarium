@@ -117,7 +117,7 @@ test('wild timing/flower/daily visitors honor auto_feed rather than manual feed'
   // Runtime scheduling is directly controllable for focused long-period tests.
   s._engine.last_wild=s._engine.now_ms-1199950;
   tick(s);assert.equal(preyCount(s),1);
-  care(s,'clean');s.level=40;s.silk=1000;placeGift(s,6);
+  care(s,'clean');s.level=40;s.xp=1950;s.silk=1000;placeGift(s,6);
   s._engine.last_wild=s._engine.now_ms-599950;
   tick(s);assert.equal(preyCount(s),1);
   s.days_lived=1;tick(s);assert.equal(preyCount(s),2);assert.equal(s.prey[1].species,7);
@@ -142,7 +142,7 @@ test('pounce flight reaches target at native speed and reports catch after landi
   tick(s,.1);assert.equal(s.state,5);assert.equal(s.x,360);assert.equal(p.dead,true);
   assert.equal(s.lastEvent.type,'catch');assert.equal(s.lastEvent.quality,'perfect');
   assert.equal(s.hunger,85);assert.equal(s.energy,83);assert.equal(s.hygiene,68);
-  assert.equal(s.mood,72);assert.equal(s.silk,25);assert.equal(s.meals,1);assert.equal(s.bond,4);
+  assert.equal(s.mood,72);assert.equal(s.silk,85);assert.equal(s.meals,1);assert.equal(s.bond,4);
   assert.equal(s.streak,1);assert.equal(s.xp,63); // 18 streak XP + 3 achievements * 15.
   tick(s,.8);assert.notEqual(s.state,5);
 });
@@ -256,13 +256,13 @@ test('a bug left in the tank leaves a speckle every BUG_POOP_MS',()=>{
   assert.equal(s.poop[0].dirt,CONFIG.POOP_DIRT_BUG);
   assert.equal(cleanReward(s),1);
 });
-test('clean/play care rewards are exact native XP and do not pay invented Silk',()=>{
+test('clean/play pay exact native XP plus one-time achievement Silk',()=>{
   const s=state();bug(s);s.poop.push({expires:10000,dirt:CONFIG.POOP_DIRT_SPIDER});
   care(s,'clean');
   assert.equal(s.hygiene,100);assert.equal(s.cleans,1);assert.equal(s.xp,18);
-  assert.equal(preyCount(s),0);assert.equal(s.poop.length,0);assert.equal(s.silk,20);
+  assert.equal(preyCount(s),0);assert.equal(s.poop.length,0);assert.equal(s.silk,40);
   care(s,'play');assert.equal(s.mood,70);assert.equal(s.energy,75);assert.equal(s.plays,1);
-  assert.equal(s.xp,37);assert.equal(s.silk,20);assert.equal(s.state,7);
+  assert.equal(s.xp,37);assert.equal(s.silk,60);assert.equal(s.state,7);
   assert.throws(()=>care(s,'pet')); // Defined on device, but not currently wired.
 });
 test('native integer decay runs every 3s, empty tank regenerates hygiene',()=>{
@@ -310,8 +310,8 @@ test('aging is exactly 30s ticks /2880 day and stage/molt rewards match device',
   s.age_ticks=2*2880-1;s.days_lived=1;s._engine.last_age=s._engine.now_ms-29950;
   tick(s);assert.equal(s.age_ticks,5760);assert.equal(s.stage,1);assert.equal(s.state,8);
   assert.equal(s.xp,25);assert.equal(s.last_molt_day,2);
-  // Native MOLT has no exit; keep parity rather than invent a life-cycle rule.
-  tick(s,1);assert.equal(s.state,8);
+  tick(s,.75);assert.equal(s.state,8);
+  tick(s,.05);assert.equal(s.state,0,'molt completes after its 800ms animation');
   s.state=0;s.age_ticks=4*2880-1;s.days_lived=3;s._engine.last_age=s._engine.now_ms-29950;
   tick(s);assert.equal(s.xp,43);assert.equal(s.last_molt_day,4);
   s.state=0;s.age_ticks=5*2880-1;s.days_lived=4;s._engine.last_age=s._engine.now_ms-29950;
@@ -355,11 +355,11 @@ test('gift visits walk, hold 3s, reward only mood+4 energy+4, then cooldown60s',
   assert.equal(s.energy,54);assert.deepEqual([s.xp,s.silk],before);
   assert.equal(s._engine.gift_visit_at,s._engine.now_ms+60000);
 });
-test('bond gift is +2 Silk at native120-240s and only without placed gift',()=>{
+test('bond gift adds two Silk independently of one-time friendship/gift achievements',()=>{
   const s=state({random:()=>0});s.bond=75;tick(s);
   assert.equal(s._engine.next_bond_gift,s._engine.now_ms+120000);
-  s._engine.next_bond_gift=s._engine.now_ms+50;tick(s);assert.equal(s.silk,22);
-  placeGift(s,0);s._engine.next_bond_gift=s._engine.now_ms+50;tick(s);assert.equal(s.silk,6);
+  s._engine.next_bond_gift=s._engine.now_ms+50;tick(s);assert.equal(s.silk,42);
+  placeGift(s,0);s._engine.next_bond_gift=s._engine.now_ms+50;tick(s);assert.equal(s.silk,46);
 });
 test('mind reevaluates4s; weights/native strict thresholds and tie order',()=>{
   const s=state();s.hunger=24;s.energy=10;tick(s);assert.equal(s.want,'food');assert.equal(s.mind_rule,'starving');
@@ -416,7 +416,7 @@ test('null restore creates fresh state but corrupt saves throw descriptive error
     ['xp',-1],['silk','20'],['hunger',101],['energy',NaN],['mood',Infinity],
     ['auto_feed',2],['auto_hunt',true],['autoFeed','yes'],['colour',6],
     ['fang_colour',9],['name',false],['level',0],['gifts_owned',0x100000000],
-    ['achievements',1<<11],['state',99],['background','fake'],['setup_complete',1],
+    ['achievements',1<<ACHIEVEMENTS.length],['state',99],['background','fake'],['setup_complete',1],
     ['createdAt','not a timestamp'],['gift',{kind:99,used:1,x:240,y:240,variant:0}],
     ['_engine',null],['spider',{x:'x',y:240,heading:0,gait_phase:0}],
   ]){

@@ -22,6 +22,7 @@
 #include <string.h>
 #include <stdatomic.h>
 #include "esp_random.h"
+#include "esp_timer.h"
 
 static const char *TAG = "spidarium.audio";
 
@@ -59,6 +60,8 @@ static uint32_t s_music_pos;
 static uint32_t s_music_fade;
 static uint32_t s_music_written;
 static uint8_t  s_music_gain = 100;
+static int64_t s_music_write_end;
+static atomic_uint s_music_max_gap_us, s_music_late_chunks, s_music_chunks;
 
 static void play_sfx(sfx_t sfx);
 static bool write_pcm(int samples);
@@ -118,6 +121,7 @@ static void music_stop(const char *reason)
     bool ok = apply_volume() && write_pcm(AMBIENCE_FADE);
     s_music_written += ok ? AMBIENCE_FADE : 0;
     s_music_on = false;
+    s_music_write_end = 0;
     s_music_fade = 0;
     ESP_LOGI(TAG, "music stopped: %s%s samples=%lu", reason, ok ? "" : " (fade write failed)",
              (unsigned long)s_music_written);
@@ -134,6 +138,15 @@ static void music_chunk(void)
                  audio_music_track_name(s_music_active_track));
     }
     music_render(MUSIC_CHUNK, false);
+    int64_t now = esp_timer_get_time();
+    if (s_music_write_end) {
+        uint32_t gap = (uint32_t)(now - s_music_write_end);
+        if (gap > atomic_load(&s_music_max_gap_us)) atomic_store(&s_music_max_gap_us, gap);
+        if (gap > 50000u) {
+            atomic_fetch_add(&s_music_late_chunks, 1);
+            ESP_LOGW(TAG, "music refill late: %lu us", (unsigned long)gap);
+        }
+    }
     if (!apply_volume() || !write_pcm(MUSIC_CHUNK)) {
         s_music_on = false;
         s_music_fade = 0;
@@ -143,6 +156,8 @@ static void music_chunk(void)
         return;
     }
     s_music_written += MUSIC_CHUNK;
+    s_music_write_end = esp_timer_get_time();
+    atomic_fetch_add(&s_music_chunks, 1);
 }
 
 static void audio_worker(void *arg)
@@ -330,8 +345,10 @@ bool audio_init(void)
                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_queue = s_buf ? xQueueCreate(4, sizeof(sfx_t)) : NULL;
     atomic_store(&s_muted, g.muted != 0);
+    /* Stay above the priority-6 LVGL adapter during allocation-heavy menus.
+     * The bounded producer yields in codec writes; no extra internal DMA. */
     if (!s_queue ||
-        xTaskCreateWithCaps(audio_worker, "spidarium_audio", 4096, NULL, 2, NULL,
+        xTaskCreateWithCaps(audio_worker, "spidarium_audio", 4096, NULL, 7, NULL,
                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
         if (s_queue) vQueueDelete(s_queue);
         s_queue = NULL;
@@ -518,6 +535,10 @@ bool audio_test(void)
     ok = valid && ok;
     ESP_LOGI(TAG, "PCM pet samples=%d hash=%08lx peak=%d endpoints=%d/%d %s", PET_SAMPLES,
              (unsigned long)hash, peak, first, last, valid ? "PASS" : "FAIL");
+    ESP_LOGI(TAG, "stream chunks=%lu max_refill_gap_us=%lu late=%lu",
+             (unsigned long)atomic_load(&s_music_chunks),
+             (unsigned long)atomic_load(&s_music_max_gap_us),
+             (unsigned long)atomic_load(&s_music_late_chunks));
     return ok;
 }
 
@@ -547,8 +568,7 @@ static void play_sfx(sfx_t sfx)
         break;
 
     case SFX_TAP:
-        /* Soft click. */
-        n = render_noise(SFX_MS_TAP, 0.08f);
+        n = render_sweep(392.0f, 330.0f, SFX_MS_TAP, 0.04f);
         break;
 
     case SFX_ALERT:
