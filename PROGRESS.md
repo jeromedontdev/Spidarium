@@ -8024,3 +8024,13 @@ evidence proves delivery and continuity, not that the player likes the sound.
   badge mappings. Full host suite now53/53. The exact Pages generation command,
   `asset_build.py --png-only`, passes and preserves all337 source PNG bytes.
   Website deployment uses main's corrected tooling with latest release1.1.27.
+- **Final publication evidence:** Pages run43135571412 on source5f00699 passed
+  build and deployment. CI passed23 art tests and175 browser tests; generation
+  preserved337 PNGs byte-for-byte and selected latest firmwarev1.1.27.
+  Production index, app, both stylesheets, browser UI/engine, shared help and
+  site README match current source (line-ending normalized) with zero obsolete
+  branding matches. Downloaded all five production firmware images and verified
+  their exact sizes/SHA256 against thev1.1.27 manifest; NVS remains excluded.
+  The three GitHub release-asset digests remain unchanged. Current tracked files
+  and every GitHub release description have zero obsolete-branding matches.
+  Historical commits, tags and older release archives were not rewritten.
