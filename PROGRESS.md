@@ -8007,3 +8007,20 @@ evidence proves delivery and continuity, not that the player likes the sound.
   source or Markdown. GitHub release-description audit finds0 matching releases;
   repository metadata, issues/PRs and their comments have no matches, and wiki/
   discussions are disabled. Immutable historical references remain out of scope.
+
+### Publication and website pipeline correction
+
+- Source92846bd pushed to main and taggedv1.1.27; the stable release is public.
+  Published application, OTA manifest and full USB archive SHA256 digests all
+  match their local verified files. Added the release tag to Pages deployment
+  policy before publishing.
+- Initial Pages run43135324338 rejected the old asset-pipeline invariant that
+  every achievement bit had to belong to the eleven dedicated badge files.
+  Firmware correctly uses nine explicit existing UI icons for the additional
+  goals. Updated the validator to cover all twenty bits and require each shared
+  icon to match native/browser mappings; dedicated-badge checks remain strict.
+  No artwork or firmware artifact changed. Do not retag the existing release.
+- Added positive and negative regression coverage for shared/missing/unknown
+  badge mappings. Full host suite now53/53. The exact Pages generation command,
+  `asset_build.py --png-only`, passes and preserves all337 source PNG bytes.
+  Website deployment uses main's corrected tooling with latest release1.1.27.

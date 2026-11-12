@@ -2,12 +2,13 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
 from asset_build import (
-    BACKGROUNDS, DECOR_ITEMS, GIFTS, TREATS, expected_dimensions,
-    validate_pixel_art, write_preview,
+    ACHIEVEMENT_ICONS, BACKGROUNDS, DECOR_ITEMS, GIFTS, TREATS, expected_dimensions,
+    validate_pixel_art, validate_runtime_mappings, write_preview,
 )
 from gen_sprites import (
     ACHIEVEMENT_NAMES, BACKGROUND_NAMES, DECOR_ITEM_NAMES, GIFT_NAMES,
@@ -18,6 +19,19 @@ from gen_sprites import (
 
 
 class ArtStyleTests(unittest.TestCase):
+    def test_all_twenty_achievement_art_mappings_are_covered(self):
+        root = Path(__file__).resolve().parents[1]
+        validate_runtime_mappings(root)
+        with patch.dict(ACHIEVEMENT_ICONS, {"ten_cleans": "play"}):
+            with self.assertRaisesRegex(ValueError, "ACH_TEN_CLEANS"):
+                validate_runtime_mappings(root)
+        with patch.dict(ACHIEVEMENT_ICONS, {"unknown": "clean"}):
+            with self.assertRaisesRegex(ValueError, "ACH_UNKNOWN"):
+                validate_runtime_mappings(root)
+        with patch.dict(ACHIEVEMENT_ICONS, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "every game.h ACH_"):
+                validate_runtime_mappings(root)
+
     def test_audio_icons_have_distinct_silhouettes_and_match_published_sources(self):
         root = Path(__file__).resolve().parents[1]
         for left, right in (("volume", "sound"), ("music", "play")):

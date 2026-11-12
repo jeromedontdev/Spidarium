@@ -43,6 +43,11 @@ ACHIEVEMENTS = (
     "first_molt", "ten_meals", "adult", "level_5", "survived_sick",
     "first_perfect",
 )
+ACHIEVEMENT_ICONS = {
+    "ten_cleans": "clean", "ten_plays": "play", "twenty_five_meals": "feed",
+    "bond_50": "mood", "streak_3": "daily", "decor_3": "decor",
+    "backgrounds_4": "backgrounds", "first_border": "display", "first_gift": "treats",
+}
 ACHIEVEMENT_ACCENTS = (
     0xE9A44F, 0xE781A5, 0x68C8C0, 0x72C58B, 0xD5634D, 0xC6B9DE,
     0xD8AE43, 0xA8C6C7, 0x7C9CFF, 0x58D68D, 0xA7D8E0,
@@ -584,7 +589,17 @@ def validate_runtime_mappings(root):
             raise ValueError(f"{symbol} must map to its dedicated achievement badge")
     with open(os.path.join(root, "main", "game.h"), encoding="utf-8") as source:
         defined = set(re.findall(r"^#define\s+(ACH_\w+)\s+", source.read(), re.MULTILINE))
-    if defined != {f"ACH_{name.upper()}" for name in ACHIEVEMENTS}:
+    with open(os.path.join(root, "site", "lib", "device-engine.js"), encoding="utf-8") as source:
+        browser = source.read()
+    for name, icon in ACHIEVEMENT_ICONS.items():
+        symbol = f"ACH_{name.upper()}"
+        if icon not in UI_ICONS or not re.search(
+            rf'case\s+{symbol}\s*:\s*return\s+sprite_icon_index\("{icon}"\)\s*;', mappings
+        ):
+            raise ValueError(f"{symbol} must map to its shared {icon} icon")
+        if not re.search(rf"\['{name}','[^']*','[^']*','ui_{icon}'\]", browser):
+            raise ValueError(f"{symbol} browser icon must match its native mapping")
+    if defined != {f"ACH_{name.upper()}" for name in (*ACHIEVEMENTS, *ACHIEVEMENT_ICONS)}:
         raise ValueError("Achievement badge set does not cover every game.h ACH_* bit")
     if not re.search(r"if\s*\(dead\)\s*return\s+base\s*;", mappings):
         raise ValueError("Dead prey must resolve dead_0 regardless of animation frame")

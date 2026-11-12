@@ -22,6 +22,9 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   Holding furniture opens inline Put Away/Blocking/Done/Cancel controls, not a
   submenu. Blocking is staged until Done; Cancel discards it. Gifts omit
   Blocking. All exits remain in the enclosure, with no Back-to-Settings route.
+  The art pipeline validates eleven dedicated badges plus nine explicitly
+  shared UI icons against native/browser mappings; every achievement bit must
+  be covered. Use the complete PNG-only pipeline, not just its unit tests.
 
 - Current working changes add seventeen help topics in the native/browser game
   and website, simplify WiFi, move Firmware Update into About, center grid art,
