@@ -8525,3 +8525,7 @@ evidence proves delivery and continuity, not that the player likes the sound.
   inside the circular opening; no horizontal page overflow. Actual hero
   screenshots confirm creature silhouettes separate from the quiet backdrop.
 - No device flash or pet changes are needed for this website-only fix.
+- Initial deployment correctly rejects an obsolete shop-grid assertion that
+  required the old moss texture. Remove that redundant background assertion;
+  the dedicated visual-style test now owns the parchment contract. The full
+  browser suite then passes181/181, not just the7 targeted style checks.

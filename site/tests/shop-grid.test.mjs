@@ -164,6 +164,4 @@ test('fold is inside the rounded screen; hero preserves spider with one small bu
   assert.match(html,/id="hero-spider"/);
   assert.match(app,/\['hero-spider'/);
   assert.doesNotMatch(html,/class="hero-beetle"/);
-  const style=await readFile(new URL('../style.css',import.meta.url),'utf8');
-  assert.match(style,/\.hero-moss \{ background:#354a39 url\("\.\.\/assets\/background_moss_0\.png"\)/);
 });
