@@ -62,9 +62,18 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   existing purchase timing and the original gift variant when moving. Native
   preview artwork/ring/Done/Cancel controls are retained objects, not recreated
   while dragging. See the latest progress round for pointer/memory evidence.
-  Holding furniture opens inline Put Away/Blocking/Done/Cancel controls, not a
-  submenu. Blocking is staged until Done; Cancel discards it. Gifts omit
-  Blocking. All exits remain in the enclosure, with no Back-to-Settings route.
+  Holding furniture opens inline Put Away/Done/Cancel controls, not a submenu.
+  New/moved decor add Solid, Walk Over, Walk Behind and Back/Front layer arrows.
+  Stage position/path/layer until Done; Cancel discards all. Floor is beneath
+  the spider; Canopy (Walk Behind) is above the creature layer. Arrows reorder
+  within a band. Gifts omit decor physics/layer controls. All exits stay in
+  the enclosure, with no Back-to-Settings route.
+  Save v13 keeps the v12 layout, storing path0/1/2 in the existing byte and
+  layer order in record order. Only path1 collides. Read old v2-v12 saves,
+  reject path2 before v13/path3 always; do not downgrade a v13 save to old
+  firmware. Renderer objects are retained/reparented only on explicit edits;
+  no per-drag allocation. Pointer self-tests use lightweight decor checks,
+  not repeated full terrain decodes that can starve the LVGL watchdog.
   The art pipeline validates eleven dedicated badges plus nine explicitly
   shared UI icons against native/browser mappings; every achievement bit must
   be covered. Use the complete PNG-only pipeline, not just its unit tests.

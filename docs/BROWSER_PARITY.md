@@ -64,9 +64,17 @@ unchanged native spider renderer. No asset PNG or save-format change is needed.
 
 Help is available directly in Menu only, matching the device. Decor/gift
 placement and hold-to-edit show draggable artwork and explicit Done/Cancel.
-Editing placed furniture adds inline Put Away and, for decor, Blocking controls.
-No item submenu or Back button is involved. Blocking is staged until Done;
-Cancel discards both position/blocking edits. Put Away returns to the enclosure.
+Editing placed furniture adds inline Put Away. New and moved decor offer
+Solid (steer around), Walk Over (spider above), and Walk Behind (spider beneath).
+Back/Front arrows reorder within Floor (Solid/Walk Over) or Canopy (Walk Behind).
+Canopy draws above Floor and the entire creature layer, below lighting/HUD.
+Hit testing checks the frontmost canopy before gifts and Floor, then reverse
+record order within each band. Preview ordering does not mutate saved records.
+Switching between Solid/Walk Over retains its layer; switching bands starts at
+the new band's front. Arrows disable at boundaries; higher numbers draw in front.
+No item submenu or Back navigation is involved. Position, path and layer are
+staged until Done; Cancel discards all edits. Put Away returns to the enclosure.
+Gifts retain their existing controls without decor path/layer choices.
 Release keeps the preview active; saved coordinates change only on Done.
 Cancel preserves the old item and moving never charges Silk or changes a gift's
 variant. Preview positions use the existing placement bounds. Browser capture
@@ -78,8 +86,13 @@ gifts and forty-eight backgrounds. Native/browser IDs, costs, unlocks and
 footprints match. Forty-eight theme-matched borders buy once independently
 from their floors, reapply free, and have a free No Border option. Decor
 grows past twelve placements; ownership uses explicit words/nibbles instead
-of shifting a 32-bit mask by high IDs. v12 local/raw saves preserve all records.
+of shifting a 32-bit mask by high IDs. v13 local/raw saves preserve all records.
 Raw saves keep the legacy twelve-slot prefix and append a counted six-byte tail.
+Path values are 0=Walk Over, 1=Solid, 2=Walk Behind in the existing blocking
+byte. Record order persists layers, including across the inline/tail boundary;
+no separate rank field. v2-v12 raw saves remain readable, but new path2 is legal
+only in v13. Browser JSON migration retains numeric modes rather than booleans.
+Older firmware cannot read v13 saves; back up before updating/downgrading.
 Browser serial framing/restore pacing and SD transfers support the full tail.
 
 Hold a placed object/gift for inline editing controls; redundant Arrange Decor and

@@ -22,6 +22,7 @@ void terrarium_refresh_decor(void);
 /* Rebuild the background after a theme change. */
 void terrarium_rebuild(void);
 bool terrarium_test(void);
+bool terrarium_decor_test(void);
 
 /* Draw a poop blob at playfield coords. */
 void terrarium_add_poop(int32_t x, int32_t y);
@@ -42,7 +43,10 @@ int terrarium_dirt(void);
 
 /* Retained placement artwork/ring; drag updates never mutate saved furniture
  * or allocate new LVGL objects. A moving item's original visual is hidden. */
-void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_t y);
+void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_t y,
+                            uint8_t path, int layer);
+void terrarium_raise_canopy(void);
+bool terrarium_preview_test(uint8_t path, int layer);
 void terrarium_preview_show(int32_t x, int32_t y, int32_t radius);
 void terrarium_preview_hide(void);
 

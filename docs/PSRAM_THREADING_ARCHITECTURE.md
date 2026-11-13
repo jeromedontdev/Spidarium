@@ -86,7 +86,7 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   occurs from the external-stack LVGL task.
   Save acknowledgements propagate queue rejection instead of reporting success.
   Background ownership/selection, power, music and enclosure lighting share
-  the v12 pet snapshot: 268-byte fixed prefix plus six bytes per extra decor
+  the v13 pet snapshot: 268-byte fixed prefix plus six bytes per extra decor
   slot. The original twelve slots/older offsets remain unchanged. The 20 KB
   serialized-payload ceiling is a storage-resource/protocol bound, not a
   twelve-item gameplay limit; storage/allocation/commit failures are explicit.
@@ -100,6 +100,12 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   Floors/frames retain independent 48px thumbnails; a single mapped-QOI decode
   workspace feeds the existing 480px floor canvas. Transparent frames composite
   around its edge without creating a full-screen overlay or redrawing each tick.
+  v13 preserves that layout: existing decor blocking bytes hold path0/1/2;
+  only1 steers, 2 selects a retained Canopy layer above creatures. Existing
+  record order persists within-band stacking, including inline/tail swaps.
+  Position/path/layer previews use retained image/ring/controls; reparent/order
+  on explicit changes only. Cancel restores saved order; Done queues one save.
+  No new framebuffer, draw task or per-frame/per-drag allocation is introduced.
   Deep-sleep requests copy the live snapshot on LVGL; only this internal-stack
   worker enters sleep after an actual successful save, bounded audio/power drain
   and display pause acknowledgement. New saves/radio jobs are rejected while

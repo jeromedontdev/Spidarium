@@ -13,7 +13,7 @@
  * the 480x480 canvas, so each source pixel covers a 2x2 block. */
 #define PIXEL_GRID 2
 
-static lv_obj_t *s_background, *s_decor_layer, *s_gift_layer, *s_poop_layer,
+static lv_obj_t *s_background, *s_decor_layer, *s_canopy_layer, *s_gift_layer, *s_poop_layer,
                 *s_preview_ring, *s_preview_image;
 static int s_preview_slot = -1;
 static bool s_preview_gift;
@@ -117,10 +117,17 @@ bool terrarium_test(void)
                 }
         }
     }
+    return terrarium_decor_test() && ok;
+}
+
+bool terrarium_decor_test(void)
+{
+    bool ok = true;
     /* Every placed item must have a visible image object at its position, and
      * every empty slot must be hidden. lv_obj_get_x() reads the cached coords,
      * which are only refreshed by a layout pass, so force one first. */
     lv_obj_update_layout(s_decor_layer);
+    lv_obj_update_layout(s_canopy_layer);
     for (int i = 0; i < s_decor_capacity; i++) {
         const decor_item_t *item = decor_at(i);
         lv_obj_t *obj = s_decor_obj[i];
@@ -140,7 +147,15 @@ bool terrarium_test(void)
                      "decor slot %d kind=%u visible=%d placed=%d(%d,%d vs %d,%d) sourced=%d",
                      i, item->kind, visible, placed, (int)lv_obj_get_x(obj),
                      (int)lv_obj_get_y(obj), item->x - 32, item->y - 32, sourced);
-        ok = ok && visible && placed && sourced;
+        bool canopy = item->blocking == DECOR_WALK_BEHIND;
+        bool ordered = lv_obj_get_parent(obj) == (canopy ? s_canopy_layer : s_decor_layer);
+        for (int j = i - 1; j >= 0; j--) {
+            const decor_item_t *other = decor_at(j);
+            if (!other || (other->blocking == DECOR_WALK_BEHIND) != canopy) continue;
+            ordered = ordered && lv_obj_get_index(s_decor_obj[j]) < lv_obj_get_index(obj);
+            break;
+        }
+        ok = ok && visible && placed && sourced && ordered;
     }
     return ok;
 }
@@ -241,7 +256,32 @@ void terrarium_refresh_decor(void)
         lv_image_set_scale(obj, scale);
         lv_obj_set_pos(obj, item->x - 32, item->y - 32);
         lv_obj_set_hidden(obj, false);
+        lv_obj_t *parent = item->blocking == DECOR_WALK_BEHIND ? s_canopy_layer : s_decor_layer;
+        if (lv_obj_get_parent(obj) != parent) lv_obj_set_parent(obj, parent);
+        lv_obj_move_foreground(obj);
     }
+}
+
+void terrarium_raise_canopy(void)
+{
+    lv_obj_move_foreground(s_canopy_layer);
+    lv_obj_move_foreground(s_preview_ring);
+}
+
+bool terrarium_preview_test(uint8_t path, int layer_index)
+{
+    lv_obj_t *parent = path == DECOR_WALK_BEHIND ? s_canopy_layer : s_decor_layer;
+    if (lv_obj_is_hidden(s_preview_image) || lv_obj_get_parent(s_preview_image) != parent)
+        return false;
+    int before = 0;
+    for (int i = 0; i < s_decor_capacity; i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || i == s_preview_slot ||
+            (item->blocking == DECOR_WALK_BEHIND) != (path == DECOR_WALK_BEHIND)) continue;
+        if (lv_obj_get_index(s_decor_obj[i]) < lv_obj_get_index(s_preview_image)) before++;
+    }
+    return before == layer_index &&
+        lv_obj_get_index(s_canopy_layer) > lv_obj_get_index(ui.creature_layer);
 }
 
 void terrarium_preview_show(int32_t x, int32_t y, int32_t radius)
@@ -252,7 +292,8 @@ void terrarium_preview_show(int32_t x, int32_t y, int32_t radius)
     lv_obj_set_hidden(s_preview_ring, false);
 }
 
-void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_t y)
+void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_t y,
+                            uint8_t path, int layer_index)
 {
     int index = gift ? sprite_gift_index(kind) : sprite_decor_item_index(kind);
     const lv_image_dsc_t *image = index >= 0 ? assets_image(index) : NULL;
@@ -269,6 +310,22 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     lv_image_set_antialias(s_preview_image, false);
     lv_obj_set_pos(s_preview_image, x - image->header.w / 2, y - image->header.h / 2);
     lv_obj_set_hidden(s_preview_image, false);
+    lv_obj_t *parent = gift ? lv_obj_get_parent(s_gift_layer) :
+        path == DECOR_WALK_BEHIND ? s_canopy_layer : s_decor_layer;
+    if (lv_obj_get_parent(s_preview_image) != parent) lv_obj_set_parent(s_preview_image, parent);
+    if (gift) {
+        lv_obj_move_to_index(s_preview_image, lv_obj_get_index(s_preview_ring));
+    } else {
+        int index = 0;
+        for (int i = 0; i < s_decor_capacity; i++) {
+            const decor_item_t *item = decor_at(i);
+            if (!item || i == slot ||
+                (item->blocking == DECOR_WALK_BEHIND) != (path == DECOR_WALK_BEHIND)) continue;
+            if (index++ == layer_index) lv_obj_move_foreground(s_preview_image);
+            lv_obj_move_foreground(s_decor_obj[i]);
+        }
+        if (layer_index >= index) lv_obj_move_foreground(s_preview_image);
+    }
     terrarium_preview_show(x, y, gift ? 34 : decor_def(kind)->radius * 2 + 2);
 }
 
@@ -281,6 +338,7 @@ void terrarium_preview_hide(void)
         lv_obj_set_hidden(s_decor_obj[s_preview_slot], decor_at(s_preview_slot) == NULL);
     s_preview_gift = false;
     s_preview_slot = -1;
+    terrarium_refresh_decor();
 }
 
 /* A dropping is a small three-lobe mound, not a flat square: a wide base, a
@@ -401,6 +459,7 @@ void terrarium_init(lv_obj_t *parent)
     /* Decor is part of the floor, so its layer is created before the gift and
      * the droppings and therefore draws beneath them. */
     s_decor_layer = layer(parent);
+    s_canopy_layer = layer(parent);
     terrarium_refresh_decor();
     s_gift_layer = layer(parent);
     s_gift_pixels = heap_caps_malloc(64 * 64 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

@@ -491,10 +491,13 @@ footprint radius, blocking flag and whether the kind is owned, then reports the
 Silk balance and placed slots (placement can grow beyond twelve). `decor place KIND X Y`
 grants the Silk and level needed for the kind (test-only), buys it if it is not
 owned, and places it. `decor move SLOT X Y` repositions a placed item, keeping
-its slot, kind and blocking flag. `decor block SLOT` flips the blocking flag.
-`decor item SLOT` opens the per-item menu (Blocking / Move / Put Away) for that
-slot, which is the same menu a long press on the item opens. `decor clear` empties
-the enclosure. All of them persist and refresh the layer.
+its slot, kind and path. `decor block SLOT` cycles Walk Over (0), Solid (1),
+Walk Behind (2), rather than toggling a boolean. Only Solid affects steering.
+`decor item SLOT` opens the same inline drag/path/layer controls as a long press.
+Done saves position/path/layer; Cancel discards edits. Back/Front arrows order
+decor within Floor or Canopy (Walk Behind). `decor clear` empties the enclosure.
+Mutating console commands persist and refresh the layer; opening controls does
+not save. The UI offers Put Away while preserving ownership.
 
 ### `setupdone`
 
@@ -913,10 +916,14 @@ little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
 Export snapshots on LVGL, waits for the existing internal-stack persistence
-worker on the console task, then reads the raw NVS blob. A new v12 backup is
-280 bytes plus six bytes per extra decor slot; supported v2-v11 payloads remain
+worker on the console task, then reads the raw NVS blob. A new v13 backup is
+280 bytes plus six bytes per extra decor slot; supported v2-v12 payloads remain
 readable. `decorTail` identifies offset 268, stride 6 and the count field;
 v10/v11 tails retain their historical offset 260 when read.
+v13 reuses each six-byte record's blocking byte for path0/1/2; only path1
+collides. Record order encodes layer order within Floor and Canopy, so reordering
+may change slot indices. Path2 in older versions and path3 are rejected.
+Old firmware cannot read v13 backups: export a backup before updating/downgrading.
 `maxPayload` is the 20 KB NVS/protocol storage bound. It contains no
 network credentials. Background ownership/selection and power preferences are
 included, along with extended decor ownership, music and enclosure lighting;

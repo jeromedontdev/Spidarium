@@ -25,7 +25,7 @@
 static lv_obj_t *s_stats[NUM_STATS], *s_values[NUM_STATS], *s_bars[NUM_STATS];
 static lv_obj_t *s_level, *s_progress, *s_resources, *s_hint, *s_bubble, *s_bubble_label;
 static lv_obj_t *s_care_button, *s_care_label, *s_place_done, *s_place_cancel;
-static lv_obj_t *s_place_away, *s_place_blocking, *s_place_blocking_label;
+static lv_obj_t *s_place_away, *s_place_path[3], *s_place_back, *s_place_front, *s_place_layer_label;
 static lv_obj_t *s_layer;
 static lv_obj_t *s_identity, *s_battery, *s_battery_fill, *s_battery_text, *s_charge;
 static uint32_t s_battery_key = UINT32_MAX;
@@ -33,10 +33,11 @@ static uint32_t s_bubble_until, s_last_refresh;
 static bool s_top_visible, s_bot_visible;
 void ui_hud_capture_hide(bool hidden)
 {
-    static bool was_hidden[9];
+    static bool was_hidden[14];
     lv_obj_t *objects[] = {s_layer, s_battery, s_care_button, s_bubble, s_place_done, s_place_cancel,
-                          s_place_away, s_place_blocking, s_hint};
-    for (unsigned i = 0; i < 9; i++) {
+                          s_place_away, s_place_path[0], s_place_path[1], s_place_path[2],
+                          s_place_back, s_place_front, s_place_layer_label, s_hint};
+    for (unsigned i = 0; i < 14; i++) {
         if (hidden) was_hidden[i] = lv_obj_is_hidden(objects[i]);
         lv_obj_set_hidden(objects[i], hidden || was_hidden[i]);
     }
@@ -152,6 +153,20 @@ static lv_obj_t *make_action(lv_obj_t *parent, int x, int y, int w,
 }
 
 static uint8_t s_gift_preview;
+static lv_obj_t *place_action(lv_obj_t *parent, int x, int y, int w,
+                              const char *name, lv_event_cb_t cb, intptr_t value)
+{
+    lv_obj_t *obj = make_action(parent, x, y, w, "", name, cb);
+    lv_obj_set_height(obj, 48);
+    lv_obj_t *label = lv_obj_get_child(obj, -1);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    lv_obj_center(label);
+    lv_obj_remove_event_cb(obj, cb);
+    lv_obj_add_event_cb(obj, cb, LV_EVENT_CLICKED, (void *)value);
+    lv_obj_set_hidden(obj, true);
+    return obj;
+}
+
 static void back_to_gifts(void)
 {
     ui_hud_gift_menu_show();
@@ -314,12 +329,18 @@ void ui_hud_init(lv_obj_t *parent)
     ui_hud_set_chrome(false);
     s_place_cancel = make_action(parent, 80, 388, 148, "back", "Cancel", game_on_placement_cancel);
     s_place_done = make_action(parent, 252, 388, 148, "decor", "Done", game_on_placement_done);
-    s_place_away = make_action(parent, 80, 316, 148, "decor", "Put Away", game_on_placement_put_away);
-    s_place_blocking = make_action(parent, 252, 316, 148, "lock", "Blocking: Off", game_on_placement_blocking);
-    s_place_blocking_label = lv_obj_get_child(s_place_blocking, -1);
-    lv_obj_set_style_text_font(s_place_blocking_label, &lv_font_montserrat_12, 0);
+    s_place_away = place_action(parent, 176, 338, 128, "Put Away", game_on_placement_put_away, 0);
+    static const char *names[] = {"Walk Over", "Solid", "Walk Behind"};
+    for (int i = 0; i < 3; i++)
+        s_place_path[i] = place_action(parent, 68 + i * 116, 232, 112, names[i], game_on_placement_path, i);
+    s_place_back = place_action(parent, 80, 286, 96, LV_SYMBOL_LEFT " Back", game_on_placement_layer, -1);
+    s_place_front = place_action(parent, 304, 286, 96, "Front " LV_SYMBOL_RIGHT, game_on_placement_layer, 1);
+    s_place_layer_label = make_label(parent, "", &lv_font_montserrat_12, COL_TEXT);
+    lv_obj_set_size(s_place_layer_label, 128, 40);
+    lv_obj_set_pos(s_place_layer_label, 176, 292);
+    lv_obj_set_style_text_align(s_place_layer_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_hidden(s_place_layer_label, true);
     lv_obj_set_hidden(s_place_away, true);
-    lv_obj_set_hidden(s_place_blocking, true);
     lv_obj_set_hidden(s_place_done, true);
     lv_obj_set_hidden(s_place_cancel, true);
     s_hint = make_label(parent, "Slide to position; Done saves",
@@ -360,11 +381,28 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_care_label, !on);
     lv_obj_set_hidden(s_place_done, !on);
     lv_obj_set_hidden(s_place_cancel, !on);
-    bool decor_move = g_decor_mode && g_decor_move_slot >= 0;
+    bool decor = on && g_decor_mode;
     lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
-    lv_obj_set_hidden(s_place_blocking, !on || !decor_move);
-    lv_label_set_text(s_place_blocking_label, game_placement_blocking() ? "Blocking: On" : "Blocking: Off");
-    lv_obj_align(s_hint, LV_ALIGN_TOP_MID, 0, on && game_placement_existing() ? 286 : 350);
+    for (int i = 0; i < 3; i++) {
+        lv_obj_set_hidden(s_place_path[i], !decor);
+        lv_obj_set_style_bg_color(s_place_path[i], lv_color_hex(
+            game_placement_blocking() == i ? 0x2b6a5f : COL_PANEL), 0);
+    }
+    lv_obj_set_hidden(s_place_back, !decor);
+    lv_obj_set_hidden(s_place_front, !decor);
+    lv_obj_set_hidden(s_place_layer_label, !decor);
+    lv_obj_set_state(s_place_back, LV_STATE_DISABLED, game_placement_layer() == 0);
+    lv_obj_set_state(s_place_front, LV_STATE_DISABLED,
+        game_placement_layer() >= game_placement_layers() - 1);
+    lv_label_set_text_fmt(s_place_layer_label, "%s Layer\n%d / %d",
+        game_placement_blocking() == DECOR_WALK_BEHIND ? "Canopy" : "Floor",
+        game_placement_layer() + 1, game_placement_layers());
+    if (decor) {
+        static const char *tips[] = {"Spider crosses above this item",
+            "Spider steers around this item", "Spider passes underneath this item"};
+        lv_label_set_text(s_hint, tips[game_placement_blocking()]);
+    }
+    lv_obj_align(s_hint, LV_ALIGN_TOP_MID, 0, decor ? 208 : 286);
 }
 
 void ui_hud_set_top(bool on)

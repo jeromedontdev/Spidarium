@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.28](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.28)**
+| **[Download v1.1.29](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.29)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -45,7 +45,8 @@ The web updater preserves and verifies the save region. On-device updates
 resolve GitHub's latest stable release, verify the image and require matching
 artwork; art changes use USB. Slow HTTPS reads retry within a five-minute
 download limit. Single-tile sliders support held dragging; menu tiles omit
-submenu arrows. See [v1.1.28 release notes](docs/RELEASE_v1.1.28.md).
+submenu arrows. Decor previews now offer three spider paths and layer arrows.
+See [v1.1.29 release notes](docs/RELEASE_v1.1.29.md).
 **OTA verification boundary:** GitHub discovery and safe partial-download
 recovery are tested, but a complete hosted download/reboot has not passed on
 the current hardware connection. Use USB for a verified installation.
@@ -117,18 +118,25 @@ They cost 12–120 Silk and unlock from level 1 to 18. Pick one in the Decor men
 then slide the preview and press **Done** to place it. **Cancel** discards the
 pending position, not purchased decor ownership. Holding a placed decoration
 or gift opens the same drag/Done controls directly over the enclosure, with
-**Put Away**, **Blocking** (decor only), **Done** and **Cancel**. No submenu or
-Back button is involved. Done applies position/blocking; Cancel discards both;
+**Put Away**, **Done** and **Cancel**, plus decor path/layer controls. No submenu or
+Back navigation is involved. Done applies position, path and layer; Cancel discards edits;
 Put Away retains ownership and stays in the enclosure. Releasing a drag
 does not commit or save. Storage grows beyond twelve items, subject to
 available PSRAM/NVS space rather than an arbitrary twelve-item cap.
-Each item is either **blocking** or
-**non-blocking**: the spider steers around a blocking item before it reaches it,
-and walks straight over a non-blocking one. Blocking is a steering input, not a
-positional shove, so the spider turns away instead of grinding against a rock.
-**Hold a finger on a placed item** to open its on-screen editing controls, where you can flip the
-blocking flag, move it, or put it away without a submenu. The catalogue order is shared with the
+Choose **Solid** to steer around an item, **Walk Over** to cross above it, or
+**Walk Behind** to pass underneath its artwork without a collision.
+**Back / Front arrows** reorder overlapping decor within its displayed band:
+Floor contains Solid/Walk Over; Canopy contains Walk Behind and always draws
+above the spider and Floor. Higher layer numbers draw in front. Changes preview
+immediately but save only with Done. These controls also appear for new decor.
+Solid is a steering input, not a positional shove. Gifts retain their existing
+movement/Put Away controls without decor physics or layer choices.
+The catalogue order is shared with the
 browser port and checked by a test that parses the C table.
+
+Save v13 preserves these path modes and layer order without changing the
+six-byte item layout. It reads older saves; older firmware cannot safely read
+new v13 saves. Export a backup before updating or attempting a downgrade.
 
 **A daily loop, and treats to spend Silk on.** Each in-game day offers a check-in
 whose reward grows with a consecutive-day streak (6 XP / 4 Silk on day one, up to

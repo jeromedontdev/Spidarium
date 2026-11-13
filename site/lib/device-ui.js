@@ -1,9 +1,9 @@
-import * as E from './sim.js?v=1.1.28';
+import * as E from './sim.js?v=1.1.29';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.28';
-import { HELP_TOPICS } from './help.js';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.29';
+import { HELP_TOPICS } from './help.js?v=1.1.29';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -160,8 +160,15 @@ export class DeviceGame {
     this.controls.append(this.placementControls);
     this.placementHint=box(element('div','d-placement-hint','Slide to position; Done saves'),80,340,320,36);
     this.placementControls.append(this.placementHint);
-    this.placementAway=this.button(this.placementControls,'Put Away',80,316,148,64,()=>this.putAwayPlacement(),'ui_decor');
-    this.placementBlocking=this.button(this.placementControls,'Blocking: Off',252,316,148,64,()=>this.togglePlacementBlocking(),'ui_lock');
+    this.placementAway=this.button(this.placementControls,'Put Away',176,338,128,48,()=>this.putAwayPlacement());
+    this.placementPaths=E.DECOR_PATH_NAMES.map((name,path)=>
+      this.button(this.placementControls,name,68+path*116,232,112,48,()=>this.setPlacementPath(path)));
+    this.placementBack=this.button(this.placementControls,'‹ Back',80,286,96,48,()=>this.changePlacementLayer(-1));
+    this.placementFront=this.button(this.placementControls,'Front ›',304,286,96,48,()=>this.changePlacementLayer(1));
+    for(const button of [...this.placementPaths,this.placementBack,this.placementFront])
+      button.classList.add('d-placement-small');
+    this.placementLayer=box(element('div','d-placement-hint d-placement-layer'),176,292,128,40);
+    this.placementControls.append(this.placementLayer);
     this.button(this.placementControls,'Cancel',80,388,148,64,()=>this.cancelPlacement(),'ui_back');
     this.button(this.placementControls,'Done',252,388,148,64,()=>this.commitPlacement(),'ui_decor');
     const battery = this.button(this.hudLayer, '', 412, 8, 52, 44, () => this.open('Battery'));
@@ -175,9 +182,21 @@ export class DeviceGame {
     this.placementControls.hidden = !this.placement;
     const editing=this.placement&&(this.placement.slot!==null||this.giftMoving);
     this.placementAway.hidden=!editing;
-    this.placementBlocking.hidden=!editing||this.placement.gift;
-    this.placementBlocking.lastChild.textContent=this.placement?.blocking?'Blocking: On':'Blocking: Off';
-    this.placementHint.style.top=editing?'272px':'340px';
+    const decor=!!this.placement&&!this.placement.gift,p=this.placement;
+    this.placementPaths.forEach((button,path)=>{
+      button.hidden=!decor;
+      button.setAttribute('aria-pressed',String(decor&&p.blocking===path));
+      button.style.background=decor&&p.blocking===path?'#2b6a5f':'';
+    });
+    for(const control of [this.placementBack,this.placementFront,this.placementLayer])control.hidden=!decor;
+    if(decor){
+      const count=E.decorLayerSlots(this.state,p.blocking,p.slot??-1).length+1;
+      this.placementBack.disabled=p.layer===0;this.placementFront.disabled=p.layer===count-1;
+      this.placementLayer.textContent=`${E.decorCanopy(p.blocking)?'Canopy':'Floor'} Layer\n${p.layer+1} / ${count}`;
+      this.placementHint.textContent=['Spider crosses above this item','Spider steers around this item','Spider passes underneath this item'][p.blocking];
+    }
+    else this.placementHint.textContent='Slide to position; Done saves';
+    this.placementHint.style.top=decor?'196px':'272px';
     this.earMark.textContent = placing ? '×' : '';
     this.ear.setAttribute('aria-label', placing ? 'Cancel Placement' : 'Show or Hide Care HUD');
     this.ear.setAttribute('aria-expanded', String(this.hud));
@@ -615,7 +634,11 @@ export class DeviceGame {
     this.cancelLongPress();clearTimeout(this.petTapTimer);this.petTapTimer=null;
     this.aiming=false;E.cancelAim(this.state);this.lastTap=null;this.hud=false;
     this.placement={gift,kind,slot,x,y};this.placementPointer=null;
-    if(!gift&&slot!==null)this.placement.blocking=!!this.state.decor[slot].blocking;
+    if(!gift){
+      this.placement.blocking=slot!==null?this.state.decor[slot].blocking:E.DECOR_KINDS[kind].blocking;
+      this.placement.layer=slot!==null?E.decorLayerIndex(this.state,slot):
+        E.decorLayerSlots(this.state,this.placement.blocking).length;
+    }
     this.refreshHUD();this.report('Slide to position. Done saves; Cancel leaves placement unchanged.');
     if(this.notice)this.notice.hidden=true;
   }
@@ -638,16 +661,34 @@ export class DeviceGame {
   }
   commitPlacement(){
     const p=this.placement;if(!p)return;
+    let slot=p.slot;
     const ok=p.gift?(this.giftMoving?E.moveGift(this.state,p.x,p.y):E.placeGift(this.state,p.kind,p.x,p.y)):
-      p.slot!==null?E.moveDecor(this.state,p.slot,p.x,p.y):E.placeDecor(this.state,p.kind,p.x,p.y)>=0;
+      slot!==null?E.moveDecor(this.state,slot,p.x,p.y):(slot=E.placeDecor(this.state,p.kind,p.x,p.y))>=0;
     if(!ok){this.report('Placement could not be saved. Check ownership and available space.',true);return;}
-    if(!p.gift&&p.slot!==null)this.state.decor[p.slot].blocking=p.blocking?1:0;
+    if(!p.gift){
+      this.state.decor[slot].blocking=p.blocking;
+      if(!E.setDecorLayer(this.state,slot,p.layer)){this.report('Layer could not be saved.',true);return;}
+    }
     this.cancelPlacement(false);this.persist();this.report('Placement Saved.');
   }
   togglePlacementBlocking(){
     const p=this.placement;
-    if(!p||p.gift||p.slot===null)return;
-    p.blocking=!p.blocking;this.refreshHUD();
+    if(!p||p.gift)return;
+    this.setPlacementPath((p.blocking+1)%3);
+  }
+  setPlacementPath(path){
+    const p=this.placement;
+    if(!p||p.gift)return;
+    if(!Number.isInteger(path)||path<0||path>2){this.report('Invalid path mode.',true);return;}
+    if(path===p.blocking)return;
+    if(E.decorCanopy(p.blocking)!==E.decorCanopy(path))
+      p.layer=E.decorLayerSlots(this.state,path,p.slot??-1).length;
+    p.blocking=path;this.refreshHUD();
+  }
+  changePlacementLayer(step){
+    const p=this.placement;if(!p||p.gift)return;
+    const last=E.decorLayerSlots(this.state,p.blocking,p.slot??-1).length;
+    p.layer=clamp(p.layer+step,0,last);this.refreshHUD();
   }
   putAwayPlacement(){
     const p=this.placement;
@@ -743,7 +784,8 @@ export class DeviceGame {
           this.longPress = null; this.aiming = false; E.cancelAim(this.state);
           this.cancelTap();this.tapPointer=null;
           this.pointerConsumed = true;
-          if(gift)this.beginGiftMove();else this.beginDecorMove(slot);
+          if(gift&&!(slot>=0&&E.decorCanopy(this.state.decor[slot].blocking)))this.beginGiftMove();
+          else this.beginDecorMove(slot);
           this.placementPointer=event.pointerId;
           this.placementOffset={x:this.placement.x-p.x,y:this.placement.y-p.y};
           this.canvas.setPointerCapture(event.pointerId);
@@ -862,24 +904,12 @@ export class DeviceGame {
       const border=this.image(`border_${E.BACKGROUNDS[s.border_id]}_0`);
       if(border.complete&&border.naturalWidth)ctx.drawImage(border,0,0,480,480);
     }
-    // Decor is part of the floor, so it draws under the gift and the droppings.
-    // The source is 64x64 and the footprint radius is in playfield pixels, so
-    // the drawn size is radius*4 -- the same ratio the device uses.
-    for (const [slot,item] of (s.decor ?? []).entries()) {
-      if(this.placement&&!this.placement.gift&&this.placement.slot===slot)continue;
-      if (item.kind === E.DECOR_EMPTY) continue;
-      const def = E.DECOR_KINDS[item.kind];
-      if (!def) continue;
-      const image = this.image(E.decorSprite(item.kind));
-      if (!image.complete || !image.naturalWidth) continue;
-      const size = def.radius * 4;
-      ctx.drawImage(image, item.x - size / 2, item.y - size / 2, size, size);
-    }
+    this.drawDecor(false);
     if (s.gift?.used && !this.placement?.gift) {
       const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
       if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
     }
-    if(this.placement){
+    if(this.placement?.gift){
       const p=this.placement,size=p.gift?64:E.DECOR_KINDS[p.kind].radius*4;
       const image=this.image(p.gift?E.GIFTS[p.kind].asset:E.decorSprite(p.kind));
       if(image.complete&&image.naturalWidth)ctx.drawImage(image,p.x-size/2,p.y-size/2,size,size);
@@ -943,9 +973,26 @@ export class DeviceGame {
           ctx.restore();
         }
       }
-      if(s.lights_dimmed){
-        ctx.fillStyle='rgba(7,12,32,0.43)';ctx.fillRect(0,0,480,480);
-      }
+    }
+    this.drawDecor(true);
+    if(s.lights_dimmed){
+      ctx.fillStyle='rgba(7,12,32,0.43)';ctx.fillRect(0,0,480,480);
+    }
+  }
+  drawDecor(canopy){
+    const p=this.placement&&!this.placement.gift?this.placement:null,ctx=this.ctx;
+    const slots=E.decorLayerSlots(this.state,canopy?2:0,p?.slot??-1);
+    const draw=item=>{
+      const image=this.image(E.decorSprite(item.kind)),size=E.DECOR_KINDS[item.kind].radius*4;
+      if(image.complete&&image.naturalWidth)ctx.drawImage(image,item.x-size/2,item.y-size/2,size,size);
+    };
+    for(let i=0;i<=slots.length;i++){
+      if(p&&E.decorCanopy(p.blocking)===canopy&&i===p.layer)draw(p);
+      if(i<slots.length)draw(this.state.decor[slots[i]]);
+    }
+    if(p&&canopy){
+      const size=E.DECOR_KINDS[p.kind].radius*4;
+      ctx.strokeStyle='#f5c86b';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2-2,p.y-size/2-2,size+4,size+4);
     }
   }
   frame(now) {

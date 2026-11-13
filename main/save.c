@@ -509,7 +509,7 @@ bool save_raw_valid(const void *src, size_t len)
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
         hdr.version != 3 && hdr.version != 4 &&
         hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9 &&
-        hdr.version != 10 && hdr.version != 11) {
+        hdr.version != 10 && hdr.version != 11 && hdr.version != 12) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
@@ -541,7 +541,7 @@ bool save_raw_valid(const void *src, size_t len)
         int kinds = hdr.version >= 12 ? DECOR_COUNT : hdr.version >= 10 ? 34 : 16;
         for (int i = 0; i < DECOR_SLOTS; i++) {
             const decor_item_t *item = &state.decor[i];
-            if ((item->kind != 255 && item->kind >= kinds) || item->blocking > 1 ||
+            if ((item->kind != 255 && item->kind >= kinds) || item->blocking > (hdr.version >= 13 ? 2 : 1) ||
                 item->x < 0 || item->x > 480 || item->y < 0 || item->y > 480) {
                 ESP_LOGW(TAG, "raw save rejected: invalid inline decor record %d", i);
                 return false;
@@ -562,7 +562,7 @@ bool save_raw_valid(const void *src, size_t len)
         }
         const decor_item_t *extra = (const decor_item_t *)((const uint8_t *)src + sizeof hdr + prefix);
         for (uint32_t i = 0; i < state.decor_extra_count; i++)
-            if ((extra[i].kind != 255 && extra[i].kind >= (hdr.version >= 12 ? DECOR_COUNT : 34)) || extra[i].blocking > 1 ||
+            if ((extra[i].kind != 255 && extra[i].kind >= (hdr.version >= 12 ? DECOR_COUNT : 34)) || extra[i].blocking > (hdr.version >= 13 ? 2 : 1) ||
                 extra[i].x < 0 || extra[i].x > 480 || extra[i].y < 0 || extra[i].y > 480) {
                 ESP_LOGW(TAG, "raw save rejected: invalid extended decor record %lu", (unsigned long)i);
                 return false;
@@ -636,6 +636,19 @@ bool save_format_test(void)
     memcpy(blob, &header, sizeof header);
     memcpy(blob + sizeof header, &base, sizeof base);
     bool ok = save_raw_valid(blob, sizeof blob);
+    game_state_t paths = base;
+    paths.decor[0] = (decor_item_t){0, DECOR_WALK_BEHIND, 200, 200};
+    memcpy(blob + sizeof header, &paths, sizeof paths);
+    ok = save_raw_valid(blob, sizeof blob) && ok;
+    header.version = 12;
+    memcpy(blob, &header, sizeof header);
+    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    header.version = SAVE_VERSION;
+    memcpy(blob, &header, sizeof header);
+    paths.decor[0].blocking = DECOR_PATH_COUNT;
+    memcpy(blob + sizeof header, &paths, sizeof paths);
+    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    memcpy(blob + sizeof header, &base, sizeof base);
     game_state_t invalid_music = base;
     invalid_music.music_volume = 101;
     memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);

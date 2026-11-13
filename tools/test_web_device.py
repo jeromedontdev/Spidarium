@@ -50,8 +50,8 @@ def main():
             raise RuntimeError("Incorrect current raw save size")
         flags = [field for field in schema["fields"]
                  if field["name"] in {"auto_feed", "auto_hunt"}]
-        if schema["version"] != 12 or len(schema["fields"]) != 52 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
-            raise RuntimeError("Fields missing from compiled version 12 schema")
+        if schema["version"] != 13 or len(schema["fields"]) != 52 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
+            raise RuntimeError("Fields missing from compiled version 13 schema")
         for field in flags:
             command(connection, f"set {field['name']} 1")
         command(connection, "reboot")
@@ -86,13 +86,20 @@ def main():
         extra_count = 260
         for i in range(12):
             offset = 12 + 164 + i * 6
-            preferences[offset:offset + 6] = bytes((0, 0)) + (70 + i * 20).to_bytes(2, "little") + (100).to_bytes(2, "little")
+            preferences[offset:offset + 6] = bytes((i, i % 3)) + (70 + i * 20).to_bytes(2, "little") + (100).to_bytes(2, "little")
         preferences[12 + 256:12 + 260] = extra_count.to_bytes(4, "little")
         for i in range(extra_count):
-            preferences.extend(bytes((i % 68, i % 2)) +
+            preferences.extend(bytes((i % 68, i % 3)) +
                                (60 + (i % 50) * 7).to_bytes(2, "little") +
                                (80 + (i % 50) * 5).to_bytes(2, "little"))
         preferences[8:12] = (len(preferences) - 12).to_bytes(4, "little")
+        for offset in (12 + 165, 12 + 269):
+            invalid = bytearray(preferences)
+            invalid[offset] = 3
+            command(connection, "save restore " + invalid.hex(), "ERR")
+        legacy = bytearray(preferences)
+        legacy[4:6] = (12).to_bytes(2, "little")
+        command(connection, "save restore " + legacy.hex(), "ERR")
         command(connection, "save restore " + preferences.hex())
         command(connection, "reboot")
         time.sleep(2)
@@ -102,7 +109,7 @@ def main():
         persisted = export(connection)
         if persisted[12 + 236:12 + 248] != preferences[12 + 236:12 + 248]:
             raise RuntimeError("Background ownership or power preferences did not persist")
-        if persisted[12 + 248:] != preferences[12 + 248:]:
+        if persisted[12 + 164:12 + 236] != preferences[12 + 164:12 + 236] or persisted[12 + 248:] != preferences[12 + 248:]:
             raise RuntimeError("Extended decor, music or lights did not persist")
         command(connection, "decor item 271")
         command(connection, "decor move 271 330 350")
@@ -168,7 +175,7 @@ def main():
             if original[offset:offset + length] != restored[offset:offset + length]:
                 raise RuntimeError("Reboot changed restored field: " + field["name"])
         command(connection, "open close")
-    print("WEB DEVICE: PASS - v12/52-field schema, variable decor, high ownership and borders, music/lights, invalid fields, exact restore, overwrite guard, reboot")
+    print("WEB DEVICE: PASS - v13/52-field schema, three decor paths and record order across inline/tail reboot, v12 compatibility rejection, variable decor, high ownership and borders, music/lights, invalid fields, exact restore, overwrite guard, reboot")
 
 
 if __name__ == "__main__":

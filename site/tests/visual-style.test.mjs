@@ -128,6 +128,7 @@ test('circular hero keeps unfiltered creatures readable on a quiet light backdro
   assert.equal(prey.top, '22%');
   assert.equal(prey['image-rendering'], 'pixelated');
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  assert.ok(html.includes('./style.css?v=1.1.28-hero1'));
+  const {version}=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
+  assert.ok(html.includes(`./style.css?v=${version}`));
   assert.ok(html.includes('against a quiet light backdrop'));
 });

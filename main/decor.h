@@ -8,7 +8,8 @@
  * Each kind has a footprint and a blocking flag:
  *
  *   blocking      the spider steers around it and will not walk over it
- *   non-blocking  the spider walks straight over it
+ *   walk over     the spider walks straight over it
+ *   walk behind   the spider passes beneath the artwork, without collision
  *
  * Blocking is a steering input, not a positional shove, so the spider turns
  * away before reaching the item instead of grinding against it.
@@ -96,9 +97,16 @@ typedef enum {
 /* Legacy inline slots retained for old save compatibility, not a placement cap. */
 #define DECOR_SLOTS 12
 
+typedef enum {
+    DECOR_WALK_OVER = 0,
+    DECOR_SOLID = 1,
+    DECOR_WALK_BEHIND = 2,
+    DECOR_PATH_COUNT
+} decor_path_t;
+
 typedef struct {
     uint8_t kind;      /* decor_kind_t */
-    uint8_t blocking;  /* 1 = spider avoids it */
+    uint8_t blocking;  /* decor_path_t; byte retained for save compatibility */
     int16_t x, y;      /* playfield-local centre */
 } decor_item_t;
 
@@ -147,8 +155,13 @@ bool decor_move(int slot, int16_t x, int16_t y);
 /* Remove the item in a slot. */
 bool decor_remove(int slot);
 
-/* Toggle the blocking flag of a placed slot. */
+/* Cycle Walk Over -> Solid -> Walk Behind. */
 bool decor_toggle_blocking(int slot);
+bool decor_set_path(int slot, uint8_t path);
+int decor_layer_count(uint8_t path, int exclude_slot);
+int decor_layer_index(int slot);
+/* Reorder within the floor/canopy band. Returns the item's new slot, or -1. */
+int decor_set_layer(int slot, int index);
 
 /* The placed item whose footprint contains a point, or -1. */
 int decor_hit_test(int16_t x, int16_t y);

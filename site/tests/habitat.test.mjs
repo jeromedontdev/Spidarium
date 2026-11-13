@@ -252,7 +252,7 @@ test('on-screen editing stages blocking until Done and Put Away stays in the enc
   const silk=state.silk;
   ui.beginDecorMove(0);ui.togglePlacementBlocking();
   assert.equal(state.decor[0].blocking,0);
-  assert.equal(ui.placement.blocking,true);
+  assert.equal(ui.placement.blocking,1);
   ui.cancelPlacement();assert.equal(state.decor[0].blocking,0);
   ui.beginDecorMove(0);ui.togglePlacementBlocking();ui.commitPlacement();
   assert.equal(state.decor[0].blocking,1);

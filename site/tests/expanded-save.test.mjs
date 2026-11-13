@@ -6,7 +6,7 @@ import { decodeSave } from '../lib/save.js';
 const schema=JSON.parse(await readFile(new URL('../save-schema.json',import.meta.url)));
 
 test('compiled v12 schema still reads v10 variable save with eighty extra placements',()=>{
-  assert.equal(schema.version,12);
+  assert.equal(schema.version,13);
   assert.deepEqual(schema.payloadSizes,[120,268]);
   const count=80,bytes=new Uint8Array(272+count*6),view=new DataView(bytes.buffer);
   view.setUint32(0,schema.magic,true);view.setUint16(4,10,true);view.setUint32(8,bytes.length-12,true);

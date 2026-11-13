@@ -265,7 +265,7 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:12,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:13,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
@@ -318,7 +318,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8,9,10,11,12].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9,10,11,12,13].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -372,7 +372,8 @@ export function validateProgress(raw) {
       if(!item||typeof item!=='object')fail('decor slot is invalid');
       if(!Number.isSafeInteger(item.kind)||(item.kind!==DECOR_EMPTY&&(item.kind<0||item.kind>=(raw.version>=12?DECOR_KINDS.length:34))))
         fail('decor kind is outside its valid range');
-      if(![0,1].includes(item.blocking))fail('decor blocking must be 0 or 1');
+      if(!Number.isInteger(item.blocking)||item.blocking<0||item.blocking>(raw.version>=13?2:1))
+        fail('decor path mode is invalid');
       if(!Number.isSafeInteger(item.x)||!Number.isSafeInteger(item.y))fail('decor position is invalid');
     }
   }
@@ -473,7 +474,7 @@ export function restoreSim(raw,options={}) {
       const item=raw.decor[i];
       if(!item||!Number.isInteger(item.kind)||item.kind===DECOR_EMPTY||!DECOR_KINDS[item.kind])
         return {kind:DECOR_EMPTY,blocking:0,x:0,y:0};
-      return {kind:item.kind,blocking:item.blocking===1?1:0,
+      return {kind:item.kind,blocking:item.blocking,
         x:round(clamp(item.x,34,446)),y:round(clamp(item.y,34,446))};
     });
   s.sick=raw.sick===1?1:0;s.muted=raw.muted===true||raw.muted===1?1:0;
@@ -681,8 +682,8 @@ export function buyTreat(s,kind){
   return true;
 }
 /** Placeable decor. Backgrounds are ground texture only; everything that sits
- * on the floor is bought with Silk and placed by the player. `blocking` means
- * the spider steers around it, otherwise it walks straight over.
+ * on the floor is bought with Silk and placed by the player. Default path0
+ * is Walk Over, path1 Solid; players can also select path2 Walk Behind.
  * Order must match decor_kind_t in main/decor.h. */
 export const DECOR_KINDS=Object.freeze([
   {key:'rock_small',name:'Small Rock',cost:18,level:1,radius:9,blocking:0},
@@ -813,14 +814,35 @@ export function removeDecor(s,slot){
 }
 export function toggleDecorBlocking(s,slot){
   if(slot<0||slot>=s.decor.length||s.decor[slot].kind===DECOR_EMPTY)return false;
-  s.decor[slot].blocking=s.decor[slot].blocking?0:1;
+  s.decor[slot].blocking=(s.decor[slot].blocking+1)%3;
+  return true;
+}
+export const DECOR_PATH_NAMES=['Walk Over','Solid','Walk Behind'];
+export const decorCanopy=path=>path===2;
+export function decorLayerSlots(s,path,exclude=-1){
+  return s.decor.flatMap((item,slot)=>slot!==exclude&&item.kind!==DECOR_EMPTY&&
+    decorCanopy(item.blocking)===decorCanopy(path)?[slot]:[]);
+}
+export function decorLayerIndex(s,slot){
+  return decorLayerSlots(s,s.decor[slot].blocking).indexOf(slot);
+}
+export function setDecorLayer(s,slot,index){
+  const item=s.decor[slot];
+  if(!item||item.kind===DECOR_EMPTY)return event(s,'rejected',{reason:'missing decor'});
+  const slots=decorLayerSlots(s,item.blocking);
+  if(!Number.isInteger(index)||index<0||index>=slots.length)
+    return event(s,'rejected',{reason:'invalid decor layer'});
+  const items=slots.map(i=>s.decor[i]),from=slots.indexOf(slot);
+  items.splice(index,0,items.splice(from,1)[0]);
+  slots.forEach((value,i)=>{s.decor[value]=items[i];});
   return true;
 }
 /** The placed item whose footprint contains a point, or -1. */
 export function decorHitTest(s,x,y){
+  for(const canopy of [true,false])
   for(let i=s.decor.length-1;i>=0;i--){
     const item=s.decor[i];
-    if(item.kind===DECOR_EMPTY)continue;
+    if(item.kind===DECOR_EMPTY||decorCanopy(item.blocking)!==canopy)continue;
     const d=DECOR_KINDS[item.kind];
     if(!d)continue;
     const dx=x-item.x,dy=y-item.y;
@@ -832,7 +854,7 @@ export function decorHitTest(s,x,y){
 /** True when a point is inside a blocking item's footprint. */
 export function decorBlocksPoint(s,x,y){
   for(const item of s.decor){
-    if(item.kind===DECOR_EMPTY||!item.blocking)continue;
+    if(item.kind===DECOR_EMPTY||item.blocking!==1)continue;
     const d=DECOR_KINDS[item.kind];
     if(!d)continue;
     const dx=x-item.x,dy=y-item.y;
@@ -844,7 +866,7 @@ export function decorBlocksPoint(s,x,y){
 export function decorNearestBlocking(s,x,y,maxDistance){
   let best=maxDistance*maxDistance,found=null;
   for(const item of s.decor){
-    if(item.kind===DECOR_EMPTY||!item.blocking)continue;
+    if(item.kind===DECOR_EMPTY||item.blocking!==1)continue;
     const dx=item.x-x,dy=item.y-y,d2=dx*dx+dy*dy;
     if(d2<best){best=d2;found=item;}
   }
@@ -1089,7 +1111,7 @@ function steer(s,want,dt,avoid=false){
     // Non-blocking items are ignored entirely.
     const near=decorNearestBlocking(s,s.spider_x,s.spider_y,66);
     if(near){
-      const def=DECOR_KINDS[s.decor.find(d=>d.kind!==DECOR_EMPTY&&d.blocking&&
+      const def=DECOR_KINDS[s.decor.find(d=>d.kind!==DECOR_EMPTY&&d.blocking===1&&
         d.x===near.x&&d.y===near.y)?.kind];
       const edge=near.distance-(def?def.radius:0);
       if(edge<=26&&near.distance>.1){

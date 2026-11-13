@@ -8529,3 +8529,58 @@ evidence proves delivery and continuity, not that the player likes the sound.
   required the old moss texture. Remove that redundant background assertion;
   the dedicated visual-style test now owns the parchment contract. The full
   browser suite then passes181/181, not just the7 targeted style checks.
+- Follow-up website-only run43519531060 succeeds. The live page is reloaded
+  and verifies the parchment/no-image backdrop,48px beetle and current CSS
+  cache key, completing the public hero fix.
+
+## Round 94 - Three decor paths and staged layer controls
+
+### Decisions made
+
+- Replace binary Blocking with Walk Over, Solid and Walk Behind for both new
+  and moved decor. Only Solid affects collision/steering. Floor contains
+  Walk Over/Solid below the spider; Canopy contains Walk Behind above the
+  creature layer. Back/Front arrows reorder within each band, with visible
+  layer counts and disabled endpoints. Higher layer numbers draw in front.
+- Stage position/path/layer together until Done; Cancel restores saved
+  placement/order without a write. Switching Floor modes retains its layer;
+  switching bands starts at the new band's front. Put Away keeps ownership.
+  Gifts keep their current movement controls without decor path/layer rules.
+- Persist order in existing records, including inline/tail swaps. Save v13
+  reuses the268-byte prefix/six-byte records/52 compiled fields; path2 uses
+  the existing blocking byte. Old v2-v12 reads remain supported; path2 before
+  v13/path3 always are rejected. Older firmware cannot read v13 backups.
+- Native retains/reparents its preview, controls and Canopy objects; no new
+  framebuffer, worker LVGL calls or per-drag allocations. Browser paints the
+  entire Canopy after creatures and before one enclosure lighting overlay.
+  Preserve every artwork file and both spider renderers.
+- Update shared help, website copy, README, architecture/handoff/parity and
+  serial docs. Console decor block now cycles0/1/2. Keep the1.1.28 art pack;
+  publish matching1.1.29 firmware/browser/schema rather than stale v12 files.
+
+### Exact evidence and corrections
+
+- Final build/flash wrappers exit0 with zero compiler warnings. Native52/52,
+  host75/75 and browser189/189 pass. Actual furniture pointer flags all equal1:
+  hold/staged/decor_move/gift_move/cancel/new/actions/lights/paths/layers.
+- First hardware run exposed Floor mode switches incorrectly changing rank
+  and a watchdog stall from repeated full terrain decoding in pointer tests.
+  Retain Floor rank and use lightweight decor-only renderer checks. Rebuilt,
+  reflashed and reran the full native suite successfully, not build-only.
+- A new browser regression reproduces canopy artwork contaminating the
+  steering radius of a co-located Solid item (heading -0.471239 instead of0).
+  Restrict the footprint lookup to path1; the exact regression now passes.
+- Actual compiled schema captured asv13,52 fields,268-byte prefix/6-byte tail.
+  Real serial save tests preserve three modes and exact record order across
+  inline/extended slots and reboot, including273 placements. Reject invalid
+  path3 and a v12 header carrying path2; exact restore/overwrite guard pass.
+- render500: largest_drift=0. scanloop5:ok=5,failed=0,largest_drift=0.
+  Internal/DMA largest63,488 >=51,200.40-second restored-pet soak:zero faults,
+  VERDICT:PASS. No authorized association or complete hosted OTA claim added.
+- Capture actual480x480 LVGL Canopy editing UI. Browser actual button clicks
+  verify same-band rank retention, staged saved-state preservation, Cancel,
+  Walk Behind selection and disabled endpoints.390px viewport has no page
+  overflow and every control is contained. Physical touch feel is not claimed.
+- Finally restore the fresh pre-placement280-byte pet exactly, including after
+  the temporary capture fixture. Reboot checks preserve ownership/settings,
+  Silk4541 and Crystal14/14. No reset, artwork change or gameplay reward added.

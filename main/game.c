@@ -366,9 +366,13 @@ void game_on_sleep(lv_event_t *e)
 
 static int16_t s_place_x, s_place_y, s_place_dx, s_place_dy;
 static bool s_place_dragging;
-static bool s_place_blocking;
+static uint8_t s_place_blocking;
+static int s_place_layer;
+static void placement_position(int32_t x, int32_t y);
 
-bool game_placement_blocking(void) { return s_place_blocking; }
+uint8_t game_placement_blocking(void) { return s_place_blocking; }
+int game_placement_layer(void) { return s_place_layer; }
+int game_placement_layers(void) { return decor_layer_count(s_place_blocking, g_decor_move_slot) + 1; }
 bool game_placement_existing(void)
 {
     return (g_decor_mode && g_decor_move_slot >= 0) || (g.gift_mode && s_gift_moving);
@@ -377,11 +381,37 @@ bool game_placement_existing(void)
 void game_on_placement_blocking(lv_event_t *e)
 {
     (void)e;
-    if (!g_decor_mode || g_decor_move_slot < 0) return;
-    s_place_blocking = !s_place_blocking;
+    if (!g_decor_mode) return;
+    uint8_t previous = s_place_blocking;
+    s_place_blocking = (s_place_blocking + 1) % DECOR_PATH_COUNT;
+    if ((previous == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND))
+        s_place_layer = decor_layer_count(s_place_blocking, g_decor_move_slot);
+    placement_position(s_place_x, s_place_y);
     ui_hud_set_place_mode(true, NULL);
 }
 
+void game_on_placement_path(lv_event_t *e)
+{
+    if (!g_decor_mode) return;
+    uint8_t path = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
+    if (path == s_place_blocking) return;
+    if ((path == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND))
+        s_place_layer = decor_layer_count(path, g_decor_move_slot);
+    s_place_blocking = path;
+    placement_position(s_place_x, s_place_y);
+    ui_hud_set_place_mode(true, NULL);
+}
+
+void game_on_placement_layer(lv_event_t *e)
+{
+    if (!g_decor_mode) return;
+    int step = (int)(intptr_t)lv_event_get_user_data(e);
+    int next = s_place_layer + step;
+    if (next < 0 || next >= game_placement_layers()) return;
+    s_place_layer = next;
+    placement_position(s_place_x, s_place_y);
+    ui_hud_set_place_mode(true, NULL);
+}
 void game_on_placement_put_away(lv_event_t *e)
 {
     (void)e;
@@ -409,7 +439,7 @@ static void placement_position(int32_t x, int32_t y)
     s_place_x = x < left ? left : x > right ? right : x;
     s_place_y = y < top ? top : y > bottom ? bottom : y;
     terrarium_preview_item(g.gift_mode != 0, kind, g_decor_mode ? g_decor_move_slot : -1,
-                           s_place_x, s_place_y);
+                           s_place_x, s_place_y, s_place_blocking, s_place_layer);
 }
 
 void game_on_placement_cancel(lv_event_t *e)
@@ -429,16 +459,21 @@ void game_on_placement_done(lv_event_t *e)
     (void)e;
     if (!g.gift_mode && !g_decor_mode) return;
     if (g_decor_mode) {
-        bool ok = g_decor_move_slot >= 0 ? decor_move(g_decor_move_slot, s_place_x, s_place_y) :
-                  decor_place(g_decor_selected, s_place_x, s_place_y) >= 0;
+        int slot = g_decor_move_slot;
+        bool ok;
+        if (slot >= 0) ok = decor_move(slot, s_place_x, s_place_y);
+        else { slot = decor_place(g_decor_selected, s_place_x, s_place_y); ok = slot >= 0; }
         if (!ok) {
             ESP_LOGW(TAG, "decor placement commit failed");
             ui_hud_bubble("Cannot Place / See Log", 0xf5c86b, 1800);
             return;
         }
-        if (g_decor_move_slot >= 0 &&
-            (decor_at(g_decor_move_slot)->blocking != s_place_blocking))
-            decor_toggle_blocking(g_decor_move_slot);
+        if (!decor_set_path(slot, s_place_blocking) || decor_set_layer(slot, s_place_layer) < 0) {
+            ESP_LOGE(TAG, "placement path/layer commit failed");
+            ui_hud_bubble("Cannot Set Layer / See Log", 0xf5c86b, 1800);
+            return;
+        }
+        terrarium_preview_hide();
         terrarium_refresh_decor();
     } else {
         if (!s_gift_moving && !gift_purchase(g.gift_selected)) {
@@ -850,17 +885,19 @@ static void decor_begin_placement(uint8_t kind)
     ui_hud_set_chrome(false);
     behaviour_aim_cancel();
     s_place_dragging = false;
+    s_place_blocking = def->blocking;
+    s_place_layer = decor_layer_count(s_place_blocking, -1);
     placement_position(ui.W / 2, ui.H / 2);
     ui_hud_set_place_mode(true, "Slide to position; Done saves");
 }
 
-/* Reposition an item that is already in the tank. The item keeps its slot,
- * blocking flag and ownership; only its position changes. */
+/* Keep position, path and layer staged until Done. */
 static void decor_begin_move(int slot)
 {
     if (!decor_at(slot)) return;
     g_decor_move_slot = slot;
     s_place_blocking = decor_at(slot)->blocking;
+    s_place_layer = decor_layer_index(slot);
     g_decor_selected = decor_at(slot)->kind;
     g_decor_mode = 1;
     ui_menu_close();
@@ -1858,8 +1895,8 @@ static bool test_furniture_pointer(void)
     created = created && g.gift.x == 260 && g.gift.y == 260 && g.silk == silk;
     decor_begin_move(slot);
     uint8_t blocking = g.decor[slot].blocking;
-    test_pointer_send(indev, &pointer, 326, 344, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 326, 344, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 240, 256, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 240, 256, LV_INDEV_STATE_RELEASED);
     bool actions = game_placement_blocking() != blocking && g.decor[slot].blocking == blocking;
     game_on_placement_cancel(NULL);
     actions = actions && g.decor[slot].blocking == blocking;
@@ -1868,13 +1905,44 @@ static bool test_furniture_pointer(void)
     game_on_placement_done(NULL);
     actions = actions && g.decor[slot].blocking != blocking;
     decor_begin_move(slot);
-    test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 240, 362, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 240, 362, LV_INDEV_STATE_RELEASED);
     actions = actions && !g_decor_mode && !decor_at(slot) && !ui_menu_visible() && decor_owned(0);
     on_gift_item_pick(0);
-    test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 240, 362, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 240, 362, LV_INDEV_STATE_RELEASED);
     actions = actions && !g.gift_mode && !g.gift.used && !ui_menu_visible() && g.silk == silk;
+    decor_clear();
+    int first = decor_place(0, 120, 150);
+    decor_place(0, 220, 150);
+    int last = decor_place(0, 320, 150);
+    terrarium_refresh_decor();
+    decor_begin_move(last);
+    test_pointer_send(indev, &pointer, 120, 310, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 120, 310, LV_INDEV_STATE_RELEASED);
+    bool layers = s_place_layer == 1 && decor_at(last)->x == 320 &&
+        terrarium_preview_test(DECOR_WALK_OVER, 1);
+    game_on_placement_cancel(NULL);
+    layers = layers && decor_at(last)->x == 320 && decor_at(first)->x == 120;
+    decor_begin_move(last);
+    test_pointer_send(indev, &pointer, 120, 310, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 120, 310, LV_INDEV_STATE_RELEASED);
+    game_on_placement_done(NULL);
+    layers = layers && decor_at(1)->x == 320 && decor_at(2)->x == 220 && terrarium_decor_test();
+    decor_begin_move(first);
+    test_pointer_send(indev, &pointer, 356, 256, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 356, 256, LV_INDEV_STATE_RELEASED);
+    bool paths = s_place_blocking == DECOR_WALK_BEHIND && decor_at(first)->blocking == 0 &&
+        terrarium_preview_test(DECOR_WALK_BEHIND, 0);
+    game_on_placement_done(NULL);
+    paths = paths && decor_at(first)->blocking == DECOR_WALK_BEHIND &&
+        !decor_blocks_point(120, 150) && decor_hit_test(120, 150) == first && terrarium_decor_test();
+    decor_begin_placement(0);
+    game_on_placement_blocking(NULL);
+    game_on_placement_blocking(NULL);
+    paths = paths && s_place_blocking == DECOR_WALK_BEHIND &&
+        terrarium_preview_test(DECOR_WALK_BEHIND, 1);
+    game_on_placement_cancel(NULL);
     lv_indev_set_long_press_time(indev, 550);
     cancel_enclosure_tap();
     uint8_t before_lights = g.lights_dimmed;
@@ -1913,9 +1981,9 @@ static bool test_furniture_pointer(void)
     ui_hud_set_place_mode(false, NULL);
     terrarium_refresh_gift();
     terrarium_refresh_decor();
-    ESP_LOGI(TAG, "furniture pointer: hold=%d staged=%d decor_move=%d gift_move=%d cancel=%d new=%d actions=%d lights=%d",
-             held, staged, moved, gift_moved, cancelled, created, actions, lights);
-    return held && staged && moved && gift_moved && cancelled && created && actions && lights;
+    ESP_LOGI(TAG, "furniture pointer: hold=%d staged=%d decor_move=%d gift_move=%d cancel=%d new=%d actions=%d lights=%d paths=%d layers=%d",
+             held, staged, moved, gift_moved, cancelled, created, actions, lights, paths, layers);
+    return held && staged && moved && gift_moved && cancelled && created && actions && lights && paths && layers;
 }
 
 static bool test_hunt_pointer(int32_t target_x, int32_t target_y)
@@ -2521,7 +2589,9 @@ void game_on_terrarium_long_press(lv_event_t *e)
     lv_point_t p = {0, 0};
     lv_indev_get_point(indev, &p);
 
-    if (g.gift.used && abs(p.x - g.gift.x) <= 32 && abs(p.y - g.gift.y) <= 32) {
+    int slot = decor_hit_test((int16_t)p.x, (int16_t)p.y);
+    bool canopy = slot >= 0 && decor_at(slot)->blocking == DECOR_WALK_BEHIND;
+    if (!canopy && g.gift.used && abs(p.x - g.gift.x) <= 32 && abs(p.y - g.gift.y) <= 32) {
         behaviour_aim_cancel();
         on_gift_item_pick(0);
         s_place_dragging = true;
@@ -2529,7 +2599,6 @@ void game_on_terrarium_long_press(lv_event_t *e)
         s_place_dy = s_place_y - p.y;
         return;
     }
-    int slot = decor_hit_test((int16_t)p.x, (int16_t)p.y);
     if (slot < 0) return;
 
     /* A long press must not also fire the pounce on release. */
@@ -2896,7 +2965,7 @@ void game_init(void)
     lv_obj_set_style_border_width(ui.tap_layer, 0, 0);
     lv_obj_set_scrollable(ui.tap_layer, false);
     lv_obj_set_clickable(ui.tap_layer, true);
-    lv_obj_add_flag(ui.tap_layer, LV_OBJ_FLAG_PRESS_LOCK);
+    lv_obj_set_press_lock(ui.tap_layer, true);
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_tap, LV_EVENT_CLICKED, NULL);
     /* Slingshot needs the raw press/move/release stream, not just clicks. */
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_press,
@@ -2921,6 +2990,7 @@ void game_init(void)
      * creates the slingshot aim visuals. */
     cspider_init(ui.creature_layer);
     spider_init(ui.creature_layer);
+    terrarium_raise_canopy();
 
     s_light_overlay = lv_obj_create(root);
     lv_obj_remove_style_all(s_light_overlay);

@@ -8,6 +8,8 @@
 .game-screen #tank { position:absolute; inset:0; width:480px; height:480px; image-rendering:pixelated; border-radius:44px; }
 #device-controls { position:absolute; inset:0; pointer-events:none; }
 .d-placement-hint { position:absolute; color:#f5c86b; background:#101c2c; border:2px solid #b99b67; text-align:center; font-size:14px; line-height:32px; }
+.d-placement-layer { white-space:pre-line; font-size:12px; line-height:18px; }
+.game-screen .d-placement-controls .d-placement-small { font-size:12px; }
 .game-screen button, .game-screen input, .game-screen textarea { font:inherit; }
 .game-screen h2, .game-screen h3 { font-family:inherit; font-weight:500; letter-spacing:0; }
 .game-screen button { text-transform:none; letter-spacing:0; min-height:0; cursor:pointer; }

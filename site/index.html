@@ -7,12 +7,12 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
   <meta name="description" content="A tiny world for an eight-legged friend. Play Spidarium in your browser, flash an ESP32-S3, and safely manage your pet save.">
   <title>Spidarium — a little wild, a little wonderful</title>
-  <link rel="stylesheet" href="./style.css?v=1.1.28-hero1">
-  <link rel="stylesheet" href="./device.css?v=1.1.28">
+  <link rel="stylesheet" href="./style.css?v=1.1.29">
+  <link rel="stylesheet" href="./device.css?v=1.1.29">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="../assets/ui_status.png" type="image/png">
   <link rel="apple-touch-icon" href="../assets/ui_status.png">
-  <script type="module" src="./app.js?v=1.1.28"></script>
+  <script type="module" src="./app.js?v=1.1.29"></script>
 </head>
 <body>
   <header class="site-header">
@@ -42,7 +42,7 @@
         <div class="game-toolbar"><span>480 × 480 WORLD · SCALED TO YOUR SCREEN</span><button id="fullscreen" class="button secondary">Fullscreen</button></div>
         <div class="game-viewport"><div class="game-screen" tabindex="0" role="application" aria-label="Spidarium. Tap the upper-left page ear to show care buttons. Drag from the spider to aim; release to pounce."><canvas id="tank" width="480" height="480"></canvas><div id="device-controls"></div></div></div>
         <p id="sim-message" class="game-message" role="status">Progress saves on this browser. Tap the page ear for care and menus.</p>
-        <p class="gesture-hint">Drag from your spider to aim; release to pounce. Auto Feed is off until checked in Settings.<br>Slide decor/gift previews, then press Done; Cancel keeps the old position. Hold placed furniture to edit on the game screen with Put Away, Blocking for decor, Done and Cancel; no submenu or Back button. Double tap to dim the enclosure. Buy 48 backgrounds, 48 independent matching borders, 68 decor styles and 36 gifts with Silk; placement grows beyond 12 items. Pick from 12 treats.<br>Gentle music has its own switch, three soundtracks and independent volume in Settings → Sound. Uncheck Sound to silence everything. Battery preferences mirror the device; hardware deep sleep is device-only.<br>Keyboard: M toggles the HUD; arrows aim, Space pounces. While placing: arrows move, Enter saves, Escape cancels. Menu → Help Guide explains every feature. Browser storage can be cleared: download a backup in Settings → SD Card.</p>
+        <p class="gesture-hint">Drag from your spider to aim; release to pounce. Auto Feed is off until checked in Settings.<br>Slide decor/gift previews, then press Done; Cancel discards edits. Hold placed furniture for inline Put Away/Done/Cancel controls. Decor adds Solid, Walk Over and Walk Behind, plus Back/Front layer arrows. Floor stays below the spider; Canopy stays above it. Changes save only with Done; no submenu or Back navigation. Double tap to dim the enclosure. Buy 48 backgrounds, 48 independent matching borders, 68 decor styles and 36 gifts with Silk; placement grows beyond 12 items. Pick from 12 treats.<br>Gentle music has its own switch, three soundtracks and independent volume in Settings → Sound. Uncheck Sound to silence everything. Battery preferences mirror the device; hardware deep sleep is device-only.<br>Keyboard: M toggles the HUD; arrows aim, Space pounces. While placing: arrows move, Enter saves, Escape cancels. Menu → Help Guide explains every feature. Browser storage can be cleared: download a backup in Settings → SD Card. Save v13 reads older backups; older firmware cannot read new saves.</p>
         <input id="browser-save-file" type="file" accept=".json,application/json" hidden>
       </div>
     </section>

@@ -317,7 +317,7 @@ void game_on_play(lv_event_t *e);
 void game_on_sleep(lv_event_t *e);
 void game_on_gift(lv_event_t *e);
 void game_on_menu(lv_event_t *e);
-/* Hold on a placed decor item to open its move/blocking menu. */
+/* Hold placed decor to stage position, path and layer inline. */
 void game_on_terrarium_long_press(lv_event_t *e);
 
 /* Open a menu by name, for the serial console. Returns false if the name is
@@ -405,7 +405,11 @@ void game_on_placement_done(lv_event_t *e);
 void game_on_placement_cancel(lv_event_t *e);
 void game_on_placement_put_away(lv_event_t *e);
 void game_on_placement_blocking(lv_event_t *e);
-bool game_placement_blocking(void);
+uint8_t game_placement_blocking(void);
+int game_placement_layer(void);
+int game_placement_layers(void);
+void game_on_placement_path(lv_event_t *e);
+void game_on_placement_layer(lv_event_t *e);
 bool game_placement_existing(void);
 
 /* WiFi menu actions, marshalled from menu callbacks onto the LVGL task. */

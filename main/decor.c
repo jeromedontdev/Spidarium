@@ -255,17 +255,80 @@ bool decor_toggle_blocking(int slot)
 {
     decor_item_t *item = slot_at(slot);
     if (!item || item->kind == 0xFF) return false;
-    item->blocking = !item->blocking;
+    return decor_set_path(slot, (item->blocking + 1) % DECOR_PATH_COUNT);
+}
+
+bool decor_set_path(int slot, uint8_t path)
+{
+    decor_item_t *item = slot_at(slot);
+    if (!item || item->kind == 0xFF || path >= DECOR_PATH_COUNT) {
+        ESP_LOGW(TAG, "path rejected: slot=%d path=%u", slot, path);
+        return false;
+    }
+    item->blocking = path;
     ESP_LOGI(TAG, "slot %d blocking=%u", slot, item->blocking);
     return true;
 }
 
+static bool same_band(uint8_t a, uint8_t b)
+{
+    return (a == DECOR_WALK_BEHIND) == (b == DECOR_WALK_BEHIND);
+}
+
+int decor_layer_count(uint8_t path, int exclude_slot)
+{
+    int count = 0;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *item = decor_at(i);
+        if (item && i != exclude_slot && same_band(item->blocking, path)) count++;
+    }
+    return count;
+}
+
+int decor_layer_index(int slot)
+{
+    const decor_item_t *item = decor_at(slot);
+    if (!item) return -1;
+    int index = 0;
+    for (int i = 0; i < slot; i++) {
+        const decor_item_t *other = decor_at(i);
+        if (other && same_band(item->blocking, other->blocking)) index++;
+    }
+    return index;
+}
+
+int decor_set_layer(int slot, int index)
+{
+    const decor_item_t *item = decor_at(slot);
+    if (!item || index < 0 || index >= decor_layer_count(item->blocking, -1)) {
+        ESP_LOGW(TAG, "layer rejected: slot=%d index=%d", slot, index);
+        return -1;
+    }
+    int current = decor_layer_index(slot);
+    while (current != index) {
+        int step = current < index ? 1 : -1;
+        int next = slot + step;
+        while (next >= 0 && next < decor_slot_count()) {
+            const decor_item_t *other = decor_at(next);
+            if (other && same_band(item->blocking, other->blocking)) break;
+            next += step;
+        }
+        decor_item_t swap = *slot_at(next);
+        *slot_at(next) = *slot_at(slot);
+        *slot_at(slot) = swap;
+        slot = next;
+        item = decor_at(slot);
+        current += step;
+    }
+    return slot;
+}
+
 int decor_hit_test(int16_t x, int16_t y)
 {
-    /* Later slots are drawn on top, so search backwards to pick the visible one. */
+    for (int band = 1; band >= 0; band--)
     for (int i = decor_slot_count() - 1; i >= 0; i--) {
         const decor_item_t *item = decor_at(i);
-        if (!item) continue;
+        if (!item || (item->blocking == DECOR_WALK_BEHIND) != band) continue;
         const decor_def_t *def = decor_def(item->kind);
         if (!def) continue;
         float dx = (float)(x - item->x);
@@ -280,7 +343,7 @@ bool decor_blocks_point(int16_t x, int16_t y)
 {
     for (int i = 0; i < decor_slot_count(); i++) {
         const decor_item_t *item = decor_at(i);
-        if (!item || !item->blocking) continue;
+        if (!item || item->blocking != DECOR_SOLID) continue;
         const decor_def_t *def = decor_def(item->kind);
         if (!def) continue;
         float dx = (float)(x - item->x);
@@ -297,7 +360,7 @@ bool decor_nearest_blocking(int16_t x, int16_t y, float max_distance,
     int found = -1;
     for (int i = 0; i < decor_slot_count(); i++) {
         const decor_item_t *item = decor_at(i);
-        if (!item || !item->blocking) continue;
+        if (!item || item->blocking != DECOR_SOLID) continue;
         float dx = (float)(item->x - x);
         float dy = (float)(item->y - y);
         float d2 = dx * dx + dy * dy;
@@ -416,6 +479,23 @@ bool decor_test(void)
     ok = ok && slot >= 0;
     ok = ok && decor_at(slot)->x >= g_play.left;
     ok = ok && decor_at(slot)->y >= g_play.top;
+
+    decor_clear();
+    int a = decor_place(DECOR_ROCK_SMALL, 200, 200);
+    int b = decor_place(DECOR_CRYSTAL, 200, 200);
+    int c = decor_place(DECOR_ROCK_SMALL, 200, 200);
+    ok = ok && decor_set_path(b, DECOR_WALK_BEHIND);
+    ok = ok && !decor_blocks_point(200, 200) &&
+         !decor_nearest_blocking(200, 200, 100, NULL, NULL, NULL);
+    ok = ok && decor_hit_test(200, 200) == b && decor_layer_count(0, -1) == 2;
+    ok = ok && decor_layer_count(2, -1) == 1 && decor_layer_index(c) == 1;
+    int reordered = decor_set_layer(c, 0);
+    ok = ok && reordered == a && decor_layer_index(reordered) == 0;
+    ok = ok && decor_at(b)->blocking == DECOR_WALK_BEHIND && decor_hit_test(200, 200) == b;
+    ok = ok && !decor_set_path(a, 3) && decor_set_layer(a, -1) < 0;
+    ok = ok && decor_set_layer(a, 2) < 0 && decor_layer_index(a) == 0;
+    ok = ok && decor_set_path(b, DECOR_SOLID) && decor_blocks_point(200, 200);
+    ok = ok && decor_set_layer(b, 2) >= 0;
 
     g.level = 40;
     g.silk = 100000;

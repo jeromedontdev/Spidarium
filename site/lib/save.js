@@ -12,7 +12,7 @@ export const toHex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, 
 
 export function validateSchema(schema) {
   if (!schema || !Number.isInteger(schema.magic) || schema.magic < 0 || schema.magic > 0xffffffff ||
-      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
+      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
       !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 268) ||
       !Array.isArray(schema.fields)) throw new Error('Unsupported save schema');
   const names = new Set();
@@ -86,7 +86,7 @@ export function decodeSave(bytes, schema) {
   if(header.version>=8){
     const kinds=header.version>=12?68:header.version>=10?34:16;
     for(const item of fields.decor){
-      if((item.kind!==255&&item.kind>=kinds)||item.blocking>1||
+      if((item.kind!==255&&item.kind>=kinds)||item.blocking>(header.version>=13?2:1)||
           item.x<0||item.x>480||item.y<0||item.y>480)
         throw new Error('Invalid inline decor record');
     }
@@ -105,7 +105,7 @@ export function decodeSave(bytes, schema) {
       const offset=12+prefix+i*6;
       const item={kind:view.getUint8(offset),blocking:view.getUint8(offset+1),
         x:view.getInt16(offset+2,true),y:view.getInt16(offset+4,true)};
-      if((item.kind!==255&&item.kind>=(header.version>=12?68:34))||item.blocking>1||
+      if((item.kind!==255&&item.kind>=(header.version>=12?68:34))||item.blocking>(header.version>=13?2:1)||
           item.x<0||item.x>480||item.y<0||item.y>480)
         throw new Error('Invalid extended decor record');
       fields.decor.push(item);
