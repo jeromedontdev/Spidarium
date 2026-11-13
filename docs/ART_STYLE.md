@@ -226,6 +226,12 @@ mobile layouts and distinct selected/disabled/destructive states. This is a
 pixel-art visual treatment, not an instruction to replace text with tiny
 bitmap lettering or change game behavior.
 
+The circular website hero uses a quiet light parchment fill (`#e3dcc7`),
+not a detailed habitat texture: both the gray spider and dark beetle must
+remain distinct. Keep their source pixels unfiltered; the beetle displays at
+48x48 above the spider's legs. This presentation-only backdrop does not
+replace any in-game terrain.
+
 ## Generate, pack and verify
 
 Edit [the generator](../tools/gen_sprites.py), not individual PNGs. Geometry is

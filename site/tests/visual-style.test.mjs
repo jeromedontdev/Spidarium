@@ -119,3 +119,15 @@ test('landing chrome shares local Montserrat and palette without filtering artwo
   assert.equal(declarations(landing, 'progress::-webkit-progress-value')['border-radius'], '0');
   assert.equal(declarations(landing, 'progress::-moz-progress-bar')['border-radius'], '0');
 });
+
+test('circular hero keeps unfiltered creatures readable on a quiet light backdrop', async () => {
+  assert.equal(declarations(landing, '.hero-moss').background, '#e3dcc7');
+  const prey = declarations(landing, '.hero-prey');
+  assert.equal(prey.width, '48px');
+  assert.equal(prey.height, '48px');
+  assert.equal(prey.top, '22%');
+  assert.equal(prey['image-rendering'], 'pixelated');
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(html.includes('./style.css?v=1.1.28-hero1'));
+  assert.ok(html.includes('against a quiet light backdrop'));
+});

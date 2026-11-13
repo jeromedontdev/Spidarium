@@ -8504,3 +8504,24 @@ evidence proves delivery and continuity, not that the player likes the sound.
   redirect and versioned UI imports verified. The published binary/pack are
   exactly the artifacts already flashed and tested, not a later untested build.
   No hosted OTA association/download/reboot or physical-screen claim added.
+
+## Round 93 - Restoring contrast in the circular website hero
+
+### Decisions made
+
+- Replace only the hero's busy moss texture with a flat light parchment
+  background #e3dcc7. Preserve every artwork file and both spider renderers.
+  Show the existing beetle at48x48 and move it above the spider's legs.
+  In-game backgrounds and firmware remain v1.1.28 without modification.
+- Update accessible hero description, style contract and CSS cache key
+  1.1.28-hero1. Add a visual-style regression for the quiet fill/prey geometry.
+  Publish as a website-only main-branch deployment, not a new firmware release.
+
+### Exact evidence and boundary
+
+- All7 targeted visual-style tests pass and bundled website build succeeds.
+- Browser verifies actual local source styles at1440px and390px: parchment
+  RGB227/220/199, no background image, beetle48px source loaded and fully
+  inside the circular opening; no horizontal page overflow. Actual hero
+  screenshots confirm creature silhouettes separate from the quiet backdrop.
+- No device flash or pet changes are needed for this website-only fix.

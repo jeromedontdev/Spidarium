@@ -49,9 +49,9 @@ button:disabled, .button:disabled {
   background:var(--panel);
 }
 .hero-moss, .hero-spider { filter:none; }
-.hero-moss { background:#354a39 url("../assets/background_moss_0.png") center/cover; }
+.hero-moss { background:#e3dcc7; }
 .hero-vivarium .hero-spider { position:absolute; width:240px; height:240px; left:calc(50% - 120px); top:calc(50% - 120px); animation:none; transform:none; image-rendering:pixelated; pointer-events:none; }
-.hero-prey { position:absolute; width:40px; height:40px; left:72%; top:28%; image-rendering:pixelated; pointer-events:none; }
+.hero-prey { position:absolute; width:48px; height:48px; left:72%; top:22%; image-rendering:pixelated; pointer-events:none; }
 .tool-card select { width:100%; padding:10px; margin-top:8px; color:#e8efda; background:#16283c; border:2px solid #b99b67; font:inherit; }
 .hero-name, .tank-bottom { background:var(--panel); color:var(--ink); }
 .device-preview { background:var(--panel); border:2px solid var(--line); border-radius:2px; box-shadow:6px 6px 0 var(--bg); }
