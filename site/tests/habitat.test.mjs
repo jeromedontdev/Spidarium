@@ -4,6 +4,88 @@ import { readFile } from 'node:fs/promises';
 import * as E from '../lib/device-engine.js';
 import { DeviceGame } from '../lib/device-ui.js';
 
+function tapFixture(t) {
+  t.mock.timers.enable({apis:['setTimeout']});
+  let now=1000;
+  t.mock.method(performance,'now',()=>now);
+  const ui=Object.assign(Object.create(DeviceGame.prototype),{
+    state:E.freshState(),started:true,modal:null,game:null,hud:false,
+    decorKind:null,decorMoveSlot:null,giftKind:null,
+    screen:{focus(){}},canvas:{setPointerCapture(){}},audio:{unlock(){}},
+    point:event=>event,persist(){this.saves=(this.saves??0)+1;},report(){},
+  });
+  const tap=(x=200,y=250,gap=100)=>{
+    now+=gap;ui.pointerDown({x,y,pointerId:1});now+=40;
+    ui.pointerUp({x,y,pointerId:1});
+  };
+  return {ui,tap,advance:ms=>{now+=ms;}};
+}
+
+test('lights accept repeated double-tap pairs, finger spacing and slower taps without petting',t=>{
+  const {ui,tap}=tapFixture(t);
+  for(let pair=0;pair<3;pair++){
+    tap(200,250);tap(240,260,350);
+    assert.equal(ui.state.lights_dimmed,(pair+1)%2);
+    t.mock.timers.tick(500);
+    assert.equal(ui.state.pets,0);
+  }
+  assert.equal(ui.saves,3);
+});
+
+test('lights enforce time and distance boundaries, not triple-click streaks',t=>{
+  const {ui,tap}=tapFixture(t);
+  tap();tap(200,250,411); // 451ms between releases.
+  assert.equal(ui.state.lights_dimmed,0);
+  ui.cancelTap();tap();tap(249,250);
+  assert.equal(ui.state.lights_dimmed,0);
+  ui.cancelTap();tap();tap(248,250,410); // Inclusive 450ms / 48px.
+  assert.equal(ui.state.lights_dimmed,1);
+});
+
+test('tap jitter is accepted; out-and-back drags, holds and cancelled pointers cannot toggle lights',t=>{
+  const {ui,tap,advance}=tapFixture(t);
+  tap();
+  ui.pointerDown({x:200,y:250,pointerId:1});
+  ui.pointerMove({x:215,y:255,pointerId:1});
+  ui.pointerUp({x:215,y:255,pointerId:1});
+  assert.equal(ui.state.lights_dimmed,1);
+  for(const kind of ['drag','hold','cancel']){
+    ui.cancelTap();tap();
+    ui.pointerDown({x:200,y:250,pointerId:1});
+    if(kind==='drag'){
+      ui.pointerMove({x:260,y:250,pointerId:1});
+      ui.pointerMove({x:200,y:250,pointerId:1});
+    }else if(kind==='hold')advance(550);
+    else ui.pointerCancel({pointerId:1});
+    ui.pointerUp({x:200,y:250,pointerId:1});
+    assert.equal(ui.state.lights_dimmed,1,kind);
+  }
+});
+
+test('a single spider tap still pets after the double-tap window; HUD cancels pending taps',t=>{
+  const {ui,tap,advance}=tapFixture(t);
+  tap(ui.state.spider_x,ui.state.spider_y);
+  t.mock.timers.tick(474);assert.equal(ui.state.pets,0);
+  t.mock.timers.tick(1);assert.equal(ui.state.pets,1);
+  advance(475);
+  tap();ui.hud=true;ui.pointerDown({x:200,y:250,pointerId:1});
+  ui.pointerUp({x:200,y:250,pointerId:1});ui.hud=false;tap();
+  assert.equal(ui.state.lights_dimmed,0);
+});
+
+test('hunting drags retain the 18px shot threshold and cannot seed a light-toggle pair',t=>{
+  const {ui,tap}=tapFixture(t);
+  ui.state.hunger=50;assert.equal(E.spawnPrey(ui.state,0),true);
+  assert.equal(E.aimAvailable(ui.state),true);
+  ui.pointerDown({x:300,y:250,pointerId:1});
+  ui.pointerMove({x:320,y:250,pointerId:1});
+  ui.pointerUp({x:320,y:250,pointerId:1});
+  assert.equal(ui.state.state,4,'a 20px hunting drag still fires');
+  assert.equal(ui.lastTap,null);
+  tap(320,250);
+  assert.equal(ui.state.lights_dimmed,0);
+});
+
 test('all background prices match native; buying once persists free reapplication', async () => {
   const native = await readFile(new URL('../../main/theme.c', import.meta.url), 'utf8');
   const prices = native.match(/k_costs\[THEME_COUNT\] = \{([^}]+)\}/)[1].match(/\d+/g).map(Number);

@@ -13,6 +13,49 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- The completed decor overhaul starts with the original sixteen natural props
+  and their five derived legacy PNGs. tools/core_decor_art.py authors explicit
+  32px material geometry, a transparent one-pixel gutter and exact2x outputs.
+  Keep the existing IDs/dimensions/radii/blocking defaults and pet. Remaining
+  52 props/all36 gifts/12 treats now use tools/furnishing_art.py, with explicit
+  item details and connected material planes instead of diagonal speckles.
+  tools/small_art.py handles all40 prey frames/30 icons/11 badges at their
+  original grid sizes. These181 final sprites preserve the approved96 terrain/
+  16 core/five legacy images and39 spider exports/both renderers. Read the
+  current asset/style guide for anatomy reuse and finite-palette composition.
+  Latest progress records v1.1.28 build/device/pet/publication evidence.
+
+- All47 non-Crystal background/border pairs now use the approved offline moss
+  direction. Exact moss floor/frame are hash-pinned imports;46 other pairs use
+  explicit theme recipes in tools/terrain_art.py with fixed seeds and discrete
+  material planes. Generated centers allow16 tones/luma64; Minimal keeps3/24.
+  Moss allows17/80 but is hash-pinned. Preserve the thin16px rim and transparent
+  208x208 opening. That terrain pass preserved every non-terrain PNG and the
+  Crystal pair. No new buffers/save fields or PixelLab spend. Round90 records
+  its device evidence; Round92 records inclusion in the v1.1.28 publication.
+
+- Crystal background14 now imports the exact user-approved PixelLab floor from
+  `assets/sources/crystal_floor.png` at240x240. Generation stays offline and
+  deterministic. Its pinned decoded-pixel hash replaces the three-tone-center
+  check for Crystal only. Crystal border14 imports
+  a separate hash-pinned120x120 PixelLab source, explicitly nine-slices its18px
+  rim to8px, then doubles to240x240. Binary alpha/16 colors/transparent208x208
+  opening remain strict. Its pixels are unchanged by the offline catalogue redraw.
+  Preserve the spider, current pet and other artwork. See latest progress for
+  actual flash/activation evidence and v1.1.28 publication.
+  Read [the PixelLab workflow](PIXELLAB_WORKFLOW.md) for successful reference
+  roles/prompts and cost bands. The final10 trial generations returned four
+  border candidates in one request; the trial is now exhausted.
+
+- The light-gesture fix uses independent 450ms/48px tap pairs instead of
+  LVGL's single/double/triple streak. Allow 24px tap jitter outside hunting;
+  preserve hunting's 18px shot threshold. Exclude holds, out-and-back drags,
+  placement and HUD/menu interactions. Petting waits 475ms. Keep native/browser
+  behavior aligned and preserve the actual-pointer regressions.
+  `silk add N` now grants testing currency on LVGL, with overflow rejection and
+  console acknowledgement only after the save worker finishes. See the serial
+  guide; it adds to the current balance, not a replacement save or set-total.
+
 - Help now appears only in the root Menu on native/browser. Decor/gifts and
   their hold-to-edit action use draggable artwork previews: release does
   not commit, Done saves once, Cancel keeps the previous placement. Preserve

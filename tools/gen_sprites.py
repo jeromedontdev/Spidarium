@@ -2,14 +2,15 @@
 """
 Spidarium sprite generator.
 
-Draws every sprite procedurally with Pillow and writes RGBA PNGs into assets/.
-Deterministic geometry and fixed per-theme seeds produce identical bytes.
+Draws sprites, themed terrain and imports the approved moss/Crystal pairs.
+Fixed geometry/seeds and checked source images produce identical pixels.
 Background and decor materials are defined alongside their drawing helpers.
 
 Usage:  python tools/gen_sprites.py
 """
 
 import colorsys
+import hashlib
 import io
 import math
 import os
@@ -21,6 +22,11 @@ try:
 except ImportError:
     sys.exit("ERROR: Pillow is required. Install it with: pip install Pillow")
 
+from asset_build import APPROVED_CRYSTAL_PIXEL_SHA256, APPROVED_CRYSTAL_BORDER_SOURCE_SHA256
+import terrain_art
+import core_decor_art
+import furnishing_art
+import small_art
 
 # ---------------------------------------------------------------------------
 # Tunables — retune the art here without touching the drawing code.
@@ -481,8 +487,10 @@ def _shade_materials(image, materials):
             continue
         first = min(x + y for x, y in points)
         span = max(1, max(x + y for x, y in points) - first)
-        light = tuple(min(255, v + (255 - v) // 3) for v in material[:3]) + (255,)
-        dark = tuple(v * 3 // 4 for v in material[:3]) + (255,)
+        light = tuple(min(255, v + (255 - v) // 3 + shift)
+                      for v, shift in zip(material[:3], (5, 3, 0))) + (255,)
+        dark = tuple(min(255, v * 3 // 4 + shift)
+                     for v, shift in zip(material[:3], (0, 2, 8))) + (255,)
         for x, y in points:
             position = (x + y - first) * 10
             if position <= span * 2:
@@ -516,7 +524,7 @@ def _draw_larva(species, anim, frame):
     _octagon(d, (17, 10, 20, 14), dark, 1)
     d.point((18, 10), fill=body)
     d.point((19, 11), fill=CREAM)
-    return _enlarge(_shade_materials(img, (body, dark, highlight)))
+    return _enlarge(small_art.finish(_shade_materials(img, (body, dark, highlight)), species, "prey"))
 
 
 def prey_leg_paths(species, frame):
@@ -577,7 +585,7 @@ def draw_prey(species, anim, frame):
         reach = 4 if species in ("roach", "cricket") else 2
         d.line([(18, 12 + side), (21, 12 + side * reach),
                 (22, 12 + side * (reach + 1))], fill=INK)
-    return _enlarge(_shade_materials(img, (body, dark, wing)))
+    return _enlarge(small_art.finish(_shade_materials(img, (body, dark, wing)), species, "prey"))
 
 
 def draw_splatter(species):
@@ -614,7 +622,7 @@ def draw_splatter(species):
     d.line([(12, 9), (14, 9), (15, 10)], fill=rim)
     d.line([(7, 11), (8, 10), (10, 10)], fill=rim)
     d.point((9, 10), fill=glint)
-    return _enlarge(img)
+    return _enlarge(small_art.finish(img, species, "splatter"))
 
 
 def draw_achievement(name):
@@ -721,7 +729,7 @@ def draw_achievement(name):
         d.rectangle((10, 19, 14, 21), fill=CREAM)
     else:
         raise ValueError(f"Unknown achievement: {name}")
-    return _enlarge(_shade_materials(img, (accent, shade, CREAM)))
+    return _enlarge(small_art.finish(_shade_materials(img, (accent, shade, CREAM)), name, "badge"))
 
 
 def _pixel_star(d, color):
@@ -940,7 +948,7 @@ def draw_icon(name):
         d.line([(7, 12), (17, 12)], fill=CREAM)
         d.rectangle((11, 14, 13, 16), fill=INK)
         d.line([(12, 16), (12, 19)], fill=INK)
-    return _enlarge(_shade_materials(img, (accent, shade, CREAM)))
+    return _enlarge(small_art.finish(_shade_materials(img, (accent, shade, CREAM)), name, "icon"))
 
 
 def draw_gift(name):
@@ -1114,7 +1122,7 @@ def draw_gift(name):
             _leaf_shape(d, base, tip, 2, c, hi, dark, ink)
     else:
         raise ValueError("Unknown gift: " + name)
-    return _enlarge(img)
+    return furnishing_art.existing(_enlarge(img), name, "gift")
 
 
 def draw_decor(name):
@@ -1229,6 +1237,8 @@ def _frond(d, base, tip, curve, body, light, dark, ink=INK):
 
 def draw_decor_item(name):
     """One placeable decor item at 32x32, doubled to 64x64."""
+    if name in core_decor_art.NAMES:
+        return core_decor_art.draw(name)
     if name in DECOR_ITEM_NAMES[34:]:
         return _draw_catalogue_decor(name)
     img, d = _decor_canvas()
@@ -1653,7 +1663,7 @@ def draw_decor_item(name):
         "bone_arch": (bone, bone_hi),
         "stone_bridge": (stone,),
     }.get(name, ())
-    return _enlarge(_shade_materials(img, material_shading))
+    return furnishing_art.existing(_enlarge(_shade_materials(img, material_shading)), name, "decor")
 
 
 # ---------------------------------------------------------------------------
@@ -2207,7 +2217,20 @@ _BACKGROUND_SCENES = {
 
 
 def draw_background(name):
-    """Compose one top-down ground texture at the panel's native 240x240."""
+    if name == "crystal":
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "assets", "sources", "crystal_floor.png")
+        with Image.open(path) as source:
+            source.load()
+            if (source.format != "PNG" or source.mode != "RGBA" or source.size != (240, 240) or
+                    hashlib.sha256(source.tobytes()).hexdigest() != APPROVED_CRYSTAL_PIXEL_SHA256):
+                raise ValueError("Crystal source differs from the approved 240x240 RGBA floor")
+            return source.copy()
+    return terrain_art.background(name)
+
+
+def _draw_procedural_background(name):
+    """Legacy terrain retained for the earlier procedural drawing helpers."""
     if name in BACKGROUND_NAMES[24:]:
         return _draw_catalogue_background(name)
     p = BACKGROUND_PALETTES[name]
@@ -2219,7 +2242,7 @@ def draw_background(name):
 
 
 # Appended catalogue art uses three discrete material ramps and a shared ink.
-# The original renderers above remain untouched so all published bytes survive.
+# Legacy terrain helpers below no longer author the active background/frame set.
 _CATALOGUE_RAMPS = (
     (0x594156, 0xAD7957, 0xE9C68E),
     (0x493A68, 0xA269AF, 0xF5BADD),
@@ -2291,8 +2314,11 @@ def _catalogue_canvas(size):
     return image, ImageDraw.Draw(image), [_rgba(r[1]) for r in _CATALOGUE_RAMPS]
 
 
-def _catalogue_finish(image, family=None):
+def _catalogue_finish(image, family=None, name=None, kind=None):
     """Shade only material pixels; preserve ink, silhouette and binary alpha."""
+    if name is not None:
+        return _enlarge(furnishing_art.catalogue(
+            image, name, kind, _CATALOGUE_RAMPS, _THEME_MATERIALS[family], INK))
     for ramp in _CATALOGUE_RAMPS:
         body = _rgba(ramp[1])
         points = [(x, y) for y in range(image.height) for x in range(image.width)
@@ -2563,7 +2589,7 @@ def _draw_catalogue_decor(name):
         d.arc((3, 5, 29, 32), 185, 355, fill=leaf, width=2)
     else:
         raise ValueError(f"Unknown appended decor: {name}")
-    return _catalogue_finish(image, _material_family(name))
+    return _catalogue_finish(image, _material_family(name), name, "decor")
 
 
 def _draw_catalogue_gift(name):
@@ -2669,7 +2695,7 @@ def _draw_catalogue_gift(name):
         _oval(d, (5, 11, 10, 15), leaf)
     else:
         raise ValueError(f"Unknown appended gift: {name}")
-    return _catalogue_finish(image, _material_family(name))
+    return _catalogue_finish(image, _material_family(name), name, "gift")
 
 
 def draw_treat(name):
@@ -2752,7 +2778,7 @@ def draw_treat(name):
         _oval(d, (15, 15, 19, 19), leaf)
     else:
         raise ValueError(f"Unknown fictional treat: {name}")
-    return _catalogue_finish(image, _material_family(name))
+    return _catalogue_finish(image, _material_family(name), name, "treat")
 
 
 def _draw_catalogue_background(name):
@@ -3130,13 +3156,43 @@ def _border_corner(family):
     return corner
 
 
+def _draw_crystal_border():
+    source_path = os.path.join(os.path.dirname(__file__), "..", "assets", "sources",
+                               "crystal_border.png")
+    with Image.open(source_path) as source:
+        source.load()
+        if (source.format != "PNG" or source.mode != "RGBA" or source.size != (120, 120)
+                or hashlib.sha256(source.tobytes()).hexdigest() != APPROVED_CRYSTAL_BORDER_SOURCE_SHA256):
+            raise ValueError("Crystal border source differs from the selected PixelLab image")
+        if source.getchannel("A").crop((18, 18, 102, 102)).getbbox():
+            raise ValueError("Crystal border source paints inside its nine-slice opening")
+        # Fit the generated 18px rim to 8px without clipping inward crystal tips.
+        source_edges, target_edges = (0, 18, 102, 120), (0, 8, 112, 120)
+        image = Image.new("RGBA", (120, 120))
+        for y in range(3):
+            for x in range(3):
+                box = (source_edges[x], source_edges[y],
+                       source_edges[x + 1], source_edges[y + 1])
+                size = (target_edges[x + 1] - target_edges[x],
+                        target_edges[y + 1] - target_edges[y])
+                image.paste(source.crop(box).resize(size, Image.Resampling.NEAREST),
+                            (target_edges[x], target_edges[y]))
+    return image.resize((240, 240), Image.Resampling.NEAREST)
+
+
 def draw_border(name):
     """A theme-specific 2x pixel frame with a genuinely transparent play opening."""
     if name not in BACKGROUND_NAMES:
         raise ValueError(f"Unknown border theme: {name}")
+    if name == "crystal":
+        return _draw_crystal_border()
+    return terrain_art.border(name)
+
+
+def _draw_legacy_border(name):
     index = BACKGROUND_NAMES.index(name)
     family = _material_family(name)
-    source = draw_background(name).resize((120, 120), Image.Resampling.NEAREST)
+    source = _draw_procedural_background(name).resize((120, 120), Image.Resampling.NEAREST)
     image = Image.new("RGBA", (120, 120))
     # Sample the theme's edge materials rather than recoloring one generic frame.
     # The 10-color shared ramp keeps even the old 64-color terrain crisp here.

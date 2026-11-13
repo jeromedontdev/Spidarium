@@ -375,6 +375,7 @@ typedef enum {
     GAME_UI_SETUP_DONE,
     GAME_UI_DEEP_SLEEP,
     GAME_UI_BORDER,
+    GAME_UI_ADD_SILK,
 } game_ui_action_t;
 typedef enum {
     DECOR_EDIT_STATUS, DECOR_EDIT_CLEAR, DECOR_EDIT_PLACE, DECOR_EDIT_MOVE, DECOR_EDIT_BLOCK
@@ -386,6 +387,7 @@ const lv_draw_buf_t *game_screen_capture(void);
  * so a stalled render timer cannot hang the caller. */
 bool game_ui_call(game_ui_action_t action);
 bool game_ui_call_value(game_ui_action_t action, int value);
+void game_cancel_pending_tap(void);
 
 /* Open a menu by name from the console, marshalled onto the LVGL task.
  * Returns false if the name is unknown. */

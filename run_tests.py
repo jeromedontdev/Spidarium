@@ -66,6 +66,10 @@ COMMANDS = [
     ("wifi sync 99", 10, "ERR"),
     ("wifi ota http://invalid.example/firmware.bin", 10, "ERR"),
     ("rtcset -1", 10, "ERR"),
+    ("silk add 0", 10, "ERR"),
+    ("silk add -1", 10, "ERR"),
+    ("silk add 1x", 10, "ERR"),
+    ("silk add 2147483648", 10, "ERR"),
     ("mem", 10, "OK"),
 ]
 if "--gameplay" in sys.argv:

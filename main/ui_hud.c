@@ -388,6 +388,7 @@ void ui_hud_set_bot(bool on)
 
 void ui_hud_set_chrome(bool on)
 {
+    game_cancel_pending_tap();
     if (on) {
         behaviour_aim_cancel();
         spider_render(lv_tick_get());

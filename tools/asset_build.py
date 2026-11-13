@@ -7,6 +7,7 @@ import re
 import struct
 import subprocess
 import sys
+from terrain_art import MOSS_FLOOR_SHA, MOSS_BORDER_SHA
 
 try:
     from PIL import Image, ImageDraw
@@ -18,6 +19,9 @@ SPIDER_COUNT = 39
 PREY_SPECIES = ("fly", "cricket", "moth", "beetle", "roach", "mealworm", "fruitfly", "waxworm")
 ASSET_COUNT = 337
 NON_SPIDER_COUNT = 298
+APPROVED_CRYSTAL_PIXEL_SHA256 = "89d076f4219d5839d72f9b137a0f893647177223f745ee95887a5886f76f8c6b"
+APPROVED_CRYSTAL_BORDER_SOURCE_SHA256 = "7ea7c587861a0844e9296a01b01a22859f631f5ac1d7602af157081bdeac9c09"
+APPROVED_CRYSTAL_BORDER_PIXEL_SHA256 = "e6160c76ed9bc30aea45595ba507e4a5155e55f9687c49382702e23d314c6e1a"
 BACKGROUNDS = (
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
     "mushroom", "gothic", "seashell", "succulent", "willow", "desert", "crystal",
@@ -150,8 +154,9 @@ def read_bytes(path):
 def validate_pixel_art(image, name):
     """Reject smoothing, off-grid detail, and unrestricted color ramps.
 
-    Backgrounds use native 240x240 pixels and finite material ramps, not the
-    sprite grid. Their central 160x160 area stays quiet for spider and decor.
+    Backgrounds use native 240x240 pixels and bounded finite material ramps.
+    Moss and Crystal are exact approved imports. Generated central 160x160
+    areas allow richer substrate shading but exclude high-contrast scenery.
 
     Spider frames are exempt from the 2x2 grid rule because they are a direct
     export of main/cspider.c, which writes single pixels into a 96x96 canvas.
@@ -192,6 +197,10 @@ def validate_pixel_art(image, name):
             raise ValueError(f"{name}: border must be 240x240")
         if image.getchannel("A").crop((16, 16, 224, 224)).getbbox():
             raise ValueError(f"{name}: border paints inside the transparent opening")
+        if name == "border_crystal_0.png" and hashlib.sha256(image.tobytes()).hexdigest() != APPROVED_CRYSTAL_BORDER_PIXEL_SHA256:
+            raise ValueError(f"{name}: pixels differ from the fitted PixelLab Crystal border")
+        if name == "border_moss_0.png" and hashlib.sha256(image.tobytes()).hexdigest() != MOSS_BORDER_SHA:
+            raise ValueError(f"{name}: pixels differ from the approved moss border")
     if name.startswith(("decoritem_", "gift_", "treat_")) and len(colors) < 8:
         raise ValueError(f"{name}: furnishings need at least 8 visible material tones")
     minimum = (6 if "_dead_" in name else 9) if name.startswith("prey_") else (
@@ -201,12 +210,26 @@ def validate_pixel_art(image, name):
     if is_background:
         if len(colors) > MAX_BACKGROUND_COLORS:
             raise ValueError(f"{name}: background exceeds {MAX_BACKGROUND_COLORS} colors")
+        if name == "background_crystal_0.png":
+            if image.size != (240, 240) or hashlib.sha256(image.tobytes()).hexdigest() != APPROVED_CRYSTAL_PIXEL_SHA256:
+                raise ValueError(f"{name}: pixels differ from the approved textured Crystal floor")
+            return len(colors)
+        if image.size != (240, 240):
+            raise ValueError(f"{name}: background must be 240x240")
+        is_moss = name == "background_moss_0.png"
+        is_minimal = name == "background_minimal_0.png"
+        tone_limit = 17 if is_moss else 3 if is_minimal else 16
+        luma_limit = 80 if is_moss else 24 if is_minimal else 64
+        if len(colors) < (3 if is_minimal else 5):
+            raise ValueError(f"{name}: terrain needs readable finite material shading")
         center = {color for _, color in image.crop((40, 40, 200, 200)).getcolors(160 * 160)}
-        if len(center) > 3:
-            raise ValueError(f"{name}: quiet center exceeds 3 substrate tones")
+        if len(center) > tone_limit:
+            raise ValueError(f"{name}: quiet center exceeds {tone_limit} substrate tones")
         luminances = [(r * 299 + g * 587 + b * 114) // 1000 for r, g, b, _ in center]
-        if max(luminances) - min(luminances) > 24:
-            raise ValueError(f"{name}: quiet center luminance span exceeds 24/255")
+        if max(luminances) - min(luminances) > luma_limit:
+            raise ValueError(f"{name}: quiet center luminance span exceeds {luma_limit}/255")
+        if is_moss and hashlib.sha256(image.tobytes()).hexdigest() != MOSS_FLOOR_SHA:
+            raise ValueError(f"{name}: pixels differ from the approved moss floor")
     return len(colors)
 
 
@@ -709,7 +732,8 @@ def main():
     print(f"ACHIEVEMENTS: {len(ACHIEVEMENTS)} unique dedicated badge contents and silhouettes")
     print(f"SPLATTERS: all {len(PREY_SPECIES)} species, colored puddles and detached droplets")
     print(f"BACKGROUNDS: {len(BACKGROUNDS)} opaque 240x240 keeper enclosures, "
-          f"at most {MAX_BACKGROUND_COLORS} colors, quiet three-tone 160x160 centers")
+          f"at most {MAX_BACKGROUND_COLORS} colors; 46 bounded textured centers, "
+          "hash-verified approved moss and Crystal floors")
     print(f"DECOR: {len(DECOR_ITEMS)} placeable props with 8-12 material tones each")
     print(f"GIFTS: {len(GIFTS)} furnishings with 8-12 material tones each")
     print(f"TREATS: {len(TREATS)} dedicated 48x48 fictional game item icons")

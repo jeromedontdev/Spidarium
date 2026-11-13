@@ -5,6 +5,10 @@ import unittest
 from unittest.mock import patch
 
 from PIL import Image, ImageDraw
+import terrain_art
+import core_decor_art
+import furnishing_art
+import small_art
 
 from asset_build import (
     ACHIEVEMENT_ICONS, BACKGROUNDS, DECOR_ITEMS, GIFTS, TREATS, expected_dimensions,
@@ -13,12 +17,125 @@ from asset_build import (
 from gen_sprites import (
     ACHIEVEMENT_NAMES, BACKGROUND_NAMES, DECOR_ITEM_NAMES, GIFT_NAMES,
     PREY_ANIMS, PREY_SPECIES, UI_ICONS, _blob, _save_png, _shade_materials,
-    draw_achievement, draw_background, draw_decor_item, draw_gift, draw_icon, draw_prey,
+    draw_achievement, draw_background, draw_decor, draw_decor_item, draw_gift, draw_icon, draw_prey,
     TREAT_NAMES, _border_corner, _THEME_MATERIALS, draw_border, draw_treat, prey_leg_paths,
 )
 
 
 class ArtStyleTests(unittest.TestCase):
+    def test_remaining_material_recipes_cover_the_complete_catalogue(self):
+        self.assertEqual(set(furnishing_art.DECOR_DETAILS), set(DECOR_ITEM_NAMES[16:]))
+        self.assertEqual(set(furnishing_art.GIFT_DETAILS), set(GIFT_NAMES))
+        self.assertEqual(set(furnishing_art.TREAT_DETAILS), set(TREAT_NAMES))
+        self.assertEqual(set(small_art.ICON_DETAILS), set(UI_ICONS))
+        self.assertEqual(set(small_art.BADGE_DETAILS), set(ACHIEVEMENT_NAMES))
+        self.assertEqual(set(small_art.PREY_DETAILS), set(PREY_SPECIES))
+        self.assertEqual(set(small_art.SPLATTER_DETAILS), set(PREY_SPECIES))
+
+    def test_remaining_furnishings_match_sources_and_repeat_exactly(self):
+        root = Path(__file__).resolve().parents[1]
+        for prefix, names, renderer in (
+            ("decoritem", DECOR_ITEM_NAMES[16:], draw_decor_item),
+            ("gift", GIFT_NAMES, draw_gift), ("treat", TREAT_NAMES, draw_treat),
+        ):
+            for name in names:
+                with self.subTest(group=prefix, item=name):
+                    image = renderer(name)
+                    self.assertEqual(image.tobytes(), renderer(name).tobytes())
+                    with Image.open(root / "assets" / f"{prefix}_{name}.png") as source:
+                        self.assertEqual(image.tobytes(), source.tobytes())
+                    validate_pixel_art(image, f"{prefix}_{name}.png")
+
+    def test_authored_detail_preserves_alpha_and_cannot_paint_outside_materials(self):
+        image = Image.new("RGBA", (16, 16))
+        ImageDraw.Draw(image).rectangle((3, 3, 12, 12), fill=(100, 110, 80, 255))
+        mask = image.getchannel("A").tobytes()
+        colors = [(20, 30, 40, 255), (170, 190, 110, 255)]
+        furnishing_art.detail(image, ((1, ((0, 0), (15, 15))),), colors)
+        self.assertEqual(mask, image.getchannel("A").tobytes())
+        self.assertEqual(image.getpixel((4, 4)), colors[1])
+        self.assertEqual(image.getpixel((0, 0)), (0, 0, 0, 0))
+
+    def test_small_details_preserve_ink_alpha_and_existing_finite_palette(self):
+        image = Image.new("RGBA", (24, 24))
+        ink, body, light = (20, 30, 40, 255), (80, 120, 90, 255), (180, 200, 150, 255)
+        d = ImageDraw.Draw(image)
+        d.rectangle((3, 3, 20, 20), fill=body, outline=ink)
+        d.line((6, 6, 15, 6), fill=light)
+        original = image.copy()
+        small_art.finish(image, "decor", "icon")
+        self.assertEqual(original.getchannel("A").tobytes(), image.getchannel("A").tobytes())
+        self.assertLessEqual({p for p in image.get_flattened_data() if p[3]}, {ink, body, light})
+        for y in range(24):
+            for x in range(24):
+                if original.getpixel((x, y)) == ink:
+                    self.assertEqual(image.getpixel((x, y)), ink)
+
+    def test_core_decor_redraw_is_explicit_deterministic_and_matches_sources(self):
+        self.assertEqual(core_decor_art.NAMES, tuple(DECOR_ITEM_NAMES[:16]))
+        root = Path(__file__).resolve().parents[1]
+        for name in core_decor_art.NAMES:
+            with self.subTest(item=name):
+                image = core_decor_art.draw(name)
+                self.assertEqual(image.tobytes(), core_decor_art.draw(name).tobytes())
+                self.assertEqual(image.tobytes(), draw_decor_item(name).tobytes())
+                validate_pixel_art(image, f"decoritem_{name}.png")
+                with Image.open(root / "assets" / f"decoritem_{name}.png") as source:
+                    self.assertEqual(image.tobytes(), source.tobytes())
+                logical = image.resize((32, 32), Image.Resampling.NEAREST)
+                self.assertGreater(sum(bool(pixel[3]) for pixel in logical.get_flattened_data()), 80)
+                x0, y0, x1, y1 = logical.getbbox()
+                self.assertGreaterEqual(min(x0, y0), 1)
+                self.assertLessEqual(max(x1, y1), 31)
+        with self.assertRaisesRegex(ValueError, "Unknown core decor"):
+            core_decor_art.draw("unknown")
+
+    def test_legacy_decor_uses_the_same_redrawn_core_pixels(self):
+        for legacy, name, size in (
+            ("rock_0", "rock_large", (24, 16)), ("rock_1", "rock_small", (20, 14)),
+            ("plant_0", "fern", (24, 32)), ("plant_1", "succulent", (26, 28)),
+            ("wood_log", "log", (48, 18)),
+        ):
+            with self.subTest(item=legacy):
+                source = core_decor_art.draw(name).resize((32, 32), Image.Resampling.NEAREST)
+                expected = source.crop(source.getbbox()).resize(size, Image.Resampling.NEAREST)
+                actual = draw_decor(legacy)
+                self.assertEqual(actual.tobytes(), expected.resize(
+                    (size[0] * 2, size[1] * 2), Image.Resampling.NEAREST).tobytes())
+
+    def test_every_non_crystal_theme_has_an_explicit_terrain_recipe(self):
+        self.assertEqual(set(terrain_art.RECIPES), set(BACKGROUND_NAMES) - {"crystal"})
+        self.assertGreaterEqual(len({recipe[0] for recipe in terrain_art.RECIPES.values()}), 18)
+        self.assertGreaterEqual(len({recipe[4] for recipe in terrain_art.RECIPES.values()}), 24)
+
+    def test_approved_moss_pair_is_pixel_identical_to_sources(self):
+        root = Path(__file__).resolve().parents[1]
+        for kind, renderer in (("floor", draw_background), ("border", draw_border)):
+            with Image.open(root / "assets" / "sources" / f"moss_{kind}.png") as source:
+                self.assertEqual(source.tobytes(), renderer("moss").tobytes())
+
+    def test_generated_terrain_is_deterministic_and_not_a_recolored_layout(self):
+        for name in BACKGROUND_NAMES:
+            self.assertEqual(draw_background(name).tobytes(), draw_background(name).tobytes())
+            self.assertEqual(draw_border(name).tobytes(), draw_border(name).tobytes())
+        def tonal_layout(name):
+            image = draw_background(name).crop((40, 40, 200, 200))
+            colors = sorted(image.getcolors(25600), key=lambda item: item[0], reverse=True)
+            indices = {color: index for index, (_, color) in enumerate(colors)}
+            return bytes(indices[pixel] for pixel in image.get_flattened_data())
+        for left, right in (("cork", "house"), ("moss", "fern"), ("pond", "marsh"),
+                            ("gothic", "cathedral"), ("starship", "circuit_garden")):
+            self.assertNotEqual(tonal_layout(left), tonal_layout(right))
+
+    def test_flat_terrain_and_excess_center_colors_are_rejected(self):
+        image = Image.new("RGBA", (240, 240), (80, 90, 70, 255))
+        with self.assertRaisesRegex(ValueError, "finite material shading"):
+            validate_pixel_art(image, "background_fern_0.png")
+        image = draw_background("fern")
+        for index in range(17):
+            image.putpixel((100 + index, 100), (index + 60, 80, 65, 255))
+        with self.assertRaisesRegex(ValueError, "quiet center"):
+            validate_pixel_art(image, "background_fern_0.png")
     def test_all_twenty_achievement_art_mappings_are_covered(self):
         root = Path(__file__).resolve().parents[1]
         validate_runtime_mappings(root)
@@ -86,6 +203,31 @@ class ArtStyleTests(unittest.TestCase):
         ImageDraw.Draw(image).rectangle((20, 20, 21, 21), fill=(0, 0, 0, 255))
         with self.assertRaisesRegex(ValueError, "transparent opening"):
             validate_pixel_art(image, "border_woodland_0.png")
+
+    def test_crystal_border_fit_is_pinned_and_preserves_source_palette(self):
+        root = Path(__file__).resolve().parents[1]
+        with Image.open(root / "assets" / "sources" / "crystal_border.png") as source:
+            self.assertEqual(source.size, (120, 120))
+            self.assertIsNone(source.getchannel("A").crop((18, 18, 102, 102)).getbbox())
+            source_colors = {color for _, color in source.getcolors() if color[3]}
+        image = draw_border("crystal")
+        self.assertEqual(validate_pixel_art(image, "border_crystal_0.png"), 16)
+        self.assertEqual({color for _, color in image.getcolors() if color[3]}, source_colors)
+        with Image.open(root / "assets" / "border_crystal_0.png") as rendered:
+            self.assertEqual(image.tobytes(), rendered.tobytes())
+        altered = image.copy()
+        colors = list(source_colors)
+        replacement = next(color for color in colors if color != altered.getpixel((4, 4)))
+        ImageDraw.Draw(altered).rectangle((4, 4, 5, 5), fill=replacement)
+        with self.assertRaisesRegex(ValueError, "fitted PixelLab Crystal border"):
+            validate_pixel_art(altered, "border_crystal_0.png")
+
+    def test_changed_crystal_border_source_is_rejected_before_fitting(self):
+        source = Image.new("RGBA", (120, 120))
+        source.format = "PNG"
+        with patch("gen_sprites.Image.open", return_value=source):
+            with self.assertRaisesRegex(ValueError, "source differs"):
+                draw_border("crystal")
 
     def test_theme_families_use_distinct_corner_silhouettes(self):
         silhouettes = set()
@@ -161,7 +303,7 @@ class ArtStyleTests(unittest.TestCase):
             self.assertEqual(shifts[0], shifts[2])
             self.assertEqual(shifts[0], -shifts[1])
 
-    def test_all_backgrounds_are_distinct_and_quiet(self):
+    def test_all_backgrounds_are_distinct_and_follow_their_approved_contract(self):
         contents = set()
         for name in BACKGROUND_NAMES:
             with self.subTest(theme=name):
@@ -170,6 +312,21 @@ class ArtStyleTests(unittest.TestCase):
                 validate_pixel_art(image, f"background_{name}_0.png")
                 self.assertNotIn(image.tobytes(), contents)
                 contents.add(image.tobytes())
+
+    def test_crystal_floor_is_exact_approved_source_and_keeps_richer_texture(self):
+        root = Path(__file__).resolve().parents[1]
+        with Image.open(root / "assets" / "sources" / "crystal_floor.png") as source:
+            image = draw_background("crystal")
+            self.assertEqual(source.tobytes(), image.tobytes())
+        self.assertGreater(len(image.crop((40, 40, 200, 200)).getcolors(25600)), 3)
+        validate_pixel_art(image, "background_crystal_0.png")
+        replacement = image.getpixel((0, 0))
+        if replacement == image.getpixel((100, 100)):
+            replacement = image.getpixel((239, 239))
+        self.assertNotEqual(replacement, image.getpixel((100, 100)))
+        image.putpixel((100, 100), replacement)
+        with self.assertRaisesRegex(ValueError, "approved textured Crystal"):
+            validate_pixel_art(image, "background_crystal_0.png")
 
     def test_every_decor_item_has_richer_materials_on_the_pixel_grid(self):
         contents = set()

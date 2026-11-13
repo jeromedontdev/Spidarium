@@ -65,6 +65,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <limits.h>
 
 static const char *TAG = "spidarium.cmd";
 
@@ -139,6 +141,7 @@ static void cmd_help(void)
     printf("  spawn [SPECIES]      spawn unlocked bug (0..7, or random)\n");
     printf("  state N              force spider state\n");
     printf("  set FIELD VALUE      needs; auto_feed/auto_hunt accept 0 or 1, volume 0..100\n");
+    printf("  silk add N           add 1..2147483647 testing Silk and save\n");
     printf("  refresh              rebuild the visual layers\n");
     printf("  save                 save now\n");
     printf("  save export|schema  browser backup and field layout\n");
@@ -450,6 +453,26 @@ static bool wait_save(void)
 {
     for (int i = 0; i < 500 && save_busy(); i++) vTaskDelay(pdMS_TO_TICKS(20));
     return !save_busy() && save_last_ok();
+}
+
+static void cmd_silk(const char *arg)
+{
+    char *end = NULL;
+    errno = 0;
+    long amount = arg && !strncmp(arg, "add ", 4) ? strtol(arg + 4, &end, 10) : 0;
+    if (errno == ERANGE || !end || *end || amount <= 0 || amount > INT_MAX) {
+        printf("ERR usage: silk add N (1..2147483647)\n");
+        return;
+    }
+    if (!game_ui_call_value(GAME_UI_ADD_SILK, (int)amount)) {
+        printf("ERR silk grant rejected or save not queued; inspect stat before retrying\n");
+        return;
+    }
+    if (!wait_save()) {
+        printf("ERR silk save incomplete or failed; balance changed in RAM, inspect stat before retrying\n");
+        return;
+    }
+    printf("OK silk added=%ld total=%lu saved=1\n", amount, (unsigned long)g.silk);
 }
 
 static bool console_data(const char *text)
@@ -1177,6 +1200,7 @@ static void run_line(char *line)
     else if (!strcmp(line, "state"))    cmd_state(n);
     else if (!strcmp(line, "refresh"))  cmd_refresh();
     else if (!strcmp(line, "save"))     cmd_save_tool(arg);
+    else if (!strcmp(line, "silk"))     cmd_silk(arg);
     else if (!strcmp(line, "reset"))    cmd_reset();
     else if (!strcmp(line, "reboot"))   cmd_reboot();
     else if (!strcmp(line, "otatest")) printf("%s otatest\n", net_ota_test() ? "OK" : "ERR");

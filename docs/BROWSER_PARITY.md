@@ -84,7 +84,13 @@ Browser serial framing/restore pacing and SD transfers support the full tail.
 
 Hold a placed object/gift for inline editing controls; redundant Arrange Decor and
 Placed Gift navigation is removed. Double tap toggles enclosure-only dimming
-and cannot also pet. Music is original slow consonant ambient scoring, enabled
+and cannot also pet. Repeated pairs work without waiting for a triple-click
+streak to expire: releases must be within 450ms and 48 logical pixels; a tap
+allows up to 24px of finger jitter. Drags (including moving out and back),
+holds, cancelled pointers, placement and HUD/menu interactions are excluded.
+During hunting the existing 18px shot threshold takes precedence over tap jitter.
+Single-tap petting waits 475ms to disambiguate the pair.
+Music is original slow consonant ambient scoring, enabled
 by default and separately switchable in Sound. Master mute and hidden-page
 silence still win. The pet sound is a soft bell/purr, not a falling chirp.
 Speaker listening approval is not inferred from deterministic PCM tests.

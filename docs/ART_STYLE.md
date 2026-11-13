@@ -40,6 +40,19 @@ No smoothing, blur, continuous gradients or translucent shadows.
 
 ## Terrain: detail at the edges, breathing room in the middle
 
+Crystal's user-approved PixelLab floor now retains richer violet mineral
+texture across the whole canvas, without the oversized crystal/boulder rim.
+It is imported unchanged from `assets/sources/crystal_floor.png`. Its exact
+decoded pixels are hash-verified. The player subsequently approved the offline
+moss trial and requested this texture-driven approach across the remaining
+themes. Separate
+border and decor layers remain independent. Crystal's separate PixelLab border
+uses an explicit nearest-neighbor nine-slice fit to retain the standard thin
+16px runtime rim and transparent opening; this pair and decor remain unchanged
+while the other 47 floor/frame pairs are upgraded. See
+[source provenance](../assets/README.md#approved-pixellab-crystal-floor).
+Read [the PixelLab workflow](PIXELLAB_WORKFLOW.md) before generating more art.
+
 All twenty-four existing saved theme IDs remain unchanged; twenty-four append.
 Backgrounds are low-profile
 terrain, not pre-furnished rooms:
@@ -58,10 +71,14 @@ terrain, not pre-furnished rooms:
 - Crystal: violet mineral ground with embedded edge facets.
 - Minimal: pale, sparsely marked substrate with very little edge detail.
 
-The central **160x160 source pixels**, coordinates `[40,200)` on both axes,
-use at most **three closely spaced substrate tones**, with luminance span
-at most **24/255** (integer luma weights 299/587/114). On screen this protects
-a 320x320 play area. Strong outlines, stones, foliage banks and accent colors
+The central **160x160 source pixels**,
+coordinates `[40,200)` on both axes,
+use at most **16 closely spaced substrate tones**, with luminance span
+at most **64/255** (integer luma weights 299/587/114). Minimal retains 3/24.
+The exact approved moss allows 17 tones/80 luminance span but is hash-pinned;
+the exact approved Crystal remains a separate richer hash-pinned source.
+On screen this protects a 320x320 play area. Strong outlines, large stones,
+foliage banks and accent colors
 stay outside it. Fine center texture is clustered and low contrast, never
 isolated bright/dark noise.
 
@@ -72,10 +89,30 @@ Painted edge materials do not add collision obstacles.
 
 Use a finite palette of discrete material ramps. Do not revive the old advice
 to target 200-900 colors, interpolate shading, add value-noise octaves or
-increase contrast everywhere. Color count is a regression guard, not proof of
+increase contrast everywhere. Authoring uses named material recipes in
+[terrain_art.py](../tools/terrain_art.py), not one recolored texture for every
+theme. Substrate shading is materially specific: grooves in bark/wood,
+short shingled moss ridges, sand ripples, chipped paving, woven cloth, panel
+seams, crushed minerals and shallow water highlights. No per-frame artwork
+generation or new display buffers. Color count is a regression guard, not proof of
 art quality: inspect the actual composition with the spider and placed items.
 
 ## Decor
+
+The approved overhaul starts with the original sixteen natural props, authored
+in [core_decor_art.py](../tools/core_decor_art.py). Keep their 32x32 logical
+canvases, exact doubling and one-pixel transparent gutter. Richer detail means
+intentional cracks, bark grain, pinnae, overlapping growth, petal folds,
+gills and shell ribs, not noise or extra outlines on every pixel. Review both
+enlarged silhouettes and actual game-scale compositions on moss and Crystal.
+The subsequent completed pass covers the other 52 props and all 36 gifts in
+[furnishing_art.py](../tools/furnishing_art.py). Retain recognizable silhouettes
+and separately shade connected material planes. Named details belong to the
+object: book pages/bookmarks, bark grain, cloth folds, stone cracks, bamboo
+nodes, equipment seams/rivets, cycad pinnae and bonsai cushions. Never use a
+generic scattered highlight filter as a substitute for material anatomy.
+Structural materials may use five finite tones; secondary materials retain
+three each, with ink keeping the full sprite within 12 visible colors.
 
 All sixty-eight placeable sprites have 8-12 visible tones. Distinct material
 surfaces matter more than simply adding colors:
@@ -93,7 +130,8 @@ surfaces matter more than simply adding colors:
 Shading is clipped inside the silhouette. `_blob()` must not spill offset
 highlight/shadow ellipses outside an ink rim. `_leaf_shape()` draws lit and
 shadowed halves and a midrib. Top-left lighting is shared throughout.
-Legacy `decor_*.png` derive from the same redesigned placeable art.
+Legacy `decor_*.png` derive from the same redesigned placeable art, including
+the newer core-prop drawings.
 
 **Decor includes all thirty-six gift furnishings**, not only the sixty-eight
 `decoritem_*.png` props. Gifts use the same top-left light, ink rims, shaded
@@ -114,10 +152,13 @@ The 34 appended props and 18 appended furnishings have separately authored
 silhouettes: fairy doors and bridges, ironwork and urns, books and globes,
 household sewing tools, witchcraft props, fossils and cycads, neon machinery,
 space equipment, fantasy monuments, lost-city stonework and Japanese gardens.
-The 24 appended backgrounds echo these themes through different architectural,
-vegetation, celestial, water and circuit edge compositions, with the same
-quiet-center contract. All original 201 PNGs and both spider renderers remain
-unchanged.
+The 24 appended backgrounds echo these themes through materially specific
+terrain and separate architectural, vegetation, celestial, water and circuit
+trim. All47 non-Crystal floor/frame pairs are redrawn; the Crystal pair, all
+non-terrain PNGs and both spider renderers remained unchanged during that
+terrain batch. The later core-decor batch changes only the sixteen original
+props and five derived legacy images. The final pass updates the other
+181 sprites while preserving all approved terrain/core art and spider.
 
 Each of the 48 backgrounds has a separate `border_{theme}_0.png`. Borders are
 transparent enclosure overlays, never backgrounds with an opaque center.
@@ -126,16 +167,26 @@ source opening `[16,224)` on both axes must be alpha zero; only the outer
 16-pixel band may contain ink/materials. Theme-specific vines, flowers,
 masonry, shells, crystals, books, circuits, clouds and raked stone edge motifs
 use binary alpha and at most 16 colors. Rotation is exact, never interpolated.
-Fifteen separately authored corner silhouette families reinforce theme identity:
-leaf boughs, fairy mushrooms, gothic gargoyle/arches, academia books, sewing
-buttons/spools, witch potions/moons, fossil ribs, cyberpunk cog/wires, space
-stars/solar panels, fantasy battlements/dragons, ancient stepped temples/runes,
-zen torii/bamboo, shells, crystal shards and desert dunes/cacti. Corner
-ornaments extend along both edges but never intrude into the transparent opening.
+Eight trim material families and separately drawn motifs reinforce theme identity:
+leaf/fern sprigs, small mushrooms/petals, chipped arches/runes, books, shell
+ribs/fossils, bamboo nodes, stitches, small crystalline accents and circuitry.
+Each edge has its own deterministic motif offsets; it is not one rotated
+repeating tile. No large corner monument or ornament may intrude into the opening.
 Material ramps likewise differ by family: cold steel/cyan and navy/magenta
 are not shaded wood; gothic stone is cool with burgundy accents; academia
 is oak/brass; household goods are porcelain/cloth; witchcraft is black-plum
 and herb green; fossils are umber/amber; Japanese props are bamboo/stone.
+
+## Small-sprite translation
+
+The same language must remain legible on a 16px gift or 24px icon/prey canvas.
+Keep silhouettes, species anatomy, glyph meaning and animation timing; use
+short connected interior highlights and cool shadow breaks, not decorative
+noise or enlarged outlines. [small_art.py](../tools/small_art.py) records
+explicit glyph/species detail paths and clips to opaque, non-ink pixels.
+Gift furnishings retain 16px logical art and the existing runtime scale.
+Do not silently expand dimensions, add translucent pixels or increase palettes
+to imitate the larger props. Compare native-size thumbnails as well as zooms.
 
 Twelve dedicated treat icons use 24x24 logical pixels and 8-12 tones.
 Legacy filename keys do not rename items: `hunger`, `mood`, `energy`, `dew`,
@@ -152,7 +203,7 @@ and walk/flee silhouettes remain readable; no smoothing or random color noise.
 All eight dead frames retain their species-colored puddle, detached droplets
 and separate silhouettes, with a broken highlight and darker pooled edge.
 
-All thirteen action/stat glyphs and eleven achievement badges share the
+All thirty action/stat/settings glyphs and eleven achievement badges share the
 same cluster lighting. Keep their recognizable motifs and semantic colors:
 mint hygiene, amber food, blue energy, gold XP, and individual badge accents.
 `_shade_materials()` changes only exact selected material colors within
@@ -179,7 +230,8 @@ bitmap lettering or change game behavior.
 
 Edit [the generator](../tools/gen_sprites.py), not individual PNGs. Geometry is
 pixel-snapped; procedural curves may calculate positions before snapping.
-Random placement uses fixed per-theme seeds. No downloaded art or machine fonts.
+Random placement uses fixed per-theme seeds. Approved source imports are
+hash-pinned; builds never download artwork or call a generation service.
 
 From the repository root:
 
@@ -192,9 +244,9 @@ powershell -File build.ps1
 ```
 
 For a complete review sheet, add `--preview PATH.png` to the validator.
-It lays out all 119 non-spider assets with nearest-neighbor sampling.
+It lays out all 298 non-spider assets with nearest-neighbor sampling.
 
-The validator checks 158 RGBA PNGs, dimensions/names, binary alpha, sprite grid,
+The validator checks 337 RGBA PNGs, dimensions/names, binary alpha, sprite grid,
 palette limits, quiet centers, deterministic hashes across two passes, runtime
 mappings, and every decoded QOI pixel in the existing pack. Every source PNG,
 including backgrounds, badges and spider exports, must remain byte-identical

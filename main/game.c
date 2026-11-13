@@ -565,7 +565,25 @@ static struct { decor_edit_t operation; int value, x, y, count; } s_decor_edit;
 static lv_obj_t *s_light_overlay;
 static lv_timer_t *s_pet_tap_timer;
 static lv_point_t s_pet_tap;
-static bool s_double_tap_consumed;
+static lv_point_t s_tap_origin, s_last_tap;
+static uint32_t s_last_tap_at;
+static bool s_tap_valid, s_tap_pending;
+
+#define ENCLOSURE_DOUBLE_TAP_MS 450
+#define ENCLOSURE_TAP_SLOP 24
+#define ENCLOSURE_DOUBLE_TAP_SLOP 48
+
+static void cancel_enclosure_tap(void)
+{
+    s_tap_pending = false;
+    if (s_pet_tap_timer) { lv_timer_delete(s_pet_tap_timer); s_pet_tap_timer = NULL; }
+}
+
+void game_cancel_pending_tap(void)
+{
+    s_tap_valid = false;
+    cancel_enclosure_tap();
+}
 
 static void apply_enclosure_lights(void)
 {
@@ -583,14 +601,11 @@ static void delayed_pet(lv_timer_t *timer)
     }
 }
 
-static void enclosure_double_tap(lv_event_t *event)
+static void enclosure_double_tap(void)
 {
-    (void)event;
-    if (ui_menu_visible() || g.gift_mode || g_decor_mode) return;
-    if (s_pet_tap_timer) { lv_timer_delete(s_pet_tap_timer); s_pet_tap_timer = NULL; }
+    cancel_enclosure_tap();
     behaviour_aim_cancel();
     g.lights_dimmed = !g.lights_dimmed;
-    s_double_tap_consumed = true;
     apply_enclosure_lights();
     game_save_now();
 }
@@ -1032,6 +1047,7 @@ static void back_to_main(void)
 
 static void menu_open(int which)
 {
+    cancel_enclosure_tap();
     ui_menu_item_t *items = s_menu_items;
 
     /* Remember which menu is on screen so the render tick can tell whether the
@@ -1684,7 +1700,8 @@ bool game_ui_call(game_ui_action_t action)
 
 bool game_ui_call_value(game_ui_action_t action, int value)
 {
-    if (power_sleep_pending() || action <= GAME_UI_NONE || action > GAME_UI_BORDER ||
+    if (power_sleep_pending() || action <= GAME_UI_NONE || action > GAME_UI_ADD_SILK ||
+        (action == GAME_UI_ADD_SILK && value <= 0) ||
         (action == GAME_UI_DEEP_SLEEP && (value < 5 || value > 86400)) ||
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
@@ -1859,12 +1876,34 @@ static bool test_furniture_pointer(void)
     test_pointer_send(indev, &pointer, 154, 344, LV_INDEV_STATE_RELEASED);
     actions = actions && !g.gift_mode && !g.gift.used && !ui_menu_visible() && g.silk == silk;
     lv_indev_set_long_press_time(indev, 550);
+    cancel_enclosure_tap();
     uint8_t before_lights = g.lights_dimmed;
+    bool lights = true;
+    for (int i = 0; i < 6; i++) {
+        int x = i % 2 ? 435 : 400;
+        test_pointer_send(indev, &pointer, x, 400, LV_INDEV_STATE_PRESSED);
+        test_pointer_send(indev, &pointer, x + 8, 407, LV_INDEV_STATE_PRESSED);
+        if (i % 2) s_last_tap_at = game_now() - 350;
+        test_pointer_send(indev, &pointer, x + 8, 407, LV_INDEV_STATE_RELEASED);
+        lights = lights && g.lights_dimmed == (before_lights ^ (((i + 1) / 2) % 2));
+    }
+    cancel_enclosure_tap();
+    before_lights = g.lights_dimmed;
+    test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_RELEASED);
+    s_last_tap_at = game_now() - 451;
+    test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_RELEASED);
+    lights = lights && g.lights_dimmed == before_lights;
+    cancel_enclosure_tap();
     for (int i = 0; i < 2; i++) {
+        test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_PRESSED);
+        test_pointer_send(indev, &pointer, 450, 400, LV_INDEV_STATE_PRESSED);
         test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_PRESSED);
         test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_RELEASED);
     }
-    bool lights = g.lights_dimmed != before_lights;
+    lights = lights && g.lights_dimmed == before_lights;
+    cancel_enclosure_tap();
     lv_indev_delete(indev);
     g = original;
     decor_restore_extra(original_extra);
@@ -2076,6 +2115,19 @@ static void ui_service_request(void)
         audio_set_muted(s_ui_value != 0);
         game_save_now();
         break;
+    case GAME_UI_ADD_SILK: {
+        uint32_t before = g.silk;
+        if ((uint32_t)s_ui_value > UINT32_MAX - before) {
+            ESP_LOGW(TAG, "Silk grant rejected: balance would overflow");
+            atomic_store(&s_ui_ok, false);
+            break;
+        }
+        game_add_silk((uint32_t)s_ui_value);
+        bool queued = game_save_now();
+        if (!queued) g.silk = before;
+        atomic_store(&s_ui_ok, queued);
+        break;
+    }
     case GAME_UI_BORDER:
         atomic_store(&s_ui_ok, border_set(s_ui_value));
         terrarium_rebuild();
@@ -2365,8 +2417,17 @@ static void ui_service_menu_request(void)
 void game_on_terrarium_press(lv_event_t *e)
 {
     (void)e;
+    s_tap_valid = false;
     if (ui_hud_chrome_visible() || ui_menu_visible() ||
-        game_paused()) return;
+        game_paused() || g.gift_mode || g_decor_mode) cancel_enclosure_tap();
+    else {
+        lv_indev_t *indev = lv_indev_active();
+        if (indev) {
+            lv_indev_get_point(indev, &s_tap_origin);
+            s_tap_valid = true;
+        }
+    }
+    if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused()) return;
     if (g.gift_mode || g_decor_mode) {
         lv_indev_t *indev = lv_indev_active();
         if (!indev) return;
@@ -2393,6 +2454,18 @@ void game_on_terrarium_press(lv_event_t *e)
 void game_on_terrarium_pressing(lv_event_t *e)
 {
     (void)e;
+    lv_indev_t *active = lv_indev_active();
+    if (s_tap_valid && active) {
+        lv_point_t p;
+        lv_indev_get_point(active, &p);
+        int dx = p.x - s_tap_origin.x, dy = p.y - s_tap_origin.y;
+        int distance = dx * dx + dy * dy;
+        if (distance > ENCLOSURE_TAP_SLOP * ENCLOSURE_TAP_SLOP ||
+            (behaviour_aim_dragging() && distance >= AIM_MIN_PULL_PX * AIM_MIN_PULL_PX)) {
+            s_tap_valid = false;
+            cancel_enclosure_tap();
+        }
+    }
     if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused()) {
         behaviour_aim_cancel();
         return;
@@ -2429,6 +2502,7 @@ void game_on_terrarium_release(lv_event_t *e)
     }
 
     if (behaviour_aim_release()) {
+        game_cancel_pending_tap();
         g.taps++;
     }
 }
@@ -2437,6 +2511,8 @@ void game_on_terrarium_release(lv_event_t *e)
 void game_on_terrarium_long_press(lv_event_t *e)
 {
     (void)e;
+    s_tap_valid = false;
+    cancel_enclosure_tap();
     if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused() ||
         g.gift_mode || g_decor_mode) return;
 
@@ -2467,16 +2543,39 @@ void game_on_terrarium_long_press(lv_event_t *e)
 
 void game_on_terrarium_tap(lv_event_t *e)
 {
-    if (s_double_tap_consumed) { s_double_tap_consumed = false; return; }
+    (void)e;
     if (ui_menu_visible()) return;
     lv_indev_t *indev = lv_indev_active();
     lv_point_t p = {0, 0};
     if (indev) lv_indev_get_point(indev, &p);
 
-    if (g_decor_mode || g.gift_mode) return;
+    if (g_decor_mode || g.gift_mode || game_paused()) {
+        cancel_enclosure_tap();
+        return;
+    }
     if (ui_hud_chrome_visible()) {
+        cancel_enclosure_tap();
         ui_hud_dismiss_if_visible();
         return;
+    }
+    if (indev) {
+        int dx = p.x - s_tap_origin.x, dy = p.y - s_tap_origin.y;
+        int distance = dx * dx + dy * dy;
+        if (!s_tap_valid || distance > ENCLOSURE_TAP_SLOP * ENCLOSURE_TAP_SLOP ||
+            (behaviour_aim_active() && distance >= AIM_MIN_PULL_PX * AIM_MIN_PULL_PX)) {
+            cancel_enclosure_tap();
+            return;
+        }
+        dx = p.x - s_last_tap.x; dy = p.y - s_last_tap.y;
+        uint32_t now = game_now();
+        if (s_tap_pending && now - s_last_tap_at <= ENCLOSURE_DOUBLE_TAP_MS &&
+            dx * dx + dy * dy <= ENCLOSURE_DOUBLE_TAP_SLOP * ENCLOSURE_DOUBLE_TAP_SLOP) {
+            enclosure_double_tap();
+            return;
+        }
+        s_last_tap = p;
+        s_last_tap_at = now;
+        s_tap_pending = true;
     }
 
     /* Care has its own hit target; edge drags no longer reveal a tray. */
@@ -2501,7 +2600,7 @@ void game_on_terrarium_tap(lv_event_t *e)
     if (indev) {
         s_pet_tap = p;
         if (s_pet_tap_timer) lv_timer_delete(s_pet_tap_timer);
-        s_pet_tap_timer = lv_timer_create(delayed_pet, 450, NULL);
+        s_pet_tap_timer = lv_timer_create(delayed_pet, ENCLOSURE_DOUBLE_TAP_MS + 25, NULL);
         lv_timer_set_repeat_count(s_pet_tap_timer, 1);
         return;
     }
@@ -2799,7 +2898,6 @@ void game_init(void)
     lv_obj_set_clickable(ui.tap_layer, true);
     lv_obj_add_flag(ui.tap_layer, LV_OBJ_FLAG_PRESS_LOCK);
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_tap, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(ui.tap_layer, enclosure_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
     /* Slingshot needs the raw press/move/release stream, not just clicks. */
     lv_obj_add_event_cb(ui.tap_layer, game_on_terrarium_press,
                         LV_EVENT_PRESSED, NULL);

@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.27](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.27)**
+| **[Download v1.1.28](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.28)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -45,7 +45,7 @@ The web updater preserves and verifies the save region. On-device updates
 resolve GitHub's latest stable release, verify the image and require matching
 artwork; art changes use USB. Slow HTTPS reads retry within a five-minute
 download limit. Single-tile sliders support held dragging; menu tiles omit
-submenu arrows. See [v1.1.27 release notes](docs/RELEASE_v1.1.27.md).
+submenu arrows. See [v1.1.28 release notes](docs/RELEASE_v1.1.28.md).
 **OTA verification boundary:** GitHub discovery and safe partial-download
 recovery are tested, but a complete hosted download/reboot has not passed on
 the current hardware connection. Use USB for a verified installation.
@@ -68,6 +68,13 @@ RTC; its backup power keeps time while the device is off.
 **Thirty-six gifts and consistent artwork.** All gift bonuses have gameplay
 consumers. Non-spider art follows a deterministic pixel-art generator and
 [style contract](docs/ART_STYLE.md); existing spider art is preserved.
+The complete catalogue now shares crisp material planes, chipped stone/wood,
+layered foliage and readable small-scale highlights. Exact approved moss and
+Crystal terrain remain unchanged; all 68 decor and 36 gifts match the richer
+direction. The lighting double tap accepts repeatable tap pairs with finger
+jitter, while holds, drags and furniture editing cannot toggle the lights.
+For testing currency, the documented console command `silk add 5000` adds
+exactly 5,000 Silk and acknowledges the completed save.
 See [asset maintenance](assets/README.md).
 
 **Hunting gets the whole enclosure.** A small paper/gold top-left page fold reveals

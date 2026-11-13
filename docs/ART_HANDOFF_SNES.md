@@ -18,6 +18,24 @@ shading and noisy scatter are superseded. Do not restore them.
 
 ## What changed
 
+The approved decor pass starts with the sixteen original natural props plus
+their five legacy derivatives. Explicit 32px material geometry lives in
+[core_decor_art.py](../tools/core_decor_art.py): fractured stone, chipped wood,
+paired fern pinnae, shingled moss, folded petals, gills, shell ribs and
+crystal seams. Dimensions, IDs, radii, blocking defaults and save data stay
+unchanged. The later completed pass covers the remaining52 props and36 gifts,
+plus prey/icons/badges/treats:181 sprites with connected material shading,
+individually authored construction marks and scale-appropriate highlights.
+Terrain/core art and both spider renderers are preserved. See the latest
+release/progress evidence; historical bullets below describe earlier passes.
+
+Latest terrain upgrade supersedes the original three-tone center advice in
+the historical bullets below: all47 non-Crystal pairs use the approved moss
+direction, with exact moss imports and46 named procedural material recipes.
+Generated centers allow16 tones/luma64, Minimal3/24; moss17/80 and Crystal are
+exact hash-pinned sources. Thin transparent frame geometry, spider and all
+non-terrain assets are unchanged. See [current style limits](ART_STYLE.md).
+
 - Sixteen backgrounds now use discrete material ramps, low-contrast clustered
   substrate and stronger detail only at the margins. No bilinear value noise,
   continuous color interpolation, smooth vignette or bright grit field.
@@ -51,9 +69,25 @@ bits removes the repeated top/bottom-only scatter while retaining fixed seeds.
 
 ## Source of truth
 
+Crystal's approved PixelLab floor is an imported-source exception: read
+[provenance and rules](../assets/README.md#approved-pixellab-crystal-floor).
+The generator preserves its exact floor pixels and deterministically fits the
+separate [raw Crystal border](../assets/sources/crystal_border.png) to the thin
+standard opening. Moss imports its exact approved floor/frame; all other
+backgrounds/borders use the explicit new terrain material recipes.
+See [the verified PixelLab workflow](PIXELLAB_WORKFLOW.md) for reference roles,
+prompt recipes, budget bands and the explicitly documented nine-slice fit.
+
 | Surface | Source |
 |---|---|
-| Geometry, palettes, fixed seeds | [tools/gen_sprites.py](../tools/gen_sprites.py) |
+| Geometry, palettes, fixed seeds and approved Crystal import | [tools/gen_sprites.py](../tools/gen_sprites.py) |
+| Approved textured Crystal floor | [assets/sources/crystal_floor.png](../assets/sources/crystal_floor.png) |
+| Exact approved moss floor/frame | [assets/sources/moss_floor.png](../assets/sources/moss_floor.png), [assets/sources/moss_border.png](../assets/sources/moss_border.png) |
+| Named terrain/frame material recipes | [tools/terrain_art.py](../tools/terrain_art.py) |
+| First-batch natural decor geometry/materials | [tools/core_decor_art.py](../tools/core_decor_art.py) |
+| Remaining props/gifts/treats and per-item material details | [tools/furnishing_art.py](../tools/furnishing_art.py) |
+| Small glyph, badge and species details | [tools/small_art.py](../tools/small_art.py) |
+| Raw selected Crystal border, fitted offline by the generator | [assets/sources/crystal_border.png](../assets/sources/crystal_border.png) |
 | PNG contract and packed QOI validation | [tools/asset_build.py](../tools/asset_build.py) |
 | Quiet-center, palette, silhouette regressions | [tools/test_art_style.py](../tools/test_art_style.py) |
 | Generated source art | [assets](../assets/) |
@@ -76,7 +110,7 @@ powershell -File build.ps1
 ```
 
 The explicit generator run establishes the new approved art baseline before
-the validator snapshots all 158 source files. Validation still checks all names,
+the validator snapshots all 337 source files. Validation still checks all names,
 dimensions, deterministic output, style, runtime mappings and packed pixels.
 Confirm the spider and every non-target PNG match a pre-edit hash snapshot.
 Use `tools\asset_build.py --png-only --preview PATH.png` to inspect every

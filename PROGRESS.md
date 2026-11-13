@@ -8034,3 +8034,450 @@ evidence proves delivery and continuity, not that the player likes the sound.
   The three GitHub release-asset digests remain unchanged. Current tracked files
   and every GitHub release description have zero obsolete-branding matches.
   Historical commits, tags and older release archives were not rewritten.
+
+## Round 85 - Reliable enclosure double taps and testing Silk
+
+### Decisions made
+
+- Replace LVGL DOUBLE_CLICKED with explicit enclosure tap pairs. LVGL binds
+  inter-tap distance to its small scroll limit and cycles single/double/triple
+  events, so repeated pairs could miss every other light toggle. Use a450ms
+  release window and48px distance, with24px within-tap jitter. Preserve the18px
+  hunting-shot threshold; actual shots never seed a light-toggle pair.
+- Native/browser both reject holds, out-and-back drags, placement and HUD/menu
+  gestures. HUD/menu entry clears pending taps. Delay single petting475ms so
+  accepted double taps cannot also pet. Keep enclosure-only dimming and the
+  existing save ABI/artwork; do not change global LVGL click/scroll behavior.
+- Add `silk add N`, validated1..2147483647, marshalled to LVGL. Reject balance
+  overflow and roll back if persistence cannot be queued. Console waits for the
+  worker's completed save, not queue acceptance. Explain partial-save failures
+  explicitly and document the command in runtime help and the serial guide.
+- Capture a fresh current pet before flashing/testing. It has2Silk; never
+  restore earlier task snapshots. Restore this snapshot after mutating tests,
+  then grant exactly5000 once and verify committed bytes and reboot retention.
+  Needs continue normally while menus are open; validation must not mistake
+  ordinary time-based stat changes for a currency-command mutation.
+
+### Exact evidence
+
+- Final wrapper build and COM7 flash exit0, zero compiler warnings. Browser
+  suite180/180 and production bundle build pass; host suite53/53 passes.
+- Native suite48/48 plus an additional passing uitest. Real injected LVGL
+  pointer regression reports
+  `hold=1 staged=1 decor_move=1 gift_move=1 cancel=1 new=1 actions=1 lights=1`.
+  Lights checks include six consecutive jittered taps (three toggles),350ms
+  spacing, rejected451ms gaps and out-and-back drags. Browser regressions add
+  inclusive450ms/48px boundaries, held/cancelled gestures, delayed single pets,
+  HUD isolation and preservation of a20px hunting shot.
+- Silk parser rejects missing, zero, negative, malformed, fractional and
+  oversized input without currency/habitat changes. A temporary+1 grant commits;
+  uint32-max balance rejects another+1 without wrapping. Restored the fresh pet
+  exactly after tests. Added four non-mutating rejection cases to the persistent
+  hardware runner and executed those4/4 separately; host console-client8/8.
+- `render500` and `scanloop5` both largest_drift0; scans ok5/failed0.
+  Internal/DMA largest63,488. Final40-second soak reports `VERDICT: PASS`,
+  faults/errors0.
+- Granted exactly5000 once through the new command:
+  `OK silk added=5000 total=5002 saved=1`. Read back committed Silk5002 and the
+  unchanged habitat/ownership/settings tail; reboot verifies5002 again.
+  Follow-up resets, stat and the four negative-command checks retain5002.
+  Current pet remains preserved; no old snapshot or second grant was applied.
+- Changes are local and flashed, not committed or published as a new release.
+  Browser parity is implemented/tested locally; the hosted site still uses the
+  published version. Actual finger feel remains for physical touchscreen use;
+  automated pointer injection is not a claim of manual tactile acceptance.
+
+## Round 86 - Reference-aware PixelLab detail pilot preparation
+
+### Decisions made
+
+- Inspect the supplied768x768 nine-panel art reference and current moss pair.
+  Target its overlapping shaded leaves, chipped stone planes, bark furrows and
+  broken highlights, not crowded furnishings, collage layout or black corners.
+  Preserve existing theme designs and the approved spider. Keep the center quiet.
+- Add an offline script for per-theme edit/inpaint briefs, protected-region
+  masks and strict candidate validation. Do not upload images, handle credentials,
+  spend trial generations or install output. Start with one moss background;
+  review before any matching border or batch. A request is not assumed to cost
+  one trial generation; confirm access, schema and debit before any submission.
+- Candidate validation reuses the existing art contract without automatic
+  conversion:240x240 RGBA PNG,64-color opaque background/three-tone quiet center,
+  or16-color aligned2x2 border with a fully transparent208x208 opening.
+  Outputs stage outside the repository and never overwrite existing files.
+  Leave deterministic generator/integration untouched until visual approval.
+
+### Exact evidence and boundary
+
+- Prepared a moss edit brief using the actual supplied reference's path,
+  dimensions and SHA256, plus an offline quiet-center mask. No reference image
+  or credential was committed. No API call or generation was made.
+- Final seven offline guardrail tests and full host suite60/60 pass, including
+  CLI rejection checks for missing reference and repository output paths.
+  Pylance reports no syntax errors in either new Python file. Both actual
+  reference-aware briefs and protected-center/frame masks prepare successfully;
+  the existing border passes read-only candidate validation without installation.
+  Current backgrounds, borders, all other PNGs and both spider renderers remain
+  untouched; previous local lighting/Silk changes are preserved.
+- Suggested endpoints come from PixelLab's public endpoint list, not a verified
+  request schema. External submission is blocked here; these briefs are not an
+  authenticated API client or proof of generated-art quality/approval.
+
+### Crystal-cave MCP pilot
+
+- User selected crystal cave and supplied a322x325 cropped style reference.
+  PixelLab MCP balance confirmed40 trial generations unused. Submit one Pro
+  candidate at240x240 native pixels for existing480x480 nearest-neighbor display;
+  the receipt charges10 generations. Native480x480 would cost25, so no runtime
+  format change or larger trial spend was attempted.
+- Use the crop for shading/facets/cool hues, and the published crystal image
+  only for theme/open layout. Prompt finer pixels, small10-24px edge crystals,
+  modest4-12px stones, sparse edge groups, protected three-tone center, no
+  furniture/spider, and opaque square corners. Seed861113.
+- Job5025211d-d99a-4750-8e44-0d4feff278b6 completed and saved in PixelLab's
+  gallery. Downloaded candidate and made a480x480 nearest-neighbor review copy
+  outside the repository; retained the exact prompt/receipt. Balance30 remains.
+  One submission, no paid correction/retry, no border generation.
+- Candidate is240x240 RGBA with64 colors, but center has13 colors and luma span30
+  instead of limits3/24. Existing strict validator rejects it. Visually it stays
+  too close to the primitive composition guide and does not deliver the desired
+  material-detail upgrade. Do not install or silently quantize it into acceptance.
+  Reconsider the primitive layout reference on any next user-approved trial.
+  Game backgrounds/borders and approved spider remain unchanged.
+
+### Reference-only crystal retry
+
+- User approved a second candidate using only the cropped crystal reference.
+  Submitted one Pro240x240 opaque64-color image, seed861114, with no existing
+  background/layout reference. Keep facet shading and cool hues; prompt
+  smaller edge groups, finer pixel clusters and the quiet central160x160.
+- Job25a88aa4-8473-4241-977b-8be62d25907b completed and saved as gallery asset
+  94944141-bc16-53be-acde-42e262e255ab. Charged10 generations; balance20 remains
+  after20 total used. No additional paid repairs or border generation.
+- Material shading is visually closer to the reference, but crystals and
+  bottom-right boulders are still too large. Strict validation fails: central
+  region contains58 colors and luma span230, not limits3/24. Bright detailed
+  edge art intrudes into the protected center. Preserve the raw candidate and
+  exact prompt/receipt plus a nearest-neighbor480px review preview outside the
+  repo. Do not install, silently postprocess or claim player approval.
+  Existing backgrounds, borders and spider remain untouched.
+
+## Round 87 - Approved Crystal floor installed and activated
+
+### Decisions made
+
+- User approved rich floor texture but rejected large crystals/boulders baked
+  into background edges: selectable borders/decor supply that scenery instead.
+  Submit one floor-only Pro240x240 candidate using the second pilot as a
+  material reference, seed861115. Job4542b745-e8ec-427a-b86f-4bc0c09ecbce
+  costs10 generations;30 used/10 remaining. No further generation for installation.
+- Install the approved third candidate exactly as existing Crystal background14.
+  Preserve the native240x240 format and480x480 nearest-neighbor display.
+  Keep its immutable source in assets/sources/crystal_floor.png and pin decoded
+  RGBA SHA256 to89d076f4219d5839d72f9b137a0f893647177223f745ee95887a5886f76f8c6b.
+  The64-color opaque floor has56 center colors/luma span142: user-approved
+  texture supersedes the old three-tone center only for this exact image.
+  The other47 backgrounds retain their existing quiet-center checks.
+- Generate the separate Crystal border from the original procedural terrain,
+  not the imported floor. Keep all borders, decor and the approved spider
+  unchanged. Update asset/style/handoff documentation and offline Crystal brief.
+- Activate only this device through normal shop/save commands, not every
+  player's default. Preserve current pet/furnishings/settings and selected
+  border32. Crystal was not owned, so its existing48-Silk price applies.
+
+### Exact evidence and boundary
+
+- Only one of337 runtime PNGs changed; the other336 and both spider renderers
+  match pre-install hashes. Source/runtime/local browser Crystal PNG bytes match
+  the approved original SHA256:
+  7a19cb8a21c148ca506809d4494948778725d148039ea4e8720359e115f3d88f.
+- Two deterministic generator passes preserve all337 source assets. All337
+  packed MMAP/QOI entries pass dimensions/opcodes/decoded-pixel validation.
+  Host62/62 and browser180/180 tests pass; local browser build succeeds.
+- Wrapper build exits0 with zero compiler warnings; full COM7 flash wrapper
+  exits0. Native52/52 tests and all eight furniture-pointer checks pass.
+  Restore the fresh pre-install280-byte pet exactly after mutating tests;
+  reboot verifies ownership/habitat and Silk4623 unchanged.
+- Activation helper initially read scalar schema length0 as a byte width;
+  corrected it to use scalar type widths. The command had already purchased
+  Crystal once; retry verifies against the fresh backup and does not charge
+  again. Committed background14/ownership persist after reboot. Silk4575 is
+  exactly4623 minus48, with border32 and furnishing/settings bytes unchanged.
+- Actual LVGL480x480 playfield capture shows the approved textured floor behind
+  the original border, furnishings and spider. This verifies composition, not
+  physical panel/finger acceptance. Final active-floor render500 and scanloop5
+  both largest_drift0; scans ok5/failed0. Internal/DMA largest63,488 remains
+  above51,200. Final stat confirms background14 and Silk4575.
+- Active-Crystal40-second soak reports VERDICT: PASS and faults/errors0.
+  Evidence/capture/fresh and active save snapshots remain in session files.
+  Source/local browser and device are updated; no new commit/release or hosted
+  website publication was requested or performed. The hosted site remains the
+  earlier published release.
+
+## Round 88 - PixelLab workflow documented and matching Crystal border applied
+
+### Decisions made
+
+- Document the tested reference/prompt lessons, successful floor and thin-frame
+  recipes, native resolutions, MCP upload/budget workflow and reproducible
+  integration in docs/PIXELLAB_WORKFLOW.md. Link it from asset/style/handoff
+  docs and refine the offline Crystal border brief. No credentials included.
+- User authorizes the remaining10 generations for a matching border and asks
+  to apply it. Verify account0USD/10 trial generations remaining. Submit one
+  Pro120x120 transparent16-color request, seed861116, with pilot2 as material
+  style and the approved floor as a separately labeled hue reference.
+  Job2f18c1f6-972f-4386-878a-8a7ad07fd42d returns four candidates for10 total
+  generations; account now40 used/0 remaining. No extra paid retry/correction.
+- Select candidate0 for quieter violet/slate mineral shading and restrained
+  lavender/cyan crystals. All four outputs ignore the requested8px logical rim,
+  despite correct dimensions/16 colors/binary alpha. Do not claim raw compliance.
+  Retain the exact120x120 source in assets/sources/crystal_border.png.
+  Nine-slice source edges0/18/102/120 onto0/8/112/120 with nearest-neighbor
+  sampling, then double to240x240. This explicit documented fit preserves the
+  corner/edge composition instead of clipping inward tips. Both source/final
+  decoded pixels are hash-pinned. Keep all frame contract checks strict.
+- Keep the already-active Crystal floor14 and all spider/decor artwork.
+  Replace only separate Crystal border14 and apply through normal save/shop
+  rules. No runtime allocations, schema, IDs, prices or SDK configuration change.
+
+### Exact evidence and boundary
+
+- Candidate0 has3082 visible pixels inside the requested logical opening;
+  its actual maximum inward depth17 needs an18px source slice, leaving84x84
+  transparent. Final fitted frame has16 colors, binary alpha, uniform2x2
+  blocks and completely transparent208x208 runtime opening.
+  Source pixel SHA2567ea7c587861a0844e9296a01b01a22859f631f5ac1d7602af157081bdeac9c09;
+  final pixel SHA256e6160c76ed9bc30aea45595ba507e4a5155e55f9687c49382702e23d314c6e1a.
+- All other336 runtime PNGs, including approved floor, and both spider
+  renderers match this request's pre-edit hashes. Raw source PNG bytes match
+  downloaded candidate0; final local browser frame matches runtime PNG bytes.
+  Exact prompt/settings/reference hashes/receipt and all four candidates remain
+  in session files; no temporary signed upload URL retained in project docs.
+- Host65/65 and browser180/180 tests pass. Five modified Python files have
+  zero Pylance syntax errors. Full asset pipeline validates337 packed MMAP/QOI
+  entries and decoded pixels; two generator passes are deterministic.
+  Wrapper build exits0, zero compiler warnings; full COM7 flash exits0.
+  Local browser build/art preparation succeeds.
+- Fresh pre-edit current pet backed up as280 bytes before flash; mutating
+  native52/52 suite and all eight furniture-pointer flags pass, then restore
+  exactly that fresh save. Reboot verifies ownership/habitat and Silk unchanged.
+  Crystal border was unowned: normal34-Silk purchase changes4575 to4541.
+  Committed floor14/border14/ownership persist after reboot, with other
+  furnishing/settings/ownership bytes unchanged. No new Silk grant.
+- Actual LVGL480x480 playfield capture confirms the new thin mineral frame
+  around the approved floor, original spider and furnishings. Final active-pair
+  render500/scanloop5 both largest_drift0; scans ok5/failed0.
+  Internal/DMA largest63,488 stays above51,200; final stat Silk4541.
+  Active-pair40-second soak: VERDICT: PASS, faults/errors0.
+- This verifies saved selection, composition and stability, not physical panel
+  appearance or manual touch acceptance. Local/device work only: no commit,
+  release or hosted website publication requested/performed.
+
+## Round 89 - Offline moss floor and border visual trial
+
+### Decisions made
+
+- User accepts a trial of another background/border authored without PixelLab.
+  Choose moss woodland and produce review-only images; do not replace the
+  active approved Crystal pair or spend generations. Inspect the original
+  nine-panel reference, current moss and approved Crystal floor before drawing.
+- Write a deterministic session-local Pillow generator, seed89113, with
+  irregular substrate planes, smaller overlapping moss growth, broken leaf
+  ridges and warm/cool finite material ramps. Refine the first larger-island
+  texture into finer low-relief clusters. Keep big furniture out of the floor.
+  Draw a separate thin chipped-stone/leaf border at120 logical pixels, doubled
+  exactly to240. No imported PixelLab pixels, smoothing or filtered resizing.
+- Show existing moss beside the new pair and a local specimen composition using
+  unchanged approved spider/decor PNGs. This is not a device screenshot or
+  proof of user approval. Keep generation source and outputs in session files
+  until the player chooses whether it approaches the desired quality.
+
+### Exact evidence and boundary
+
+- Both candidates are240x240 RGBA. Floor opaque17 colors; border binary-alpha
+  12 colors, uniform aligned2x2 blocks and transparent208x208 opening.
+  Existing strict border validator passes. Repeated generation matches exact
+  decoded pixels. All337 source PNGs and both spider renderers remain unchanged.
+- The experimental floor's center has17 colors/luma span75, so it intentionally
+  does not pass the current moss three-tone quiet-center rule. Richer texture
+  requires explicit visual approval and a narrowly scoped contract decision
+  before any runtime integration; no validator was loosened.
+- Generated native floor/border,480px floor/pair/specimen and side-by-side
+  comparison. Floor pixel SHA256
+  af3f0f41a75732f076f185f792c8df7e63d750816147d99c78d28683c749f173;
+  border pixel SHA256
+  ac24829fa37058028b319dcc7e4893ce4b8b030f7836806b7f5f2e6f24b4b72c.
+  No game runtime/source asset changes, flash, save mutation, publication or
+  PixelLab call. No claim that this matches PixelLab quality before user review.
+
+## Round 90 - Approved moss direction applied to all remaining terrain pairs
+
+### Decisions made
+
+- User loves the offline moss pair and requests the rest of the backgrounds
+  and borders. Integrate that exact pair as checked source PNGs; preserve the
+  already-approved PixelLab Crystal pair. Redraw the other46 pairs offline,
+  without PixelLab calls, changing spider/decor or changing the active selection.
+- Add tools/terrain_art.py with explicit recipes for all47 non-Crystal themes,
+  fixed hash-derived seeds and finite hue-shifted material ramps. Recipes use
+  25 material modes and36 border motifs: chipped bark, shingled moss, litter,
+  sand/dunes, minerals, snow, wet banks, paving/flagstones, submerged masonry,
+  wood grain, cloth weave, panel seams, regolith, ash, raked sand and cloud
+  texture. Frames use their own stone/wood/ice/metal/ceramic/bamboo materials
+  and leaves/ferns/petals/mushrooms, shell/fossil ribs, books, stitches,
+  runes/arches and circuit accents. Separate floor from optional scene trim.
+- Explicit user approval supersedes the universal three-tone-center rule.
+  Generated centers permit16 substrate tones/luma span64; Minimal keeps3/24.
+  Moss allows17/80 but stays exact hash-pinned, as do both Crystal sources.
+  All floors remain opaque240x240/at most64 colors. Frames remain240x240,
+  at most16 colors/binary alpha, aligned2x2 blocks and transparent208x208
+  opening. No runtime buffers, worker, save layout, prices or ID changes.
+- Update style/asset/handoff/PixelLab documents, offline briefs and regressions.
+  Keep source generation deterministic; old terrain helpers are legacy rather
+  than the active authoring path. Reuse exact moss source pixels without
+  trying to approximate the approved trial via a new recoloring.
+
+### Exact evidence and boundary
+
+- Exactly94 target PNGs changed:47 backgrounds plus47 borders. Crystal pair,
+  remaining243 runtime PNGs and both spider renderers match pre-edit hashes.
+  Approved moss source files exactly match reviewed trial PNG bytes.
+  Reviewed three labeled16-theme sheets covering all48 composed pairs and six
+  local specimen scenes with unchanged spider/decor. Generated non-moss/
+  non-Crystal floors use3-15 colors; maximum center luma span59, below64.
+- Host69/69 and browser180/180 regressions pass. Six Python files have zero
+  Pylance syntax errors. Tests cover exact imports, all recipe keys, distinct
+  tonal layouts, determinism, flat/noisy palette rejection and frame openings.
+  Full packed validation checks337 MMAP/QOI entries/dimensions/opcodes/decoded
+  pixels; two generation passes preserve all337 current PNG bytes.
+- Wrapper build exits0 with zero compiler warnings. Storage pack1,653,510 bytes
+  fits its6MiB partition. Full COM7 flash wrapper exits0, without erase.
+  Browser build and local337-PNG asset preparation succeed; source/runtime/
+  local browser artwork matches. No public release or hosted-site deployment.
+- Capture a fresh280-byte current pet immediately before flash. Native52/52
+  tests and all eight furniture-pointer flags pass; render500/scanloop5 both
+  largest_drift0, scans ok5/failed0, then exact fresh save restored and rebooted.
+- Exercise every background/border ID0-47 through normal console selection,
+  check reported IDs and render3 for each. All48 pairs pass; smallest
+  internal/DMA largest63,488. End-of-cycle render500/scanloop5 drift0; scans
+  ok5/failed0. Temporary testing Silk is removed by exact fresh-save restore:
+  committed280 bytes, ownership/furniture/settings and Silk verified after reboot.
+- Actual LVGL480x480 moss capture shows the exact approved pair with existing
+  furniture/spider. Initial snow/neon captures were blank because the idle
+  display had slept, not accepted as art evidence. Retry after explicit wake:
+  battery status screen_sleep0, nonblank multicolor captures verify both
+  snow20 and neon36. Restore the fresh pet again afterward; final active
+  background14/border14 and Silk4541 survive reboot. No lasting testing grant
+  or purchase from the catalogue sweep, no unrequested activation change.
+- Forty-second post-sweep soak reports VERDICT: PASS, faults/errors0.
+  Evidence, fresh save, sheets and device captures remain in session files.
+  Physical touchscreen appearance/manual finger acceptance is not claimed.
+
+## Round 91 - Starting the decor overhaul with sixteen natural props
+
+### Decisions made
+
+- Start with the original sixteen natural props so the richer terrain
+  direction can be judged on readable, familiar silhouettes before extending
+  it to the remaining52 themed props and36 gift furnishings. This is a first
+  batch, not a claim that the entire furnishing catalogue has been redrawn.
+- Author explicit32px geometry/material clusters in tools/core_decor_art.py:
+  fractured stone planes/moss seams, chipped wood and hollow end grain,
+  paired fern pinnae, shingled moss cushions, overlapping succulent leaves,
+  folded petals/pollen, mushroom gills/stalk, converging shell ribs, crystal
+  facets/fractures, layered fallen leaves and detailed twig/bone silhouettes.
+  No random detail overlay, global texture filter or palette-only replacement.
+- Preserve64x64 runtime canvases, exact nearest-neighbor doubling, binary
+  alpha and8-12 material tones. Add one logical transparent pixel of gutter
+  around every core prop; iterate fern pinnae to avoid clipping. The five
+  legacy props derive from the same new core sources at their old dimensions.
+  IDs/order, prices, radii, blocking defaults, save layout, runtime buffers,
+  workers and menus are unchanged. No PixelLab spend.
+- Preserve all terrain, approved Crystal/moss pairs, spider and the other
+  catalogue artwork. Update asset/style/handoff documentation with explicit
+  batch boundaries. Refresh local website artwork, not the hosted release.
+
+### Exact evidence and boundary
+
+- Pre-edit hashes prove exactly21 PNG changes:16 core props plus5 legacy
+  derivatives. Remaining316 PNGs and both spider renderers are byte-identical.
+  Final core sprites use8-11 colors; all have unclipped transparent gutters.
+  Reviewed a16-item before/after sheet, actual-scale moss/Crystal thumbnails,
+  two habitat compositions and an actual480x480 LVGL device capture.
+- Host art32/32 and browser180/180 tests pass; three repository Python files
+  have zero Pylance syntax errors. Regressions cover explicit batch membership,
+  determinism, source/runtime pixels, minimum silhouette area, all four canvas
+  gutters and exact legacy derivation. Existing all-catalogue checks remain.
+- Full asset validation passes337 MMAP/QOI entries, dimensions/opcodes/decoded
+  pixels and two deterministic generation passes; all337 source PNG bytes
+  preserved on repeated generation. All337 local browser images match sources.
+  Local browser build succeeds. Storage1,657,727 bytes fits unchanged6MiB.
+- Build wrapper exits0/zero compiler warnings; full COM7 flash wrapper exits0.
+  Fresh pre-flash pet backup is280 bytes/Silk4541, not an earlier test snapshot.
+  Native52/52 tests pass, all eight furniture-pointer flags equal1 and
+  decortest reports placed68. Six representative new props were placed through
+  the real path and captured after explicit wake; nonblank composition verified.
+- render500 and scanloop5 both largest_drift0; scans ok5/failed0.
+  Internal/DMA largest63,488 exceeds51,200 floor. Exact fresh280-byte pet
+  restored and rebooted; original habitat/ownership/settings and Silk verified.
+  Final active background14/border14 and Silk4541; temporary test placements
+  and their test grants/purchases do not persist.
+- Final40-second restored-pet soak: VERDICT: PASS, faults/errors0.
+  Physical touchscreen appearance remains a separate human judgement.
+  No commit, public firmware release or hosted website deployment in this batch.
+
+## Round 92 - Completing the material-art catalogue and publishing v1.1.28
+
+### Decisions made
+
+- Complete the remaining181 sprites:52 decor,36 gifts,40 prey frames,30 menu
+  icons,11 badges and12 treats. Preserve all96 approved terrain images,
+  16 core props/five legacy derivatives,39 spider exports and both renderers.
+  Together with the approved earlier batches, all298 non-spider PNGs share
+  the richer direction without changing dimensions, IDs, prices or save ABI.
+- Use explicit tools/furnishing_art.py recipes, connected per-material planes,
+  finite warm/cool ramps and authored construction marks instead of scattered
+  diagonal speckles. Add cycad/bonsai anatomy, pages/bookmarks, masonry cracks
+  and equipment rivets. Reuse approved core anatomy for the fern pot,
+  mushroom pair, flower planter, moss stone and crystal cluster with explicit
+  finite-palette composition. Preserve16px logical gift scale.
+- Use tools/small_art.py for named alpha/ink-clipped highlights on small
+  glyphs/species, preserving silhouettes, glyph meanings and gait. Splatter
+  recipes remain separate so rare puddle colors/droplets survive. No network
+  generation, PixelLab spend, new runtime buffers or per-frame allocation.
+- Include the previously verified native/browser light-gesture correction and
+  acknowledged additive silk console command in this requested publication.
+  Update asset/style/handoff/console/README/site/release documentation and
+  v1.1.28 cache versions. Refresh actual LVGL HUD/menu/playfield captures.
+  Art differences require the save-preserving USB updater, not app-only OTA.
+
+### Exact evidence and boundary
+
+- Reviewed all181 before/after sprites across ten sheets; final source/hash
+  comparison proves exactly181 updates,156 approved PNGs and both spider
+  renderers unchanged. Final planter anatomy was regenerated and retested,
+  not accepted solely from earlier build results.
+- Host75/75 tests, including36 art tests, and browser180/180 pass. Pylance
+  reports no Python syntax errors in the new material pipeline. Regressions
+  cover recipe membership, source pixels, repeatability and alpha/ink clipping.
+- Full packed validation passes337 MMAP/QOI dimensions/opcodes/decoded pixels,
+  two deterministic generation passes and all337 byte-identical source PNGs.
+  All337 local browser images match sources; bundled website build succeeds.
+  Final storage pack1,662,738 bytes fits the unchanged6MiB partition.
+- Final wrapper build exits0 with zero compiler warnings; full COM7 flash
+  wrapper exits0 without erase. Fresh pre-flash pet backup280 bytes/Silk4541.
+  Native52/52 regressions pass. Eight furniture-pointer flags equal1,
+  decortest places68 kinds, and gifttest verifies36 bonuses plus neutral
+  removal/economy/visits. This is not a claim of all probabilistic outcomes.
+- Actual480x480 LVGL captures show six remaining props and the updated menu.
+  render500 and scanloop5 both largest_drift0; scans ok5/failed0. Internal/DMA
+  largest63,488 exceeds51,200. Exact fresh280-byte save restored, committed
+  bytes verified before reboot, then original habitat/ownership/settings and
+  Silk checked afterward. Crystal background14/border14 and Silk4541 remain;
+  temporary test placements and purchases do not persist.
+- Restored-pet40-second clean-boot soak: VERDICT: PASS, faults/errors0.
+  Physical touchscreen appearance/finger feel remain human judgements.
+  Full hosted OTA installation/reboot, SD media and RTC battery retention
+  are not inferred from these checks.
+- Prepared v1.1.28 five-image ZIP with NVS excluded, standalone app and matching
+  OTA descriptor. Publication and hosted-byte evidence are recorded below
+  after deployment, rather than inferred from a pushed commit or queued run.

@@ -19,6 +19,7 @@ python cmd.py COM7 "help"
 python cmd.py COM7 "scan"
 python cmd.py COM7 "scanloop 5"
 python cmd.py COM7 "render 500"
+python cmd.py COM7 "silk add 5000"
 ```
 
 `cmd.py` opens the port, waits up to **45 seconds for console readiness**, sends
@@ -44,9 +45,9 @@ To run the whole suite at once:
 python run_tests.py COM7
 ```
 
-The suite has 37 cases covering rendering, five scans, radio-off assertions,
+The suite has 52 cases covering rendering, five scans, radio-off assertions,
 all gift bonuses, audio/care and committed save, marshalled debug actions,
-menu/editor opens, rejection paths and memory readings.
+menu/editor opens, Silk-grant rejection paths and memory readings.
 It asserts `largest >= 51200`, checks fault logs, and writes `test_results.txt`.
 Pass a second argument to choose the output path. Host parser tests:
 `python tools\test_console_client.py`. The soak tool also exits nonzero for
@@ -179,6 +180,28 @@ petting budget (`pet_xp=N/10`).
 
 Useful for confirming the simulation is actually running: if `pos` never changes
 between two calls, the logic timer is not ticking.
+
+---
+
+### `silk add N`
+
+Add testing currency to the **current** pet without replacing its save:
+
+```powershell
+python cmd.py COM7 "silk add 5000"
+python cmd.py COM7 "stat"
+```
+
+This adds 5,000 Silk, rather than setting the total to 5,000. Run it only once
+per intended grant. `N` must be a whole number from 1 to 2,147,483,647; malformed
+values and grants that would overflow the uint32 balance are rejected.
+`set silk 5000` is not supported.
+
+The change runs on LVGL and queues persistence to the save worker. The console
+waits for completed persistence before replying, for example
+`OK silk added=5000 total=5024 saved=1`. No reboot or separate `save` is needed.
+If an error reports an incomplete save, inspect `stat` before retrying: the RAM
+balance may already have changed. This does not unlock level-gated items.
 
 ---
 
@@ -463,9 +486,9 @@ image object at its recorded position sourced from the right asset. It then
 restores the player's enclosure, Silk, level and owned mask, so it is safe to
 run on a live pet.
 
-`decor` with no argument lists the sixteen kinds with cost, unlock level,
+`decor` with no argument lists all 68 kinds with cost, unlock level,
 footprint radius, blocking flag and whether the kind is owned, then reports the
-Silk balance and how many of the twelve slots are filled. `decor place KIND X Y`
+Silk balance and placed slots (placement can grow beyond twelve). `decor place KIND X Y`
 grants the Silk and level needed for the kind (test-only), buys it if it is not
 owned, and places it. `decor move SLOT X Y` repositions a placed item, keeping
 its slot, kind and blocking flag. `decor block SLOT` flips the blocking flag.
@@ -658,9 +681,9 @@ small day number therefore cannot be written to it.
 
 `reset` clears the claim and the streak so the next `claim` pays again.
 
-### `treat [0..5]`
+### `treat [0..11]`
 
-Lists or buys a treat. With no argument it lists all six with their costs and
+Lists or buys a treat. With no argument it lists all twelve with their costs and
 the current Silk balance:
 
 ```
@@ -814,7 +837,7 @@ flag/calendar is invalid. `rtcset` is manual RTC recovery/testing, UTC epoch
 system clock from that RTC. Use an accurate current UTC epoch, not the example
 timestamp. Backup-battery retention requires a physical power-off test.
 
-`gifttest` runs on LVGL, prints all eighteen effective bonuses, verifies removal
+`gifttest` runs on LVGL, prints all thirty-six effective bonuses, verifies removal
 returns neutral values, and restores the original game state without saving.
 It checks bonus computation, not every probabilistic catch or pixel appearance.
 

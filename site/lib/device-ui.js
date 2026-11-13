@@ -1,8 +1,8 @@
-import * as E from './sim.js?v=1.1.27';
+import * as E from './sim.js?v=1.1.28';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.27';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.28';
 import { HELP_TOPICS } from './help.js';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
@@ -70,10 +70,7 @@ export class DeviceGame {
     this.canvas.addEventListener('pointerdown', event => this.pointerDown(event));
     this.canvas.addEventListener('pointermove', event => this.pointerMove(event));
     this.canvas.addEventListener('pointerup', event => this.pointerUp(event));
-    this.canvas.addEventListener('pointercancel', event => {
-      this.releasePlacementPointer(event.pointerId);
-      this.aiming = false; this.cancelLongPress(); E.cancelAim(this.state);
-    });
+    this.canvas.addEventListener('pointercancel', event => this.pointerCancel(event));
     this.canvas.addEventListener('pointerleave', () => this.cancelLongPress());
     this.screen.addEventListener('keydown', event => this.key(event));
     root.querySelector('#browser-save-file').onchange = () => this.importProgress();
@@ -153,6 +150,7 @@ export class DeviceGame {
     this.ear.setAttribute('aria-keyshortcuts', 'M');
     this.earMark = element('span', ''); this.ear.append(this.earMark);
     this.ear.onclick = () => {
+      this.cancelTap();
       if (this.placement) { this.cancelPlacement(); return; }
       else { E.cancelAim(this.state); this.hud = !this.hud; }
       this.refreshHUD();
@@ -223,6 +221,7 @@ export class DeviceGame {
     this.refreshHUD();
   }
   open(name, page = 0, slot = null) {
+    this.cancelTap();
     this.close(); this.modal = this.panel(name === 'Gifts' ? `Gifts / ${this.state.silk} Silk` : name, () => this.back(name)); this.modal.name = name; this.modal.page = page;
     if (slot !== null) this.decorSlot = slot;
     this.refreshHUD();
@@ -715,13 +714,17 @@ export class DeviceGame {
   }
   pointerDown(event) {
     this.screen.focus({ preventScroll: true });
-    if (!this.started || this.modal || this.game || this.hud) return;
+    if (!this.started || this.modal || this.game || this.hud) {
+      this.tapPointer=null;this.pointerOrigin=null;this.cancelLongPress();this.cancelTap();return;
+    }
+    if(!this.placement&&this.tapPointer!=null&&this.tapPointer!==event.pointerId)return;
     const p = this.point(event);
     this.pointerOrigin = p; this.pointerConsumed = false;
     void this.audio.unlock(this.state.sound);
     if(this.placement){
       if(this.placementPointer!==null)return;
       this.pointerConsumed=true;this.placementPointer=event.pointerId;
+      this.cancelTap();
       const preview=this.placement,reach=preview.gift?40:E.DECOR_KINDS[preview.kind].radius*2+12;
       const grabbed=Math.abs(p.x-preview.x)<=reach&&Math.abs(p.y-preview.y)<=reach;
       this.placementOffset={x:grabbed?preview.x-p.x:0,y:grabbed?preview.y-p.y:0};
@@ -729,6 +732,8 @@ export class DeviceGame {
       this.canvas.setPointerCapture(event.pointerId);
       return;
     }
+    this.tapPointer=event.pointerId;this.tapStarted=performance.now();this.tapMoved=false;
+    this.canvas.setPointerCapture(event.pointerId);
     /* Hold furniture to edit directly over the playfield. */
     if (this.decorKind === null && this.decorMoveSlot === null && this.giftKind === null) {
       const slot = E.decorHitTest(this.state, p.x, p.y);
@@ -736,6 +741,7 @@ export class DeviceGame {
       if (slot >= 0 || gift) {
         this.longPress = setTimeout(() => {
           this.longPress = null; this.aiming = false; E.cancelAim(this.state);
+          this.cancelTap();this.tapPointer=null;
           this.pointerConsumed = true;
           if(gift)this.beginGiftMove();else this.beginDecorMove(slot);
           this.placementPointer=event.pointerId;
@@ -750,6 +756,14 @@ export class DeviceGame {
   cancelLongPress() {
     if (this.longPress) { clearTimeout(this.longPress); this.longPress = null; }
   }
+  cancelTap() {
+    clearTimeout(this.petTapTimer);this.petTapTimer=null;this.lastTap=null;
+  }
+  pointerCancel(event) {
+    this.releasePlacementPointer(event.pointerId);
+    this.aiming=false;this.tapPointer=null;this.pointerOrigin=null;this.tapMoved=true;
+    this.cancelLongPress();this.cancelTap();E.cancelAim(this.state);
+  }
   pointerMove(event) {
     const p = this.point(event);
     if(this.placement){
@@ -757,43 +771,51 @@ export class DeviceGame {
         this.positionPlacement(p.x+this.placementOffset.x,p.y+this.placementOffset.y);
       return;
     }
-    if (this.pointerOrigin && Math.hypot(p.x-this.pointerOrigin.x,p.y-this.pointerOrigin.y) > 12)
-      this.cancelLongPress();
+    if(this.tapPointer!=null&&event.pointerId!=null&&event.pointerId!==this.tapPointer)return;
+    if (this.pointerOrigin && Math.hypot(p.x-this.pointerOrigin.x,p.y-this.pointerOrigin.y) > (this.aiming?17:24)) {
+      this.cancelLongPress();this.tapMoved=true;this.cancelTap();
+    }
     if (this.aiming) { const p = this.point(event); E.moveAim(this.state, p.x, p.y); }
   }
   pointerUp(event) {
+    if(!this.placement&&this.tapPointer!=null&&event.pointerId!==this.tapPointer)return;
     this.cancelLongPress();
     if(this.placement){
       this.pointerMove(event);
       this.releasePlacementPointer(event.pointerId);
       return;
     }
-    if (this.pointerConsumed || this.modal || this.game || this.hud) return;
+    if (this.pointerConsumed || this.modal || this.game || this.hud) {
+      this.tapPointer=null;this.pointerOrigin=null;this.cancelTap();return;
+    }
     const point = this.point(event), now = performance.now();
-    const tapping = this.pointerOrigin &&
-      Math.hypot(point.x-this.pointerOrigin.x,point.y-this.pointerOrigin.y) <= 12;
+    this.tapPointer=null;
+    const tapping = this.pointerOrigin && !this.tapMoved && now-this.tapStarted<550 &&
+      Math.hypot(point.x-this.pointerOrigin.x,point.y-this.pointerOrigin.y) <= (this.aiming?17:24);
+    this.pointerOrigin=null;
     if(tapping){
-      if(this.lastTap && now-this.lastTap.time<=400 &&
-          Math.hypot(point.x-this.lastTap.x,point.y-this.lastTap.y)<=30){
-        clearTimeout(this.petTapTimer);this.petTapTimer=null;this.lastTap=null;
+      if(this.lastTap && now-this.lastTap.time<=450 &&
+          Math.hypot(point.x-this.lastTap.x,point.y-this.lastTap.y)<=48){
+        this.cancelTap();
         this.aiming=false;E.cancelAim(this.state);
         this.state.lights_dimmed=this.state.lights_dimmed?0:1;
         this.persist();this.report(this.state.lights_dimmed?'Enclosure Lights Dimmed.':'Enclosure Lights Restored.');
         return;
       }
       this.lastTap={...point,time:now};
-    }else this.lastTap=null;
+    }else this.cancelTap();
     if (!this.aiming) {
       /* A tap that did not start an aim is a pet if it landed on the spider.
        * The engine enforces the hit radius and the cooldown. */
       const p = this.point(event);
+      if(!tapping)return;
       clearTimeout(this.petTapTimer);
       this.petTapTimer=setTimeout(()=>{
         this.petTapTimer=null;
         if(!this.modal&&!this.game&&!this.hud&&E.pet(this.state,p.x,p.y)){
           this.persist();this.report('Spider Petted.');
         }
-      },450);
+      },475);
       return;
     }
     this.aiming = false;
@@ -808,7 +830,7 @@ export class DeviceGame {
       else if(event.key==='Escape'){event.preventDefault();this.cancelPlacement();}
       return;
     }
-    if (event.key.toLowerCase() === 'm' && this.started && !this.modal && !this.game) { event.preventDefault(); this.hud = !this.hud; this.refreshHUD(); return; }
+    if (event.key.toLowerCase() === 'm' && this.started && !this.modal && !this.game) { event.preventDefault(); this.cancelTap(); this.hud = !this.hud; this.refreshHUD(); return; }
     if (this.modal || this.game || !this.started || this.hud) return;
     const s = this.state;
     const directions = { ArrowLeft: [-30, 0], ArrowRight: [30, 0], ArrowUp: [0, -30], ArrowDown: [0, 30] };
