@@ -8584,3 +8584,26 @@ evidence proves delivery and continuity, not that the player likes the sound.
 - Finally restore the fresh pre-placement280-byte pet exactly, including after
   the temporary capture fixture. Reboot checks preserve ownership/settings,
   Silk4541 and Crystal14/14. No reset, artwork change or gameplay reward added.
+
+### Publication evidence
+
+- Commit8f7f80e and annotated tagv1.1.29 are pushed. Stable
+  [v1.1.29 release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.29)
+  contains ZIP/standalone app/OTA descriptor. Public ZIP equals the verified
+  local package; SHA-256
+  da0b99bd6fe5f62766160fa29710d0e96bbe461a6684b3adbe5487a591428977.
+  Five manifest images pass size/hash checks; no NVS file is included.
+- Pages tag policy allows v1.1.29.
+  [Release-triggered run43522682795](https://github.com/jeromedontdev/Spidarium/actions/runs/43522682795)
+  succeeds through art/browser checks, official-image verification, build and
+  deployment. Existing hosted-action runtime/runner deprecation notices are
+  not firmware warnings or failed verification.
+- All five hosted firmware images equal the public ZIP; standalone app/OTA
+  descriptor and storage hashes agree. Hosted save schema equals the actual
+  capturedv13/52-field schema and ZIP. All337 published PNGs remain identical
+  to approved local bytes; packed QOI validation also passes337 entries.
+- Live browser reload verifies app.js?v=1.1.29, state/schema13, all three path
+  names, layer instructions and retained quiet hero background. Root redirect
+  and release cache imports pass. No stalev12 schema/firmware bundle is served.
+- Local test server is stopped. Public firmware bytes are the actual flashed
+  and tested build; no later unverified firmware rebuild replaces them.
