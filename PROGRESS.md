@@ -8479,5 +8479,28 @@ evidence proves delivery and continuity, not that the player likes the sound.
   Full hosted OTA installation/reboot, SD media and RTC battery retention
   are not inferred from these checks.
 - Prepared v1.1.28 five-image ZIP with NVS excluded, standalone app and matching
-  OTA descriptor. Publication and hosted-byte evidence are recorded below
-  after deployment, rather than inferred from a pushed commit or queued run.
+  OTA descriptor. Publication evidence follows, not inferred from queueing.
+
+### Publication evidence
+
+- Commit94417dc and annotated tagv1.1.28 pushed to origin. Published stable
+  [v1.1.28 release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.28)
+  with ZIP, standalone spidarium.bin and spidarium-ota.json. Public downloads
+  equal the verified local files; all five ZIP entries pass size/SHA-256 checks.
+  ZIP2,308,939 bytes, SHA-256
+  8a020fd6ca1e3ee571ecf9e3b1175554728d43d6e57fd4641d51851844265b6d.
+- Pages tag policy allows v1.1.28.
+  [Release-triggered run43515992329](https://github.com/jeromedontdev/Spidarium/actions/runs/43515992329)
+  succeeds through art/browser checks, official-image verification, build and
+  deployment. Existing hosted-action runtime deprecation annotations remain;
+  they are not firmware compiler warnings or deployment failures.
+- Public website firmware manifest reports1.1.28; all five hosted firmware
+  files equal the verified public ZIP entries. Standalone app/OTA descriptor
+  and storage size/hash agree. All337 hosted PNGs equal local approved bytes.
+  First parallel HTTP sweep received503; retry at two requests at a time
+  succeeds for every asset, with no mismatches or skipped entries.
+- Live integrated browser loads app.js?v=1.1.28, current68-decor/36-gift copy,
+  all DOM images without broken sources and the480x480 game canvas. Root
+  redirect and versioned UI imports verified. The published binary/pack are
+  exactly the artifacts already flashed and tested, not a later untested build.
+  No hosted OTA association/download/reboot or physical-screen claim added.
