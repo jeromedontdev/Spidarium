@@ -8669,3 +8669,24 @@ evidence proves delivery and continuity, not that the player likes the sound.
 - Final app2,056,976 bytes/3MiB:1,088,752 free (1.04MiB),3,328-byte increase
   over1.1.29. Artwork1,662,738 bytes/6MiB:4,628,718 free (4.41MiB),unchanged.
   Reserved factory/OTA slots are each3MiB.24KiB NVS utilization not measured.
+
+### Publication evidence
+
+- Release commit47e553d and annotated tagv1.1.30 are pushed.
+  [Stable release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.30)
+  contains ZIP/standalone app/OTA descriptor. Downloaded public ZIP equals
+  the verified local package; SHA-256
+  88c3c9bfaf4f6e647d88d1852e7ed922d349e17546f05c0e5998122c2bbdecde.
+  All five manifest images match size/hash; no NVS image is included.
+- Pages tag policy allows v1.1.30.
+  [Release-triggered run43528995024](https://github.com/jeromedontdev/Spidarium/actions/runs/43528995024)
+  succeeds through art/browser checks, official-image verification, build and
+  deployment. Existing hosted-action Node/runner notices are not firmware
+  compiler warnings or failed verification.
+- All five hosted firmware images equal the public ZIP; standalone app/OTA/
+  storage hashes agree. Hosted schema equals actual compiled14/52 fields and
+  ZIP. All337 published PNGs equal approved local bytes. Root redirect passes.
+- Live browser reload verifies app.js?v=1.1.30, all ten score names, schema14
+  and current instructions. No stale13 schema/firmware bundle is served.
+- Local test server is stopped. Published app is the actual flashed/tested
+  binary, not a later unverified rebuild. Original pet remains restored.
