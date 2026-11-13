@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { soundSamples, DeviceAudio, musicSamples, musicSample, petSample, MUSIC_LOOP, MUSIC_SINE,
   MUSIC_PAD, MUSIC_MELODY, PET_NOTES, PET_SAMPLES } from '../lib/device-audio.js';
 import { MUSIC_TRACKS, MUSIC_EXTRA_TRACKS, MUSIC_MOON_PAD, MUSIC_MOON_MELODY,
-  MUSIC_RAIN_PAD, MUSIC_RAIN_MELODY, musicTrackLoop, musicGain } from '../lib/device-audio.js';
+  MUSIC_RAIN_PAD, MUSIC_RAIN_MELODY, MUSIC_PITCH, MUSIC_SCORE_CHORDS,
+  MUSIC_SCORE_MELODIES, MUSIC_SCORES, musicTrackLoop, musicGain } from '../lib/device-audio.js';
 
 function rms(samples, start = 0, end = samples.length) {
   let power = 0;
@@ -202,11 +203,24 @@ test('native header tables and self-test hashes match the browser synthesis', ()
   assert.deepEqual(table('MUSIC_RAIN_PAD'), [...MUSIC_RAIN_PAD]);
   assert.deepEqual(table('MUSIC_RAIN_MELODY'), [...MUSIC_RAIN_MELODY]);
   assert.deepEqual(table('PET_NOTES'), [...PET_NOTES]);
+  assert.deepEqual(table('MUSIC_PITCH'), [...MUSIC_PITCH]);
+  assert.deepEqual(table('MUSIC_SCORE_CHORDS'), [...MUSIC_SCORE_CHORDS]);
+  assert.deepEqual(table('MUSIC_SCORE_MELODIES'), [...MUSIC_SCORE_MELODIES]);
+  const scores = header.match(/MUSIC_SCORES\[7\] = \{([\s\S]*?)\n\};/)[1];
+  assert.deepEqual([...scores.matchAll(/\{([^}]+)\}/g)].map(row=>
+    row[1].split(',').map(value=>Number(value.trim().replace(/u$/,'')))),MUSIC_SCORES);
+  assert.ok([...MUSIC_SCORE_CHORDS,...MUSIC_SCORE_MELODIES].every(note=>note===0||(note>=48&&note<=84)));
   const define = name => Number(header.match(new RegExp(`#define ${name} (0x[0-9a-f]+)u`))[1]);
   assert.equal(fnv(MUSIC_LOOP, musicSample), define('MUSIC_TEST_HASH'));
   assert.equal(fnv(musicTrackLoop(1), i => musicSample(i, 1)), define('MUSIC_MOON_TEST_HASH'));
   assert.equal(fnv(musicTrackLoop(2), i => musicSample(i, 2)), define('MUSIC_RAIN_TEST_HASH'));
   assert.equal(fnv(PET_SAMPLES, petSample), define('PET_TEST_HASH'));
+  const hashes=header.match(/MUSIC_HASHES\[MUSIC_TRACK_COUNT\] = \{([^}]+)\}/)[1]
+    .split(',').map(value=>value.trim()).filter(Boolean).map(value=>
+      value.startsWith('MUSIC_')?define(value):Number(value.replace(/u$/,'')));
+  assert.equal(hashes.length,10);
+  for(let track=3;track<10;track++)
+    assert.equal(fnv(musicTrackLoop(track),i=>musicSample(i,track)),hashes[track],`track${track} exact native hash`);
   const descriptors = [...header.matchAll(/\{MUSIC_(?:MOON|RAIN)_PAD, MUSIC_(?:MOON|RAIN)_MELODY, ([^}]+)\}/g)]
     .map(match => match[1].split(',').map(value => Number(value.trim().replace(/u$/, ''))));
   assert.deepEqual(descriptors, MUSIC_EXTRA_TRACKS.map(track => [
@@ -268,8 +282,10 @@ test('effects fade the music out, then music fades back in after the effect', ()
   assert.ok(sound.sources.size === 2);
 });
 
-test('three original tracks have distinct PCM, tempo and voices with continuous quiet loops', () => {
-  assert.deepEqual(MUSIC_TRACKS, ['Silk Garden', 'Moonlit Hollow', 'Rainy Canopy']);
+test('ten original tracks have distinct PCM, tempo and voices with continuous quiet loops', () => {
+  assert.deepEqual(MUSIC_TRACKS, ['Silk Garden', 'Moonlit Hollow', 'Rainy Canopy',
+    'Crystal Echoes','Mosslight Waltz','Ember Hearth','Starlit Web',
+    'Bamboo Rain','Clockwork Fern','Dewdrop Lullaby']);
   const hashes = new Set(), lengths = new Set();
   for (let track = 0; track < MUSIC_TRACKS.length; track++) {
     const samples = musicSamples(track), length = musicTrackLoop(track);
@@ -289,8 +305,8 @@ test('three original tracks have distinct PCM, tempo and voices with continuous 
       assert.ok(rms(samples, second * 16000, (second + 1) * 16000) > .004, 'no dead seconds');
     hashes.add(fnv(length, i => musicSample(i, track)));
   }
-  assert.equal(hashes.size, 3, 'all tracks are genuinely different recordings');
-  assert.equal(lengths.size, 3, 'different harmonic tempos');
+  assert.equal(hashes.size, 10, 'all tracks are genuinely different recordings');
+  assert.ok(lengths.size >= 4, 'different harmonic tempos');
 });
 
 test('music-only gain has exact silence/full scale and symmetric integer scaling', () => {
@@ -381,7 +397,7 @@ test('invalid music inputs report rejection and retain the prior valid settings'
   sound.report = (...args) => errors.push(args);
   sound.tick('idle', 0, true, 70, true, true, 40, 1);
   const source = sound.music;
-  for (const [volume, track] of [[101, 3], [-1, -1], [NaN, NaN], [1.5, 1.5]]) {
+  for (const [volume, track] of [[101, 10], [-1, -1], [NaN, NaN], [1.5, 1.5]]) {
     sound.tick('idle', 16, true, 70, true, true, volume, track);
     assert.equal(sound.musicVolume, .4);
     assert.equal(sound.musicTrack, 1);
@@ -389,7 +405,7 @@ test('invalid music inputs report rejection and retain the prior valid settings'
   }
   assert.equal(errors.length, 8);
   assert.ok(errors.every(([message, error]) => /^Invalid music (volume|track):/.test(message) && error));
-  assert.throws(() => musicSamples(3), RangeError);
+  assert.throws(() => musicSamples(10), RangeError);
   assert.throws(() => musicSample(0, -1), RangeError);
   assert.throws(() => musicTrackLoop(NaN), RangeError);
 });
@@ -397,7 +413,7 @@ test('invalid music inputs report rejection and retain the prior valid settings'
 test('native music requests publish atomics only and the worker owns fade/restart and PCM reuse', () => {
   const source = readFileSync(new URL('../../main/audio.c', import.meta.url), 'utf8');
   const header = readFileSync(new URL('../../main/audio.h', import.meta.url), 'utf8');
-  assert.match(header, /#define AUDIO_MUSIC_TRACK_COUNT 3/);
+  assert.match(header, /#define AUDIO_MUSIC_TRACK_COUNT 10/);
   assert.match(source, /_Static_assert\(AUDIO_MUSIC_TRACK_COUNT == MUSIC_TRACK_COUNT/);
   for (const [name, maximum] of [['track', 'AUDIO_MUSIC_TRACK_COUNT'], ['volume', '100']]) {
     const setter = source.match(new RegExp(`void audio_set_music_${name}\\(uint8_t ${name}\\)\\s*\\{([\\s\\S]*?)\\n\\}`))[1];

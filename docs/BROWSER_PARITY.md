@@ -109,12 +109,26 @@ silence still win. The pet sound is a soft bell/purr, not a falling chirp.
 Speaker listening approval is not inferred from deterministic PCM tests.
 The older ambience policy below is historical and superseded.
 
-Sound page 2 adds an independent Music Volume slider and three selectable
-original scores: Silk Garden, Moonlit Hollow and Rainy Canopy. Gain is relative
+Sound page 2 has an independent Music Volume slider and ten selectable
+original scores. IDs0..2 remain Silk Garden, Moonlit Hollow and Rainy Canopy.
+New IDs3..9: Crystal Echoes, Mosslight Waltz, Ember Hearth, Starlit Web,
+Bamboo Rain, Clockwork Fern and Dewdrop Lullaby. Each has original chord/melody,
+tempo/rhythm and voice tables, not an audio file or transposition of one loop.
+The ten menu tiles use matching theme artwork and selection survives reboot/
+JSON/raw restore. Native/browser integer samples and full-loop hashes match.
+The device streams one reused PSRAM buffer; browser caches only its current loop.
+Gain is relative
 to master volume; setting music to zero does not mute effects. Save v11 uses
 old padding for volume/track. v12 keeps those offsets and extends the prefix to
 268 for border ownership; historical v10/v11 tails still decode at 260.
 Browser progress migrates old saves to music volume 100 and track 0.
+Save v14 keeps the existing layout/track byte while accepting0..9; old
+v11-v13 headers reject tracks3..9. Old backups remain readable, but new saves
+must not be downgraded to old firmware.
+Device-only USB attach/detach chimes rise/fall after two confirmed PMIC samples.
+Mute/zero master volume win; read errors/bounce/full-charge changes do not
+retrigger them. Initial USB boot chimes once, not every poll. The browser does
+not pretend to monitor the board's charger or implement USB deep-sleep wake.
 
 SD Card means real hardware storage only on the device. Its third row shows
 actual pending/result/error status, including verified backup and restore.

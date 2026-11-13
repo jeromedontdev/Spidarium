@@ -1,9 +1,9 @@
-import * as E from './sim.js?v=1.1.29';
+import * as E from './sim.js?v=1.1.30';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.29';
-import { HELP_TOPICS } from './help.js?v=1.1.29';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.30';
+import { HELP_TOPICS } from './help.js?v=1.1.30';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -33,7 +33,9 @@ const SCREEN_TIMEOUTS = ['30 Seconds','1 Minute','2 Minutes','5 Minutes','Never'
 const SLEEP_DELAYS = ['Never','5 Minutes Idle','15 Minutes Idle','30 Minutes Idle','1 Hour Idle'];
 const RTC_WAKES = ['15 Minutes','1 Hour','6 Hours'];
 const SOUNDTRACKS = MUSIC_TRACKS;
-const TRACK_ART = ['background_leaf_litter_0', 'background_night_0', 'background_woodland_0'];
+const TRACK_ART = ['background_leaf_litter_0', 'background_night_0', 'background_woodland_0',
+  'background_crystal_0','background_moss_0','background_desert_0','background_observatory_0',
+  'background_bamboo_grove_0','background_circuit_garden_0','background_pond_0'];
 function element(tag, className, text) {
   const obj = document.createElement(tag); obj.className = className;
   if (text !== undefined) obj.textContent = text;
@@ -349,7 +351,7 @@ export class DeviceGame {
           {submenu:true,icon:TRACK_ART[this.state.music_track]}),
       ]; break;
       case 'Soundtrack': rows = SOUNDTRACKS.map((label,id)=>row(label,()=>{
-        this.state.music_track=id;this.persist();this.open(name);
+        this.state.music_track=id;this.persist();this.open(name,page);
       },id===this.state.music_track?'Selected / Original Ambient Score':'Choose This Score',
       {selected:id===this.state.music_track,icon:TRACK_ART[id]})); break;
       case 'Backgrounds': rows = E.BACKGROUNDS.map((key,id) => row(title(key), () => {

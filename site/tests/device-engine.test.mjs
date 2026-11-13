@@ -89,7 +89,7 @@ test('native automation has padding-stable ABI, v2 migration, and gated entries'
   assert.match(header,/offsetof\(game_state_t, daily_day\) == 136/);
   assert.match(header,/offsetof\(game_state_t, decor_owned\) == 160/);
   assert.match(header,/offsetof\(game_state_t, decor\) == 164/);
-  assert.match(config,/#define SAVE_VERSION\s+13/);
+  assert.match(config,/#define SAVE_VERSION\s+14/);
   assert.match(save,/version == 2\)[\s\S]*?state->auto_feed = 0;[\s\S]*?state->auto_hunt = 0;/);
   assert.match(save,/migrate_automation\(&state, header\.version\)/);
   assert.match(save,/state\.auto_feed = 0xA5;[\s\S]*?state\.auto_hunt = 0x5A;[\s\S]*?migrate_automation\(&state, header\.version\)/);

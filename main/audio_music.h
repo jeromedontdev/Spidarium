@@ -5,8 +5,8 @@
  * (site/tests/audio.test.mjs parses these tables). A 32-second D-Bm-G-A loop of
  * slowly crossfaded, gently detuned sine triads with a sparse bell melody. The
  * function is periodic, so streaming it chunk by chunk is seamless. Track 0
- * remains byte-identical; two distinct-tempo/voiced original arrangements
- * below share the same small oscillator table, never another PCM allocation.
+ * remains byte-identical, as do the original Moon/Rain arrangements. Seven
+ * further scores share the oscillator and streaming buffer, never stored PCM.
  */
 #pragma once
 
@@ -26,7 +26,12 @@
 #define MUSIC_MOON_TEST_HASH 0x28f08634u
 #define MUSIC_RAIN_TEST_HASH 0xfa2bc0bcu
 #define PET_TEST_HASH 0x3e6c27c9u
-#define MUSIC_TRACK_COUNT 3
+#define MUSIC_TRACK_COUNT 10
+static const uint32_t MUSIC_HASHES[MUSIC_TRACK_COUNT] = {
+    MUSIC_TEST_HASH, MUSIC_MOON_TEST_HASH, MUSIC_RAIN_TEST_HASH,
+    0xdc20c82fu, 0xde599828u, 0x7cca5660u, 0x11770065u,
+    0x32cf5e08u, 0xfc23df78u, 0xfd8a2b74u,
+};
 
 static const int16_t MUSIC_SINE[256] = {
     0, 804, 1608, 2410, 3212, 4011, 4808, 5602, 6393, 7179, 7962, 8739,
@@ -106,9 +111,60 @@ static const music_track_t MUSIC_EXTRA_TRACKS[2] = {
     {MUSIC_RAIN_PAD, MUSIC_RAIN_MELODY, 96000u, 24000u, 24000u, 2400u, 380, 950},
 };
 
+/* MIDI C3..C6. Scores use notes, not stored PCM; 0 is a melodic rest. */
+static const uint32_t MUSIC_PITCH[37] = {
+    35114789u, 37202823u, 39415018u, 41758757u, 44241862u, 46872620u,
+    49659811u, 52612737u, 55741253u, 59055800u, 62567441u, 66287895u,
+    70229578u, 74405646u, 78830036u, 83517514u, 88483724u, 93745240u,
+    99319622u, 105225474u, 111482506u, 118111601u, 125134882u, 132575789u,
+    140459156u, 148811292u, 157660072u, 167035027u, 176967447u, 187490479u,
+    198639243u, 210450947u, 222965012u, 236223201u, 250269764u, 265151578u, 280918312u,
+};
+/* Crystal Echoes, Mosslight Waltz, Ember Hearth, Starlit Web,
+ * Bamboo Rain, Clockwork Fern, Dewdrop Lullaby. Four chords per score. */
+static const uint8_t MUSIC_SCORE_CHORDS[84] = {
+    50,54,57, 59,62,66, 55,59,62, 57,61,64,
+    55,59,62, 52,55,59, 48,52,55, 50,54,57,
+    53,57,60, 50,53,57, 58,62,65, 48,52,55,
+    48,52,55, 55,59,62, 57,60,64, 53,57,60,
+    50,57,62, 55,62,69, 57,64,69, 50,57,64,
+    52,55,59, 48,52,55, 55,59,62, 50,54,57,
+    48,52,55, 53,57,60, 50,53,57, 55,59,62,
+};
+static const uint8_t MUSIC_SCORE_MELODIES[112] = {
+    78,0,81,0, 74,0,73,0, 71,0,74,0, 76,0,73,0,
+    71,74,79,74, 71,67,0,67, 72,76,79,76, 74,69,66,0,
+    65,0,69,72, 69,65,62,0, 65,0,70,74, 67,64,60,0,
+    76,0,0,79, 74,0,0,71, 72,0,0,76, 77,0,76,0,
+    74,76,0,81, 79,0,76,74, 81,0,83,81, 78,76,74,0,
+    76,71,79,71, 72,67,76,67, 74,71,79,71, 78,69,74,0,
+    72,0,67,0, 69,0,65,0, 65,0,62,0, 67,0,71,0,
+};
+typedef struct {
+    uint32_t chord, beat, attack;
+    int32_t pad_gain, bass_gain, lead_gain, arp_gain;
+    uint16_t rhythm;
+    uint8_t sustained;
+} music_score_t;
+static const music_score_t MUSIC_SCORES[7] = {
+    {128000u,16000u,640u,150,850,1250,300,0x5555,0},
+    {96000u,16000u,480u,100,900,1200,600,0x6db6,0},
+    {128000u,16000u,160u,100,1500,1050,350,0x2929,0},
+    {192000u,24000u,3200u,140,450,1250,250,0x1111,1},
+    {96000u,12000u,128u,140,800,1000,400,0xadad,0},
+    {128000u,8000u,192u,85,1100,1150,900,0xffff,0},
+    {160000u,20000u,2400u,140,500,1100,300,0x5555,1},
+};
+
 static inline uint32_t music_track_loop(uint8_t track)
 {
+    if (track >= 3) return 4u * MUSIC_SCORES[track - 3u].chord;
     return track == 0 ? MUSIC_LOOP : 4u * MUSIC_EXTRA_TRACKS[track - 1u].chord;
+}
+
+static inline uint32_t music_pitch(uint8_t note)
+{
+    return note ? MUSIC_PITCH[note - 48u] : 0;
 }
 
 static inline int16_t music_gain(int32_t sample, uint8_t volume)
@@ -189,8 +245,48 @@ static inline int32_t music_extra_pad(const music_track_t *track, uint8_t id,
     return (((sum * track->pad_gain) >> 15) * env) >> 15;
 }
 
+static inline int32_t music_score_pad(uint8_t score, uint32_t chord, uint32_t local)
+{
+    const music_score_t *s = &MUSIC_SCORES[score];
+    int32_t sum = 0;
+    for (uint32_t voice = 0; voice < 3; voice++) {
+        uint32_t inc = music_pitch(MUSIC_SCORE_CHORDS[score * 12u + chord * 3u + voice]);
+        sum += music_sine((inc - 2684u) * local) + music_sine((inc + 2684u) * local);
+    }
+    uint32_t overlap = s->chord / 4u;
+    int32_t env = 32768;
+    if (local < overlap) env = music_smooth((int32_t)(local * 32768u / overlap));
+    else if (local >= s->chord)
+        env = 32768 - music_smooth((int32_t)((local - s->chord) * 32768u / overlap));
+    return (((sum * s->pad_gain) >> 15) * env) >> 15;
+}
+
+static inline int16_t music_score_sample(uint8_t score, uint32_t position)
+{
+    const music_score_t *s = &MUSIC_SCORES[score];
+    uint32_t p = position % (4u * s->chord), chord = p / s->chord, local = p % s->chord;
+    int32_t value = music_score_pad(score, chord, local);
+    if (local < s->chord / 4u)
+        value += music_score_pad(score, (chord + 3u) & 3u, local + s->chord);
+    uint32_t beat = p / s->beat, at = p % s->beat;
+    uint32_t root = music_pitch(MUSIC_SCORE_CHORDS[score * 12u + chord * 3u]);
+    value += music_bell(root >> 1, local % (2u * s->beat), 2u * s->beat, 640u, s->bass_gain);
+    uint32_t lead = music_pitch(MUSIC_SCORE_MELODIES[score * 16u + beat % 16u]);
+    if (s->sustained && lead) {
+        int32_t env = music_smooth((int32_t)(at * 32768u / s->beat));
+        env = (env * (32768 - env)) >> 13;
+        value += (((music_sine(lead * at) * s->lead_gain) >> 15) * env) >> 15;
+    } else value += music_bell(lead, at, s->beat, s->attack, s->lead_gain);
+    if (s->rhythm & (1u << (beat % 16u))) {
+        uint32_t arp = music_pitch(MUSIC_SCORE_CHORDS[score * 12u + chord * 3u + beat % 3u]);
+        value += music_bell(arp * 2u, at, s->beat, s->attack, s->arp_gain);
+    }
+    return (int16_t)value;
+}
+
 static inline int16_t music_track_sample(uint8_t id, uint32_t position)
 {
+    if (id >= 3) return music_score_sample(id - 3u, position);
     if (id == 0) return music_sample(position);
     const music_track_t *track = &MUSIC_EXTRA_TRACKS[id - 1u];
     uint32_t p = position % (4u * track->chord), chord = p / track->chord;

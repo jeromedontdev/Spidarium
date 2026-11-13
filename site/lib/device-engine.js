@@ -265,7 +265,7 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:13,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:14,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
@@ -318,7 +318,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8,9,10,11,12,13].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(raw.version))fail('unsupported version');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -356,7 +356,7 @@ export function validateProgress(raw) {
       fail('selected border must be owned');
   }
   number('music_enabled',0,1);number('lights_dimmed',0,1);
-  number('music_volume',0,100);number('music_track',0,2);
+  number('music_volume',0,100);number('music_track',0,raw.version>=14?9:2);
   number('power_mode',0,2);number('screen_timeout',0,4);
   number('deep_sleep_after',0,4);number('rtc_wake',0,2);
   if(raw.version>=9&&(!Number.isInteger(raw.backgrounds_owned)||

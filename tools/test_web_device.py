@@ -50,8 +50,8 @@ def main():
             raise RuntimeError("Incorrect current raw save size")
         flags = [field for field in schema["fields"]
                  if field["name"] in {"auto_feed", "auto_hunt"}]
-        if schema["version"] != 13 or len(schema["fields"]) != 52 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
-            raise RuntimeError("Fields missing from compiled version 13 schema")
+        if schema["version"] != 14 or len(schema["fields"]) != 52 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
+            raise RuntimeError("Fields missing from compiled version 14 schema")
         for field in flags:
             command(connection, f"set {field['name']} 1")
         command(connection, "reboot")
@@ -66,7 +66,7 @@ def main():
             invalid = bytearray(enabled)
             invalid[12 + field["offset"]] = 2
             command(connection, "save restore " + invalid.hex(), "ERR")
-        for offset, value in ((236, 0), (240, 48), (241, 3), (242, 5), (243, 5), (244, 3), (252, 2), (253, 2), (254, 101), (255, 3), (266, 48)):
+        for offset, value in ((236, 0), (240, 48), (241, 3), (242, 5), (243, 5), (244, 3), (252, 2), (253, 2), (254, 101), (255, 10), (266, 48)):
             invalid = bytearray(enabled)
             invalid[12 + offset] = value
             command(connection, "save restore " + invalid.hex(), "ERR")
@@ -81,7 +81,7 @@ def main():
         preferences[12 + 264:12 + 266] = (65535).to_bytes(2, "little")
         preferences[12 + 266] = 47
         preferences[12 + 252:12 + 254] = bytes((0, 1))
-        preferences[12 + 254:12 + 256] = bytes((35, 2))
+        preferences[12 + 254:12 + 256] = bytes((35, 9))
         preferences = preferences[:280]
         extra_count = 260
         for i in range(12):
@@ -175,7 +175,7 @@ def main():
             if original[offset:offset + length] != restored[offset:offset + length]:
                 raise RuntimeError("Reboot changed restored field: " + field["name"])
         command(connection, "open close")
-    print("WEB DEVICE: PASS - v13/52-field schema, three decor paths and record order across inline/tail reboot, v12 compatibility rejection, variable decor, high ownership and borders, music/lights, invalid fields, exact restore, overwrite guard, reboot")
+    print("WEB DEVICE: PASS - v14/52-field schema, track9 and three decor paths across inline/tail reboot, legacy compatibility rejection, variable decor, high ownership and borders, music/lights, invalid fields, exact restore, overwrite guard, reboot")
 
 
 if __name__ == "__main__":

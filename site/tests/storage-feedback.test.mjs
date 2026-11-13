@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import { DeviceGame } from '../lib/device-ui.js';
 import { freshState, restoreSim } from '../lib/device-engine.js';
 
+test('all ten soundtrack selections survive JSON backup without changing legacy IDs',()=>{
+  for(let track=0;track<10;track++){
+    const state=freshState();state.music_track=track;
+    assert.equal(restoreSim(JSON.parse(JSON.stringify(state))).music_track,track);
+  }
+  const legacy=freshState();legacy.version=13;legacy.music_track=9;
+  assert.throws(()=>restoreSim(legacy),/music_track/);
+  legacy.music_track=2;assert.equal(restoreSim(legacy).music_track,2);
+});
+
 test('storage feedback appears inside the game and survives menu overlays', t => {
   t.mock.timers.enable({ apis:['setTimeout'] });
   const notice={setAttribute(){},classList:{toggle(){}},style:{},hidden:true};
@@ -51,7 +61,7 @@ test('music track and independent gain persist while old saves migrate audibly',
   const state=freshState();state.music_volume=25;state.music_track=2;
   const restored=restoreSim(JSON.parse(JSON.stringify(state)));
   assert.equal(restored.music_volume,25);assert.equal(restored.music_track,2);
-  for(const [key,value] of [['music_volume',101],['music_track',3]])
+  for(const [key,value] of [['music_volume',101],['music_track',10]])
     assert.throws(()=>restoreSim({...state,[key]:value}),new RegExp(key));
   const old=restoreSim({...state,version:10,music_volume:0,music_track:0});
   assert.equal(old.music_volume,100);assert.equal(old.music_track,0);

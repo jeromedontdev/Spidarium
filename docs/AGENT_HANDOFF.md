@@ -13,6 +13,20 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- USB chimes: the battery worker confirms two one-second PMIC samples for
+  attach/detach and atomically posts the rising/falling event, including USB boot.
+  Read errors/contact bounce/charging-full changes must not re-arm it.
+  LVGL queues SFX_CHARGE (10) / SFX_UNPLUG (11); only the audio worker writes
+  320ms rising/falling two-note PCM in the existing PSRAM buffer. Respect master
+  mute/zero volume, not the independent music setting. No USB deep-sleep wake.
+  power_test covers edge sequences; audiotest checks PCM bounds/endpoints.
+- Ten original soundtracks use the same integer oscillator/PSRAM stream.
+  IDs0..2 are byte-identical;3..9 are Crystal Echoes, Mosslight Waltz, Ember
+  Hearth, Starlit Web, Bamboo Rain, Clockwork Fern and Dewdrop Lullaby. Native
+  and browser score tables/hashes/loop seams match. Save v14 allows IDs0..9
+  in the existing track byte; v11-v13 allow only0..2. Read old v2-v13 backups;
+  old firmware cannot read v14 saves. Test all tracks and last-page selection.
+
 - The completed decor overhaul starts with the original sixteen natural props
   and their five derived legacy PNGs. tools/core_decor_art.py authors explicit
   32px material geometry, a transparent one-pixel gutter and exact2x outputs.

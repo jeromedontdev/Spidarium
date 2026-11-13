@@ -8607,3 +8607,65 @@ evidence proves delivery and continuity, not that the player likes the sound.
   and release cache imports pass. No stalev12 schema/firmware bundle is served.
 - Local test server is stopped. Public firmware bytes are the actual flashed
   and tested build; no later unverified firmware rebuild replaces them.
+
+## Round 95 - USB attach/detach chimes and ten soundtracks
+
+### Decisions made
+
+- Debounce USB attach/detach with two valid one-second PMIC samples. Initial
+  USB boot chimes once, including a full battery; initial battery boot is silent.
+  Errors/bounce/charging-full changes do not re-arm it. Publish an atomic effect
+  ID from the power worker; LVGL only queues it. Audio worker synthesizes the
+  rising/falling320ms two-note cues in its existing PSRAM buffer. Respect master
+  mute/zero volume, independent of music. Screen lock works; no new deep-sleep
+  wake route. Keep network/save/display drain rules and worker placement.
+- Add Crystal Echoes, Mosslight Waltz, Ember Hearth, Starlit Web, Bamboo Rain,
+  Clockwork Fern and Dewdrop Lullaby to the original three scores. New fixed
+  note/chord/rhythm/voice/tempo tables share integer oscillators and one stream,
+  not PCM assets or ten native buffers. Original three full-loop hashes remain
+  unchanged. Mirror native/browser score tables, names, icons and save bounds.
+- Save14 permits track0..9 in the existing byte, retaining268-byte prefix,
+  six-byte decor records and52 fields. Accept v2-v13 backups; v11-v13 still
+  permit only0..2. Older firmware cannot read v14. Preserve the pet/art/spider.
+- Update shared help, website, README, handoff, parity, architecture and console
+  docs. Publish matching1.1.30 firmware/browser/compiled schema, not browser14
+  against the public1.1.29/schema13 bundle.
+
+### Exact evidence and corrections
+
+- Build/full flash wrappers exit0, zero compiler warnings. Native52/52,
+  browser191/191 and host75/75 pass. Packed337 QOI entries decode exactly;
+  deterministic generation preserves all337 PNG source bytes.
+- The first expanded native suite timed out audiotest after20seconds while
+  track8 was completing; track9/both chimes/OK arrived afterward. Extend only
+  that harness budget to60seconds for ten loops. Rerun52/52, not a masked fail.
+- Serial capture initially checked only post-command data and missed track1's
+  start already returned with the setter; combine both captures. Actual ten
+  starts now observed. Full native hashes for0..9 match browser:
+  6a09516a,28f08634,fa2bc0bc,dc20c82f,de599828,7cca5660,11770065,32cf5e08,
+  fc23df78,fd8a2b74. All pass original peak<4000/step<1000/RMS300..1300 limits.
+  Stream640 chunks, maximum refill gap2809us, late0.
+- Charge PCM5120 samples:peak1766/step515/endpoints0. Unplug PCM5120:
+  peak1765/step459/endpoints0. Both complete actual5120-sample codec writes.
+  Actual boot-on-USB cases: audible exactly1, muted0/silenced1,
+  zero-volume0/silenced1. The14-second repeated-boot capture missed one mute
+  diagnostic; isolated35-second capture and all three35-second cases pass.
+  Physical cable unplug and speaker listening remain unclaimed.
+- Browser real-DOM last-page selection exposed resetting to page0; retain the
+  current page and add a regression. Actual DOM verifies track9 selected on
+  page2 with decoded thumbnails. Detached fixture does not persist browser
+  user progress. Native uitest also selects track9/page2.
+- Actual compiled schema captured14/52 fields. Real serial save test preserves
+  track9,273 placements, three paths/order and high ownership across reboot;
+  invalid track10/old-header track9 rejected. Exact restore/overwrite guard pass.
+- render500 largest_drift0. scanloop5 ok5/failed0/largest_drift0.
+  Internal/DMA largest63,488 >=51,200. Final software-reboot40-second soak:
+  VERDICT:PASS,zero faults; internal free134,339,PSRAM2,258,528.
+  Earlier RTS-reset soaks failed with Windows USB re-enumeration, not acceptance.
+  One final capture attempt found COM7 absent before mutation; device enumeration
+  confirmed its return before retrying. No firmware fault is inferred from that.
+- Restore the fresh280-byte pre-chime pet exactly after every mutating fixture;
+  reboot ownership/habitat/Silk checks pass. No rewards/reset/art changes.
+- Final app2,056,976 bytes/3MiB:1,088,752 free (1.04MiB),3,328-byte increase
+  over1.1.29. Artwork1,662,738 bytes/6MiB:4,628,718 free (4.41MiB),unchanged.
+  Reserved factory/OTA slots are each3MiB.24KiB NVS utilization not measured.

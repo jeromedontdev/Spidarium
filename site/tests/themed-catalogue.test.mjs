@@ -123,7 +123,7 @@ test('pre-expansion progress cannot unlock new IDs through historical padding or
 
 test('raw v12 ownership/border fields and shifted tail decode; v11 tail stays at 260',async()=>{
   const schema=JSON.parse(await readFile(new URL('../save-schema.json',import.meta.url)));
-  assert.equal(schema.version,13);assert.equal(schema.fields.length,52);
+  assert.equal(schema.version,14);assert.equal(schema.fields.length,52);
   for(const version of [10,11,12]){
     const prefix=version===12?268:260,bytes=new Uint8Array(12+prefix+6),v=new DataView(bytes.buffer);
     v.setUint32(0,schema.magic,true);v.setUint16(4,version,true);v.setUint32(8,prefix+6,true);

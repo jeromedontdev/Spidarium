@@ -5,8 +5,23 @@ import { decodeSave } from '../lib/save.js';
 
 const schema=JSON.parse(await readFile(new URL('../save-schema.json',import.meta.url)));
 
+test('v14 preserves all ten music IDs while old headers reject new scores',()=>{
+  const bytes=new Uint8Array(280),view=new DataView(bytes.buffer);
+  view.setUint32(0,schema.magic,true);view.setUint16(4,14,true);view.setUint32(8,268,true);
+  for(let i=0;i<12;i++)bytes[176+i*6]=255;
+  view.setUint32(248,1,true);bytes[278]=255;
+  for(let track=0;track<10;track++){
+    bytes[267]=track;
+    assert.equal(decodeSave(bytes,schema).fields.music_track,track);
+  }
+  bytes[267]=10;assert.throws(()=>decodeSave(bytes,schema),/music preference/);
+  bytes[267]=9;view.setUint16(4,13,true);
+  assert.throws(()=>decodeSave(bytes,schema),/music preference/);
+  bytes[267]=2;assert.equal(decodeSave(bytes,schema).fields.music_track,2);
+});
+
 test('compiled v12 schema still reads v10 variable save with eighty extra placements',()=>{
-  assert.equal(schema.version,13);
+  assert.equal(schema.version,14);
   assert.deepEqual(schema.payloadSizes,[120,268]);
   const count=80,bytes=new Uint8Array(272+count*6),view=new DataView(bytes.buffer);
   view.setUint32(0,schema.magic,true);view.setUint16(4,10,true);view.setUint32(8,bytes.length-12,true);

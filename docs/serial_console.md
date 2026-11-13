@@ -387,7 +387,9 @@ backup filename. Never format or erase the card as a workaround.
 
 Queue one synthesized effect, obeying mute. IDs 0..6 are gameplay effects
 (pounce is now a soft noise whoosh, not a rising laser tone); 7 is eight seconds
-of air, 8 a soft consonant bell/purr, 9 ten seconds of leaves. IDs are unchanged.
+of air, 8 a soft consonant bell/purr, 9 ten seconds of leaves, and 10 the
+320ms rising two-note USB plug-in chime. ID11 is the matching falling unplug
+chime. Existing IDs are unchanged.
 Muted output explicitly says `OK sound muted`; unavailable/full queues return
 `ERR`. Queue acceptance is not playback completion: the worker logs written
 foreground sample counts and `ambience ... complete/interrupted/codec error`
@@ -409,6 +411,11 @@ leaves: 160,000 samples, `096a6969`, peak 1345. Both endpoints must be zero.
 These little-endian 16-bit hashes are also asserted by the browser tests,
 covering every sample rather than just duration. `OK audiotest` requires both
 checks to pass; it does not prove speaker response or subjective sound quality.
+Both USB chime checks validate all5,120 samples, silent endpoints,
+nonzero/bounded peak and maximum adjacent-sample step. All ten complete music
+loops must match pinned hashes and pass peak/RMS/step/seam and gain checks.
+The console yields periodically; the regression harness allows60seconds for
+the expanded ten-track test instead of the former three-track20seconds.
 
 Run `python audio_check.py COM7` for actual 8/10-second codec writes plus
 foreground/radio interruption checks (requires sound enabled). It opens/closes
@@ -424,6 +431,16 @@ are explicitly labelled rather than inventing a percentage. Example:
 ```
 OK battery 100% / 4152 mV / USB Power policy=1 screen_sleep=0
 ```
+
+While awake or screen-locked, two consecutive one-second PMIC USB samples
+trigger one charge chime, including booting already plugged in and a full
+battery on USB power. Two confirmed unplugged samples play the falling chime
+and re-arm the rising one; read errors,
+brief contact bounce and charging/full changes do not retrigger it. Master mute
+and zero volume silence the chime; music's separate switch/volume do not.
+The worker publishes an atomic event; LVGL queues sound without codec I/O.
+USB insertion does not wake true deep sleep, which still uses RTC/right button.
+`battery` also self-tests the edge policy without changing real PMIC state.
 
 `wake` is marshalled to LVGL, hides the idle overlay and resets touch inactivity.
 It does not feed, shoot, change needs or grant rewards. Use one open serial
@@ -916,22 +933,25 @@ little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
 Export snapshots on LVGL, waits for the existing internal-stack persistence
-worker on the console task, then reads the raw NVS blob. A new v13 backup is
-280 bytes plus six bytes per extra decor slot; supported v2-v12 payloads remain
+worker on the console task, then reads the raw NVS blob. A new v14 backup is
+280 bytes plus six bytes per extra decor slot; supported v2-v13 payloads remain
 readable. `decorTail` identifies offset 268, stride 6 and the count field;
 v10/v11 tails retain their historical offset 260 when read.
 v13 reuses each six-byte record's blocking byte for path0/1/2; only path1
 collides. Record order encodes layer order within Floor and Canopy, so reordering
 may change slot indices. Path2 in older versions and path3 are rejected.
-Old firmware cannot read v13 backups: export a backup before updating/downgrading.
+v14 additionally permits music tracks0..9 without moving offsets; v11-v13
+permit only0..2. Old firmware cannot read v14 backups: export before updating.
 `maxPayload` is the 20 KB NVS/protocol storage bound. It contains no
 network credentials. Background ownership/selection and power preferences are
 included, along with extended decor ownership, music and enclosure lighting;
 saved WiFi credentials remain separate NVS keys.
 Music volume and track occupy former padding at offsets 254/255. Older saves
-default to 100 and track 0. `set music_volume 0..100` and `set music_track 0..2`
+default to 100 and track 0. `set music_volume 0..100` and `set music_track 0..9`
 use copied LVGL requests; invalid values are rejected. Tracks are Silk Garden,
-Moonlit Hollow and Rainy Canopy. Master mute and master volume still win.
+Moonlit Hollow, Rainy Canopy, Crystal Echoes, Mosslight Waltz, Ember Hearth,
+Starlit Web, Bamboo Rain, Clockwork Fern and Dewdrop Lullaby. Master mute and
+master volume still win.
 v12 ownership uses byte245 for gift32..35 (low nibble) and decor64..67 (high),
 u16 at246 for background32..47, and the full u32 at248 for decor32..63.
 Border ownership is u32 at260/u16 at264, with selection at266 (255=None).

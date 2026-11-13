@@ -23,6 +23,7 @@ static atomic_uint s_sample;
 static atomic_int s_requested = 50, s_applied = -1;
 static atomic_bool s_writing;
 static atomic_bool s_sleep_pending;
+static atomic_uint s_usb_chime;
 static lv_obj_t *s_sleep_screen;
 static bool s_sleeping, s_low_saved;
 /* Set by power_sleep() (the middle button), cleared by power_wake(). The idle
@@ -35,10 +36,29 @@ static esp_err_t read_reg(uint8_t reg, uint8_t *data, size_t size)
     return i2c_master_transmit_receive(s_pmic, &reg, 1, data, size, 100);
 }
 
+typedef struct {
+    bool connected;
+    uint8_t stable;
+} usb_edge_t;
+
+/* Two consecutive PMIC samples confirm each edge; errors never re-arm it. */
+static int usb_changed(usb_edge_t *edge, bool valid, bool usb)
+{
+    if (!valid || usb == edge->connected) {
+        edge->stable = 0;
+        return 0;
+    }
+    if (++edge->stable < 2) return 0;
+    edge->connected = usb;
+    edge->stable = 0;
+    return usb ? 1 : -1;
+}
+
 static void power_worker(void *arg)
 {
     (void)arg;
     unsigned errors = 0;
+    usb_edge_t usb_edge = {0};
     for (;;) {
         if (!net_busy() && !power_sleep_pending()) {
             uint8_t status[2], voltage[2], percent;
@@ -53,9 +73,15 @@ static void power_worker(void *arg)
                     (present << 20) | (usb << 21) | (((status[1] >> 5) == 1) << 22) |
                     (1u << 23);
                 atomic_store(&s_sample, value);
+                int change = usb_changed(&usb_edge, true, usb);
+                if (change) {
+                    ESP_LOGI("spidarium.power", "USB %s; chime pending", change > 0 ? "attached" : "detached");
+                    atomic_store(&s_usb_chime, change > 0 ? SFX_CHARGE : SFX_UNPLUG);
+                }
                 errors = 0;
             } else {
                 atomic_store(&s_sample, 0);
+                usb_changed(&usb_edge, false, false);
                 if (errors++ % 12 == 0)
                     ESP_LOGW("spidarium.power", "battery read: %s", esp_err_to_name(err));
             }
@@ -252,6 +278,13 @@ void power_tick(void)
         lv_obj_set_hidden(s_sleep_screen, true);
     }
     unsigned sample = atomic_load(&s_sample);
+    unsigned chime = atomic_exchange(&s_usb_chime, 0);
+    if (chime) {
+        if (audio_muted() || audio_volume() == 0)
+            ESP_LOGI("spidarium.power", "USB chime silenced by sound settings");
+        else if (!audio_play((sfx_t)chime))
+            ESP_LOGW("spidarium.power", "USB chime rejected; see audio log");
+    }
     uint32_t idle = lv_display_get_inactive_time(NULL);
     int target = brightness_policy(sample, idle, g.brightness, g.power_mode, g.screen_timeout);
     /* A manual lock (the middle button) must blank the panel too. Without this
@@ -319,8 +352,26 @@ void power_status(char *text, unsigned size)
 }
 bool power_test(void)
 {
+    usb_edge_t edge = {0};
+    bool edges = usb_changed(&edge, true, false) == 0 &&
+        usb_changed(&edge, true, true) == 0 &&
+        usb_changed(&edge, true, true) == 1 &&
+        usb_changed(&edge, true, true) == 0 &&
+        usb_changed(&edge, false, false) == 0 &&
+        usb_changed(&edge, true, true) == 0 &&
+        usb_changed(&edge, true, false) == 0 &&
+        usb_changed(&edge, true, true) == 0 &&
+        usb_changed(&edge, true, false) == 0 &&
+        usb_changed(&edge, true, false) == -1 &&
+        usb_changed(&edge, true, false) == 0 &&
+        usb_changed(&edge, true, true) == 0 &&
+        usb_changed(&edge, false, true) == 0 &&
+        usb_changed(&edge, true, true) == 0 &&
+        usb_changed(&edge, true, true) == 1;
+    ESP_LOGI("spidarium.power", "USB chime edges: boot/held/error/bounce/reconnect %s",
+             edges ? "PASS" : "FAIL");
     unsigned battery = (1u << 23) | (1u << 20) | (9u << 13) | 3700;
-    return brightness_policy(battery, 0, 50, 0, 3) == 5 &&
+    return edges && brightness_policy(battery, 0, 50, 0, 3) == 5 &&
         brightness_policy(battery | (1u << 21), 0, 50, 0, 3) == 50 &&
         brightness_policy(0, 60000, 50, 0, 3) == 15 &&
         brightness_policy(0, 300000, 50, 0, 3) == 0 &&

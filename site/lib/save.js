@@ -1,6 +1,6 @@
 const widths = { u8: 1, u16: 2, u32: 4, i16: 2, i32: 4, f32: 4 };
 const getters = { u8: 'getUint8', u16: 'getUint16', u32: 'getUint32', i16: 'getInt16', i32: 'getInt32', f32: 'getFloat32' };
-const payloadByVersion = { 2: 132, 3: 132, 4: 132, 5: 136, 6: 152, 7: 160, 8: 236, 9: 248, 10: 260, 11:260, 12:268 };
+const payloadByVersion = { 2: 132, 3: 132, 4: 132, 5: 136, 6: 152, 7: 160, 8: 236, 9: 248, 10: 260, 11:260, 12:268, 13:268 };
 const fieldWidth = field => field.type === 'string' ? field.length :
   field.type === 'decor[12]' && field.length === 72 ? 72 : widths[field.type];
 
@@ -12,7 +12,7 @@ export const toHex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, 
 
 export function validateSchema(schema) {
   if (!schema || !Number.isInteger(schema.magic) || schema.magic < 0 || schema.magic > 0xffffffff ||
-      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
+      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
       !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 268) ||
       !Array.isArray(schema.fields)) throw new Error('Unsupported save schema');
   const names = new Set();
@@ -76,7 +76,7 @@ export function decodeSave(bytes, schema) {
     if (['auto_feed', 'auto_hunt'].includes(field.name) && fields[field.name] > 1) throw new Error(`Invalid checkbox in ${field.name}`);
     if (field.name === 'volume' && fields.volume > 100) throw new Error('Invalid volume in save');
     if ((field.name === 'music_volume' && fields.music_volume > 100) ||
-        (field.name === 'music_track' && fields.music_track > 2)) throw new Error('Invalid music preference in save');
+        (field.name === 'music_track' && fields.music_track > (header.version>=14?9:2))) throw new Error('Invalid music preference in save');
     if(['music_enabled','lights_dimmed'].includes(field.name)&&fields[field.name]>1)
       throw new Error(`Invalid ${field.name} in save`);
     const powerLimits = { power_mode: 2, screen_timeout: 4, deep_sleep_after: 4, rtc_wake: 2 };

@@ -9,7 +9,9 @@ const EFFECTS = {
 export const MUSIC_RATE = 16000, MUSIC_CHORD = 128000, MUSIC_OVERLAP = 32000;
 export const MUSIC_NOTE = 32000, MUSIC_LOOP = 4 * MUSIC_CHORD;
 export const MUSIC_PAD_GAIN = 400, MUSIC_MELODY_GAIN = 1100, MUSIC_FADE_IN = 24000;
-export const MUSIC_TRACKS = Object.freeze(['Silk Garden', 'Moonlit Hollow', 'Rainy Canopy']);
+export const MUSIC_TRACKS = Object.freeze(['Silk Garden', 'Moonlit Hollow', 'Rainy Canopy',
+  'Crystal Echoes', 'Mosslight Waltz', 'Ember Hearth', 'Starlit Web',
+  'Bamboo Rain', 'Clockwork Fern', 'Dewdrop Lullaby']);
 const increment = hz => hz ? Math.round(hz * 4294967296 / MUSIC_RATE) : 0;
 export const MUSIC_SINE = Int16Array.from({ length: 256 }, (_, i) => Math.round(32767 * Math.sin(2 * Math.PI * i / 256)));
 /* D, Bm, G, A: slow consonant triads, each note a slightly detuned pair. */
@@ -33,12 +35,43 @@ export const MUSIC_EXTRA_TRACKS = Object.freeze([
   { pad: MUSIC_RAIN_PAD, melody: MUSIC_RAIN_MELODY, chord: 96000, overlap: 24000,
     note: 24000, attack: 2400, padGain: 380, melodyGain: 950 },
 ]);
+export const MUSIC_PITCH = Uint32Array.from({length:37},(_,i)=>
+  increment(440*Math.pow(2,(i+48-69)/12)));
+export const MUSIC_SCORE_CHORDS = Uint8Array.from([
+  50,54,57,59,62,66,55,59,62,57,61,64,
+  55,59,62,52,55,59,48,52,55,50,54,57,
+  53,57,60,50,53,57,58,62,65,48,52,55,
+  48,52,55,55,59,62,57,60,64,53,57,60,
+  50,57,62,55,62,69,57,64,69,50,57,64,
+  52,55,59,48,52,55,55,59,62,50,54,57,
+  48,52,55,53,57,60,50,53,57,55,59,62,
+]);
+export const MUSIC_SCORE_MELODIES = Uint8Array.from([
+  78,0,81,0,74,0,73,0,71,0,74,0,76,0,73,0,
+  71,74,79,74,71,67,0,67,72,76,79,76,74,69,66,0,
+  65,0,69,72,69,65,62,0,65,0,70,74,67,64,60,0,
+  76,0,0,79,74,0,0,71,72,0,0,76,77,0,76,0,
+  74,76,0,81,79,0,76,74,81,0,83,81,78,76,74,0,
+  76,71,79,71,72,67,76,67,74,71,79,71,78,69,74,0,
+  72,0,67,0,69,0,65,0,65,0,62,0,67,0,71,0,
+]);
+/* chord, beat, attack, pad/bass/lead/arpeggio gains, rhythm mask, sustained. */
+export const MUSIC_SCORES = Object.freeze([
+  [128000,16000,640,150,850,1250,300,0x5555,0],
+  [96000,16000,480,100,900,1200,600,0x6db6,0],
+  [128000,16000,160,100,1500,1050,350,0x2929,0],
+  [192000,24000,3200,140,450,1250,250,0x1111,1],
+  [96000,12000,128,140,800,1000,400,0xadad,0],
+  [128000,8000,192,85,1100,1150,900,0xffff,0],
+  [160000,20000,2400,140,500,1100,300,0x5555,1],
+]);
 function validateTrack(track) {
   if (!Number.isInteger(track) || track < 0 || track >= MUSIC_TRACKS.length)
     throw new RangeError(`Invalid music track: ${track}`);
 }
 export function musicTrackLoop(track = 0) {
   validateTrack(track);
+  if(track>=3)return 4*MUSIC_SCORES[track-3][0];
   return track === 0 ? MUSIC_LOOP : 4 * MUSIC_EXTRA_TRACKS[track - 1].chord;
 }
 export const musicGain = (sample, volume) => Math.trunc(sample * volume / 100) || 0;
@@ -78,12 +111,45 @@ function pad(chord, local) {
 /* Loop position -> int16 sample. Periodic, so a looping stream is seamless. */
 export function musicSample(position, track = 0) {
   validateTrack(track);
+  if(track>=3)return scoreSample(track-3,position);
   if (track !== 0) return extraMusicSample(position, track);
   const p = position % MUSIC_LOOP, chord = Math.floor(p / MUSIC_CHORD), local = p - chord * MUSIC_CHORD;
   let value = pad(chord, local);
   if (local < MUSIC_OVERLAP) value += pad((chord + 3) & 3, local + MUSIC_CHORD);
   const note = Math.floor(p / MUSIC_NOTE);
   return value + bell(MUSIC_MELODY[note], p - note * MUSIC_NOTE, MUSIC_NOTE, 1280, MUSIC_MELODY_GAIN);
+}
+const pitch = note=>note?MUSIC_PITCH[note-48]:0;
+function scorePad(score,chord,local){
+  const [length,,,gain]=MUSIC_SCORES[score];let sum=0;
+  for(let voice=0;voice<3;voice++){
+    const inc=pitch(MUSIC_SCORE_CHORDS[score*12+chord*3+voice]);
+    sum+=sine(Math.imul(inc-2684,local)>>>0)+sine(Math.imul(inc+2684,local)>>>0);
+  }
+  const overlap=length/4;let env=32768;
+  if(local<overlap)env=smoothQ15(Math.floor(local*32768/overlap));
+  else if(local>=length)env=32768-smoothQ15(Math.floor((local-length)*32768/overlap));
+  return (((sum*gain)>>15)*env)>>15;
+}
+function scoreSample(score,position){
+  const [length,beatLength,attack,,bass,leadGain,arpGain,rhythm,sustained]=MUSIC_SCORES[score];
+  const p=position%(4*length),chord=Math.floor(p/length),local=p%length;
+  let value=scorePad(score,chord,local);
+  if(local<length/4)value+=scorePad(score,(chord+3)&3,local+length);
+  const beat=Math.floor(p/beatLength),at=p%beatLength;
+  const root=pitch(MUSIC_SCORE_CHORDS[score*12+chord*3]);
+  value+=bell(root>>>1,local%(2*beatLength),2*beatLength,640,bass);
+  const lead=pitch(MUSIC_SCORE_MELODIES[score*16+beat%16]);
+  if(sustained&&lead){
+    let env=smoothQ15(Math.floor(at*32768/beatLength));
+    env=(env*(32768-env))>>13;
+    value+=(((sine(Math.imul(lead,at)>>>0)*leadGain)>>15)*env)>>15;
+  }else value+=bell(lead,at,beatLength,attack,leadGain);
+  if(rhythm&(1<<(beat%16))){
+    const arp=pitch(MUSIC_SCORE_CHORDS[score*12+chord*3+beat%3]);
+    value+=bell(arp*2,at,beatLength,attack,arpGain);
+  }
+  return value;
 }
 function extraPad(track, id, chord, local) {
   let sum = 0;

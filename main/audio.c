@@ -213,6 +213,24 @@ static float env_adsr(float t, float dur, float attack, float release)
     return 1.0f;
 }
 
+#define CHARGE_SAMPLES (AUDIO_SAMPLE_RATE * 320 / 1000)
+_Static_assert(CHARGE_SAMPLES <= MAX_SAMPLES, "charge chime exceeds PCM buffer");
+
+static int16_t charge_sample(uint32_t position, bool unplug)
+{
+    if (position == 0 || position >= CHARGE_SAMPLES - 1) return 0;
+    float value = 0.0f;
+    for (int note = 0; note < 2; note++) {
+        int32_t offset = (int32_t)position - note * (AUDIO_SAMPLE_RATE * 120 / 1000);
+        if (offset < 0 || offset >= AUDIO_SAMPLE_RATE / 5) continue;
+        float t = (float)offset / AUDIO_SAMPLE_RATE;
+        float envelope = env_adsr(t, 0.2f, 0.008f, 0.16f);
+        float frequency = (note != unplug) ? 783.99f : 523.25f;
+        value += sinf(2.0f * PI_F * frequency * t) * envelope * envelope * 1500.0f;
+    }
+    return (int16_t)value;
+}
+
 /* Render a tone with a linear frequency sweep and an ADSR envelope. */
 static int render_sweep(float f0, float f1, uint32_t ms, float gain)
 {
@@ -397,6 +415,8 @@ const char *audio_music_track_name(uint8_t track)
 {
     static const char *const names[AUDIO_MUSIC_TRACK_COUNT] = {
         "Silk Garden", "Moonlit Hollow", "Rainy Canopy",
+        "Crystal Echoes", "Mosslight Waltz", "Ember Hearth", "Starlit Web",
+        "Bamboo Rain", "Clockwork Fern", "Dewdrop Lullaby",
     };
     if (track >= AUDIO_MUSIC_TRACK_COUNT) {
         ESP_LOGW(TAG, "music name rejected: invalid track %u", (unsigned)track);
@@ -486,9 +506,6 @@ bool audio_test(void)
                  (unsigned long)hash, peak, first, last, valid ? "PASS" : "FAIL");
     }
 
-    const uint32_t music_hashes[MUSIC_TRACK_COUNT] = {
-        MUSIC_TEST_HASH, MUSIC_MOON_TEST_HASH, MUSIC_RAIN_TEST_HASH,
-    };
     for (uint8_t track = 0; track < MUSIC_TRACK_COUNT; track++) {
         uint32_t length = music_track_loop(track), hash = 2166136261u;
         int peak = 0, step = 0, previous = music_track_sample(track, length - 1u);
@@ -511,7 +528,7 @@ bool audio_test(void)
         }
         int rms = (int)sqrt((double)power / length);
         /* step includes the loop seam (last sample -> first sample). */
-        bool valid = hash == music_hashes[track] && peak < 4000 && step < 1000 &&
+        bool valid = hash == MUSIC_HASHES[track] && peak < 4000 && step < 1000 &&
                      rms > 300 && rms < 1300 && gain_ok;
         ok = valid && ok;
         ESP_LOGI(TAG, "PCM music samples=%lu hash=%08lx peak=%d maxstep=%d rms=%d track=%u gain=%s %s",
@@ -535,6 +552,24 @@ bool audio_test(void)
     ok = valid && ok;
     ESP_LOGI(TAG, "PCM pet samples=%d hash=%08lx peak=%d endpoints=%d/%d %s", PET_SAMPLES,
              (unsigned long)hash, peak, first, last, valid ? "PASS" : "FAIL");
+    for (int unplug = 0; unplug < 2; unplug++) {
+        peak = 0;
+        int step = 0, previous = 0;
+        for (uint32_t i = 0; i < CHARGE_SAMPLES; i++) {
+            int sample = charge_sample(i, unplug);
+            int magnitude = sample < 0 ? -sample : sample;
+            int change = sample > previous ? sample - previous : previous - sample;
+            if (magnitude > peak) peak = magnitude;
+            if (change > step) step = change;
+            previous = sample;
+            if ((i + 1u) % yield_samples == 0) vTaskDelay(1);
+        }
+        valid = charge_sample(0, unplug) == 0 && previous == 0 && peak > 100 && peak < 3000 && step < 1000;
+        ok = valid && ok;
+        ESP_LOGI(TAG, "PCM %s samples=%d peak=%d maxstep=%d endpoints=%d/%d %s",
+                 unplug ? "unplug" : "charge", CHARGE_SAMPLES, peak, step,
+                 charge_sample(0, unplug), previous, valid ? "PASS" : "FAIL");
+    }
     ESP_LOGI(TAG, "stream chunks=%lu max_refill_gap_us=%lu late=%lu",
              (unsigned long)atomic_load(&s_music_chunks),
              (unsigned long)atomic_load(&s_music_max_gap_us),
@@ -595,6 +630,10 @@ static void play_sfx(sfx_t sfx)
     case SFX_DROP:
         play_ambience(true);
         return;
+    case SFX_CHARGE:
+    case SFX_UNPLUG:
+        for (n = 0; n < CHARGE_SAMPLES; n++) s_buf[n] = charge_sample((uint32_t)n, sfx == SFX_UNPLUG);
+        break;
 
     default:
         return;

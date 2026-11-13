@@ -30,8 +30,8 @@ bool audio_test(void);
 void audio_set_music(bool enabled);
 bool audio_music(void);
 
-#define AUDIO_MUSIC_TRACK_COUNT 3
-/* Stable track IDs: 0 Silk Garden, 1 Moonlit Hollow, 2 Rainy Canopy.
+#define AUDIO_MUSIC_TRACK_COUNT 10
+/* Stable track IDs: original0..2 preserved, seven further scores at3..9.
  * Atomic requests only; caller persists both settings. Invalid values are
  * logged and rejected, leaving the previous setting unchanged. Music volume
  * is relative to master volume and never changes foreground effects. */

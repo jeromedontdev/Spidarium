@@ -103,9 +103,18 @@ test('Sound is one reversible master checkbox beside independent music and volum
     rows[3].slider.change(35);
     assert.equal(state.music_volume,35);assert.equal(state.volume,70);
     rows[4].click();
-    assert.deepEqual(rows.map(row=>row.label),['Silk Garden','Moonlit Hollow','Rainy Canopy']);
-    rows[2].click();
-    assert.equal(state.music_track,2);assert.equal(state.music_volume,35);
+    assert.deepEqual(rows.map(row=>row.label),['Silk Garden','Moonlit Hollow','Rainy Canopy',
+      'Crystal Echoes','Mosslight Waltz','Ember Hearth','Starlit Web','Bamboo Rain','Clockwork Fern','Dewdrop Lullaby']);
+    assert.equal(new Set(rows.map(row=>row.icon)).size,10);
+    for(let track=0;track<10;track++){
+      rows[track].click();assert.equal(state.music_track,track);
+      assert.equal(rows[track].selected,true);
+    }
+    let selectedPage;
+    ui.list=(items,page)=>{rows=items;selectedPage=page;};
+    ui.open('Soundtrack',2);rows[9].click();
+    assert.equal(selectedPage,2);assert.equal(rows[9].selected,true);
+    assert.equal(state.music_volume,35);
   });
 
 test('root and species icons are distinct and redundant movement entries are absent',()=>{

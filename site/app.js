@@ -1,9 +1,9 @@
 import { SerialConsole } from './lib/protocol.js';
-import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.29';
-import { loadFirmware, flashFirmware } from './lib/flasher.js?v=1.1.29';
-import { DeviceGame } from './lib/device-ui.js?v=1.1.29';
+import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.30';
+import { loadFirmware, flashFirmware } from './lib/flasher.js?v=1.1.30';
+import { DeviceGame } from './lib/device-ui.js?v=1.1.30';
 import { renderSpider } from './lib/spider-renderer.js';
-import { HELP_TOPICS } from './lib/help.js?v=1.1.29';
+import { HELP_TOPICS } from './lib/help.js?v=1.1.30';
 
 const $ = selector => document.querySelector(selector);
 for (const topic of HELP_TOPICS) {

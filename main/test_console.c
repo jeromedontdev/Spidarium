@@ -149,7 +149,7 @@ static void cmd_help(void)
     printf("  screenshot [menu|playfield|spider|sd] capture screen or save playfield to SD\n");
     printf("  capturetest          pixel-compare capture restoration (open a menu first)\n");
     printf("  sd backup|restore|status verified SD backup/restore or card probe\n");
-    printf("  sound N              effect 0..9 (7=air, 8=pet chirp, 9=leaves)\n");
+    printf("  sound N              effect 0..11 (7=air, 8=pet, 9=leaves, 10=charge, 11=unplug)\n");
     printf("  audiotest            check environmental PCM hashes/envelopes\n");
     printf("  nap SECONDS          save and deep sleep (5..86400); right button wakes\n");
     printf("  battery              report PMIC charge and power policy\n");

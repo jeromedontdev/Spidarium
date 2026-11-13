@@ -98,6 +98,8 @@ typedef enum {
     SFX_RUSTLE,
     SFX_CHIRP,
     SFX_DROP,
+    SFX_CHARGE,
+    SFX_UNPLUG,
     SFX_COUNT,
 } sfx_t;
 

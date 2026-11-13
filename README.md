@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.29](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.29)**
+| **[Download v1.1.30](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.30)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -19,7 +19,7 @@ give it gifts. It remembers all of it across reboots.
 ## What makes it interesting
 
 **An atmospheric, customizable habitat.** Gentle original background music has
-its own Sound switch, three scores and independent music volume; master mute
+its own Sound switch, ten scores and independent music volume; master mute
 silences everything. Twelve treats, 48 backgrounds, 68 decor styles and 36 gifts
 share the retro artwork. Buy 48 matching enclosure borders separately with Silk,
 mix them with any background, or remove the frame for free. Themes include
@@ -32,13 +32,19 @@ pixel icons and a full-effect gift preview keep purchases clear. Gold menu ornam
 leave Back clear. Prey have thorax-attached legs, alternating tripod steps,
 travel-driven ground animation and heading-aware sprites; the spider is unchanged.
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
+A soft rising chime confirms USB connection (including a full battery);
+a descending chime confirms unplugging.
+Sound mute/zero volume silence both. They work while screen-locked, but USB
+insertion does not wake true deep sleep.
 The website and device Help Guide explain all features in seventeen topics.
 In-game Help is directly in Menu, not duplicated in Settings or About.
 Twenty achievements show their goals and automatically pay 15 XP plus 20 Silk
 once; existing earned badges are never paid twice. First Pet is available, and
 the existing molt at age two days now finishes its animation and resumes care.
-Moonlit Hollow has low plucked beats and Rainy Canopy has quick mallet arpeggios,
-rather than three variations of the same pad sound. Unaffordable shop tiles are
+The seven new scores are Crystal Echoes, Mosslight Waltz, Ember Hearth,
+Starlit Web, Bamboo Rain, Clockwork Fern and Dewdrop Lullaby. Choose one in
+Settings > Sound > Soundtrack. The original three scores are unchanged.
+Unaffordable shop tiles are
 dimmed, Borders stays in its menu, and controls have inset slider grab areas.
 Firmware Update is under Settings > About; WiFi has separate scan results.
 The web updater preserves and verifies the save region. On-device updates
@@ -46,7 +52,7 @@ resolve GitHub's latest stable release, verify the image and require matching
 artwork; art changes use USB. Slow HTTPS reads retry within a five-minute
 download limit. Single-tile sliders support held dragging; menu tiles omit
 submenu arrows. Decor previews now offer three spider paths and layer arrows.
-See [v1.1.29 release notes](docs/RELEASE_v1.1.29.md).
+See [v1.1.30 release notes](docs/RELEASE_v1.1.30.md).
 **OTA verification boundary:** GitHub discovery and safe partial-download
 recovery are tested, but a complete hosted download/reboot has not passed on
 the current hardware connection. Use USB for a verified installation.
@@ -134,9 +140,9 @@ movement/Put Away controls without decor physics or layer choices.
 The catalogue order is shared with the
 browser port and checked by a test that parses the C table.
 
-Save v13 preserves these path modes and layer order without changing the
+Save v14 preserves these path modes, layer order and ten soundtracks without changing the
 six-byte item layout. It reads older saves; older firmware cannot safely read
-new v13 saves. Export a backup before updating or attempting a downgrade.
+new v14 saves. Export a backup before updating or attempting a downgrade.
 
 **A daily loop, and treats to spend Silk on.** Each in-game day offers a check-in
 whose reward grows with a consecutive-day streak (6 XP / 4 Silk on day one, up to

@@ -61,6 +61,10 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   stay in PSRAM; no extra internal DMA buffers. `audiotest` reports completed
   chunks, maximum refill gap and late (>50 ms) refill count. This measures
   scheduling headroom, not the physical speaker's audible quality.
+  Ten original score tables share this same stream/oscillator; old IDs0..2
+  remain byte-identical. USB attach/detach chimes reuse that PCM buffer too.
+  The PMIC worker debounces edges and atomically publishes a copied effect ID;
+  LVGL only queues it. Neither PMIC nor LVGL writes PCM or waits for playback.
 - **Network worker:** 12 KB internal stack for credential/OTA flash writes;
   queued scan, join, time-sync, forget, OTA. Notifications
   wake it; atomics publish completion. Passwords never appear in logs.
@@ -86,7 +90,7 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   occurs from the external-stack LVGL task.
   Save acknowledgements propagate queue rejection instead of reporting success.
   Background ownership/selection, power, music and enclosure lighting share
-  the v13 pet snapshot: 268-byte fixed prefix plus six bytes per extra decor
+  the v14 pet snapshot: 268-byte fixed prefix plus six bytes per extra decor
   slot. The original twelve slots/older offsets remain unchanged. The 20 KB
   serialized-payload ceiling is a storage-resource/protocol bound, not a
   twelve-item gameplay limit; storage/allocation/commit failures are explicit.

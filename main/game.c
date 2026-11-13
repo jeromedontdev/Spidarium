@@ -1082,6 +1082,8 @@ static void back_to_main(void)
     menu_open(MENU_MAIN);
 }
 
+static const uint8_t k_track_background[AUDIO_MUSIC_TRACK_COUNT] = {2,18,6,14,1,13,29,45,37,21};
+
 static void menu_open(int which)
 {
     cancel_enclosure_tap();
@@ -1349,7 +1351,7 @@ static void menu_open(int which)
         ui_menu_set_item_slider(0, audio_volume(), on_volume_slider);
         ui_menu_set_item_slider(3, g.music_volume, on_volume_slider);
         ui_menu_set_item_icon(3, sprite_icon_index("energy"));
-        ui_menu_set_item_icon(4, sprite_background_index(g.music_track == 0 ? 2 : g.music_track == 1 ? 18 : 6));
+        ui_menu_set_item_icon(4, sprite_background_index(k_track_background[g.music_track]));
         ui_menu_set_back(back_to_settings);
         break;
     }
@@ -1360,7 +1362,7 @@ static void menu_open(int which)
                 true, i == g.music_track, false, i };
         ui_menu_open("Soundtrack", items, AUDIO_MUSIC_TRACK_COUNT, on_soundtrack_pick);
         for (int i = 0; i < AUDIO_MUSIC_TRACK_COUNT; i++)
-            ui_menu_set_item_icon(i, sprite_background_index(i == 0 ? 2 : i == 1 ? 18 : 6));
+            ui_menu_set_item_icon(i, sprite_background_index(k_track_background[i]));
         ui_menu_set_back(back_to_sound);
         break;
 
@@ -2336,9 +2338,11 @@ static void ui_service_request(void)
         uint8_t original_track = g.music_track;
         uint8_t original_volume = audio_volume();
         on_volume_slider(3, 35);
-        on_soundtrack_pick(2);
+        on_soundtrack_pick(AUDIO_MUSIC_TRACK_COUNT - 1);
         bool music_ok = g.music_volume == 35 && audio_music_volume() == 35 &&
-                        g.music_track == 2 && audio_music_track() == 2 &&
+                        g.music_track == AUDIO_MUSIC_TRACK_COUNT - 1 &&
+                        audio_music_track() == AUDIO_MUSIC_TRACK_COUNT - 1 &&
+                        ui_menu_page() == (AUDIO_MUSIC_TRACK_COUNT - 1) / 4 &&
                         audio_volume() == original_volume;
         g.music_volume = original_music_volume;
         g.music_track = original_track;

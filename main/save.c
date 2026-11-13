@@ -509,7 +509,7 @@ bool save_raw_valid(const void *src, size_t len)
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
         hdr.version != 3 && hdr.version != 4 &&
         hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9 &&
-        hdr.version != 10 && hdr.version != 11 && hdr.version != 12) {
+        hdr.version != 10 && hdr.version != 11 && hdr.version != 12 && hdr.version != 13) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
@@ -556,7 +556,8 @@ bool save_raw_valid(const void *src, size_t len)
             ESP_LOGW(TAG, "raw save rejected: invalid extended habitat");
             return false;
         }
-        if (hdr.version >= 11 && (state.music_volume > 100 || state.music_track >= AUDIO_MUSIC_TRACK_COUNT)) {
+        if (hdr.version >= 11 && (state.music_volume > 100 ||
+            state.music_track >= (hdr.version >= 14 ? AUDIO_MUSIC_TRACK_COUNT : 3))) {
             ESP_LOGW(TAG, "raw save rejected: invalid music preferences");
             return false;
         }
@@ -656,6 +657,12 @@ bool save_format_test(void)
     invalid_music = base;
     invalid_music.music_track = AUDIO_MUSIC_TRACK_COUNT;
     memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
+    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    invalid_music.music_track = AUDIO_MUSIC_TRACK_COUNT - 1;
+    memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
+    ok = save_raw_valid(blob, sizeof blob) && ok;
+    header.version = 13;
+    memcpy(blob, &header, sizeof header);
     ok = !save_raw_valid(blob, sizeof blob) && ok;
     header.version = 10;
     header.size = 260;
