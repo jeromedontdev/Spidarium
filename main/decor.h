@@ -10,9 +10,17 @@
  *   blocking      the spider steers around it and will not walk over it
  *   walk over     the spider walks straight over it
  *   walk behind   the spider passes beneath the artwork, without collision
+ *   climb         the spider walks up onto it and is drawn raised
  *
  * Blocking is a steering input, not a positional shove, so the spider turns
  * away before reaching the item instead of grinding against it.
+ *
+ * CLIMBING is what makes the enclosure read as 2.5D. A climbable item is not a
+ * wall and not a flat decal: the spider walks onto its footprint and is drawn
+ * lifted by the item's height, with a contact shadow left on the floor beneath
+ * it. Because the lift is applied to the spider's draw position rather than to
+ * its logical position, every existing system (steering, hunting, pouncing,
+ * hit-testing) keeps working in flat floor coordinates.
  */
 #pragma once
 
@@ -101,6 +109,7 @@ typedef enum {
     DECOR_WALK_OVER = 0,
     DECOR_SOLID = 1,
     DECOR_WALK_BEHIND = 2,
+    DECOR_CLIMB = 3,
     DECOR_PATH_COUNT
 } decor_path_t;
 
@@ -118,6 +127,7 @@ typedef struct {
     uint8_t     radius;      /* footprint radius in pixels */
     uint8_t     blocking;    /* default blocking flag */
     const char *sprite;      /* asset name, e.g. "decor_rock_small" */
+    uint8_t     climb_height;/* pixels of lift when the spider stands on it */
 } decor_def_t;
 
 /* The definition for a kind. Never NULL for a valid kind. */
@@ -155,13 +165,42 @@ bool decor_move(int slot, int16_t x, int16_t y);
 /* Remove the item in a slot. */
 bool decor_remove(int slot);
 
-/* Cycle Walk Over -> Solid -> Walk Behind. */
+/* Cycle Walk Over -> Solid -> Walk Behind -> Climb. */
 bool decor_toggle_blocking(int slot);
 bool decor_set_path(int slot, uint8_t path);
 int decor_layer_count(uint8_t path, int exclude_slot);
 int decor_layer_index(int slot);
 /* Reorder within the floor/canopy band. Returns the item's new slot, or -1. */
 int decor_set_layer(int slot, int index);
+
+/* --- climbing (2.5D) ---------------------------------------------------
+ * A climbable item is walked onto rather than around. The spider's logical
+ * position stays in flat floor coordinates; only its draw position is lifted,
+ * so steering, hunting and hit-testing are unaffected. */
+
+/* True if the kind can be climbed at all, i.e. it has a non-zero height. */
+bool decor_climbable(uint8_t kind);
+
+/* The lift in pixels the spider gets from standing on the item in `slot`, or 0
+ * when the slot is empty, not climbable, or not set to DECOR_CLIMB. */
+uint8_t decor_climb_height(int slot);
+
+/* The highest lift available at a floor point, and the slot providing it.
+ * Returns 0 and leaves *out_slot at -1 when nothing climbable is there. */
+uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot);
+
+/* The lift the spider should be drawn at right now, ramped so stepping on and
+ * off an item is a short climb rather than a teleport. Call once per render
+ * tick; `now_ms` drives the ramp. */
+int32_t decor_climb_lift(int16_t x, int16_t y, uint32_t now_ms);
+
+/* Reset the ramp, e.g. after a save load or a teleport. */
+void decor_climb_reset(void);
+
+/* Force the ramp to a fixed lift, bypassing the footprint test. Test hook for
+ * the serial console: the spider wanders, so a scripted check cannot reliably
+ * keep it standing on a climbable item long enough to inspect the shadow. */
+void decor_climb_force(int32_t lift);
 
 /* The placed item whose footprint contains a point, or -1. */
 int decor_hit_test(int16_t x, int16_t y);

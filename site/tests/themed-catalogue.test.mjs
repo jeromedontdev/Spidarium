@@ -9,12 +9,13 @@ const source=name=>readFile(new URL(`../../main/${name}`,import.meta.url),'utf8'
 
 test('all 68 native/browser decor entries keep names, prices, levels and footprints in sync',async()=>{
   const text=(await source('decor.c')).split('static const decor_def_t k_decor_kinds')[1].split('};')[0];
-  const rows=[...text.matchAll(/\{\s*"([^"]+)",\s*"[^"]+",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"decor_([^"]+)"\s*\}/g)];
+  const rows=[...text.matchAll(/\{\s*"([^"]+)",\s*"[^"]+",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"decor_([^"]+)",\s*(\d+)\s*\}/g)];
   assert.equal(rows.length,68);
   rows.forEach((row,id)=>{
     const item=E.DECOR_KINDS[id];
     assert.deepEqual([item.name,item.cost,item.level,item.radius,item.blocking,item.key],
       [row[1],...row.slice(2,6).map(Number),row[6]],`decor ${id}`);
+    assert.equal(item.climb,Number(row[7]),`decor climb ${id}`);
   });
   const themes=await source('theme.c');
   const names=[...themes.split('const theme_def_t k_themes')[1].split('};')[0]
@@ -123,7 +124,7 @@ test('pre-expansion progress cannot unlock new IDs through historical padding or
 
 test('raw v12 ownership/border fields and shifted tail decode; v11 tail stays at 260',async()=>{
   const schema=JSON.parse(await readFile(new URL('../save-schema.json',import.meta.url)));
-  assert.equal(schema.version,18);assert.equal(schema.fields.length,55);
+  assert.equal(schema.version,19);assert.equal(schema.fields.length,55);
   for(const version of [10,11,12]){
     const prefix=version===12?268:260,bytes=new Uint8Array(12+prefix+6),v=new DataView(bytes.buffer);
     v.setUint32(0,schema.magic,true);v.setUint16(4,version,true);v.setUint32(8,prefix+6,true);

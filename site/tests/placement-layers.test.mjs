@@ -130,3 +130,40 @@ test('canopy renders above the entire creature layer and below one lighting over
   assert.ok(calls.indexOf('canopy')<calls.indexOf('dim'));
   assert.equal(calls.filter(name=>name==='dim').length,1);
 });
+
+test('climb path lifts the spider and leaves a floor shadow',()=>{
+  const {state}=fixture();
+  for(const item of state.decor)item.blocking=0;
+  /* The fixture stacks fifteen items at one point; clear them so the footprint
+   * test measures only the item under test. */
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  /* Kind 3 is the Log: radius 22, climb height 16. */
+  state.decor[0]={kind:3,blocking:3,x:240,y:240};
+  assert.equal(E.decorClimbable(3),true,'the log is climbable');
+  assert.equal(E.decorClimbable(5),false,'the fern is flat');
+  assert.equal(E.decorClimbHeight(state,0),16);
+  assert.equal(E.decorClimbAt(state,240,240),16,'standing on the log');
+  assert.equal(E.decorClimbAt(state,240,240+30),0,'outside the footprint');
+  /* A Walk Over log must not lift: only the Climb path does. */
+  state.decor[0].blocking=0;
+  assert.equal(E.decorClimbAt(state,240,240),0);
+  state.decor[0].blocking=3;
+  /* The highest climbable item wins when two overlap. */
+  state.decor[1]={kind:33,blocking:3,x:240,y:240};
+  assert.equal(E.decorClimbAt(state,240,240),18,'the stone bridge is taller');
+});
+
+test('climb is only offered for kinds that have height',()=>{
+  const {state}=fixture();
+  state.decor[0]={kind:5,blocking:0,x:240,y:240};   /* Fern: flat */
+  state.decor[1]={kind:3,blocking:0,x:200,y:200};   /* Log: climbable */
+  for(let i=0;i<4;i++)E.toggleDecorBlocking(state,0);
+  assert.notEqual(state.decor[0].blocking,3,'a flat prop never reaches Climb');
+  let reached=false;
+  for(let i=0;i<4;i++){
+    E.toggleDecorBlocking(state,1);
+    if(state.decor[1].blocking===3)reached=true;
+  }
+  assert.equal(reached,true,'a climbable prop can reach Climb');
+  assert.deepEqual(E.DECOR_PATH_NAMES,['Walk Over','Solid','Walk Behind','Climb']);
+});

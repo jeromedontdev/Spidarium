@@ -121,6 +121,8 @@ static void cmd_help(void)
     printf("  gaittest             cadence and bounded leg geometry checks\n");
     printf("  preytest             eight level gates, restore pet level\n");
     printf("  decortest            place every decor kind, verify the layer\n");
+    printf("  climb [N]            report the live climb lift; N pins it for testing\n");
+    printf("  climbhere            place a climbable item under the spider and climb it\n");
     printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
     printf("  setupdone            finish the naming screen without tapping\n");
     printf("  background [0-%d]    show/set persistent pixel-art background\n", THEME_COUNT - 1);
@@ -1156,6 +1158,41 @@ static void run_line(char *line)
     else if (!strcmp(line, "decortest")) {
         if (!game_ui_call(GAME_UI_DECOR_TEST)) printf("ERR decor test request or assertion failed\n");
         else printf("OK decortest placed=%d slots=%d\n", DECOR_COUNT, DECOR_SLOTS);
+    }
+    else if (!strcmp(line, "climb")) {
+        /* Report the live climb state at the spider's position. This is the only
+         * way to confirm on hardware that the lift is actually being applied,
+         * since the lift is a draw-time value and never touches the save.
+         *
+         * "climb N" pins the lift to N pixels and "climb -1" returns to normal.
+         * The spider wanders, so a scripted check cannot reliably keep it
+         * standing on a climbable item long enough to inspect the shadow. */
+        if (arg) {
+            int32_t forced = (int32_t)atoi(arg);
+            decor_climb_force(forced);
+            printf("OK climb forced=%ld\n", (long)forced);
+        } else {
+            int slot = -1;
+            uint8_t height = decor_climb_at(g.spider_x, g.spider_y, &slot);
+            printf("CLIMB pos=(%d,%d) height=%u slot=%d lift=%ld\n",
+                   g.spider_x, g.spider_y, height, slot,
+                   (long)decor_climb_lift(g.spider_x, g.spider_y, game_now()));
+            cspider_shadow_report();
+            printf("OK climb\n");
+        }
+    }
+    else if (!strcmp(line, "climbhere")) {
+        /* Place a climbable item under the spider and set it to Climb in one
+         * command. The spider wanders faster than a script can issue separate
+         * place/block/climb commands, so the footprint path could never be
+         * exercised from the console without this. */
+        decor_climb_force(-1);
+        int slot = decor_place(DECOR_STONE_BRIDGE, g.spider_x, g.spider_y);
+        if (slot < 0) { printf("ERR climbhere: place failed\n"); return; }
+        if (!decor_set_path(slot, DECOR_CLIMB)) {
+            printf("ERR climbhere: set_path refused\n"); return;
+        }
+        printf("OK climbhere slot=%d pos=(%d,%d)\n", slot, g.spider_x, g.spider_y);
     }
     else if (!strcmp(line, "decor")) cmd_decor(arg);
     else if (!strcmp(line, "setupdone")) {

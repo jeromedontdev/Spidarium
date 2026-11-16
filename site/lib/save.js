@@ -1,6 +1,6 @@
 const widths = { u8: 1, u16: 2, u32: 4, i16: 2, i32: 4, f32: 4 };
 const getters = { u8: 'getUint8', u16: 'getUint16', u32: 'getUint32', i16: 'getInt16', i32: 'getInt32', f32: 'getFloat32' };
-const payloadByVersion = { 2: 132, 3: 132, 4: 132, 5: 136, 6: 152, 7: 160, 8: 236, 9: 248, 10: 260, 11:260, 12:268, 13:268, 14:268, 15:860,16:3096,17:3096,18:3100 };
+const payloadByVersion = { 2: 132, 3: 132, 4: 132, 5: 136, 6: 152, 7: 160, 8: 236, 9: 248, 10: 260, 11:260, 12:268, 13:268, 14:268, 15:860,16:3096,17:3096,18:3100,19:3100 };
 export const lifeLayout={offset:860,size:2236,minVersion:16,visitor_day:0,season_highwater:4,
   progress:{offset:8,count:3},cooldown:11,daynight:12,weather:13,retired_count:14,light_gesture_disabled:{offset:15,minVersion:17},
   retired:{offset:16,count:3,stride:740,core:{offset:0,count:120},daily:{offset:120,count:24},
@@ -26,7 +26,7 @@ export const toHex = bytes => Array.from(bytes, b => b.toString(16).padStart(2, 
 
 export function validateSchema(schema) {
   if (!schema || !Number.isInteger(schema.magic) || schema.magic < 0 || schema.magic > 0xffffffff ||
-      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,17,18].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
+      ![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,16,17,18,19].includes(schema.version) || schema.headerSize !== 12 || !Array.isArray(schema.payloadSizes) ||
       !schema.payloadSizes.length || schema.payloadSizes.some(n => !Number.isInteger(n) || n < 1 || n > 3100) ||
       !Array.isArray(schema.fields)) throw new Error('Unsupported save schema');
   if(schema.version>=15 && (!sameLayout(schema.companion,companionLayout) ||
@@ -180,7 +180,7 @@ export function decodeSave(bytes, schema) {
 // A template retains native-only prefix bytes that the human-readable schema omits.
 export function encodeSave(fields, schema, template) {
   validateSchema(schema);
-  if(schema.version!==18)throw new Error('Encoding requires save v18');
+  if(schema.version!==19)throw new Error('Encoding requires save v19');
   const previous=template?decodeSave(template,schema):null;
   const defaults={silk:20,gifts_owned:0,brightness:50,auto_feed:0,auto_hunt:0,volume:70,last_seen:0,
     daily_day:0xffffffff,daily_base_day:0xffffffff,daily_task_base:0,daily_streak:0,daily_task_done:0,

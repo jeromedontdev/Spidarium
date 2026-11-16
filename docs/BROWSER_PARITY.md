@@ -134,8 +134,10 @@ unchanged native spider renderer. No asset PNG or save-format change is needed.
 Help is available directly in Menu only, matching the device. Decor/gift
 placement and hold-to-edit show draggable artwork and explicit Done/Cancel.
 Editing placed furniture adds inline Put Away. New and moved decor offer
-Solid (steer around), Walk Over (spider above), and Walk Behind (spider beneath).
-Back/Front arrows reorder within Floor (Solid/Walk Over) or Canopy (Walk Behind).
+Solid (steer around), Walk Over (spider above), Walk Behind (spider beneath),
+and Climb (spider walks onto it and is drawn raised, with a contact shadow left
+on the floor). Climb is offered only for kinds with a climb height.
+Back/Front arrows reorder within Floor (Solid/Walk Over/Climb) or Canopy (Walk Behind).
 Canopy draws above Floor and the entire creature layer, below lighting/HUD.
 Hit testing checks the frontmost canopy before gifts and Floor, then reverse
 record order within each band. Preview ordering does not mutate saved records.
@@ -157,10 +159,11 @@ from their floors, reapply free, and have a free No Border option. Decor
 grows past twelve placements; ownership uses explicit words/nibbles instead
 of shifting a 32-bit mask by high IDs. v13 local/raw saves preserve all records.
 Raw saves keep the legacy twelve-slot prefix and append a counted six-byte tail.
-Path values are 0=Walk Over, 1=Solid, 2=Walk Behind in the existing blocking
-byte. Record order persists layers, including across the inline/tail boundary;
-no separate rank field. v2-v12 raw saves remain readable, but new path2 is legal
-only in v13. Browser JSON migration retains numeric modes rather than booleans.
+Path values are 0=Walk Over, 1=Solid, 2=Walk Behind, 3=Climb in the existing
+blocking byte. Record order persists layers, including across the inline/tail
+boundary; no separate rank field. v2-v12 raw saves remain readable, but new
+path2 is legal only in v13 and path3 only in v19. Browser JSON migration retains
+numeric modes rather than booleans.
 Older firmware cannot read v13 saves; back up before updating/downgrading.
 Browser serial framing/restore pacing and SD transfers support the full tail.
 

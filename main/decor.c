@@ -20,74 +20,74 @@ static const char *TAG = "spidarium.decor";
 /* Shop order. Costs are tuned against the treat prices (12..80 Silk) so decor
  * is a long-term sink rather than something you buy out in one session. */
 static const decor_def_t k_decor_kinds[DECOR_COUNT] = {
-    { "Small Rock",   "spider walks over it",   18,  1,  9, 0, "decor_rock_small" },
-    { "Large Rock",   "spider walks around it", 34,  2, 16, 1, "decor_rock_large" },
-    { "Pebbles",      "spider walks over it",   14,  1,  8, 0, "decor_pebbles" },
-    { "Log",          "spider walks around it", 46,  4, 22, 1, "decor_log" },
-    { "Bark Slab",    "spider walks over it",   22,  3, 14, 0, "decor_bark" },
-    { "Fern",         "spider walks over it",   38,  5, 15, 0, "decor_fern" },
-    { "Moss Clump",   "spider walks over it",   20,  2, 11, 0, "decor_moss_clump" },
-    { "Succulent",    "spider walks around it", 52,  7, 14, 1, "decor_succulent" },
-    { "White Flower", "spider walks over it",   26,  3,  8, 0, "decor_flower_white" },
-    { "Pink Flower",  "spider walks over it",   30,  6,  8, 0, "decor_flower_pink" },
-    { "Mushroom",     "spider walks over it",   28,  4, 10, 0, "decor_mushroom" },
-    { "Shell",        "spider walks over it",   24,  5,  9, 0, "decor_shell" },
-    { "Crystal",      "spider walks around it", 68,  9, 12, 1, "decor_crystal" },
-    { "Leaf Pile",    "spider walks over it",   16,  1, 13, 0, "decor_leaf_pile" },
-    { "Twig",         "spider walks over it",   12,  1, 12, 0, "decor_twig" },
-    { "Bone",         "spider walks around it", 58,  8, 13, 1, "decor_bone" },
-    { "Fern Planter", "spider walks around it", 48,  6, 14, 1, "decor_fern_pot" },
-    { "Acorn Hide",   "spider shelters inside",72, 10, 15, 1, "decor_acorn_hide" },
-    { "Driftwood Arch","spider walks around it",82, 12, 18, 1, "decor_driftwood_arch" },
-    { "Web Hammock",  "spider walks over it",   64,  8, 15, 0, "decor_web_hammock" },
-    { "Dew Pool",     "spider walks over it",   54,  7, 14, 0, "decor_dew_pool" },
-    { "Mushroom Pair","spider walks over it",   62,  8, 13, 0, "decor_mushroom_pair" },
-    { "Flower Planter","spider walks around it",68,  9, 15, 1, "decor_flower_planter" },
-    { "Crystal Cluster","spider walks around it",98, 14, 15, 1, "decor_crystal_cluster" },
-    { "Shell Cove",   "spider shelters inside",74, 11, 16, 1, "decor_shell_cove" },
-    { "Twig Ladder",  "spider walks over it",   46,  6, 13, 0, "decor_twig_ladder" },
-    { "Mossy Stone",  "spider walks over it",   42,  5, 13, 0, "decor_moss_stone" },
-    { "Seed Pod",     "spider walks over it",   38,  4, 10, 0, "decor_seed_pod" },
-    { "Silk Tent",    "spider shelters inside",112, 16, 19, 1, "decor_silk_tent" },
-    { "Leaf Umbrella","spider walks around it", 88, 13, 15, 1, "decor_leaf_umbrella" },
-    { "Bone Arch",    "spider walks around it", 96, 15, 16, 1, "decor_bone_arch" },
-    { "Fossil",       "spider walks over it",   58,  8, 12, 0, "decor_fossil" },
-    { "Lantern Cap",  "spider walks over it",   92, 14, 13, 0, "decor_lantern_cap" },
-    { "Stone Bridge", "spider walks around it",120, 18, 20, 1, "decor_stone_bridge" },
-    { "Fairy Ring", "woodland fairy / walk over", 44, 4, 17, 0, "decor_fairy_ring" },
-    { "Foxglove Lantern", "woodland fairy / walk around", 58, 6, 12, 1, "decor_foxglove_lantern" },
-    { "Pixie Door", "woodland fairy / walk around", 70, 8, 14, 1, "decor_pixie_door" },
-    { "Gargoyle", "gothic / walk around", 78, 9, 15, 1, "decor_gargoyle" },
-    { "Iron Gate", "gothic / walk around", 84, 10, 19, 1, "decor_iron_gate" },
-    { "Rose Urn", "gothic / walk around", 54, 6, 12, 1, "decor_rose_urn" },
-    { "Book Stack", "academia / walk around", 40, 3, 12, 1, "decor_book_stack" },
-    { "Globe", "academia / walk around", 66, 7, 13, 1, "decor_globe" },
-    { "Quill Desk", "academia / walk around", 90, 11, 19, 1, "decor_quill_desk" },
-    { "Tea Cup", "household / walk around", 32, 2, 13, 1, "decor_tea_cup" },
-    { "Spool", "household / walk around", 26, 2, 10, 1, "decor_spool" },
-    { "Thimble", "household / walk around", 30, 3, 10, 1, "decor_thimble" },
-    { "Cauldron", "witchy / walk around", 74, 8, 17, 1, "decor_cauldron" },
-    { "Broom", "witchy / walk over", 38, 4, 15, 0, "decor_broom" },
-    { "Potion Rack", "witchy / walk around", 86, 10, 17, 1, "decor_potion_rack" },
-    { "Amber Fossil", "prehistoric / walk over", 58, 6, 12, 0, "decor_amber_fossil" },
-    { "Cycad", "prehistoric / walk around", 62, 7, 16, 1, "decor_cycad" },
-    { "Dinosaur Egg", "prehistoric / walk around", 72, 9, 13, 1, "decor_dinosaur_egg" },
-    { "Neon Sign", "cyberpunk / walk around", 80, 9, 14, 1, "decor_neon_sign" },
-    { "Holo Terminal", "cyberpunk / walk around", 96, 12, 15, 1, "decor_holo_terminal" },
-    { "Cable Coil", "cyberpunk / walk over", 42, 4, 12, 0, "decor_cable_coil" },
-    { "Moon Rover", "sci-fi / walk around", 104, 13, 18, 1, "decor_moon_rover" },
-    { "Solar Array", "sci-fi / walk around", 88, 10, 18, 1, "decor_solar_array" },
-    { "Oxygen Pod", "sci-fi / walk around", 92, 11, 14, 1, "decor_oxygen_pod" },
-    { "Wizard Tower", "fantasy / walk around", 112, 14, 17, 1, "decor_wizard_tower" },
-    { "Dragon Statue", "fantasy / walk around", 120, 16, 18, 1, "decor_dragon_statue" },
-    { "Treasure Chest", "fantasy / walk around", 98, 12, 15, 1, "decor_treasure_chest" },
-    { "Sun Obelisk", "lost civilization / walk around", 108, 13, 13, 1, "decor_sun_obelisk" },
-    { "Glyph Tablet", "lost civilization / walk over", 64, 7, 14, 0, "decor_glyph_tablet" },
-    { "Broken Column", "lost civilization / walk around", 76, 8, 15, 1, "decor_broken_column" },
-    { "Stone Lantern", "Japanese zen / walk around", 70, 6, 13, 1, "decor_stone_lantern" },
-    { "Bamboo Fountain", "Japanese zen / walk around", 84, 9, 16, 1, "decor_bamboo_fountain" },
-    { "Bonsai", "Japanese zen / walk around", 94, 11, 16, 1, "decor_bonsai" },
-    { "Fairy Bridge", "woodland fairy / walk around", 102, 12, 20, 1, "decor_fairy_bridge" },
+    { "Small Rock", "spider walks over it", 18, 1, 9, 0, "decor_rock_small", 6 },
+    { "Large Rock", "spider walks around it", 34, 2, 16, 1, "decor_rock_large", 14 },
+    { "Pebbles", "spider walks over it", 14, 1, 8, 0, "decor_pebbles", 3 },
+    { "Log", "spider walks around it", 46, 4, 22, 1, "decor_log", 16 },
+    { "Bark Slab", "spider walks over it", 22, 3, 14, 0, "decor_bark", 7 },
+    { "Fern", "spider walks over it", 38, 5, 15, 0, "decor_fern", 0 },
+    { "Moss Clump", "spider walks over it", 20, 2, 11, 0, "decor_moss_clump", 4 },
+    { "Succulent", "spider walks around it", 52, 7, 14, 1, "decor_succulent", 0 },
+    { "White Flower", "spider walks over it", 26, 3, 8, 0, "decor_flower_white", 0 },
+    { "Pink Flower", "spider walks over it", 30, 6, 8, 0, "decor_flower_pink", 0 },
+    { "Mushroom", "spider walks over it", 28, 4, 10, 0, "decor_mushroom", 5 },
+    { "Shell", "spider walks over it", 24, 5, 9, 0, "decor_shell", 4 },
+    { "Crystal", "spider walks around it", 68, 9, 12, 1, "decor_crystal", 12 },
+    { "Leaf Pile", "spider walks over it", 16, 1, 13, 0, "decor_leaf_pile", 3 },
+    { "Twig", "spider walks over it", 12, 1, 12, 0, "decor_twig", 3 },
+    { "Bone", "spider walks around it", 58, 8, 13, 1, "decor_bone", 6 },
+    { "Fern Planter", "spider walks around it", 48, 6, 14, 1, "decor_fern_pot", 0 },
+    { "Acorn Hide", "spider shelters inside", 72, 10, 15, 1, "decor_acorn_hide", 10 },
+    { "Driftwood Arch", "spider walks around it", 82, 12, 18, 1, "decor_driftwood_arch", 18 },
+    { "Web Hammock", "spider walks over it", 64, 8, 15, 0, "decor_web_hammock", 8 },
+    { "Dew Pool", "spider walks over it", 54, 7, 14, 0, "decor_dew_pool", 0 },
+    { "Mushroom Pair", "spider walks over it", 62, 8, 13, 0, "decor_mushroom_pair", 6 },
+    { "Flower Planter", "spider walks around it", 68, 9, 15, 1, "decor_flower_planter", 0 },
+    { "Crystal Cluster", "spider walks around it", 98, 14, 15, 1, "decor_crystal_cluster", 16 },
+    { "Shell Cove", "spider shelters inside", 74, 11, 16, 1, "decor_shell_cove", 8 },
+    { "Twig Ladder", "spider walks over it", 46, 6, 13, 0, "decor_twig_ladder", 12 },
+    { "Mossy Stone", "spider walks over it", 42, 5, 13, 0, "decor_moss_stone", 8 },
+    { "Seed Pod", "spider walks over it", 38, 4, 10, 0, "decor_seed_pod", 4 },
+    { "Silk Tent", "spider shelters inside", 112, 16, 19, 1, "decor_silk_tent", 14 },
+    { "Leaf Umbrella", "spider walks around it", 88, 13, 15, 1, "decor_leaf_umbrella", 0 },
+    { "Bone Arch", "spider walks around it", 96, 15, 16, 1, "decor_bone_arch", 16 },
+    { "Fossil", "spider walks over it", 58, 8, 12, 0, "decor_fossil", 5 },
+    { "Lantern Cap", "spider walks over it", 92, 14, 13, 0, "decor_lantern_cap", 9 },
+    { "Stone Bridge", "spider walks around it", 120, 18, 20, 1, "decor_stone_bridge", 18 },
+    { "Fairy Ring", "woodland fairy / walk over", 44, 4, 17, 0, "decor_fairy_ring", 0 },
+    { "Foxglove Lantern", "woodland fairy / walk around", 58, 6, 12, 1, "decor_foxglove_lantern", 0 },
+    { "Pixie Door", "woodland fairy / walk around", 70, 8, 14, 1, "decor_pixie_door", 0 },
+    { "Gargoyle", "gothic / walk around", 78, 9, 15, 1, "decor_gargoyle", 14 },
+    { "Iron Gate", "gothic / walk around", 84, 10, 19, 1, "decor_iron_gate", 18 },
+    { "Rose Urn", "gothic / walk around", 54, 6, 12, 1, "decor_rose_urn", 10 },
+    { "Book Stack", "academia / walk around", 40, 3, 12, 1, "decor_book_stack", 8 },
+    { "Globe", "academia / walk around", 66, 7, 13, 1, "decor_globe", 0 },
+    { "Quill Desk", "academia / walk around", 90, 11, 19, 1, "decor_quill_desk", 14 },
+    { "Tea Cup", "household / walk around", 32, 2, 13, 1, "decor_tea_cup", 7 },
+    { "Spool", "household / walk around", 26, 2, 10, 1, "decor_spool", 6 },
+    { "Thimble", "household / walk around", 30, 3, 10, 1, "decor_thimble", 6 },
+    { "Cauldron", "witchy / walk around", 74, 8, 17, 1, "decor_cauldron", 12 },
+    { "Broom", "witchy / walk over", 38, 4, 15, 0, "decor_broom", 3 },
+    { "Potion Rack", "witchy / walk around", 86, 10, 17, 1, "decor_potion_rack", 14 },
+    { "Amber Fossil", "prehistoric / walk over", 58, 6, 12, 0, "decor_amber_fossil", 5 },
+    { "Cycad", "prehistoric / walk around", 62, 7, 16, 1, "decor_cycad", 0 },
+    { "Dinosaur Egg", "prehistoric / walk around", 72, 9, 13, 1, "decor_dinosaur_egg", 9 },
+    { "Neon Sign", "cyberpunk / walk around", 80, 9, 14, 1, "decor_neon_sign", 0 },
+    { "Holo Terminal", "cyberpunk / walk around", 96, 12, 15, 1, "decor_holo_terminal", 12 },
+    { "Cable Coil", "cyberpunk / walk over", 42, 4, 12, 0, "decor_cable_coil", 4 },
+    { "Moon Rover", "sci-fi / walk around", 104, 13, 18, 1, "decor_moon_rover", 12 },
+    { "Solar Array", "sci-fi / walk around", 88, 10, 18, 1, "decor_solar_array", 10 },
+    { "Oxygen Pod", "sci-fi / walk around", 92, 11, 14, 1, "decor_oxygen_pod", 11 },
+    { "Wizard Tower", "fantasy / walk around", 112, 14, 17, 1, "decor_wizard_tower", 16 },
+    { "Dragon Statue", "fantasy / walk around", 120, 16, 18, 1, "decor_dragon_statue", 16 },
+    { "Treasure Chest", "fantasy / walk around", 98, 12, 15, 1, "decor_treasure_chest", 11 },
+    { "Sun Obelisk", "lost civilization / walk around", 108, 13, 13, 1, "decor_sun_obelisk", 13 },
+    { "Glyph Tablet", "lost civilization / walk over", 64, 7, 14, 0, "decor_glyph_tablet", 4 },
+    { "Broken Column", "lost civilization / walk around", 76, 8, 15, 1, "decor_broken_column", 12 },
+    { "Stone Lantern", "Japanese zen / walk around", 70, 6, 13, 1, "decor_stone_lantern", 11 },
+    { "Bamboo Fountain", "Japanese zen / walk around", 84, 9, 16, 1, "decor_bamboo_fountain", 14 },
+    { "Bonsai", "Japanese zen / walk around", 94, 11, 16, 1, "decor_bonsai", 0 },
+    { "Fairy Bridge", "woodland fairy / walk around", 102, 12, 20, 1, "decor_fairy_bridge", 16 },
 };
 
 const decor_def_t *decor_def(uint8_t kind)
@@ -255,7 +255,14 @@ bool decor_toggle_blocking(int slot)
 {
     decor_item_t *item = slot_at(slot);
     if (!item || item->kind == 0xFF) return false;
-    return decor_set_path(slot, (item->blocking + 1) % DECOR_PATH_COUNT);
+    /* Cycle through the paths this kind actually supports, so a flat prop never
+     * lands on Climb and a climbable one always reaches it. */
+    uint8_t path = item->blocking;
+    for (int i = 0; i < DECOR_PATH_COUNT; i++) {
+        path = (uint8_t)((path + 1) % DECOR_PATH_COUNT);
+        if (path != DECOR_CLIMB || decor_climbable(item->kind)) break;
+    }
+    return decor_set_path(slot, path);
 }
 
 bool decor_set_path(int slot, uint8_t path)
@@ -265,16 +272,117 @@ bool decor_set_path(int slot, uint8_t path)
         ESP_LOGW(TAG, "path rejected: slot=%d path=%u", slot, path);
         return false;
     }
+    /* Climbing needs something to climb. Refuse the path on a flat prop rather
+     * than silently drawing the spider at zero lift and confusing the player. */
+    if (path == DECOR_CLIMB && !decor_climbable(item->kind)) {
+        ESP_LOGW(TAG, "path rejected: slot=%d kind=%u is not climbable", slot, item->kind);
+        return false;
+    }
     item->blocking = path;
     ESP_LOGI(TAG, "slot %d blocking=%u", slot, item->blocking);
     return true;
+}
+
+/* --- climbing (2.5D) --------------------------------------------------- */
+
+bool decor_climbable(uint8_t kind)
+{
+    const decor_def_t *def = decor_def(kind);
+    return def && def->climb_height > 0;
+}
+
+uint8_t decor_climb_height(int slot)
+{
+    const decor_item_t *item = decor_at(slot);
+    if (!item || item->blocking != DECOR_CLIMB) return 0;
+    const decor_def_t *def = decor_def(item->kind);
+    return def ? def->climb_height : 0;
+}
+
+uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot)
+{
+    if (out_slot) *out_slot = -1;
+    uint8_t best = 0;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || item->blocking != DECOR_CLIMB) continue;
+        const decor_def_t *def = decor_def(item->kind);
+        if (!def || def->climb_height == 0) continue;
+        float dx = (float)(x - item->x);
+        float dy = (float)(y - item->y);
+        /* The climbable surface is the footprint, not the hit-test radius: the
+         * spider should only be lifted while it is genuinely over the item. */
+        if (dx * dx + dy * dy > (float)def->radius * def->radius) continue;
+        if (def->climb_height > best) {
+            best = def->climb_height;
+            if (out_slot) *out_slot = i;
+        }
+    }
+    return best;
+}
+
+/* The ramp is deliberately slow enough to read as a climb and fast enough that
+ * the spider is never visibly floating: 90 px/s covers the tallest item (18 px)
+ * in a fifth of a second. */
+#define CLIMB_RAMP_PX_PER_S 90.0f
+
+static float s_climb_lift;      /* current drawn lift, pixels */
+static uint32_t s_climb_last_ms;
+static bool s_climb_init;
+/* -1 = normal footprint-driven behaviour; >= 0 pins the lift. Console test hook
+ * only, so the shadow can be inspected without the spider wandering off. */
+static int32_t s_climb_forced = -1;
+
+void decor_climb_reset(void)
+{
+    s_climb_lift = 0.0f;
+    s_climb_init = false;
+    s_climb_forced = -1;
+}
+
+void decor_climb_force(int32_t lift)
+{
+    s_climb_forced = (lift < 0) ? -1 : lift;
+    if (s_climb_forced >= 0) {
+        s_climb_lift = (float)s_climb_forced;
+        s_climb_init = true;
+    }
+}
+
+int32_t decor_climb_lift(int16_t x, int16_t y, uint32_t now_ms)
+{
+    if (s_climb_forced >= 0) return s_climb_forced;
+
+    uint8_t target = decor_climb_at(x, y, NULL);
+
+    if (!s_climb_init) {
+        s_climb_lift = (float)target;
+        s_climb_last_ms = now_ms;
+        s_climb_init = true;
+        return (int32_t)(s_climb_lift + 0.5f);
+    }
+
+    uint32_t elapsed = now_ms - s_climb_last_ms;
+    s_climb_last_ms = now_ms;
+    /* A long gap means the render tick stalled or the app was suspended; snap
+     * rather than animate a huge step. */
+    if (elapsed > 250) {
+        s_climb_lift = (float)target;
+        return (int32_t)(s_climb_lift + 0.5f);
+    }
+
+    float step = CLIMB_RAMP_PX_PER_S * (float)elapsed / 1000.0f;
+    float delta = (float)target - s_climb_lift;
+    if (fabsf(delta) <= step) s_climb_lift = (float)target;
+    else s_climb_lift += (delta > 0.0f) ? step : -step;
+
+    return (int32_t)(s_climb_lift + 0.5f);
 }
 
 static bool same_band(uint8_t a, uint8_t b)
 {
     return (a == DECOR_WALK_BEHIND) == (b == DECOR_WALK_BEHIND);
 }
-
 int decor_layer_count(uint8_t path, int exclude_slot)
 {
     int count = 0;
@@ -492,10 +600,54 @@ bool decor_test(void)
     int reordered = decor_set_layer(c, 0);
     ok = ok && reordered == a && decor_layer_index(reordered) == 0;
     ok = ok && decor_at(b)->blocking == DECOR_WALK_BEHIND && decor_hit_test(200, 200) == b;
-    ok = ok && !decor_set_path(a, 3) && decor_set_layer(a, -1) < 0;
+    /* Path 3 is Climb. A Small Rock has height, so it is allowed; an
+     * out-of-range path is not. */
+    ok = ok && decor_set_path(a, DECOR_CLIMB) && decor_at(a)->blocking == DECOR_CLIMB;
+    ok = ok && !decor_set_path(a, DECOR_PATH_COUNT);
+    ok = ok && decor_set_path(a, DECOR_WALK_OVER);
+    ok = ok && decor_set_layer(a, -1) < 0;
     ok = ok && decor_set_layer(a, 2) < 0 && decor_layer_index(a) == 0;
     ok = ok && decor_set_path(b, DECOR_SOLID) && decor_blocks_point(200, 200);
     ok = ok && decor_set_layer(b, 2) >= 0;
+
+    /* --- climbing (2.5D) ------------------------------------------------
+     * A climbable item lifts the spider only while it is over the footprint,
+     * and only on the Climb path. A flat prop must refuse the path outright. */
+    decor_clear();
+    int log = decor_place(DECOR_LOG, 240, 240);
+    ok = ok && log >= 0 && decor_climbable(DECOR_LOG);
+    ok = ok && !decor_climbable(DECOR_FERN);
+    ok = ok && decor_climb_height(log) == 0;   /* still Walk Over */
+    ok = ok && decor_set_path(log, DECOR_CLIMB);
+    ok = ok && decor_climb_height(log) == k_decor_kinds[DECOR_LOG].climb_height;
+    int climb_slot = -1;
+    ok = ok && decor_climb_at(240, 240, &climb_slot) == k_decor_kinds[DECOR_LOG].climb_height;
+    ok = ok && climb_slot == log;
+    ok = ok && decor_climb_at(240, 240 + k_decor_kinds[DECOR_LOG].radius + 6, NULL) == 0;
+    /* The tallest overlapping item wins. */
+    int bridge = decor_place(DECOR_STONE_BRIDGE, 240, 240);
+    ok = ok && bridge >= 0 && decor_set_path(bridge, DECOR_CLIMB);
+    ok = ok && decor_climb_at(240, 240, NULL) == k_decor_kinds[DECOR_STONE_BRIDGE].climb_height;
+    /* A flat prop refuses Climb rather than silently drawing zero lift. */
+    int fern = decor_place(DECOR_FERN, 120, 120);
+    ok = ok && fern >= 0 && !decor_set_path(fern, DECOR_CLIMB);
+    ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
+    /* Cycling skips Climb for a flat prop and reaches it for a climbable one. */
+    for (int i = 0; i < DECOR_PATH_COUNT; i++) decor_toggle_blocking(fern);
+    ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
+    bool reached = false;
+    for (int i = 0; i < DECOR_PATH_COUNT; i++) {
+        decor_toggle_blocking(log);
+        if (decor_at(log)->blocking == DECOR_CLIMB) reached = true;
+    }
+    ok = ok && reached;
+    /* The ramp settles on the target and resets cleanly. */
+    decor_climb_reset();
+    ok = ok && decor_climb_lift(240, 240, 1000) == k_decor_kinds[DECOR_STONE_BRIDGE].climb_height;
+    ok = ok && decor_climb_lift(240, 240, 2000) == k_decor_kinds[DECOR_STONE_BRIDGE].climb_height;
+    decor_climb_reset();
+    ok = ok && decor_climb_lift(20, 20, 3000) == 0;
+    decor_clear();
 
     g.level = 40;
     g.silk = 100000;

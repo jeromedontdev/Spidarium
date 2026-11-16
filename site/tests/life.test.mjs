@@ -169,13 +169,13 @@ test('archive validator rejects corrupt raw bytes, unterminated identity and inv
   }
 });
 
-test('browser archives round-trip the exact native v18 raw life ABI',async()=>{
+test('browser archives round-trip the exact native v19 raw life ABI',async()=>{
   const schema=JSON.parse(await readFile(new URL('../save-schema.json',import.meta.url)));
   const s=fresh();s.stage=2;s.name='Archive';s.life.progress=[5,4,3];
   E.companionTick(s,START);s.companion.treat_counts[1]=2;
   assert.equal(E.lifeRetire(s,true),true);
   const bytes=encodeSave(s,schema), decoded=decodeSave(bytes,schema);
-  assert.equal(decoded.header.version,18);assert.equal(decoded.header.size,3100);
+  assert.equal(decoded.header.version,19);assert.equal(decoded.header.size,3100);
   assert.deepEqual(decoded.fields.life,s.life);
   const offset=12+860+16;
   assert.deepEqual(Array.from(bytes.slice(offset,offset+120)),s.life.retired[0].core);

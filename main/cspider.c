@@ -12,6 +12,7 @@
 #include "cspider.h"
 
 #include "behaviour.h"
+#include "decor.h"
 #include "game.h"
 #include "game_config.h"
 #include "spider.h"
@@ -20,6 +21,7 @@
 #include "esp_log.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -70,6 +72,11 @@ static const char *TAG = "spidarium.cspider";
 /* State                                                               */
 /* ------------------------------------------------------------------ */
 static lv_obj_t   *s_canvas;
+/* The climb contact shadow is drawn INSIDE the spider canvas, at the floor
+ * point, before the legs and body. It cannot be a separate widget: a widget
+ * needs its own style and stacking, and the shadow has to sit under the body
+ * in the same buffer to composite correctly. Drawing it first means the legs
+ * and body paint over it, which is exactly the occlusion a real shadow has. */
 
 /* The canvas is RGB565A8: an RGB565 colour plane followed by an 8-bit alpha
  * plane.
@@ -335,6 +342,56 @@ static void fill_circle(int32_t cx, int32_t cy, int32_t r, uint32_t rgb)
     }
 }
 
+/* A soft elliptical contact shadow, drawn at the floor point BEFORE the body.
+ *
+ * The canvas is RGB565A8, so opacity lives in the alpha plane. The shadow is
+ * written as black with a radial alpha falloff. Because it is drawn first, the
+ * legs and body paint over its middle and only the feathered rim shows; that
+ * rim is what reads as the spider being off the ground.
+ *
+ * A separate LVGL widget was tried first and never rendered: a widget needs its
+ * own style and stacking, and the shadow has to composite under the body in the
+ * same buffer anyway. Drawing it here keeps it in one invalidate and one blit. */
+static void fill_shadow(int32_t cx, int32_t cy, int32_t rx, int32_t ry,
+                        uint8_t max_alpha)
+{
+    if (rx <= 0 || ry <= 0) return;
+
+    for (int32_t dy = -ry; dy <= ry; dy++) {
+        int32_t y = cy + dy;
+        if (y < 0 || y >= CANVAS_SIZE) continue;
+
+        float ny = (float)dy / (float)ry;
+        float span = 1.0f - ny * ny;
+        if (span <= 0.0f) continue;
+
+        int32_t w = (int32_t)((float)rx * sqrtf(span));
+        if (w <= 0) continue;
+
+        int32_t x0 = cx - w;
+        int32_t x1 = cx + w;
+        if (x0 < 0) x0 = 0;
+        if (x1 >= CANVAS_SIZE) x1 = CANVAS_SIZE - 1;
+
+        uint16_t *row = px_color() + y * CANVAS_SIZE;
+        uint8_t  *alp = px_alpha() + y * CANVAS_SIZE;
+
+        for (int32_t x = x0; x <= x1; x++) {
+            float nx = (float)(x - cx) / (float)rx;
+            float d2 = nx * nx + ny * ny;
+            if (d2 >= 1.0f) continue;
+
+            /* Squared falloff: dense at the centre, feathered at the rim. */
+            float f = 1.0f - d2;
+            uint8_t a = (uint8_t)((float)max_alpha * f * f);
+            if (a == 0) continue;
+
+            row[x] = 0x0000;
+            alp[x] = a;
+        }
+    }
+}
+
 /* A thick line segment, by stepping along it and stamping a small disc. */
 static void draw_line(int32_t x1, int32_t y1, int32_t x2, int32_t y2,
                       int32_t w, uint32_t rgb)
@@ -425,6 +482,13 @@ static void fill_triangle(int32_t x0, int32_t y0,
 
 /* ------------------------------------------------------------------ */
 /* Body-local to canvas                                                */
+/* Vertical offset applied to every body part, in canvas pixels. The climb
+ * feature raises the spider by writing a negative value here rather than moving
+ * the widget: the canvas stays anchored at the spider's floor position so the
+ * contact shadow can be drawn at the true ground point, and the body rises away
+ * from it inside the buffer. */
+static int32_t s_draw_dy;
+
 /* ------------------------------------------------------------------ */
 /* Rotate a body-local (forward, right) offset into canvas coordinates.
  *
@@ -441,7 +505,7 @@ static void to_canvas(float fwd, float right, float heading,
     float r = right * scale_r;
 
     *out_x = CANVAS_C + (int32_t)(fx * f + rx * r);
-    *out_y = CANVAS_C + (int32_t)(fy * f + ry * r);
+    *out_y = CANVAS_C + (int32_t)(fy * f + ry * r) + s_draw_dy;
 }
 
 /* ------------------------------------------------------------------ */
@@ -482,11 +546,37 @@ void cspider_init(lv_obj_t *parent)
     ESP_LOGI(TAG, "canvas spider ready (%dx%d)", CANVAS_SIZE, CANVAS_SIZE);
 }
 
-lv_obj_t *cspider_obj(void)
-{
+lv_obj_t *cspider_obj(void){
     return s_canvas;
 }
 
+void cspider_shadow_report(void)
+{
+    /* The shadow is the ONLY thing that writes partial alpha: the body and legs
+     * write 0xFF and the cleared background is 0. Counting pixels with alpha in
+     * 1..254 therefore proves whether the shadow actually reached the buffer,
+     * independently of whether it is visible on screen. */
+    int partial = 0, opaque = 0;
+    int min_y = CANVAS_SIZE, max_y = -1;
+    if (s_buf) {
+        const uint8_t *alp = px_alpha();
+        for (int32_t y = 0; y < CANVAS_SIZE; y++) {
+            for (int32_t x = 0; x < CANVAS_SIZE; x++) {
+                uint8_t a = alp[y * CANVAS_SIZE + x];
+                if (a == 0xFF) { opaque++; }
+                else if (a != 0) {
+                    partial++;
+                    if (y < min_y) min_y = y;
+                    if (y > max_y) max_y = y;
+                }
+            }
+        }
+    }
+    printf("SHADOW lift=%ld canvas=(%ld,%ld) partial=%d opaque=%d rows=%d..%d\n",
+           (long)decor_climb_lift(g.spider_x, g.spider_y, game_now()),
+           (long)lv_obj_get_x(s_canvas), (long)lv_obj_get_y(s_canvas),
+           partial, opaque, min_y, max_y);
+}
 void cspider_set_emote(cspider_emote_t e)
 {
     s_emote = e;
@@ -683,7 +773,38 @@ void cspider_render(uint32_t now_ms)
      * nothing reads it where alpha is zero. */
     memset(px_alpha(), 0, CANVAS_SIZE * CANVAS_SIZE);
 
+    /* The climb lift is resolved here because both the contact shadow and the
+     * body offset need it. */
+    int32_t climb = decor_climb_lift(g.spider_x, g.spider_y, now_ms);
+
+    /* Raise every body part inside the canvas. The canvas itself stays anchored
+     * at the spider's floor position, so the shadow below can be drawn at the
+     * true ground point and the body visibly rises away from it. */
+    s_draw_dy = -climb;
+
     int32_t x, y;
+
+    /* --- contact shadow ---------------------------------------------
+     * Drawn FIRST, at the ground point, so the legs and body paint over its
+     * middle and only the feathered rim shows. The gap between that rim and the
+     * raised feet is what reads as height.
+     *
+     * The canvas is anchored at the spider's floor position, so the ground is
+     * exactly CANVAS_C + LEG_LEN in canvas coordinates regardless of the lift.
+     * The body is offset upward by `climb` instead, which is what opens the gap.
+     *
+     * The ellipse must be WIDER than the leg span or the feet cover it
+     * completely and the climb reads as nothing. It shrinks and fades as the
+     * spider climbs, which is the usual cue for distance from the ground. */
+    if (climb > 0) {
+        int32_t rx = 34 - climb / 3;
+        int32_t ry = 12 - climb / 8;
+        if (rx < 22) rx = 22;
+        if (ry < 7)  ry = 7;
+        uint8_t alpha = (uint8_t)(170 - climb * 5);
+        if (alpha < 70) alpha = 70;
+        fill_shadow(CANVAS_C, CANVAS_C + (int32_t)LEG_LEN, rx, ry, alpha);
+    }
 
     /* --- legs -------------------------------------------------------
      * Drawn first so the body covers the hips. */
@@ -800,10 +921,17 @@ void cspider_render(uint32_t now_ms)
         }
     }
 
-    /* Tell LVGL the buffer changed. There is no layer to finish: the pixels
-     * were written directly, so this is just an invalidate. */
-    lv_obj_invalidate(s_canvas);
-
+    /* --- climbing (2.5D) ---------------------------------------------
+     * A climbable item raises the spider's DRAW position only. Its logical
+     * position stays on the floor, so steering, hunting and hit-testing are
+     * untouched; the lift is what makes the enclosure read as having height.
+     *
+     * The body was already offset upward by `climb` via s_draw_dy, so the
+     * canvas itself stays anchored at the floor. That is what lets the contact
+     * shadow sit at the true ground point with the body visibly above it.
+     *
+     * The ramp lives in decor.c so stepping on and off is a short climb rather
+     * than a teleport. */
     /* --- position ---------------------------------------------------
      * Centre the canvas on the spider, then scale it by life stage so a
      * spiderling reads as small and an adult as full size. The canvas is a
@@ -819,4 +947,9 @@ void cspider_render(uint32_t now_ms)
      * (see sick_aware), not by widget opacity: a translucent spider let the
      * pale ground textures show through and read as a rendering bug. */
     lv_obj_set_style_opa(s_canvas, LV_OPA_COVER, 0);
+
+    /* Tell LVGL the buffer and position changed. There is no layer to finish:
+     * the pixels were written directly, so this is just an invalidate. It runs
+     * last so the new position is included in the redraw. */
+    lv_obj_invalidate(s_canvas);
 }

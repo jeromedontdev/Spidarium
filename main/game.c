@@ -400,7 +400,17 @@ void game_on_placement_blocking(lv_event_t *e)
     (void)e;
     if (!g_decor_mode) return;
     uint8_t previous = s_place_blocking;
-    s_place_blocking = (s_place_blocking + 1) % DECOR_PATH_COUNT;
+    /* Cycle only through the paths this kind supports, so a flat prop never
+     * lands on Climb and a climbable one always reaches it. */
+    uint8_t kind = g_decor_selected;
+    if (g_decor_move_slot >= 0) {
+        const decor_item_t *item = decor_at(g_decor_move_slot);
+        if (item) kind = item->kind;
+    }
+    for (int i = 0; i < DECOR_PATH_COUNT; i++) {
+        s_place_blocking = (uint8_t)((s_place_blocking + 1) % DECOR_PATH_COUNT);
+        if (s_place_blocking != DECOR_CLIMB || decor_climbable(kind)) break;
+    }
     if ((previous == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND))
         s_place_layer = decor_layer_count(s_place_blocking, g_decor_move_slot);
     placement_position(s_place_x, s_place_y);
@@ -2084,10 +2094,10 @@ static void menu_open(int which)
                          def->unlock_level, def->cost);
             } else if (decor_owned((uint8_t)i)) {
                 snprintf(decor_sub[i], sizeof decor_sub[i], "Owned / %s",
-                         def->blocking ? "Blocks" : "Walk Over");
+                         def->climb_height ? "Climbable" : def->blocking ? "Blocks" : "Walk Over");
             } else {
                 snprintf(decor_sub[i], sizeof decor_sub[i], "%u Silk / %s",
-                         def->cost, def->blocking ? "Blocks" : "Walk Over");
+                         def->cost, def->climb_height ? "Climbable" : def->blocking ? "Blocks" : "Walk Over");
             }
             /* `selected` is deliberately NOT "owned". ui_menu_open() jumps to
              * the page of the first selected row, so marking owned kinds

@@ -192,7 +192,7 @@ export class DeviceGame {
     this.placementControls.append(this.placementHint);
     this.placementAway=this.button(this.placementControls,'Put Away',176,338,128,48,()=>this.putAwayPlacement());
     this.placementPaths=E.DECOR_PATH_NAMES.map((name,path)=>
-      this.button(this.placementControls,name,68+path*116,232,112,48,()=>this.setPlacementPath(path)));
+      this.button(this.placementControls,name,8+path*118,232,112,48,()=>this.setPlacementPath(path)));
     this.placementBack=this.button(this.placementControls,'‹ Back',80,286,96,48,()=>this.changePlacementLayer(-1));
     this.placementFront=this.button(this.placementControls,'Front ›',304,286,96,48,()=>this.changePlacementLayer(1));
     for(const button of [...this.placementPaths,this.placementBack,this.placementFront])
@@ -441,8 +441,8 @@ export class DeviceGame {
           const owned = E.decorOwned(this.state, id);
           const unlocked = E.decorUnlocked(this.state, id);
           const detail = !unlocked ? `Level ${item.level} / ${item.cost} Silk`
-            : owned ? `Owned / ${item.blocking ? 'Blocks' : 'Walk Over'}`
-            : `${item.cost} Silk / ${item.blocking ? 'Blocks' : 'Walk Over'}`;
+            : owned ? `Owned / ${item.climb ? 'Climbable' : item.blocking ? 'Blocks' : 'Walk Over'}`
+            : `${item.cost} Silk / ${item.climb ? 'Climbable' : item.blocking ? 'Blocks' : 'Walk Over'}`;
           /* `selected` is deliberately NOT "owned": the panel jumps to the page
            * of the first selected row, so marking owned kinds selected yanked
            * the player to page 2 the moment they bought anything past the third
@@ -1226,12 +1226,27 @@ export class DeviceGame {
     const lift = reactLeft > 0 ? -Math.round(9 * Math.sin((1 - reactLeft / E.CONFIG.PET_REACT_MS) * Math.PI)) : 0;
     const trickPerformance=s._engine?.life_performance;
     const t=trickPerformance?clamp((s.now_ms-trickPerformance.start)/trickPerformance.duration,0,1):1;
+    // Climbing (2.5D): a climbable item lifts the spider's DRAW position only,
+    // so steering and hit-testing stay in flat floor coordinates. The shadow
+    // stays on the floor, which is what makes the gap read as height.
+    const climb = E.decorClimbAt(s, s.spider_x, s.spider_y);
+    const climbLift = -climb;
+    if (climb > 0) {
+      const shrink = climb / 3;
+      ctx.save();
+      ctx.globalAlpha = Math.max(.24, (150 - climb * 4) / 255);
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(s.spider_x, s.spider_y + 6, Math.max(10, 26 - shrink), Math.max(5, 13 - shrink / 2), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     if(trickPerformance&&t<1){
-      ctx.save();ctx.translate(s.spider_x,s.spider_y+lift-(trickPerformance.trick===0?Math.sin(t*Math.PI)*9:0));
+      ctx.save();ctx.translate(s.spider_x,s.spider_y+lift+climbLift-(trickPerformance.trick===0?Math.sin(t*Math.PI)*9:0));
       if(trickPerformance.trick===1)ctx.rotate(t*Math.PI*2);
       ctx.drawImage(this.spiderCanvas,-half,-half,half*2,half*2);
       ctx.restore();
-    }else ctx.drawImage(this.spiderCanvas, s.spider_x - half, s.spider_y - half + lift, half * 2, half * 2);
+    }else ctx.drawImage(this.spiderCanvas, s.spider_x - half, s.spider_y - half + lift + climbLift, half * 2, half * 2);
     if (s.state === E.STATES.AIM) {
       ctx.strokeStyle = '#f5c86b'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath();
       ctx.moveTo(s.spider_x, s.spider_y); ctx.lineTo(s.aim_x, s.aim_y); ctx.stroke(); ctx.setLineDash([]);

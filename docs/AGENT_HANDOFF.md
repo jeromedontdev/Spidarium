@@ -38,6 +38,10 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   occurs before ui_menu_close resets its page; browser list clamps deleted pages.
   Older short effects taper their last5ms to zero; music/pet/USB hashes stay intact.
 
+- Save v19 adds the Climb decor path (value 3 in the existing blocking byte).
+  No new fields: the payload prefix stays 3,100 bytes, bound 23,308, 55 schema
+  fields. v19 accepts paths 0..3, v13..v18 accept 0..2, older 0..1. A Climb
+  record in an older save is rejected rather than silently reinterpreted.
 - Save v18 appends `decor_locked` and `auto_clean` at bytes3096/3097 plus two
   reserved bytes, keeping the payload 4-byte aligned. Current fixed prefix is
   3,100 bytes, payload bound23,308 and the compiled schema has55 fields.
@@ -146,7 +150,11 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   preview artwork/ring/Done/Cancel controls are retained objects, not recreated
   while dragging. See the latest progress round for pointer/memory evidence.
   Holding furniture opens inline Put Away/Done/Cancel controls, not a submenu.
-  New/moved decor add Solid, Walk Over, Walk Behind and Back/Front layer arrows.
+  New/moved decor add Solid, Walk Over, Walk Behind, Climb and Back/Front layer
+  arrows. Climb (2.5D) raises the spider's draw position only, leaving its
+  logical position on the floor so steering/hunting/hit-testing are untouched;
+  a contact shadow stays at the ground point. Offered only for kinds with a
+  climb height.
   Stage position/path/layer until Done; Cancel discards all. Floor is beneath
   the spider; Canopy (Walk Behind) is above the creature layer. Arrows reorder
   within a band. Gifts omit decor physics/layer controls. All exits stay in

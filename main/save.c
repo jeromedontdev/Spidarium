@@ -180,6 +180,9 @@ static void migrate_automation(game_state_t *state, uint16_t version)
         state->decor_locked = 0;
         state->auto_clean = 0;
     }
+    /* v19 added the Climb decor path. Older blobs cannot contain it, so nothing
+     * needs rewriting; the new path is simply unavailable until the player sets
+     * it. Climbable kinds keep their existing path on migration. */
 }
 
 static void save_worker(void *arg)
@@ -593,7 +596,8 @@ static bool raw_valid_state(const void *src, size_t len, game_state_t *state)
         hdr.version != 3 && hdr.version != 4 &&
         hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9 &&
         hdr.version != 10 && hdr.version != 11 && hdr.version != 12 && hdr.version != 13 &&
-        hdr.version != 14 && hdr.version != 15 && hdr.version != 16 && hdr.version != 17) {
+        hdr.version != 14 && hdr.version != 15 && hdr.version != 16 && hdr.version != 17 &&
+        hdr.version != 18) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
@@ -628,11 +632,14 @@ static bool raw_valid_state(const void *src, size_t len, game_state_t *state)
         ESP_LOGW(TAG, "raw save rejected: invalid companion fields");
         return false;
     }
+    /* v19 added the Climb path. Older blobs may only carry 0..2. */
+    uint8_t max_path = hdr.version >= 19 ? DECOR_PATH_COUNT - 1
+                      : hdr.version >= 13 ? DECOR_WALK_BEHIND : DECOR_SOLID;
     if (hdr.version >= 8) {
         int kinds = hdr.version >= 12 ? DECOR_COUNT : hdr.version >= 10 ? 34 : 16;
         for (int i = 0; i < DECOR_SLOTS; i++) {
             const decor_item_t *item = &state->decor[i];
-            if ((item->kind != 255 && item->kind >= kinds) || item->blocking > (hdr.version >= 13 ? 2 : 1) ||
+            if ((item->kind != 255 && item->kind >= kinds) || item->blocking > max_path ||
                 item->x < 0 || item->x > 480 || item->y < 0 || item->y > 480) {
                 ESP_LOGW(TAG, "raw save rejected: invalid inline decor record %d", i);
                 return false;
@@ -654,7 +661,8 @@ static bool raw_valid_state(const void *src, size_t len, game_state_t *state)
         }
         const decor_item_t *extra = (const decor_item_t *)((const uint8_t *)src + sizeof hdr + prefix);
         for (uint32_t i = 0; i < state->decor_extra_count; i++)
-            if ((extra[i].kind != 255 && extra[i].kind >= (hdr.version >= 12 ? DECOR_COUNT : 34)) || extra[i].blocking > (hdr.version >= 13 ? 2 : 1) ||
+            if ((extra[i].kind != 255 && extra[i].kind >= (hdr.version >= 12 ? DECOR_COUNT : 34)) ||
+                extra[i].blocking > max_path ||
                 extra[i].x < 0 || extra[i].x > 480 || extra[i].y < 0 || extra[i].y > 480) {
                 ESP_LOGW(TAG, "raw save rejected: invalid extended decor record %lu", (unsigned long)i);
                 return false;

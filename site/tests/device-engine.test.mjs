@@ -89,7 +89,7 @@ test('native automation has padding-stable ABI, v2 migration, and gated entries'
   assert.match(header,/offsetof\(game_state_t, daily_day\) == 136/);
   assert.match(header,/offsetof\(game_state_t, decor_owned\) == 160/);
   assert.match(header,/offsetof\(game_state_t, decor\) == 164/);
-  assert.match(config,/#define SAVE_VERSION\s+18/);
+  assert.match(config,/#define SAVE_VERSION\s+19/);
   assert.match(save,/version == 2\)[\s\S]*?state->auto_feed = 0;[\s\S]*?state->auto_hunt = 0;/);
   assert.match(save,/migrate_automation\(state, header\.version\)/);
   assert.match(save,/state->auto_feed = 0xA5;[\s\S]*?state->auto_hunt = 0x5A;[\s\S]*?migrate_automation\(state, header\.version\)/);
@@ -118,7 +118,7 @@ test('serial schema producer emits both automation offsets and minVersion3',asyn
 
 test('decor catalogue matches the native table and every kind is placeable',async()=>{
   const source=(await native('decor.c')).split('k_decor_kinds[DECOR_COUNT] = {')[1].split('};')[0];
-  const rows=[...source.matchAll(/\{\s*"([^"]+)",\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"([^"]+)"\s*\}/g)];
+  const rows=[...source.matchAll(/\{\s*"([^"]+)",\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"([^"]+)",\s*(\d+)\s*\}/g)];
   assert.equal(rows.length,DECOR_KINDS.length);
   rows.forEach((row,id)=>{
     const d=DECOR_KINDS[id];
@@ -128,6 +128,7 @@ test('decor catalogue matches the native table and every kind is placeable',asyn
     assert.equal(d.radius,Number(row[5]),`radius ${id}`);
     assert.equal(d.blocking,Number(row[6]),`blocking ${id}`);
     assert.equal(d.key,row[7].replace('decor_',''),`key ${id}`);
+    assert.equal(d.climb,Number(row[8]),`climb height ${id}`);
     assert.equal(decorSprite(id),`decoritem_${d.key}`,`sprite ${id}`);
   });
 });

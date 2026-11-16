@@ -273,7 +273,7 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:18,life:lifeDefaults(),companion:companionDefaults(),hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:19,life:lifeDefaults(),companion:companionDefaults(),hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
@@ -327,7 +327,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].includes(raw.version))fail('unsupported version');
   if(raw.version<17 && plain(raw.life)) {
     const life={...raw.life};
     if(!Object.hasOwn(life,'reserved') && !Object.hasOwn(life,'light_gesture_disabled'))
@@ -400,7 +400,7 @@ export function validateProgress(raw) {
       if(!item||typeof item!=='object')fail('decor slot is invalid');
       if(!Number.isSafeInteger(item.kind)||(item.kind!==DECOR_EMPTY&&(item.kind<0||item.kind>=(raw.version>=12?DECOR_KINDS.length:34))))
         fail('decor kind is outside its valid range');
-      if(!Number.isInteger(item.blocking)||item.blocking<0||item.blocking>(raw.version>=13?2:1))
+      if(!Number.isInteger(item.blocking)||item.blocking<0||item.blocking>(raw.version>=19?3:raw.version>=13?2:1))
         fail('decor path mode is invalid');
       if(!Number.isSafeInteger(item.x)||!Number.isSafeInteger(item.y))fail('decor position is invalid');
     }
@@ -740,74 +740,74 @@ export function buyTreat(s,kind){
  * is Walk Over, path1 Solid; players can also select path2 Walk Behind.
  * Order must match decor_kind_t in main/decor.h. */
 export const DECOR_KINDS=Object.freeze([
-  {key:'rock_small',name:'Small Rock',cost:18,level:1,radius:9,blocking:0},
-  {key:'rock_large',name:'Large Rock',cost:34,level:2,radius:16,blocking:1},
-  {key:'pebbles',name:'Pebbles',cost:14,level:1,radius:8,blocking:0},
-  {key:'log',name:'Log',cost:46,level:4,radius:22,blocking:1},
-  {key:'bark',name:'Bark Slab',cost:22,level:3,radius:14,blocking:0},
-  {key:'fern',name:'Fern',cost:38,level:5,radius:15,blocking:0},
-  {key:'moss_clump',name:'Moss Clump',cost:20,level:2,radius:11,blocking:0},
-  {key:'succulent',name:'Succulent',cost:52,level:7,radius:14,blocking:1},
-  {key:'flower_white',name:'White Flower',cost:26,level:3,radius:8,blocking:0},
-  {key:'flower_pink',name:'Pink Flower',cost:30,level:6,radius:8,blocking:0},
-  {key:'mushroom',name:'Mushroom',cost:28,level:4,radius:10,blocking:0},
-  {key:'shell',name:'Shell',cost:24,level:5,radius:9,blocking:0},
-  {key:'crystal',name:'Crystal',cost:68,level:9,radius:12,blocking:1},
-  {key:'leaf_pile',name:'Leaf Pile',cost:16,level:1,radius:13,blocking:0},
-  {key:'twig',name:'Twig',cost:12,level:1,radius:12,blocking:0},
-  {key:'bone',name:'Bone',cost:58,level:8,radius:13,blocking:1},
-  {key:'fern_pot',name:'Fern Planter',cost:48,level:6,radius:14,blocking:1},
-  {key:'acorn_hide',name:'Acorn Hide',cost:72,level:10,radius:15,blocking:1},
-  {key:'driftwood_arch',name:'Driftwood Arch',cost:82,level:12,radius:18,blocking:1},
-  {key:'web_hammock',name:'Web Hammock',cost:64,level:8,radius:15,blocking:0},
-  {key:'dew_pool',name:'Dew Pool',cost:54,level:7,radius:14,blocking:0},
-  {key:'mushroom_pair',name:'Mushroom Pair',cost:62,level:8,radius:13,blocking:0},
-  {key:'flower_planter',name:'Flower Planter',cost:68,level:9,radius:15,blocking:1},
-  {key:'crystal_cluster',name:'Crystal Cluster',cost:98,level:14,radius:15,blocking:1},
-  {key:'shell_cove',name:'Shell Cove',cost:74,level:11,radius:16,blocking:1},
-  {key:'twig_ladder',name:'Twig Ladder',cost:46,level:6,radius:13,blocking:0},
-  {key:'moss_stone',name:'Mossy Stone',cost:42,level:5,radius:13,blocking:0},
-  {key:'seed_pod',name:'Seed Pod',cost:38,level:4,radius:10,blocking:0},
-  {key:'silk_tent',name:'Silk Tent',cost:112,level:16,radius:19,blocking:1},
-  {key:'leaf_umbrella',name:'Leaf Umbrella',cost:88,level:13,radius:15,blocking:1},
-  {key:'bone_arch',name:'Bone Arch',cost:96,level:15,radius:16,blocking:1},
-  {key:'fossil',name:'Fossil',cost:58,level:8,radius:12,blocking:0},
-  {key:'lantern_cap',name:'Lantern Cap',cost:92,level:14,radius:13,blocking:0},
-  {key:'stone_bridge',name:'Stone Bridge',cost:120,level:18,radius:20,blocking:1},
-  {key:'fairy_ring',name:'Fairy Ring',cost:44,level:4,radius:17,blocking:0},
-  {key:'foxglove_lantern',name:'Foxglove Lantern',cost:58,level:6,radius:12,blocking:1},
-  {key:'pixie_door',name:'Pixie Door',cost:70,level:8,radius:14,blocking:1},
-  {key:'gargoyle',name:'Gargoyle',cost:78,level:9,radius:15,blocking:1},
-  {key:'iron_gate',name:'Iron Gate',cost:84,level:10,radius:19,blocking:1},
-  {key:'rose_urn',name:'Rose Urn',cost:54,level:6,radius:12,blocking:1},
-  {key:'book_stack',name:'Book Stack',cost:40,level:3,radius:12,blocking:1},
-  {key:'globe',name:'Globe',cost:66,level:7,radius:13,blocking:1},
-  {key:'quill_desk',name:'Quill Desk',cost:90,level:11,radius:19,blocking:1},
-  {key:'tea_cup',name:'Tea Cup',cost:32,level:2,radius:13,blocking:1},
-  {key:'spool',name:'Spool',cost:26,level:2,radius:10,blocking:1},
-  {key:'thimble',name:'Thimble',cost:30,level:3,radius:10,blocking:1},
-  {key:'cauldron',name:'Cauldron',cost:74,level:8,radius:17,blocking:1},
-  {key:'broom',name:'Broom',cost:38,level:4,radius:15,blocking:0},
-  {key:'potion_rack',name:'Potion Rack',cost:86,level:10,radius:17,blocking:1},
-  {key:'amber_fossil',name:'Amber Fossil',cost:58,level:6,radius:12,blocking:0},
-  {key:'cycad',name:'Cycad',cost:62,level:7,radius:16,blocking:1},
-  {key:'dinosaur_egg',name:'Dinosaur Egg',cost:72,level:9,radius:13,blocking:1},
-  {key:'neon_sign',name:'Neon Sign',cost:80,level:9,radius:14,blocking:1},
-  {key:'holo_terminal',name:'Holo Terminal',cost:96,level:12,radius:15,blocking:1},
-  {key:'cable_coil',name:'Cable Coil',cost:42,level:4,radius:12,blocking:0},
-  {key:'moon_rover',name:'Moon Rover',cost:104,level:13,radius:18,blocking:1},
-  {key:'solar_array',name:'Solar Array',cost:88,level:10,radius:18,blocking:1},
-  {key:'oxygen_pod',name:'Oxygen Pod',cost:92,level:11,radius:14,blocking:1},
-  {key:'wizard_tower',name:'Wizard Tower',cost:112,level:14,radius:17,blocking:1},
-  {key:'dragon_statue',name:'Dragon Statue',cost:120,level:16,radius:18,blocking:1},
-  {key:'treasure_chest',name:'Treasure Chest',cost:98,level:12,radius:15,blocking:1},
-  {key:'sun_obelisk',name:'Sun Obelisk',cost:108,level:13,radius:13,blocking:1},
-  {key:'glyph_tablet',name:'Glyph Tablet',cost:64,level:7,radius:14,blocking:0},
-  {key:'broken_column',name:'Broken Column',cost:76,level:8,radius:15,blocking:1},
-  {key:'stone_lantern',name:'Stone Lantern',cost:70,level:6,radius:13,blocking:1},
-  {key:'bamboo_fountain',name:'Bamboo Fountain',cost:84,level:9,radius:16,blocking:1},
-  {key:'bonsai',name:'Bonsai',cost:94,level:11,radius:16,blocking:1},
-  {key:'fairy_bridge',name:'Fairy Bridge',cost:102,level:12,radius:20,blocking:1},
+  {key:'rock_small',name:'Small Rock',cost:18,level:1,radius:9,blocking:0,climb:6},
+  {key:'rock_large',name:'Large Rock',cost:34,level:2,radius:16,blocking:1,climb:14},
+  {key:'pebbles',name:'Pebbles',cost:14,level:1,radius:8,blocking:0,climb:3},
+  {key:'log',name:'Log',cost:46,level:4,radius:22,blocking:1,climb:16},
+  {key:'bark',name:'Bark Slab',cost:22,level:3,radius:14,blocking:0,climb:7},
+  {key:'fern',name:'Fern',cost:38,level:5,radius:15,blocking:0,climb:0},
+  {key:'moss_clump',name:'Moss Clump',cost:20,level:2,radius:11,blocking:0,climb:4},
+  {key:'succulent',name:'Succulent',cost:52,level:7,radius:14,blocking:1,climb:0},
+  {key:'flower_white',name:'White Flower',cost:26,level:3,radius:8,blocking:0,climb:0},
+  {key:'flower_pink',name:'Pink Flower',cost:30,level:6,radius:8,blocking:0,climb:0},
+  {key:'mushroom',name:'Mushroom',cost:28,level:4,radius:10,blocking:0,climb:5},
+  {key:'shell',name:'Shell',cost:24,level:5,radius:9,blocking:0,climb:4},
+  {key:'crystal',name:'Crystal',cost:68,level:9,radius:12,blocking:1,climb:12},
+  {key:'leaf_pile',name:'Leaf Pile',cost:16,level:1,radius:13,blocking:0,climb:3},
+  {key:'twig',name:'Twig',cost:12,level:1,radius:12,blocking:0,climb:3},
+  {key:'bone',name:'Bone',cost:58,level:8,radius:13,blocking:1,climb:6},
+  {key:'fern_pot',name:'Fern Planter',cost:48,level:6,radius:14,blocking:1,climb:0},
+  {key:'acorn_hide',name:'Acorn Hide',cost:72,level:10,radius:15,blocking:1,climb:10},
+  {key:'driftwood_arch',name:'Driftwood Arch',cost:82,level:12,radius:18,blocking:1,climb:18},
+  {key:'web_hammock',name:'Web Hammock',cost:64,level:8,radius:15,blocking:0,climb:8},
+  {key:'dew_pool',name:'Dew Pool',cost:54,level:7,radius:14,blocking:0,climb:0},
+  {key:'mushroom_pair',name:'Mushroom Pair',cost:62,level:8,radius:13,blocking:0,climb:6},
+  {key:'flower_planter',name:'Flower Planter',cost:68,level:9,radius:15,blocking:1,climb:0},
+  {key:'crystal_cluster',name:'Crystal Cluster',cost:98,level:14,radius:15,blocking:1,climb:16},
+  {key:'shell_cove',name:'Shell Cove',cost:74,level:11,radius:16,blocking:1,climb:8},
+  {key:'twig_ladder',name:'Twig Ladder',cost:46,level:6,radius:13,blocking:0,climb:12},
+  {key:'moss_stone',name:'Mossy Stone',cost:42,level:5,radius:13,blocking:0,climb:8},
+  {key:'seed_pod',name:'Seed Pod',cost:38,level:4,radius:10,blocking:0,climb:4},
+  {key:'silk_tent',name:'Silk Tent',cost:112,level:16,radius:19,blocking:1,climb:14},
+  {key:'leaf_umbrella',name:'Leaf Umbrella',cost:88,level:13,radius:15,blocking:1,climb:0},
+  {key:'bone_arch',name:'Bone Arch',cost:96,level:15,radius:16,blocking:1,climb:16},
+  {key:'fossil',name:'Fossil',cost:58,level:8,radius:12,blocking:0,climb:5},
+  {key:'lantern_cap',name:'Lantern Cap',cost:92,level:14,radius:13,blocking:0,climb:9},
+  {key:'stone_bridge',name:'Stone Bridge',cost:120,level:18,radius:20,blocking:1,climb:18},
+  {key:'fairy_ring',name:'Fairy Ring',cost:44,level:4,radius:17,blocking:0,climb:0},
+  {key:'foxglove_lantern',name:'Foxglove Lantern',cost:58,level:6,radius:12,blocking:1,climb:0},
+  {key:'pixie_door',name:'Pixie Door',cost:70,level:8,radius:14,blocking:1,climb:0},
+  {key:'gargoyle',name:'Gargoyle',cost:78,level:9,radius:15,blocking:1,climb:14},
+  {key:'iron_gate',name:'Iron Gate',cost:84,level:10,radius:19,blocking:1,climb:18},
+  {key:'rose_urn',name:'Rose Urn',cost:54,level:6,radius:12,blocking:1,climb:10},
+  {key:'book_stack',name:'Book Stack',cost:40,level:3,radius:12,blocking:1,climb:8},
+  {key:'globe',name:'Globe',cost:66,level:7,radius:13,blocking:1,climb:0},
+  {key:'quill_desk',name:'Quill Desk',cost:90,level:11,radius:19,blocking:1,climb:14},
+  {key:'tea_cup',name:'Tea Cup',cost:32,level:2,radius:13,blocking:1,climb:7},
+  {key:'spool',name:'Spool',cost:26,level:2,radius:10,blocking:1,climb:6},
+  {key:'thimble',name:'Thimble',cost:30,level:3,radius:10,blocking:1,climb:6},
+  {key:'cauldron',name:'Cauldron',cost:74,level:8,radius:17,blocking:1,climb:12},
+  {key:'broom',name:'Broom',cost:38,level:4,radius:15,blocking:0,climb:3},
+  {key:'potion_rack',name:'Potion Rack',cost:86,level:10,radius:17,blocking:1,climb:14},
+  {key:'amber_fossil',name:'Amber Fossil',cost:58,level:6,radius:12,blocking:0,climb:5},
+  {key:'cycad',name:'Cycad',cost:62,level:7,radius:16,blocking:1,climb:0},
+  {key:'dinosaur_egg',name:'Dinosaur Egg',cost:72,level:9,radius:13,blocking:1,climb:9},
+  {key:'neon_sign',name:'Neon Sign',cost:80,level:9,radius:14,blocking:1,climb:0},
+  {key:'holo_terminal',name:'Holo Terminal',cost:96,level:12,radius:15,blocking:1,climb:12},
+  {key:'cable_coil',name:'Cable Coil',cost:42,level:4,radius:12,blocking:0,climb:4},
+  {key:'moon_rover',name:'Moon Rover',cost:104,level:13,radius:18,blocking:1,climb:12},
+  {key:'solar_array',name:'Solar Array',cost:88,level:10,radius:18,blocking:1,climb:10},
+  {key:'oxygen_pod',name:'Oxygen Pod',cost:92,level:11,radius:14,blocking:1,climb:11},
+  {key:'wizard_tower',name:'Wizard Tower',cost:112,level:14,radius:17,blocking:1,climb:16},
+  {key:'dragon_statue',name:'Dragon Statue',cost:120,level:16,radius:18,blocking:1,climb:16},
+  {key:'treasure_chest',name:'Treasure Chest',cost:98,level:12,radius:15,blocking:1,climb:11},
+  {key:'sun_obelisk',name:'Sun Obelisk',cost:108,level:13,radius:13,blocking:1,climb:13},
+  {key:'glyph_tablet',name:'Glyph Tablet',cost:64,level:7,radius:14,blocking:0,climb:4},
+  {key:'broken_column',name:'Broken Column',cost:76,level:8,radius:15,blocking:1,climb:12},
+  {key:'stone_lantern',name:'Stone Lantern',cost:70,level:6,radius:13,blocking:1,climb:11},
+  {key:'bamboo_fountain',name:'Bamboo Fountain',cost:84,level:9,radius:16,blocking:1,climb:14},
+  {key:'bonsai',name:'Bonsai',cost:94,level:11,radius:16,blocking:1,climb:0},
+  {key:'fairy_bridge',name:'Fairy Bridge',cost:102,level:12,radius:20,blocking:1,climb:16},
 ]);
 export const DECOR_SLOTS=12;
 export const DECOR_EMPTY=0xFF;
@@ -872,11 +872,35 @@ export function removeDecor(s,slot){
 }
 export function toggleDecorBlocking(s,slot){
   if(slot<0||slot>=s.decor.length||s.decor[slot].kind===DECOR_EMPTY)return false;
-  s.decor[slot].blocking=(s.decor[slot].blocking+1)%3;
+  const climbable=(DECOR_KINDS[s.decor[slot].kind]?.climb??0)>0;
+  let path=s.decor[slot].blocking;
+  for(let i=0;i<4;i++){
+    path=(path+1)%4;
+    if(path!==3||climbable)break;
+  }
+  s.decor[slot].blocking=path;
   return true;
 }
-export const DECOR_PATH_NAMES=['Walk Over','Solid','Walk Behind'];
+export const DECOR_PATH_NAMES=['Walk Over','Solid','Walk Behind','Climb'];
 export const decorCanopy=path=>path===2;
+export const decorClimbable=kind=>(DECOR_KINDS[kind]?.climb??0)>0;
+export const decorClimbHeight=(s,slot)=>{
+  const item=s.decor[slot];
+  if(!item||item.kind===DECOR_EMPTY||item.blocking!==3)return 0;
+  return DECOR_KINDS[item.kind]?.climb??0;
+};
+export function decorClimbAt(s,x,y){
+  let best=0;
+  for(const item of s.decor){
+    if(item.kind===DECOR_EMPTY||item.blocking!==3)continue;
+    const def=DECOR_KINDS[item.kind];
+    if(!def||!def.climb)continue;
+    const dx=x-item.x,dy=y-item.y;
+    if(dx*dx+dy*dy>def.radius*def.radius)continue;
+    if(def.climb>best)best=def.climb;
+  }
+  return best;
+}
 export function decorLayerSlots(s,path,exclude=-1){
   return s.decor.flatMap((item,slot)=>slot!==exclude&&item.kind!==DECOR_EMPTY&&
     decorCanopy(item.blocking)===decorCanopy(path)?[slot]:[]);

@@ -66,3 +66,7 @@ void cspider_pet_react(void);
 void cspider_trick_react(unsigned kind);
 
 bool cspider_gait_test(void);
+
+/* Diagnostic: report the climb shadow widget's live geometry. Used by the
+ * serial console to prove the shadow is positioned and visible on hardware. */
+void cspider_shadow_report(void);

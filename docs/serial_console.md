@@ -521,12 +521,27 @@ Silk balance and placed slots (placement can grow beyond twelve). `decor place K
 grants the Silk and level needed for the kind (test-only), buys it if it is not
 owned, and places it. `decor move SLOT X Y` repositions a placed item, keeping
 its slot, kind and path. `decor block SLOT` cycles Walk Over (0), Solid (1),
-Walk Behind (2), rather than toggling a boolean. Only Solid affects steering.
-`decor item SLOT` opens the same inline drag/path/layer controls as a long press.
+Walk Behind (2), Climb (3), rather than toggling a boolean. Only Solid affects
+steering; Climb is skipped for kinds with no climb height. `decor item SLOT`
+opens the same inline drag/path/layer controls as a long press.
 Done saves position/path/layer; Cancel discards edits. Back/Front arrows order
 decor within Floor or Canopy (Walk Behind). `decor clear` empties the enclosure.
 Mutating console commands persist and refresh the layer; opening controls does
 not save. The UI offers Put Away while preserving ownership.
+
+### `climb [N]`, `climbhere`
+
+`climb` reports the live 2.5D state at the spider's position: the climb height
+of the item under it, the slot, the ramped lift in pixels, and the contact
+shadow's pixel count and row span in the spider canvas. The shadow is the only
+thing that writes partial alpha, so a non-zero `partial` proves it reached the
+buffer.
+
+`climb N` pins the lift to N pixels and `climb -1` returns to normal. This is a
+test hook: the spider wanders faster than a script can issue separate
+place/block/climb commands, so the footprint path could not otherwise be
+inspected. `climbhere` places a Stone Bridge under the spider and sets it to
+Climb in one command, which exercises the real footprint-driven path.
 
 ### `setupdone`
 

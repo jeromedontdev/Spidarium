@@ -402,7 +402,7 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_place_front, !decor);
     lv_obj_set_hidden(s_place_layer_label, !decor);
     if (decor) {
-        static const char *names[] = {"Walk Over", "Solid", "Walk Behind"};
+        static const char *names[] = {"Walk Over", "Solid", "Walk Behind", "Climb"};
         uint8_t path = game_placement_blocking();
         lv_label_set_text(s_place_path_label, names[path]);
         lv_obj_set_style_bg_color(s_place_path, lv_color_hex(0x2b6a5f), 0);
@@ -413,7 +413,8 @@ void ui_hud_set_place_mode(bool on, const char *hint)
             path == DECOR_WALK_BEHIND ? "Canopy" : "Floor",
             game_placement_layer() + 1, game_placement_layers());
         static const char *tips[] = {"Spider crosses above this item",
-            "Spider steers around this item", "Spider passes underneath this item"};
+            "Spider steers around this item", "Spider passes underneath this item",
+            "Spider climbs onto this item"};
         lv_label_set_text(s_hint, tips[path]);
     }
     /* Keep the hint just above the control rows, which are pinned to the bottom

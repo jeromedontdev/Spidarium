@@ -9648,3 +9648,89 @@ touchscreen, SD media or RTC backup-battery claim is added.
 - All 387 published PNGs were downloaded and hashed: 0 mismatches, 0 missing.
 - Root `/` redirects to `/site/`; artwork is served from `/assets/`, not
   `/site/assets/`.
+
+---
+
+## Round 107 - 2.5D climbable decor (save v19)
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+The user asked what would take customization "to the next level" and proposed
+decor the spider can climb diagonally and upward, giving a 2.5D illusion and a
+platform for unique enclosures. This round adds a fourth decor path, **Climb**.
+
+### Decisions made
+
+- **Climb is a path, not a new decor kind.** `decor_path_t` gained
+  `DECOR_CLIMB = 3`, so every existing prop can be made climbable without new
+  artwork, new shop entries or a new save field. The path byte already existed.
+- **The lift is draw-only.** `decor_climb_lift()` returns a pixel offset that
+  `cspider_render()` applies to the spider's *drawn* position. The logical
+  position stays on the floor, so steering, hunting, pounce landing and
+  hit-testing are untouched. This is what keeps the feature from rippling
+  through `behaviour.c`.
+- **The body is raised inside the canvas, not by moving the widget.** The first
+  implementation moved the canvas up by the lift. That carried the contact
+  shadow up with it, so the shadow never separated from the feet and the climb
+  read as nothing. The canvas now stays anchored at the floor and `s_draw_dy`
+  offsets every body part upward, which is what opens the visible gap.
+- **The contact shadow is drawn in-canvas, not as a widget.** A separate
+  `lv_obj_t` was tried first and never rendered: `lv_obj_remove_style_all()`
+  strips the background style, so `bg_opa` had no effect, and the widget also
+  needed its own stacking. Drawing it into the RGB565A8 alpha plane keeps it in
+  one invalidate and one blit, and it composites under the body for free.
+- **The shadow ellipse is wider than the leg span.** At `LEG_LEN` 22 either side
+  of centre, a narrower ellipse is completely covered by the feet. It is 34px
+  wide at zero lift, shrinking and fading as the spider climbs.
+- **`decor_set_path()` refuses Climb on a flat prop** rather than silently
+  drawing zero lift, and both `decor_toggle_blocking()` and
+  `game_on_placement_blocking()` skip Climb for kinds with no climb height.
+- **Climb heights are per kind, 0..18.** Flat ground cover (fern, succulent,
+  flowers, dew pool, fairy ring, bonsai, neon sign, globe) is 0 and cannot be
+  climbed. The tallest (18) are driftwood arch, stone bridge and iron gate.
+- **Save v19 with no new fields.** The path byte already existed; only the
+  validation range changed. v19 accepts 0..3, v13..v18 accept 0..2, older 0..1,
+  so a Climb record in an older save is rejected rather than reinterpreted.
+- **Added `climb` and `climbhere` console commands.** The spider wanders faster
+  than a script can issue separate place/block/climb commands, so the
+  footprint-driven path could not be exercised from the console at all.
+  `climbhere` places a Stone Bridge under the spider and sets Climb atomically;
+  `climb N` pins the lift for deterministic shadow inspection.
+
+### Exact verification evidence
+
+- Build exit 0, zero `main` warnings. Flash exit 0, `Hash of data verified`.
+- `decortest` -> `OK decortest placed=68 slots=12`, including the climb
+  assertions: footprint hit, tallest-overlapping-wins, flat-prop refusal,
+  cycle-skips-Climb-for-flat, cycle-reaches-Climb-for-climbable, ramp settle and
+  reset.
+- Real footprint path on hardware, one session:
+  `OK climbhere slot=0 pos=(347,166)` then
+  `CLIMB pos=(346,170) height=18 slot=0 lift=18` and
+  `SHADOW lift=18 canvas=(298,122) partial=783 opaque=1910 rows=61..79`.
+  The 783 partial-alpha pixels are the shadow: it is the only thing that writes
+  alpha in 1..254, so this proves it reached the buffer.
+- Zero lift produces `partial=0 rows=96..-1`, so the shadow is absent when the
+  spider is on the floor.
+- Visual confirmation: `climb_real.png` shows the spider raised with a soft
+  elliptical shadow on the floor beneath it, and `climb_zero.png` shows no
+  shadow.
+- Browser suite 248/248 pass, including the two new climb tests in
+  `placement-layers.test.mjs`.
+- Native suite 49 passed / 3 failed, identical to the stashed pre-change
+  baseline. The failures are the known flaky `gifttest`, `hunttest`/`uitest`
+  and `wifi connect` cases, not this work.
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`.
+- `mem` -> `internal=132899 largest=63488 dma=125167 psram=1775000`, so
+  `largest` is 63,488 against the 51,200 floor.
+
+### Honest boundaries
+
+Whether the climb reads as convincing height on the physical panel, and whether
+each of the 68 assigned climb heights suits its artwork, still need human eyes.
+No hosted OTA, signed firmware, encrypted NVS or functional rollback claim is
+added. The climb does not change steering: a Climb item is neither blocking nor
+walk-over, it is simply walked onto and lifted.
