@@ -115,8 +115,13 @@ typedef enum {
 
 /* First kind that belongs to the large climb-structure family. */
 #define DECOR_CLIMB_FIRST DECOR_CLIMB_BRANCH
-/* Sprite edge length for the climb family; the props above are 64x64. */
-#define DECOR_CLIMB_SPRITE 192
+/* Sprite edge length for the climb family; the props above are 64x64.
+ *
+ * Authored at 96 and drawn at LVGL scale 512 (2x), so the climb structures
+ * share the same 2-screen-pixels-per-source-pixel density as the gifts and
+ * props. Authoring them at 192 and drawing 1:1 gave them half the density of
+ * everything else, which made their pixels look visibly smaller. */
+#define DECOR_CLIMB_SPRITE 96
 
 /* Legacy inline slots retained for old save compatibility, not a placement cap. */
 #define DECOR_SLOTS 12
@@ -192,6 +197,16 @@ int decor_layer_count(uint8_t path, int exclude_slot);
 int decor_layer_index(int slot);
 /* Reorder within the floor/canopy band. Returns the item's new slot, or -1. */
 int decor_set_layer(int slot, int index);
+
+/* --- the gift's layer ---------------------------------------------------
+ *
+ * The gift is a single item, so it has no siblings to order against. What the
+ * player wants is to order it against the DECOR sharing its band, so the gift
+ * occupies a position in the same band sequence and the renderer inserts it
+ * there. The count includes the gift itself. */
+int decor_gift_layer_count(uint8_t path);
+int decor_gift_layer_index(uint8_t path);
+bool decor_gift_set_layer(uint8_t path, int index);
 
 /* --- climbing (2.5D) ---------------------------------------------------
  * A climbable item is walked onto rather than around. The spider's logical

@@ -10301,3 +10301,83 @@ human eyes. Screenshot capture is unreliable while the spider is logging
 "inside solid decor" warnings, because the log lines interleave with the
 `SCREEN PART` stream and the parser rejects the frame; clearing the enclosure
 first makes capture reliable.
+
+## Round 115 - Gift layer control, the stuck duplicate gift, and one pixel density
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+Three reports: changing the gift left two on screen with one pinned to the
+middle, gifts still had no layer settings, and the large decor had visibly
+smaller pixels than the props and gifts.
+
+### Decisions made
+
+- **The duplicate gift was a preview image left visible while the gift layer
+  stayed hidden.** `terrarium_preview_hide()` only unhid the gift layer when
+  `s_preview_gift` was set, so once that flag had been cleared the layer stayed
+  hidden while the preview image -- a SIBLING of the layer, not a child --
+  remained on screen. That is exactly "two gifts, one stuck". The unhide is now
+  unconditional, and the gift commit path hides the preview BEFORE refreshing
+  the gift rather than after.
+- **The gift's layer is its position among the decor in its band.** The gift is
+  a single item, so it has no siblings to order against; "layer" would be
+  meaningless as an ordering between gifts. What the player is actually
+  arranging is the gift against the decor, so `decor_gift_layer_count/index/
+  set_layer` treat the gift as one more member of the band sequence and the
+  renderer inserts it at that index. The count includes the gift, so "3 / 4"
+  means third of four things in that band.
+- **The gift layer is a new save field, v22.** It is one byte, and the struct is
+  4-byte aligned, so the payload grew 3100 -> 3104. The three padding bytes are
+  named `reserved_v22` rather than implicit so the next appended field can use
+  them without another version bump. `payload_prefix()` had to stop returning
+  `sizeof(game_state_t)` for v18..v21, or every older save would have been
+  rejected as short.
+- **All art now shares one pixel density.** A gift is a 64x64 source drawn at
+  scale 512, so one source pixel is a 2x2 block on screen. The climb structures
+  were 192x192 drawn 1:1, which is half that density, so their pixels looked
+  visibly smaller. They are now 96x96 drawn at scale 512, and `import_climb.py`
+  snaps the result to the 2x2 grid so `asset_build.py` can enforce the same
+  uniformity rule it applies to every other sprite. The climb exemption from
+  that rule is gone.
+- **The art was regenerated, not resampled.** Downscaling the existing 192x192
+  PNGs would have produced a 2x2-uniform image but with the detail already
+  baked in at the wrong scale. All six were regenerated through nano banana at
+  1024x1024 and imported fresh.
+
+### Evidence
+
+- `GIFTREPORT` after `uitest` (which drives the real pointer flow including gift
+  placement and cancel): `used=1 kind=34 layer_children=1 canopy_children=0
+  layer_hidden=0 preview_hidden=1 layer=2 count=4`. Exactly one gift object on
+  screen, preview hidden.
+- `giftlayer` on hardware: index 0 -> 2 accepted, count 4 (three decor plus the
+  gift), `giftlayer 99` rejected with `ERR giftlayer requires 0..3`.
+- The v21 save migrated to v22 with the gift intact (`used=1 kind=34`), so the
+  new field defaults to 0 without losing the pet.
+- Device screenshot with a Fallen Branch, a Fern and a Leaf Pile shows all three
+  at the same pixel size; the branch's pixels are no longer finer than the
+  props beside it.
+- All six climb assets are 96x96, 2x2-uniform, binary alpha, 12 visible tones.
+- `asset_build.py` passes every check with the climb exemption removed.
+- Build exit 0 with zero `main` warnings; flash exit 0 with
+  `Hash of data verified`.
+- Browser suite 260/260, including new tests "the gift has the same layer
+  control as decor" and "every sprite family shares one pixel density".
+- Native suite 49 passed / 3 failed. `hunttest` fails on the PREVIOUS commit too
+  (verified by stashing, rebuilding and flashing the baseline: `HUNT press=0
+  held=0 ... subpixel=0`), so it is pre-existing, not a regression. The current
+  build actually improves it to `press=1 held=1 released=1 landed=1` and only
+  `subpixel` still fails.
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+The gift's layer orders it against decor in the same band, but a gift in the
+canopy band still re-parents by spider depth (`terrarium_gift_depth`), so its
+layer only decides its position among the canopy decor, not whether it is in
+front of or behind the spider. Whether the regenerated 96x96 climb art reads as
+well as the 192x192 version on the physical panel still needs human eyes; the
+numeric checks prove the density and the palette, not the impression.

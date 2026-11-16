@@ -19,6 +19,9 @@ void terrarium_refresh_gift(void);
 /* Re-parent the gift between the floor and canopy layers as the spider moves,
  * so a Walk Behind gift only covers the spider with its top half. */
 void terrarium_gift_depth(void);
+/* Report the gift's rendered state: how many objects are on screen and whether
+ * the placement preview is hidden. */
+void terrarium_gift_report(void);
 
 /* Rebuild the decor layer (after placing, removing or toggling an item). */
 void terrarium_refresh_decor(void);

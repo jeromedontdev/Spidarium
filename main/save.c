@@ -48,7 +48,7 @@ typedef struct {
 _Static_assert(offsetof(game_state_t, companion) == 268, "v14 prefix changed");
 _Static_assert(offsetof(game_state_t, usb_sounds) == 267, "USB sounds ABI changed");
 _Static_assert(offsetof(game_state_t, life) == 860, "v15 save ABI changed");
-_Static_assert(sizeof(game_state_t) == 3100, "v18 save ABI changed");
+_Static_assert(sizeof(game_state_t) == 3104, "v22 save ABI changed");
 _Static_assert(offsetof(companion_state_t, request_day) == 0, "day ABI changed");
 _Static_assert(offsetof(companion_state_t, seen_achievements) == 4, "achievement ABI changed");
 _Static_assert(offsetof(companion_state_t, requests) == 8, "request ABI changed");
@@ -76,7 +76,12 @@ _Static_assert(offsetof(companion_memory_t, calendar) == 7, "memory calendar ABI
 
 static size_t payload_prefix(uint16_t version)
 {
-    return version >= 18 ? sizeof(game_state_t) : version >= 16 ? 3096 :
+    /* v22 grew the payload to 3104. A v18..v21 blob is 3100 bytes, so the
+     * prefix must be the size that version actually wrote, not the current
+     * struct size, or every older save would be rejected as short. */
+    return version >= 22 ? sizeof(game_state_t) :
+           version >= 18 ? 3100u :
+           version >= 16 ? 3096 :
            version >= 15 ? 860 : version >= 12 ? 268 : 260;
 }
 
@@ -190,6 +195,10 @@ static void migrate_automation(game_state_t *state, uint16_t version)
      * v18 reserved byte and always 0, so an older blob simply owns none of
      * them and needs no rewriting. */
     if (version < 21) state->climb_owned = 0;
+    /* v22 added the gift's layer index. An older blob has no such byte, so the
+     * gift starts at the back of its band, which is where it was drawn before
+     * the field existed. */
+    if (version < 22) state->gift_layer = 0;
 }
 
 static void save_worker(void *arg)
@@ -617,7 +626,8 @@ static bool raw_valid_state(const void *src, size_t len, game_state_t *state)
         hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9 &&
         hdr.version != 10 && hdr.version != 11 && hdr.version != 12 && hdr.version != 13 &&
         hdr.version != 14 && hdr.version != 15 && hdr.version != 16 && hdr.version != 17 &&
-        hdr.version != 18 && hdr.version != 19 && hdr.version != 20) {
+        hdr.version != 18 && hdr.version != 19 && hdr.version != 20 &&
+        hdr.version != 21) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;

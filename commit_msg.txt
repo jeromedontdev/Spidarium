@@ -1,0 +1,42 @@
+Fix the stuck duplicate gift, give gifts layer control, unify pixel density
+
+Three reports: changing the gift left two on screen with one pinned to the
+middle, gifts still had no layer settings, and the large decor had visibly
+smaller pixels than the props and gifts.
+
+The duplicate gift was a preview image left visible while the gift layer stayed
+hidden. terrarium_preview_hide() only unhid the layer when s_preview_gift was
+set, so once that flag had been cleared the layer stayed hidden while the
+preview image -- a SIBLING of the layer, not a child -- remained on screen. The
+unhide is now unconditional and the commit path hides the preview before
+refreshing the gift.
+
+The gift's layer is its position among the decor in its band. The gift is a
+single item, so ordering it against other gifts would be meaningless; what the
+player arranges is the gift against the decor. decor_gift_layer_count/index/
+set_layer treat it as one more member of the band sequence and the renderer
+inserts it at that index. This is a new save field, v22: one byte, and the
+struct is 4-byte aligned, so the payload grew 3100 -> 3104. payload_prefix()
+had to stop returning sizeof(game_state_t) for v18..v21 or every older save
+would have been rejected as short.
+
+All art now shares one pixel density. A gift is a 64x64 source drawn at scale
+512, so one source pixel is a 2x2 block on screen. The climb structures were
+192x192 drawn 1:1, half that density, so their pixels looked smaller. They are
+now 96x96 drawn at scale 512, and import_climb.py snaps the result to the 2x2
+grid so asset_build.py can enforce the same uniformity rule it applies to every
+other sprite. The climb exemption from that rule is gone. All six were
+regenerated through nano banana rather than downscaled, so the detail is
+authored at the right scale.
+
+Verified: GIFTREPORT after uitest shows layer_children=1 preview_hidden=1,
+giftlayer 0->2 accepted and 99 rejected, the v21 save migrated with the gift
+intact, a device screenshot shows the branch at the same pixel size as the fern
+and leaf pile, all six assets are 96x96 2x2-uniform with 12 tones,
+asset_build.py passes, build exit 0 with zero main warnings, flash exit 0 with
+Hash of data verified, browser suite 260/260, native suite 49/3 (hunttest fails
+on the previous commit too, verified by stashing and flashing the baseline),
+soak PASS with 0 faults, render 500 and scanloop 5 both largest_drift=0,
+largest=63488.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

@@ -400,9 +400,9 @@ uint8_t game_placement_blocking(void) { return s_place_blocking; }
 int game_placement_layer(void) { return s_place_layer; }
 int game_placement_layers(void)
 {
-    /* A gift is a single item, so it has no siblings to order against and the
-     * layer row is meaningless. Report one layer so the arrows stay disabled. */
-    if (g.gift_mode) return 1;
+    /* A gift is a single item, but it still has a position among the decor
+     * sharing its band, which is what the player is arranging. */
+    if (g.gift_mode) return decor_gift_layer_count(s_place_blocking);
     return decor_layer_count(s_place_blocking, g_decor_move_slot) + 1;
 }
 bool game_placement_existing(void)
@@ -435,7 +435,7 @@ void game_on_placement_blocking(lv_event_t *e)
 
 void game_on_placement_layer(lv_event_t *e)
 {
-    if (!g_decor_mode) return;
+    if (!g_decor_mode && !g.gift_mode) return;
     int step = (int)(intptr_t)lv_event_get_user_data(e);
     int next = s_place_layer + step;
     if (next < 0 || next >= game_placement_layers()) return;
@@ -519,6 +519,13 @@ void game_on_placement_done(lv_event_t *e)
         g.gift.x = s_place_x;
         g.gift.y = s_place_y;
         g.gift_path = s_place_blocking;
+        if (!decor_gift_set_layer(s_place_blocking, s_place_layer)) {
+            ESP_LOGW(TAG, "gift layer commit failed: %d", s_place_layer);
+        }
+        /* Hide the preview BEFORE refreshing the gift. The preview image is a
+         * sibling of the gift layer, so refreshing first left both on screen
+         * for a frame and, if the layer stayed hidden, permanently. */
+        terrarium_preview_hide();
         terrarium_refresh_gift();
     }
     game_on_placement_cancel(NULL);
@@ -588,7 +595,7 @@ void game_gift_chosen(uint8_t kind)
      * re-opening the editor does not silently reset the player's choice. */
     s_place_blocking = s_gift_moving ? g.gift_path : DECOR_WALK_OVER;
     if (s_place_blocking >= DECOR_PATH_COUNT) s_place_blocking = DECOR_WALK_OVER;
-    s_place_layer = 0;
+    s_place_layer = s_gift_moving ? decor_gift_layer_index(s_place_blocking) : 0;
     placement_position(ui.W / 2, ui.H / 2);
     ui_hud_set_gift_mode(true);
 
@@ -1227,7 +1234,7 @@ static void on_gift_item_pick(uint8_t id)
         g.gift_mode = 1;
         g.gift_selected = g.gift.kind;
         s_place_blocking = g.gift_path < DECOR_PATH_COUNT ? g.gift_path : DECOR_WALK_OVER;
-        s_place_layer = 0;
+        s_place_layer = decor_gift_layer_index(s_place_blocking);
         ui_menu_close();
         ui_hud_set_chrome(false);
         behaviour_aim_cancel();

@@ -1,9 +1,15 @@
-"""Turn a generated climb-structure image into a 192x192 RGBA sprite.
+"""Turn a generated climb-structure image into a 96x96 RGBA sprite.
 
 The generator returns a flat JPEG with a light background, not a transparent
-PNG, so the background has to be keyed out here. The structures are drawn 1:1
-at 192x192 on the device, so this is the only decor importer that does not
-downsample to 64x64.
+PNG, so the background has to be keyed out here.
+
+The sprite is authored at 96x96 and drawn at LVGL scale 512, which is 2x. That
+is deliberate: every other sprite in the game is drawn at 2 screen pixels per
+source pixel (a 64x64 gift at scale 512, a 64x64 prop at radius*16 where the
+radius is the on-screen half-size). Authoring the climb structures at 192x192
+and drawing them 1:1 gave them half the pixel density of everything else, so
+their pixels looked visibly smaller than the props and gifts beside them. At
+96x96 drawn 2x they share the same pixel grid as the rest of the art.
 
 Pipeline:
 
@@ -14,7 +20,7 @@ Pipeline:
    not punched out along with the background.
 2. Crop to the remaining content and pad back to a square, so the object is
    centred and fills the canvas without being distorted.
-3. Resize to 192x192 with NEAREST, because the source is already pixel art and
+3. Resize to 96x96 with NEAREST, because the source is already pixel art and
    any smooth filter would destroy the hard pixel edges.
 4. Quantize to a finite palette and restore binary alpha, matching the contract
    in docs/ART_STYLE.md.
@@ -30,7 +36,7 @@ from pathlib import Path
 
 from PIL import Image
 
-TARGET = 192
+TARGET = 96
 MAX_COLORS = 12
 # How far a pixel may differ from the sampled background colour and still be
 # treated as background. Generous, because JPEG ringing around the silhouette
@@ -210,12 +216,40 @@ def quantize(image, colors=MAX_COLORS):
 
 
 def convert(source, colors=MAX_COLORS, tolerance=KEY_TOLERANCE):
-    """Full pipeline: key, centre, resize, quantize."""
+    """Full pipeline: key, centre, resize, quantize, snap to the 2x2 grid."""
     image = Image.open(source)
     image = key_background(image, tolerance)
     image = square_pad(image)
     image = image.resize((TARGET, TARGET), Image.NEAREST)
     image = quantize(image, colors)
+    image = snap_to_grid(image)
+    return image
+
+
+def snap_to_grid(image):
+    """Force every aligned 2x2 block to one colour.
+
+    The sprite is drawn at LVGL scale 512, which is 2x, so each source pixel
+    becomes a 2x2 block on screen. Every other sprite in the game is authored
+    that way and `asset_build.py` enforces it. Resizing a generated image with
+    NEAREST does not guarantee it, because the source is not an exact multiple
+    of the target, so the block boundaries drift. Snapping here keeps the climb
+    structures on the same pixel grid as the props and gifts instead of giving
+    them a finer one.
+
+    The top-left pixel of each block wins. That is deterministic and preserves
+    the silhouette, because a block that straddles an edge is at most one pixel
+    wrong on the outside.
+    """
+    width, height = image.size
+    pixels = image.load()
+    for y in range(0, height, 2):
+        for x in range(0, width, 2):
+            anchor = pixels[x, y]
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    if x + dx < width and y + dy < height:
+                        pixels[x + dx, y + dy] = anchor
     return image
 
 

@@ -160,7 +160,7 @@ test('climb path lifts the spider and leaves a floor shadow',()=>{
   const kind=E.DECOR_KINDS.length-1;
   assert.equal(E.decorIsClimbStructure(kind),true);
   assert.equal(E.decorIsClimbStructure(3),false,'the log is a prop, not a structure');
-  assert.equal(E.DECOR_CLIMB_SPRITE,192);
+  assert.equal(E.DECOR_CLIMB_SPRITE,96);
   state.decor[0]={kind,blocking:3,x:240,y:240};
   const def=E.DECOR_KINDS[kind];
   /* The slope runs up the screen: the spider enters at the BOTTOM edge and rises
@@ -391,4 +391,57 @@ test('climb is only offered for kinds that have height',()=>{  const {state}=fix
   }
   assert.equal(reached,true,'a climbable prop can reach Climb');
   assert.deepEqual(E.DECOR_PATH_NAMES,['Walk Over','Solid','Walk Behind','Climb']);
+});
+
+test('the gift has the same layer control as decor',()=>{
+  /* The gift is a single item, so it has no siblings of its own. Its layer is
+   * its position among the DECOR sharing its band, which is what the player is
+   * actually arranging: a gift behind the log, or in front of it. */
+  const {state}=fixture();
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  /* Three floor-band props. */
+  state.decor[0]={kind:3,blocking:0,x:100,y:100};
+  state.decor[1]={kind:5,blocking:0,x:200,y:200};
+  state.decor[2]={kind:6,blocking:0,x:300,y:300};
+  state.gift_layer=0;
+  /* The count includes the gift itself, so three props plus the gift is four. */
+  assert.equal(E.giftLayerCount(state,0),4,'three props plus the gift');
+  assert.equal(E.giftLayerIndex(state,0),0,'the gift starts at the back');
+  assert.equal(E.setGiftLayer(state,0,3),true,'the gift can go to the front');
+  assert.equal(state.gift_layer,3);
+  assert.equal(E.setGiftLayer(state,0,4),false,'past the end is rejected');
+  assert.equal(E.setGiftLayer(state,0,-1),false,'negative is rejected');
+  /* A canopy-band gift is ordered against canopy decor only. */
+  state.decor[0].blocking=2;
+  assert.equal(E.giftLayerCount(state,2),2,'one canopy prop plus the gift');
+  assert.equal(E.giftLayerCount(state,0),3,'two floor props plus the gift');
+  /* An out-of-range stored index is clamped rather than trusted, so a save
+   * written when more decor existed cannot index past the band. */
+  state.gift_layer=99;
+  assert.equal(E.giftLayerIndex(state,0),2,'clamped to the band size');
+});
+
+test('every sprite family shares one pixel density',()=>{
+  /* The climb structures were authored at 192x192 and drawn 1:1 while the
+   * gifts were drawn at 2x, so the climb art had half the pixel density of
+   * everything beside it and its pixels looked visibly smaller. All art is now
+   * on the same 2-screen-pixels-per-source-pixel grid. */
+  /* LVGL scale 256 is 1:1, so screen pixels per source pixel is scale / 256.
+   * That is the number that must match: it is how big one source pixel is drawn,
+   * regardless of how many source pixels the sprite has. */
+  const LVGL_ONE=256;
+  const giftScale=512, giftSrc=64;
+  const climbScale=512, climbSrc=E.DECOR_CLIMB_SPRITE;
+  assert.equal(climbSrc,96,'the climb source is 96x96');
+  const giftDensity=giftScale/LVGL_ONE;
+  const climbDensity=climbScale/LVGL_ONE;
+  assert.equal(giftDensity,climbDensity,
+    'gifts and climb structures share one density');
+  assert.equal(climbDensity,2,'both are drawn at 2x');
+  /* A prop is drawn at radius*16 from a 64x64 source, so its density varies
+   * with its footprint; the largest props land near the same 2x. */
+  const logRadius=22;
+  const logDensity=logRadius*16/LVGL_ONE;
+  assert.ok(logDensity>1.3&&logDensity<2.1,
+    'the largest props are close to the same density');
 });

@@ -117,6 +117,8 @@ static void cmd_help(void)
     printf("  rtcset EPOCH          set RTC to UTC epoch (manual recovery)\n");
     printf("  gifttest             verify 36 effective bonuses and removal\n");
     printf("  giftpath [0-3]       report or set the placed gift's path\n");
+    printf("  giftlayer [N]        report or set the gift's layer within its band\n");
+    printf("  giftreport           report the gift's rendered objects and preview state\n");
     printf("  uitest               test paging, keyboard, password, HUD, backgrounds\n");
     printf("  hunttest             inject touch, jump/catch, restore pet/prey\n");
     printf("  gaittest             cadence and bounded leg geometry checks\n");
@@ -548,12 +550,15 @@ static void cmd_save_schema(void)
         {"decor_extra_count", "u32", offsetof(game_state_t, decor_extra_count), 0, 10},
         {"decor_locked", "u8", offsetof(game_state_t, decor_locked), 0, 18},
         {"auto_clean", "u8", offsetof(game_state_t, auto_clean), 0, 18},
+        {"gift_path", "u8", offsetof(game_state_t, gift_path), 0, 19},
+        {"climb_owned", "u8", offsetof(game_state_t, climb_owned), 0, 21},
+        {"gift_layer", "u8", offsetof(game_state_t, gift_layer), 0, 22},
 #undef SAVE_FIELD
     };    enum { SCHEMA_CAP = 7168 };
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
     int pos = snprintf(json, SCHEMA_CAP,
-        "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"maxPayload\":23308,\"decorTail\":{\"offset\":3100,\"stride\":6,\"countField\":\"decor_extra_count\"},"
+        "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"maxPayload\":23308,\"decorTail\":{\"offset\":%u,\"stride\":6,\"countField\":\"decor_extra_count\"},"
         "\"life\":{\"offset\":860,\"size\":2236,\"minVersion\":16,\"visitor_day\":0,\"season_highwater\":4,"
         "\"progress\":{\"offset\":8,\"count\":3},\"cooldown\":11,\"daynight\":12,\"weather\":13,\"retired_count\":14,\"light_gesture_disabled\":{\"offset\":15,\"minVersion\":17},"
         "\"retired\":{\"offset\":16,\"count\":3,\"stride\":740,\"core\":{\"offset\":0,\"count\":120},\"daily\":{\"offset\":120,\"count\":24},"
@@ -564,7 +569,7 @@ static void cmd_save_schema(void)
         "\"favorite_treat\":67,\"favorite_gift\":68,\"favorite_play\":69,\"diary_count\":70,\"clock_mode\":71,\"initialized\":72,\"bond_level\":73,\"last_stage\":74,\"was_sick\":75,"
         "\"reserved\":{\"offset\":76,\"count\":2},\"padding\":{\"offset\":78,\"count\":2},\"diary\":{\"offset\":80,\"count\":64,\"stride\":8,\"fields\":{\"day\":0,\"kind\":4,\"value\":5,\"pinned\":6,\"calendar\":7}}},\"fields\":[",
         (unsigned)SAVE_MAGIC, SAVE_VERSION, (unsigned)offsetof(game_state_t, silk),
-        (unsigned)sizeof(game_state_t));
+        (unsigned)sizeof(game_state_t), (unsigned)sizeof(game_state_t));
     bool ok = pos > 0 && pos < SCHEMA_CAP;
     for (size_t i = 0; ok && i < sizeof fields / sizeof fields[0]; i++) {
         int written = snprintf(json + pos, SCHEMA_CAP - pos,
@@ -1183,6 +1188,29 @@ static void run_line(char *line)
                (g.gift.used && g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y) ? 1 : 0,
                g.gift_mode, game_placement_existing() ? 1 : 0);
         printf("OK giftpath\n");
+    }
+    else if (!strcmp(line, "giftreport")) {
+        terrarium_gift_report();
+        printf("OK giftreport\n");
+    }
+    else if (!strcmp(line, "giftlayer")) {
+        /* Report or set the gift's layer within its band. The gift is a single
+         * item, so its layer is its position among the decor sharing its band,
+         * which is what the player is actually arranging. */
+        if (arg) {
+            int index = atoi(arg);
+            if (!decor_gift_set_layer(g.gift_path, index)) {
+                printf("ERR giftlayer requires 0..%d\n",
+                       decor_gift_layer_count(g.gift_path) - 1);
+                return;
+            }
+            terrarium_refresh_gift();
+            game_save_now();
+        }
+        printf("GIFTLAYER index=%d count=%d path=%u\n",
+               decor_gift_layer_index(g.gift_path),
+               decor_gift_layer_count(g.gift_path), g.gift_path);
+        printf("OK giftlayer\n");
     }
     else if (!strcmp(line, "uitest")) {
         if (!game_ui_call(GAME_UI_TEST_UI)) printf("ERR UI test request failed\n");

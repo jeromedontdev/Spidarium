@@ -841,7 +841,10 @@ export const DECOR_KINDS=Object.freeze([
 /* First kind in the large climb-structure family. These are authored at
  * 192x192 and drawn 1:1, and their lift ramps from the rim to the centre. */
 export const DECOR_CLIMB_FIRST=68;
-export const DECOR_CLIMB_SPRITE=192;
+// Authored at 96 and drawn at LVGL scale 512 (2x), so the climb structures
+// share the same 2-screen-pixels-per-source-pixel density as the gifts and
+// props. Mirrors DECOR_CLIMB_SPRITE in main/decor.h.
+export const DECOR_CLIMB_SPRITE=96;
 export function decorIsClimbStructure(kind){
   return kind>=DECOR_CLIMB_FIRST&&kind<DECOR_KINDS.length;
 }
@@ -1035,6 +1038,24 @@ export function decorLayerSlots(s,path,exclude=-1){  return s.decor.flatMap((ite
 }
 export function decorLayerIndex(s,slot){
   return decorLayerSlots(s,s.decor[slot].blocking).indexOf(slot);
+}
+// The gift's layer. The gift is a single item, so it has no siblings to order
+// against; its layer is its position among the DECOR sharing its band, which is
+// what the player is actually arranging. The count includes the gift itself.
+// Mirrors decor_gift_layer_count/index/set_layer in main/decor.c.
+export function giftLayerCount(s,path){
+  return decorLayerSlots(s,path).length+1;
+}
+export function giftLayerIndex(s,path){
+  const count=decorLayerSlots(s,path).length;
+  return Math.min(Math.max(0,s.gift_layer??0),count);
+}
+export function setGiftLayer(s,path,index){
+  const count=decorLayerSlots(s,path).length;
+  if(!Number.isInteger(index)||index<0||index>count)
+    return event(s,'rejected',{reason:'invalid gift layer'});
+  s.gift_layer=index;
+  return true;
 }
 export function setDecorLayer(s,slot,index){
   const item=s.decor[slot];

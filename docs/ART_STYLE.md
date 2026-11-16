@@ -35,7 +35,7 @@ spider geometry, palettes or rendering.
 | Dedicated treat icons | 24x24 | 48x48 | 8-12 |
 | Gifts | 16x16 | 32x32; gifts displayed at 64x64 | 8-12 |
 | Placeable decor | 32x32 | 64x64; runtime uses footprint radius | 8-12 |
-| Large climb structures | 192x192 | 192x192; drawn 1:1 at LVGL scale 256 | 8-12 |
+| Large climb structures | 96x96 | 192x192; drawn at LVGL scale 512 (2x) | 8-12 |
 | Legacy decor | Half its PNG dimensions | Existing dimensions unchanged | At most 12 |
 | Backgrounds | 240x240 | 240x240, enlarged to 480x480 | At most 64 |
 | Enclosure borders | 120x120 | 240x240, enlarged to 480x480 | At most 16 |
@@ -197,16 +197,25 @@ the newer core-prop drawings.
 ### Large climb structures
 
 The six climb structures (branch, vine, root, ivy, boulder, driftwood) are a
-separate family authored at 192x192 and drawn 1:1 in game. They exist because a
-64x64 prop cannot sell a climb: at that size the spider appears to hop. Keep
-them large, keep them spanning most of the enclosure, and keep the same
-top-left light, ink rims and 8-12 tone budget as the props.
+separate family authored at 96x96 and drawn at LVGL scale 512, which is 2x. They
+exist because a 64x64 prop cannot sell a climb: at that size the spider appears
+to hop. Keep them large, keep them spanning most of the enclosure, and keep the
+same top-left light, ink rims and 8-12 tone budget as the props.
+
+**Every sprite family shares one pixel density.** A gift is a 64x64 source drawn
+at scale 512, so one source pixel becomes a 2x2 block on screen. The climb
+structures were originally authored at 192x192 and drawn 1:1, which gave them
+half that density, so their pixels looked visibly smaller than the props and
+gifts beside them. They are now 96x96 drawn at 2x, and `import_climb.py` snaps
+the result to the 2x2 grid so `asset_build.py` can enforce the same uniformity
+rule it applies to every other sprite.
 
 **Their artwork is generated, not drawn procedurally.** The prompts live in
 [climb_prompts.py](../tools/climb_prompts.py) and are run through nano banana
 (`google/gemini-nano-banana-2.1`) via `tools/imagegen.py --provider openrouter`.
 [import_climb.py](../tools/import_climb.py) keys the background, centres the
-content, resizes to 192 with NEAREST and quantizes to 12 tones. `gen_sprites.py`
+content, resizes to 96 with NEAREST, quantizes to 12 tones and snaps to the 2x2
+grid. `gen_sprites.py`
 preserves the installed PNGs rather than redrawing them; `climb_art.py` is only
 a fallback for a missing file. Do not hand-edit the PNGs.
 

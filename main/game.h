@@ -240,9 +240,19 @@ typedef struct {
      * catalogue_owned_high is full (its high nibble holds decor 64..67), so
      * this reuses the last v18 reserved byte and the payload stays 3100. */
     uint8_t climb_owned;      /* bitmask of decor kinds DECOR_CLIMB_FIRST.. */
+    /* Appended in v22: the gift's layer index within its band, so the player
+     * can order it against decor the same way decor orders against itself.
+     * There is only one gift, so this is its position among the decor items
+     * sharing its band, not an ordering between gifts.
+     *
+     * The struct is 4-byte aligned, so this single byte rounds the payload up
+     * to 3104. The three padding bytes are named rather than implicit so the
+     * next appended field can use them without another version bump. */
+    uint8_t gift_layer;       /* 0 = backmost within the band */
+    uint8_t reserved_v22[3];  /* padding to the 4-byte alignment boundary */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 3100, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 3104, "save payload ABI changed");
 _Static_assert(offsetof(game_state_t, life) == 860, "life ABI changed");
 _Static_assert(offsetof(game_state_t, companion) == 268, "companion ABI changed");
 _Static_assert(offsetof(game_state_t, usb_sounds) == 267, "USB chime setting ABI changed");

@@ -222,6 +222,24 @@ void terrarium_refresh_gift(void)
  * spider with its top half, so it moves to the canopy layer while the spider is
  * above its centre line and drops back to the floor layer once the spider is
  * level with or below the base. */
+/* Report the gift's rendered state. The duplicate-gift bug was a preview image
+ * left visible while the gift layer was hidden, so the useful check is how many
+ * gift-like objects are actually on screen: the gift layer must hold exactly one
+ * child when a gift exists, and the preview image must be hidden. */
+void terrarium_gift_report(void)
+{
+    int children = s_gift_layer ? lv_obj_get_child_count(s_gift_layer) : -1;
+    int canopy_children = s_canopy_layer ? lv_obj_get_child_count(s_canopy_layer) : -1;
+    bool preview_hidden = s_preview_image ? lv_obj_is_hidden(s_preview_image) : true;
+    bool layer_hidden = s_gift_layer ? lv_obj_is_hidden(s_gift_layer) : true;
+    printf("GIFTREPORT used=%u kind=%u layer_children=%d canopy_children=%d "
+           "layer_hidden=%d preview_hidden=%d layer=%d count=%d\n",
+           g.gift.used, g.gift.kind, children, canopy_children,
+           layer_hidden ? 1 : 0, preview_hidden ? 1 : 0,
+           decor_gift_layer_index(g.gift_path),
+           decor_gift_layer_count(g.gift_path));
+}
+
 void terrarium_gift_depth(void)
 {
     if (!s_gift_layer || !s_canopy_layer || !g.gift.used) return;
@@ -230,8 +248,24 @@ void terrarium_gift_depth(void)
     if (!obj) return;
     bool canopy = g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y;
     lv_obj_t *want = canopy ? s_canopy_layer : s_gift_layer;
-    if (lv_obj_get_parent(obj) == want) return;
-    lv_obj_set_parent(obj, want);
+    if (lv_obj_get_parent(obj) != want) lv_obj_set_parent(obj, want);
+
+    /* Insert the gift at its chosen position among the decor sharing its band.
+     * The gift has no siblings of its own, so "layer" means "where among the
+     * decor in this band", which is what the player is actually arranging. */
+    int index = decor_gift_layer_index(g.gift_path);
+    int seen = 0;
+    for (int i = 0; i < s_decor_capacity; i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item) continue;
+        if (decor_canopy_now(item) != canopy) continue;
+        if (seen++ == index) {
+            /* The gift belongs in front of everything up to this point and
+             * behind this item, so move the gift just below it. */
+            lv_obj_move_to_index(obj, lv_obj_get_index(s_decor_obj[i]));
+            return;
+        }
+    }
     lv_obj_move_foreground(obj);
 }
 
@@ -272,11 +306,13 @@ void terrarium_refresh_decor(void)
          * log at 88 px. Scaling keeps the centre, so the position is the
          * unscaled top-left.
          *
-         * The large climb structures are authored at 192x192 and drawn 1:1:
-         * scaling them by radius would shrink a 66 px-radius structure to a
-         * prop again, which is exactly what they exist to avoid. */
+         * The large climb structures are authored at 96x96 and drawn at scale
+         * 512, which is 2x. That is the same 2 screen pixels per source pixel
+         * the gifts use, so all the art shares one pixel grid. Drawing them
+         * 1:1 from a 192x192 source gave them half the density of everything
+         * else, which made their pixels look visibly smaller. */
         bool big = decor_is_climb_structure(item->kind);
-        int32_t scale = big ? 256 : (def ? (int32_t)def->radius * 16 : 256);
+        int32_t scale = big ? 512 : (def ? (int32_t)def->radius * 16 : 256);
         if (scale < 64) scale = 64;
         int32_t half = big ? DECOR_CLIMB_SPRITE / 2 : 32;
         lv_image_set_src(obj, image);
@@ -387,7 +423,7 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     lv_image_set_src(s_preview_image, image);
     bool big = !gift && decor_is_climb_structure(kind);
     lv_image_set_scale(s_preview_image,
-                       gift ? 512 : big ? 256 : decor_def(kind)->radius * 16);
+                       gift ? 512 : big ? 512 : decor_def(kind)->radius * 16);
     lv_image_set_antialias(s_preview_image, false);
     lv_obj_set_pos(s_preview_image, x - image->header.w / 2, y - image->header.h / 2);
     lv_obj_set_hidden(s_preview_image, false);
@@ -415,7 +451,13 @@ void terrarium_preview_hide(void)
 {
     lv_obj_set_hidden(s_preview_ring, true);
     lv_obj_set_hidden(s_preview_image, true);
-    if (s_preview_gift) lv_obj_set_hidden(s_gift_layer, false);
+    /* Unconditionally restore the gift layer. This used to be guarded by
+     * `s_preview_gift`, which left the layer hidden whenever the flag had
+     * already been cleared -- and a hidden layer plus a still-visible preview
+     * image is exactly the "two gifts, one stuck" report. The preview image is
+     * a SIBLING of the gift layer, not a child, so hiding the preview and
+     * showing the layer must always happen together. */
+    if (s_gift_layer) lv_obj_set_hidden(s_gift_layer, false);
     if (s_preview_slot >= 0 && s_preview_slot < s_decor_capacity)
         lv_obj_set_hidden(s_decor_obj[s_preview_slot], decor_at(s_preview_slot) == NULL);
     s_preview_gift = false;

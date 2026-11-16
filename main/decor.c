@@ -629,6 +629,40 @@ int decor_set_layer(int slot, int index)
     return slot;
 }
 
+/* --- the gift's layer ---------------------------------------------------
+ *
+ * The gift is a single item, so it has no siblings to order against. What the
+ * player actually wants is to order it against the DECOR sharing its band: a
+ * gift behind the log, or in front of it. The gift therefore occupies a
+ * position in the same band sequence the decor uses, and the renderer inserts
+ * it at that position.
+ *
+ * The count includes the gift itself, so "3 / 4" means the gift is third of
+ * four things in that band. */
+int decor_gift_layer_count(uint8_t path)
+{
+    return decor_layer_count(path, -1) + 1;
+}
+
+int decor_gift_layer_index(uint8_t path)
+{
+    int count = decor_layer_count(path, -1);
+    int index = g.gift_layer;
+    if (index > count) index = count;
+    return index;
+}
+
+bool decor_gift_set_layer(uint8_t path, int index)
+{
+    int count = decor_layer_count(path, -1);
+    if (index < 0 || index > count) {
+        ESP_LOGW(TAG, "gift layer rejected: index=%d count=%d", index, count);
+        return false;
+    }
+    g.gift_layer = (uint8_t)index;
+    return true;
+}
+
 int decor_hit_test(int16_t x, int16_t y)
 {
     for (int band = 1; band >= 0; band--)

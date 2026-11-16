@@ -176,8 +176,8 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   climb height.
   Two climb families exist. The 53 small props (64x64, drawn at radius*16)
   snap to their full climb height anywhere inside the footprint. The six large
-  structures (decor kinds 68..73, authored 192x192, drawn 1:1 at LVGL scale
-  256) are a SLOPE that runs up the screen: the spider enters at the bottom
+  structures (decor kinds 68..73, authored 96x96, drawn at LVGL scale 512 which
+  is 2x) are a SLOPE that runs up the screen: the spider enters at the bottom
   edge of the footprint and rises as it walks toward the top edge, so height is
   a function of vertical position only. Ramping radially from the centre made
   the spider rise from whichever side it approached, which read as being lifted
