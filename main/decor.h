@@ -123,6 +123,15 @@ typedef enum {
  * everything else, which made their pixels look visibly smaller. */
 #define DECOR_CLIMB_SPRITE 96
 
+/* Screen half-extent of a large climb structure's footprint.
+ *
+ * The sprite is DECOR_CLIMB_SPRITE square drawn at LVGL scale 512, which is 2x,
+ * so it covers 2 * DECOR_CLIMB_SPRITE screen pixels and its half-extent is
+ * DECOR_CLIMB_SPRITE. The `radius` field is the collision footprint and is much
+ * smaller (18 for the driftwood), so using it for the climb ramp confined the
+ * whole climb to a small circle in the middle of the artwork. */
+#define DECOR_CLIMB_EXTENT DECOR_CLIMB_SPRITE
+
 /* Legacy inline slots retained for old save compatibility, not a placement cap. */
 #define DECOR_SLOTS 12
 

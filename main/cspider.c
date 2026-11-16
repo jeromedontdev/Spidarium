@@ -590,6 +590,16 @@ static float s_profile = 0.0f;
  * overlapping exactly once the right axis collapses. */
 #define LEG_DORSAL_NEAR 1.5f
 
+/* Time constant for the side-view blend, in 1/seconds. Slower than the
+ * foreshortening's 6.0 because the profile changes the whole silhouette: at the
+ * faster rate the camera swing read as a snap between two poses. */
+#define CLIMB_PROFILE_RATE 2.5f
+
+/* Fraction of the climb at which the side view starts to blend in. Below this
+ * the spider is still effectively on the floor, so it stays top-down; starting
+ * the profile at the very bottom of the ramp made the entry look wrong. */
+#define CLIMB_PROFILE_START 0.35f
+
 /* ------------------------------------------------------------------ */
 /* Rotate a body-local (forward, right) offset into canvas coordinates.
  *
@@ -867,15 +877,28 @@ void cspider_render(uint32_t now_ms)
 
         /* Side-view blend. A spider climbing a branch is seen from the side,
          * not from above, so the camera swings down as it rises. Driven by the
-         * same lift as the foreshortening so the two cues agree, and eased with
-         * the same time constant so stepping on and off is a swing rather than
-         * a pop between two poses. */
+         * same lift as the foreshortening so the two cues agree.
+         *
+         * The blend starts only once the spider is a third of the way up. A
+         * profile at the very bottom of the ramp looked wrong: the spider was
+         * still effectively on the floor, so it should still be drawn from
+         * above. Holding the top-down pose through the lower third keeps the
+         * entry reading as stepping onto the structure.
+         *
+         * Eased more slowly than the foreshortening: the profile changes the
+         * whole silhouette, so matching the faster constant made the camera
+         * swing read as a snap. A longer time constant turns it into a swing
+         * the eye can follow. */
         float want_profile = 0.0f;
         if (climb > 0) {
-            want_profile = (float)climb / CLIMB_FULL_LIFT;
-            if (want_profile > 1.0f) want_profile = 1.0f;
+            float t = (float)climb / CLIMB_FULL_LIFT;
+            if (t > 1.0f) t = 1.0f;
+            if (t > CLIMB_PROFILE_START) {
+                want_profile = (t - CLIMB_PROFILE_START) / (1.0f - CLIMB_PROFILE_START);
+            }
         }
-        s_profile += (want_profile - s_profile) * k;
+        float kp = 1.0f - expf(-dt * CLIMB_PROFILE_RATE);
+        s_profile += (want_profile - s_profile) * kp;
         if (fabsf(s_profile - want_profile) < 0.004f) s_profile = want_profile;
     }
 

@@ -10449,3 +10449,73 @@ regression, and `decortest` is not part of `run_tests.py`. Whether the profile
 pose reads as a convincing side view on the physical panel still needs human
 eyes; the numeric checks prove the projection and the silhouette, not the
 impression.
+
+---
+
+## Round 117 - Climb ramp spans the artwork, and a gentler camera swing
+
+### Decisions made
+
+- **The climb ramp must span the ARTWORK, not the collision footprint.** A
+  large structure's sprite is `DECOR_CLIMB_SPRITE` (96) square drawn at LVGL
+  scale 512, which is 2x, so it covers 192 screen pixels and its half-extent is
+  `DECOR_CLIMB_EXTENT` (96). Its `radius` is only 13..18. `climb_lift_on()` used
+  `radius`, so the whole climb spanned a 36 px circle in the middle of a 192 px
+  sprite: the spider reached full lift 18 px above centre and zero 18 px below
+  while the art extended 96 px each way. That is precisely the "side view
+  happens when the spider is above the decor, not on the decor" report. A new
+  `climb_extent()` returns the artwork extent for a structure and `radius` for a
+  small prop, so props keep their flat-disc behaviour.
+- **The slope had the same bug and was clamped, not gentle.**
+  `decor_climb_slope()` computed `-climb_height / (2 * radius)` = -66/36 = -1.83,
+  which clamped to `CLIMB_TILT_MAX` and made the spider look like it was
+  standing on a wall. Against the artwork extent it is -66/192 = -0.32, an
+  18-degree lean. Both functions now share `climb_extent()` so they cannot drift
+  apart again.
+- **The lift fades horizontally.** The ramp is vertical, so without a fade the
+  spider gained half the climb height the instant it crossed the side of the
+  footprint. `1 - nx^2` eases the lift out toward the left and right edges.
+- **The side view holds off through the lower third of the ramp.**
+  `CLIMB_PROFILE_START` (0.35) keeps the top-down pose until the spider is
+  genuinely up the structure. A profile at the very bottom looked wrong because
+  the spider is still effectively on the floor there.
+- **The camera swing is slower than the foreshortening.** `CLIMB_PROFILE_RATE`
+  (2.5) replaces the shared 6.0 constant. The profile changes the whole
+  silhouette, so at the faster rate the swing read as a snap between two poses
+  rather than a camera move.
+
+### Evidence
+
+- `climbat` (new console probe, samples the ramp at an arbitrary point) with the
+  Driftwood Ramp at (240,240) on the Climb path, walking up x=240:
+  `y=336 height=0`, `y=320 height=5`, `y=280 height=18`, `y=240 height=31`,
+  `y=200 height=44`, `y=160 height=57`, `y=144 height=62`. The ramp now runs
+  ground-to-full across the whole 192 px artwork instead of a 36 px circle.
+- Horizontal fade at y=240: `x=240 height=31`, `x=280 height=26`,
+  `x=310 height=15`, `x=330 height=4`, `x=336 height=0`. The lift eases out
+  toward the side edge instead of jumping.
+- `slope=-0.323` at every sampled point, constant as a linear ramp should be,
+  and no longer clamped.
+- `climb N` then `climb` -> `profile=0.000` at lift 0, 10 and 22 (the dead
+  zone), then `0.161` at 30, `0.394` at 40, `0.627` at 50, `0.907` at 62. The
+  blend rises monotonically and only above the dead zone.
+- Spider-canvas screenshots at lift 0 / 22 / 40 / 62: flat top-down with both
+  eyes and a contact shadow, then progressively a profile with a raised
+  abdomen, a lower head, one eye on the front face and legs angling down.
+- `run_tests.py COM7` -> `passed=50 failed=2` (`uitest`, `wifi connect`), which
+  is at or better than the documented 49/3 baseline: `hunttest` passed this run.
+- Browser suite 262/262, with the climb-ramp, slope and profile tests updated to
+  the artwork-extent semantics.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+The numeric probes prove the ramp geometry, the slope and the profile blend;
+they do not prove the pose reads as a convincing side view on the physical
+panel, which still needs human eyes. The transition was tuned by reasoning about
+the time constants and by comparing canvas captures at four lift values, not by
+watching it animate. `decortest` still fails on the six climb structures
+reporting "not owned" -- a pre-existing harness gap (`climb_owned` is not
+granted), not a regression, and it is not part of `run_tests.py`.

@@ -156,20 +156,27 @@ test('climb path lifts the spider and leaves a floor shadow',()=>{
   test('large climb structures ramp up the screen, not out from the centre',()=>{
   const {state}=fixture();
   for(const item of state.decor)item.kind=E.DECOR_EMPTY;
-  /* Kind 74 is Driftwood Ramp: radius 66, climb height 62, drawn 1:1 at 192. */
+  /* The last kind is Driftwood Ramp: climb height 62, authored at 96 and drawn
+   * at 2x, so its screen half-extent is DECOR_CLIMB_EXTENT (96). */
   const kind=E.DECOR_KINDS.length-1;
   assert.equal(E.decorIsClimbStructure(kind),true);
   assert.equal(E.decorIsClimbStructure(3),false,'the log is a prop, not a structure');
   assert.equal(E.DECOR_CLIMB_SPRITE,96);
+  assert.equal(E.DECOR_CLIMB_EXTENT,E.DECOR_CLIMB_SPRITE,
+    'the sprite is drawn at 2x, so its half-extent is the sprite size');
   state.decor[0]={kind,blocking:3,x:240,y:240};
   const def=E.DECOR_KINDS[kind];
+  const extent=E.decorClimbExtent(kind);
+  assert.equal(extent,E.DECOR_CLIMB_EXTENT,'a structure ramps across its artwork');
+  assert.ok(extent>def.radius,
+    'the artwork is much wider than the collision footprint');
   /* The slope runs up the screen: the spider enters at the BOTTOM edge and rises
    * as it walks toward the TOP edge. Ramping radially from the centre made it
    * rise from whichever side it approached, which read as being lifted onto a
    * platform rather than climbing a branch. */
-  const bottom=E.decorClimbAt(state,240,240+def.radius-1);
+  const bottom=E.decorClimbAt(state,240,240+extent-2);
   const middle=E.decorClimbAt(state,240,240);
-  const top=E.decorClimbAt(state,240,240-def.radius+1);
+  const top=E.decorClimbAt(state,240,240-extent+2);
   assert.ok(bottom<middle,`bottom ${bottom} must be lower than middle ${middle}`);
   assert.ok(middle<top,`middle ${middle} must be lower than top ${top}`);
   assert.ok(top>def.climb*0.9,`the top edge is near full height, got ${top}`);
@@ -177,7 +184,11 @@ test('climb path lifts the spider and leaves a floor shadow',()=>{
   /* Horizontal position must not change the height: it is a slope, not a dome. */
   assert.equal(E.decorClimbAt(state,240-30,240),E.decorClimbAt(state,240+30,240),
     'height depends on vertical position only');
-  assert.equal(E.decorClimbAt(state,240+def.radius+2,240),0,'nothing past the rim');
+  /* The ramp is vertical, so the lift fades out toward the side edges instead of
+   * jumping to half height the instant the spider crosses them. */
+  assert.ok(E.decorClimbAt(state,240+extent-4,240)<def.climb/4,
+    'the lift fades out at the side edge');
+  assert.equal(E.decorClimbAt(state,240+extent+2,240),0,'nothing past the rim');
   /* A prop still snaps to full height across its whole footprint. */
   state.decor[0]={kind:3,blocking:3,x:240,y:240};
   assert.equal(E.decorClimbAt(state,240,240),16);
@@ -191,13 +202,17 @@ test('the climb surface reports a slope the body can lean with',()=>{
   const def=E.DECOR_KINDS[kind];
   state.decor[0]={kind,blocking:3,x:240,y:240};
   /* A large structure ramps linearly, so its gradient is constant across the
-   * whole footprint: climb height spread over the vertical extent. */
-  const expected=-def.climb/(2*def.radius);
+   * whole footprint: climb height spread over the ARTWORK's vertical extent.
+   * Measuring against the much smaller collision radius made the same climb a
+   * 1.8 slope that clamped to the tilt limit and looked like a wall. */
+  const extent=E.decorClimbExtent(kind);
+  const expected=-def.climb/(2*extent);
+  assert.ok(Math.abs(expected)<0.5,`a believable ramp, got ${expected}`);
   /* Sampled inside the footprint: at the very bottom edge the lift rounds to
    * zero, so there is no surface there to report a slope for. */
-  const bottom=E.decorClimbSlope(state,240,240+def.radius-8);
+  const bottom=E.decorClimbSlope(state,240,240+extent-8);
   const middle=E.decorClimbSlope(state,240,240);
-  const top=E.decorClimbSlope(state,240,240-def.radius+8);
+  const top=E.decorClimbSlope(state,240,240-extent+8);
   assert.ok(Math.abs(middle-expected)<1e-9,`middle ${middle} vs ${expected}`);
   assert.equal(bottom,middle,'a linear ramp has one gradient');
   assert.equal(top,middle,'a linear ramp has one gradient');
@@ -205,7 +220,7 @@ test('the climb surface reports a slope the body can lean with',()=>{
    * toward the TOP of the screen is negative. */
   assert.ok(middle<0,`rising toward the top is negative, got ${middle}`);
   /* Off the footprint there is no surface, so no slope. */
-  assert.equal(E.decorClimbSlope(state,240+def.radius+2,240),0);
+  assert.equal(E.decorClimbSlope(state,240+extent+2,240),0);
   /* A small prop is a flat disc, so its top is level. */
   state.decor[0]={kind:3,blocking:3,x:240,y:240};
   assert.equal(E.decorClimbSlope(state,240,240),0,'a prop top is level');
@@ -429,8 +444,18 @@ test('climbing blends the spider into a side view',()=>{
   assert.equal(E.climbProfile(0),0,'the floor is a flat top-down pose');
   assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT),1,'the top is a full profile');
   assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT*2),1,'the blend is clamped');
-  assert.ok(E.climbProfile(E.CLIMB_FULL_LIFT/2)>0.4&&
-            E.climbProfile(E.CLIMB_FULL_LIFT/2)<0.6,'the blend tracks the lift');
+  /* The blend holds the top-down pose through the lower part of the ramp: at
+   * the very bottom the spider is still effectively on the floor, so a profile
+   * there looked wrong. */
+  assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT*E.CLIMB_PROFILE_START),0,
+    'the bottom of the ramp is still top-down');
+  assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT*0.2),0,
+    'the dead zone covers the lower third');
+  /* Above the dead zone it rises monotonically to a full profile. */
+  const mid=E.climbProfile(E.CLIMB_FULL_LIFT*0.675);
+  assert.ok(mid>0.4&&mid<0.6,`the blend tracks the lift, got ${mid}`);
+  assert.ok(E.climbProfile(E.CLIMB_FULL_LIFT*0.5)<
+            E.climbProfile(E.CLIMB_FULL_LIFT*0.8),'the blend rises with the lift');
 
   /* At full profile the body's right axis collapses, which is the strongest
    * side-view cue: a top-down spider is as wide as it is long. */

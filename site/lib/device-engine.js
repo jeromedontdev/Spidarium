@@ -74,7 +74,11 @@ export const ABD_DORSAL = 7.0;
 export const CEPH_DORSAL = 3.0;
 export const EYE_DORSAL = 4.0;
 export const FANG_DORSAL = 2.0;
-export const LEG_DORSAL = 9.0;
+export const LEG_DORSAL = 5.0;
+export const LEG_DORSAL_NEAR = 1.5;
+// Fraction of the climb at which the side view starts to blend in. Below this
+// the spider is still effectively on the floor, so it stays top-down.
+export const CLIMB_PROFILE_START = 0.35;
 export const STAGES = ['Spiderling','Juvenile','Adult'];
 export const TEMPERAMENTS = [
   {name:'bold',aim_window_mult:.85,catch_mult:1.1,speed_mult:1.1,hunger_decay_mult:1,sleep_threshold:15},
@@ -855,6 +859,18 @@ export const DECOR_CLIMB_FIRST=68;
 // share the same 2-screen-pixels-per-source-pixel density as the gifts and
 // props. Mirrors DECOR_CLIMB_SPRITE in main/decor.h.
 export const DECOR_CLIMB_SPRITE=96;
+// Screen half-extent of a large climb structure's footprint. The sprite is
+// DECOR_CLIMB_SPRITE square drawn at 2x, so its half-extent is DECOR_CLIMB_SPRITE.
+// `radius` is the much smaller collision footprint and must not be used for the
+// climb ramp. Mirrors DECOR_CLIMB_EXTENT in main/decor.h.
+export const DECOR_CLIMB_EXTENT=DECOR_CLIMB_SPRITE;
+// Half-extent used for the climb ramp: the artwork for a large structure, the
+// collision footprint for a small prop.
+export function decorClimbExtent(kind){
+  const d=DECOR_KINDS[kind];
+  if(!d)return 0;
+  return decorIsClimbStructure(kind)?DECOR_CLIMB_EXTENT:d.radius;
+}
 export function decorIsClimbStructure(kind){
   return kind>=DECOR_CLIMB_FIRST&&kind<DECOR_KINDS.length;
 }
@@ -952,17 +968,33 @@ export function decorClimbAt(s,x,y){
     const def=DECOR_KINDS[item.kind];
     if(!def||!def.climb)continue;
     const dx=x-item.x,dy=y-item.y;
+    const r=decorClimbExtent(item.kind);
+    if(r<=0)continue;
     const d2=dx*dx+dy*dy;
-    if(d2>def.radius*def.radius)continue;
+    if(d2>r*r)continue;
     // A prop is a flat disc: inside the footprint you are at full height. A
     // large climb structure is a SLOPE that runs UP THE SCREEN: the spider
     // enters at the bottom edge and rises as it walks toward the top edge,
     // which is what makes it read as climbing a branch rather than floating
     // over one. Ramping radially from the centre made the spider rise from
     // whichever side it approached, which read as being lifted onto a platform.
-    const lift=decorIsClimbStructure(item.kind)
-      ? Math.round(def.climb*Math.min(1,Math.max(0,1-(dy+def.radius)/(2*def.radius))))
-      : def.climb;
+    //
+    // The ramp spans the ARTWORK, not the collision footprint: the sprite is
+    // DECOR_CLIMB_SPRITE square drawn at 2x, so its half-extent is
+    // DECOR_CLIMB_EXTENT. Using the much smaller `radius` confined the climb to
+    // a circle in the middle of the sprite.
+    let lift;
+    if(decorIsClimbStructure(item.kind)){
+      const t=Math.min(1,Math.max(0,(dy+r)/(2*r)));
+      // Fade out toward the left and right edges: the ramp is vertical, so
+      // without this the spider gained half the climb height the instant it
+      // crossed the side of the footprint.
+      const nx=dx/r;
+      const fade=Math.max(0,1-nx*nx);
+      lift=Math.round(def.climb*(1-t)*fade);
+    }else{
+      lift=def.climb;
+    }
     if(lift>best)best=lift;
   }
   return best;
@@ -987,24 +1019,39 @@ export function decorClimbSlope(s,x,y){
     const def=DECOR_KINDS[item.kind];
     if(!def||!def.climb)continue;
     const dx=x-item.x,dy=y-item.y;
-    if(dx*dx+dy*dy>def.radius*def.radius)continue;
-    const lift=decorIsClimbStructure(item.kind)
-      ? Math.round(def.climb*Math.min(1,Math.max(0,1-(dy+def.radius)/(2*def.radius))))
-      : def.climb;
+    const r=decorClimbExtent(item.kind);
+    if(r<=0)continue;
+    if(dx*dx+dy*dy>r*r)continue;
+    let lift;
+    if(decorIsClimbStructure(item.kind)){
+      const t=Math.min(1,Math.max(0,(dy+r)/(2*r)));
+      const nx=dx/r;
+      const fade=Math.max(0,1-nx*nx);
+      lift=Math.round(def.climb*(1-t)*fade);
+    }else{
+      lift=def.climb;
+    }
     if(lift===0||lift<=bestLift)continue;
     bestLift=lift;
-    if(!decorIsClimbStructure(item.kind)||def.radius<=0){best=0;continue;}
-    best=-def.climb/(2*def.radius);
+    if(!decorIsClimbStructure(item.kind)){best=0;continue;}
+    // Measured against the artwork extent, not the collision radius: the same
+    // climb over the smaller radius was a 1.8 slope that clamped to the tilt
+    // limit and looked like the spider was standing on a wall.
+    best=-def.climb/(2*r);
   }
   return best;
 }
 
 // Side-view blend for a given climb lift: 0 on the floor, 1 at the top of the
-// tallest structure. Mirrors the s_profile easing in main/cspider.c.
+// tallest structure. Mirrors the s_profile easing in main/cspider.c, including
+// the dead zone through the lower part of the ramp where the spider is still
+// effectively on the floor and should stay top-down.
 export function climbProfile(lift){
   if(!(lift>0))return 0;
   const t=lift/CLIMB_FULL_LIFT;
-  return t>1?1:t;
+  if(t<=CLIMB_PROFILE_START)return 0;
+  const u=(t-CLIMB_PROFILE_START)/(1-CLIMB_PROFILE_START);
+  return u>1?1:u;
 }
 
 // Project a body-local (forward, right, dorsal) offset into canvas coordinates.

@@ -1269,6 +1269,24 @@ static void run_line(char *line)
             printf("OK climb\n");
         }
     }
+    else if (!strcmp(line, "climbat")) {
+        /* Sample the climb ramp at an arbitrary point. The `climb` command only
+         * reports where the spider happens to be standing, which cannot confirm
+         * that the ramp spans the artwork rather than the collision footprint:
+         * the spider wanders off before a script can walk it across the whole
+         * structure. */
+        int px = 0, py = 0;
+        if (!arg || sscanf(arg, "%d %d", &px, &py) != 2) {
+            printf("ERR usage: climbat X Y\n");
+            return;
+        }
+        int slot = -1;
+        uint8_t height = decor_climb_at((int16_t)px, (int16_t)py, &slot);
+        float slope = decor_climb_slope((int16_t)px, (int16_t)py, NULL);
+        printf("CLIMBAT pos=(%d,%d) height=%u slot=%d slope=%.3f\n",
+               px, py, height, slot, (double)slope);
+        printf("OK climbat\n");
+    }
     else if (!strcmp(line, "climbhere")) {
         /* Place a climbable item under the spider and set it to Climb in one
          * command. The spider wanders faster than a script can issue separate

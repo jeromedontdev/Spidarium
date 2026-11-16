@@ -336,12 +336,28 @@ uint8_t decor_climb_height(int slot)
  *
  * The ramp is measured across the footprint's vertical extent, so the bottom
  * edge is ground level and the top edge is the full climb height. */
+/* Screen half-extent of a climbable item's footprint.
+ *
+ * A small prop's `radius` is its collision footprint, which is also where it
+ * visually ends. A large structure is different: its artwork is
+ * DECOR_CLIMB_SPRITE square drawn at 2x, so it covers twice that many screen
+ * pixels and its half-extent is DECOR_CLIMB_SPRITE. Using the raw `radius` for
+ * the ramp made the climb span a 36 px circle in the middle of a 192 px sprite,
+ * so the spider rose and fell while still well inside the artwork -- the "side
+ * view happens when the spider is above the decor, not on the decor" report. */
+static float climb_extent(const decor_item_t *item, const decor_def_t *def)
+{
+    return decor_is_climb_structure(item->kind)
+        ? (float)DECOR_CLIMB_EXTENT : (float)def->radius;
+}
+
 static uint8_t climb_lift_on(const decor_item_t *item, const decor_def_t *def,
                              int16_t x, int16_t y)
 {
     float dx = (float)(x - item->x);
     float dy = (float)(y - item->y);
-    float r = (float)def->radius;
+    float r = climb_extent(item, def);
+    if (r <= 0.0f) return 0;
     float d2 = dx * dx + dy * dy;
     if (d2 > r * r) return 0;
     if (!decor_is_climb_structure(item->kind)) return def->climb_height;
@@ -352,6 +368,16 @@ static uint8_t climb_lift_on(const decor_item_t *item, const decor_def_t *def,
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
     float lift = (float)def->climb_height * (1.0f - t);
+
+    /* Fade the lift out toward the left and right edges. The ramp is vertical,
+     * so without this the spider gained half the climb height the instant it
+     * crossed the side of the footprint, which is the jump that made the
+     * perspective shift look wrong. */
+    float nx = dx / r;
+    float fade = 1.0f - nx * nx;
+    if (fade < 0.0f) fade = 0.0f;
+    lift *= fade;
+
     return (uint8_t)(lift + 0.5f);
 }
 
@@ -379,12 +405,15 @@ uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot)
  * to full height at its top edge, so its surface has a constant gradient. The
  * gradient is the climb height spread over the footprint's vertical extent:
  *
- *     rise / run = climb_height / (2 * radius)
+ *     rise / run = climb_height / (2 * extent)
  *
- * A 62 px climb over a 66 px radius is therefore a slope of about 0.47, or
- * roughly 25 degrees. That is gentle enough to look like a ramp and steep
- * enough that a level spider would visibly float, which is exactly why the
- * renderer needs it.
+ * where `extent` is the artwork's half-extent (DECOR_CLIMB_EXTENT for a large
+ * structure, `radius` for a small prop). A 66 px climb over a 96 px extent is a
+ * slope of about 0.34, or roughly 19 degrees: gentle enough to look like a ramp
+ * and steep enough that a level spider would visibly float, which is exactly why
+ * the renderer needs it. Measuring against the collision `radius` instead made
+ * the same climb a 1.8 slope, which clamped to CLIMB_TILT_MAX and looked like
+ * the spider was standing on a wall.
  *
  * The sign is expressed in screen coordinates, where y grows downward: a
  * surface that rises toward the top of the screen has a NEGATIVE slope. The
@@ -406,7 +435,7 @@ float decor_climb_slope(int16_t x, int16_t y, int *out_slot)
         if (out_slot) *out_slot = i;
         /* A small prop is a flat disc, so its top is level. */
         if (!decor_is_climb_structure(item->kind)) { best = 0.0f; continue; }
-        float r = (float)def->radius;
+        float r = climb_extent(item, def);
         if (r <= 0.0f) { best = 0.0f; continue; }
         best = -(float)def->climb_height / (2.0f * r);
     }
@@ -884,9 +913,10 @@ bool decor_test(void)
     decor_clear();
 
     /* --- large climb structures -----------------------------------------
-     * These are a separate family: authored at 192x192, drawn 1:1, and their
-     * lift RAMPS from nothing at the rim to full height at the centre. A prop
-     * is a flat disc, so it must still snap to its full height. */
+     * These are a separate family: authored at DECOR_CLIMB_SPRITE and drawn at
+     * 2x, and their lift RAMPS up the screen from nothing at the bottom edge to
+     * full height at the top edge. A prop is a flat disc, so it must still snap
+     * to its full height. */
     ok = ok && decor_is_climb_structure(DECOR_CLIMB_BRANCH);
     ok = ok && decor_is_climb_structure(DECOR_CLIMB_DRIFTWOOD);
     ok = ok && !decor_is_climb_structure(DECOR_LOG);
@@ -894,13 +924,25 @@ bool decor_test(void)
     int big = decor_place(DECOR_CLIMB_DRIFTWOOD, 240, 240);
     ok = ok && big >= 0 && decor_set_path(big, DECOR_CLIMB);
     uint8_t full = k_decor_kinds[DECOR_CLIMB_DRIFTWOOD].climb_height;
-    uint8_t radius = k_decor_kinds[DECOR_CLIMB_DRIFTWOOD].radius;
+    /* The ramp spans the ARTWORK, not the collision footprint: the sprite is
+     * DECOR_CLIMB_SPRITE square drawn at 2x, so its half-extent is
+     * DECOR_CLIMB_EXTENT. Using the much smaller `radius` confined the climb to
+     * a circle in the middle of the sprite, which is why the side view used to
+     * appear while the spider was still above the artwork. */
+    int extent = DECOR_CLIMB_EXTENT;
     ok = ok && full >= 40;                     /* genuinely tall, not a hop */
-    ok = ok && decor_climb_at(240, 240, NULL) == full;
-    /* Halfway out the lift is roughly half, and it falls to zero at the rim. */
-    uint8_t half = decor_climb_at(240 + radius / 2, 240, NULL);
-    ok = ok && half > 0 && half < full;
-    ok = ok && decor_climb_at(240 + radius + 2, 240, NULL) == 0;
+    /* The ramp runs up the screen: ground at the bottom edge, full at the top. */
+    uint8_t bottom = decor_climb_at(240, 240 + extent - 2, NULL);
+    uint8_t middle = decor_climb_at(240, 240, NULL);
+    uint8_t top = decor_climb_at(240, 240 - extent + 2, NULL);
+    ok = ok && bottom < full / 8;
+    ok = ok && middle > full / 3 && middle < full * 2 / 3;
+    ok = ok && top > full * 7 / 8;
+    ok = ok && decor_climb_at(240, 240 + extent + 2, NULL) == 0;
+    /* The ramp is vertical, so the lift must fall off toward the side edges
+     * rather than jumping to half height the instant the spider crosses them. */
+    ok = ok && decor_climb_at(240 + extent - 4, 240, NULL) < full / 4;
+    ok = ok && decor_climb_at(240 + extent + 2, 240, NULL) == 0;
     /* A prop still snaps: no gradient across its footprint. */
     int flat = decor_place(DECOR_LOG, 120, 120);
     ok = ok && flat >= 0 && decor_set_path(flat, DECOR_CLIMB);

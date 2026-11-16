@@ -271,11 +271,13 @@ void terrarium_gift_report(void)
         break;
     }
     printf("GIFTREPORT used=%u kind=%u obj=%d gift_hidden=%d preview_hidden=%d "
-           "band=%s layer=%d count=%d gift_index=%d decor_index=%d\n",
+           "band=%s layer=%d count=%d gift_index=%d decor_index=%d "
+           "gift=(%d,%d) spider_y=%d canopy=%d\n",
            g.gift.used, g.gift.kind, s_gift_obj ? 1 : 0,
            gift_hidden ? 1 : 0, preview_hidden ? 1 : 0, band,
            decor_gift_layer_index(g.gift_path),
-           decor_gift_layer_count(g.gift_path), gift_index, decor_index);
+           decor_gift_layer_count(g.gift_path), gift_index, decor_index,
+           g.gift.x, g.gift.y, g.spider_y, gift_canopy_now() ? 1 : 0);
 }
 
 void terrarium_gift_depth(void)

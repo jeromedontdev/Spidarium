@@ -427,8 +427,16 @@ void game_on_placement_blocking(lv_event_t *e)
         s_place_blocking = (uint8_t)((s_place_blocking + 1) % DECOR_PATH_COUNT);
         if (s_place_blocking != DECOR_CLIMB || decor_climbable(kind)) break;
     }
-    if ((previous == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND))
-        s_place_layer = decor_layer_count(s_place_blocking, g_decor_move_slot);
+    if ((previous == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND)) {
+        /* Changing band changes how many items the layer is ordered against, so
+         * the staged index has to be re-seeded. A gift is ordered against the
+         * decor in its band, not against the decor slots, so it needs the gift
+         * count: using the decor count here let the staged index exceed the
+         * gift's own range and the commit was rejected. */
+        s_place_layer = g.gift_mode
+            ? decor_gift_layer_index(s_place_blocking)
+            : decor_layer_count(s_place_blocking, g_decor_move_slot);
+    }
     placement_position(s_place_x, s_place_y);
     ui_hud_set_place_mode(true, NULL);
 }
