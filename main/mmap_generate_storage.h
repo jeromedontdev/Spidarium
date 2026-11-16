@@ -13,8 +13,8 @@
 
 #include "esp_mmap_assets.h"
 
-#define MMAP_STORAGE_FILES           337
-#define MMAP_STORAGE_CHECKSUM        0x4311
+#define MMAP_STORAGE_FILES           387
+#define MMAP_STORAGE_CHECKSUM        0xD655
 
 enum MMAP_STORAGE_LISTS {
     MMAP_STORAGE_ACHIEVEMENT_ADULT_QOI = 0,        /*!< achievement_adult.qoi */
@@ -326,32 +326,82 @@ enum MMAP_STORAGE_LISTS {
     MMAP_STORAGE_TREAT_STAR_QOI = 306,        /*!< treat_star.qoi */
     MMAP_STORAGE_UI_ABOUT_QOI = 307,        /*!< ui_about.qoi */
     MMAP_STORAGE_UI_ACHIEVEMENTS_QOI = 308,        /*!< ui_achievements.qoi */
-    MMAP_STORAGE_UI_AUTO_FEED_QOI = 309,        /*!< ui_auto_feed.qoi */
-    MMAP_STORAGE_UI_BACK_QOI = 310,        /*!< ui_back.qoi */
-    MMAP_STORAGE_UI_BACKGROUNDS_QOI = 311,        /*!< ui_backgrounds.qoi */
-    MMAP_STORAGE_UI_BATTERY_QOI = 312,        /*!< ui_battery.qoi */
-    MMAP_STORAGE_UI_CLEAN_QOI = 313,        /*!< ui_clean.qoi */
-    MMAP_STORAGE_UI_DAILY_QOI = 314,        /*!< ui_daily.qoi */
-    MMAP_STORAGE_UI_DECOR_QOI = 315,        /*!< ui_decor.qoi */
-    MMAP_STORAGE_UI_DISPLAY_QOI = 316,        /*!< ui_display.qoi */
-    MMAP_STORAGE_UI_ENERGY_QOI = 317,        /*!< ui_energy.qoi */
-    MMAP_STORAGE_UI_FEED_QOI = 318,        /*!< ui_feed.qoi */
-    MMAP_STORAGE_UI_HUNGER_QOI = 319,        /*!< ui_hunger.qoi */
-    MMAP_STORAGE_UI_HYGIENE_QOI = 320,        /*!< ui_hygiene.qoi */
-    MMAP_STORAGE_UI_LOCK_QOI = 321,        /*!< ui_lock.qoi */
-    MMAP_STORAGE_UI_MOOD_QOI = 322,        /*!< ui_mood.qoi */
-    MMAP_STORAGE_UI_MUSIC_QOI = 323,        /*!< ui_music.qoi */
-    MMAP_STORAGE_UI_PLAY_QOI = 324,        /*!< ui_play.qoi */
-    MMAP_STORAGE_UI_PREY_QOI = 325,        /*!< ui_prey.qoi */
-    MMAP_STORAGE_UI_RESET_QOI = 326,        /*!< ui_reset.qoi */
-    MMAP_STORAGE_UI_SCREENSHOT_QOI = 327,        /*!< ui_screenshot.qoi */
-    MMAP_STORAGE_UI_SD_QOI = 328,        /*!< ui_sd.qoi */
-    MMAP_STORAGE_UI_SETTINGS_QOI = 329,        /*!< ui_settings.qoi */
-    MMAP_STORAGE_UI_SLEEP_QOI = 330,        /*!< ui_sleep.qoi */
-    MMAP_STORAGE_UI_SOUND_QOI = 331,        /*!< ui_sound.qoi */
-    MMAP_STORAGE_UI_STATUS_QOI = 332,        /*!< ui_status.qoi */
-    MMAP_STORAGE_UI_TREATS_QOI = 333,        /*!< ui_treats.qoi */
-    MMAP_STORAGE_UI_VOLUME_QOI = 334,        /*!< ui_volume.qoi */
-    MMAP_STORAGE_UI_WIFI_QOI = 335,        /*!< ui_wifi.qoi */
-    MMAP_STORAGE_UI_XP_QOI = 336,        /*!< ui_xp.qoi */
+    MMAP_STORAGE_UI_ACTIVITY_QOI = 309,        /*!< ui_activity.qoi */
+    MMAP_STORAGE_UI_ALBUM_QOI = 310,        /*!< ui_album.qoi */
+    MMAP_STORAGE_UI_AUTO_FEED_QOI = 311,        /*!< ui_auto_feed.qoi */
+    MMAP_STORAGE_UI_BACK_QOI = 312,        /*!< ui_back.qoi */
+    MMAP_STORAGE_UI_BACKGROUNDS_QOI = 313,        /*!< ui_backgrounds.qoi */
+    MMAP_STORAGE_UI_BATTERY_QOI = 314,        /*!< ui_battery.qoi */
+    MMAP_STORAGE_UI_BOND_QOI = 315,        /*!< ui_bond.qoi */
+    MMAP_STORAGE_UI_CALENDAR_QOI = 316,        /*!< ui_calendar.qoi */
+    MMAP_STORAGE_UI_CAMERA_QOI = 317,        /*!< ui_camera.qoi */
+    MMAP_STORAGE_UI_CHECKIN_QOI = 318,        /*!< ui_checkin.qoi */
+    MMAP_STORAGE_UI_CLEAN_QOI = 319,        /*!< ui_clean.qoi */
+    MMAP_STORAGE_UI_CONFIRM_CANCEL_QOI = 320,        /*!< ui_confirm_cancel.qoi */
+    MMAP_STORAGE_UI_DAILY_QOI = 321,        /*!< ui_daily.qoi */
+    MMAP_STORAGE_UI_DAILY_TASK_QOI = 322,        /*!< ui_daily_task.qoi */
+    MMAP_STORAGE_UI_DAYLIGHT_QOI = 323,        /*!< ui_daylight.qoi */
+    MMAP_STORAGE_UI_DECOR_QOI = 324,        /*!< ui_decor.qoi */
+    MMAP_STORAGE_UI_DELETE_PHOTO_QOI = 325,        /*!< ui_delete_photo.qoi */
+    MMAP_STORAGE_UI_DIARY_QOI = 326,        /*!< ui_diary.qoi */
+    MMAP_STORAGE_UI_DISMISS_QOI = 327,        /*!< ui_dismiss.qoi */
+    MMAP_STORAGE_UI_DISPLAY_QOI = 328,        /*!< ui_display.qoi */
+    MMAP_STORAGE_UI_ENCLOSURE_LIGHT_QOI = 329,        /*!< ui_enclosure_light.qoi */
+    MMAP_STORAGE_UI_ENERGY_QOI = 330,        /*!< ui_energy.qoi */
+    MMAP_STORAGE_UI_FAVORITE_GAME_QOI = 331,        /*!< ui_favorite_game.qoi */
+    MMAP_STORAGE_UI_FAVORITE_PLACE_QOI = 332,        /*!< ui_favorite_place.qoi */
+    MMAP_STORAGE_UI_FAVORITE_TREAT_QOI = 333,        /*!< ui_favorite_treat.qoi */
+    MMAP_STORAGE_UI_FEED_QOI = 334,        /*!< ui_feed.qoi */
+    MMAP_STORAGE_UI_GENERATIONS_QOI = 335,        /*!< ui_generations.qoi */
+    MMAP_STORAGE_UI_HUNGER_QOI = 336,        /*!< ui_hunger.qoi */
+    MMAP_STORAGE_UI_HYGIENE_QOI = 337,        /*!< ui_hygiene.qoi */
+    MMAP_STORAGE_UI_LIGHT_GESTURE_QOI = 338,        /*!< ui_light_gesture.qoi */
+    MMAP_STORAGE_UI_LOCK_QOI = 339,        /*!< ui_lock.qoi */
+    MMAP_STORAGE_UI_MEMORY_ACHIEVEMENT_QOI = 340,        /*!< ui_memory_achievement.qoi */
+    MMAP_STORAGE_UI_MEMORY_BOND_QOI = 341,        /*!< ui_memory_bond.qoi */
+    MMAP_STORAGE_UI_MEMORY_GAME_QOI = 342,        /*!< ui_memory_game.qoi */
+    MMAP_STORAGE_UI_MEMORY_GROWTH_QOI = 343,        /*!< ui_memory_growth.qoi */
+    MMAP_STORAGE_UI_MEMORY_PLACE_QOI = 344,        /*!< ui_memory_place.qoi */
+    MMAP_STORAGE_UI_MEMORY_RECOVERY_QOI = 345,        /*!< ui_memory_recovery.qoi */
+    MMAP_STORAGE_UI_MEMORY_REQUESTS_QOI = 346,        /*!< ui_memory_requests.qoi */
+    MMAP_STORAGE_UI_MEMORY_TREAT_QOI = 347,        /*!< ui_memory_treat.qoi */
+    MMAP_STORAGE_UI_MOOD_QOI = 348,        /*!< ui_mood.qoi */
+    MMAP_STORAGE_UI_MUSIC_QOI = 349,        /*!< ui_music.qoi */
+    MMAP_STORAGE_UI_MUSIC_VOLUME_QOI = 350,        /*!< ui_music_volume.qoi */
+    MMAP_STORAGE_UI_PERFORM_QOI = 351,        /*!< ui_perform.qoi */
+    MMAP_STORAGE_UI_PERSONALITY_QOI = 352,        /*!< ui_personality.qoi */
+    MMAP_STORAGE_UI_PHOTO_QOI = 353,        /*!< ui_photo.qoi */
+    MMAP_STORAGE_UI_PIN_QOI = 354,        /*!< ui_pin.qoi */
+    MMAP_STORAGE_UI_PLAY_QOI = 355,        /*!< ui_play.qoi */
+    MMAP_STORAGE_UI_PRACTICE_QOI = 356,        /*!< ui_practice.qoi */
+    MMAP_STORAGE_UI_PREY_QOI = 357,        /*!< ui_prey.qoi */
+    MMAP_STORAGE_UI_REQUEST_CLEAN_QOI = 358,        /*!< ui_request_clean.qoi */
+    MMAP_STORAGE_UI_REQUEST_HUNT_QOI = 359,        /*!< ui_request_hunt.qoi */
+    MMAP_STORAGE_UI_REQUEST_PET_QOI = 360,        /*!< ui_request_pet.qoi */
+    MMAP_STORAGE_UI_REQUEST_PLAY_QOI = 361,        /*!< ui_request_play.qoi */
+    MMAP_STORAGE_UI_REQUEST_VISIT_QOI = 362,        /*!< ui_request_visit.qoi */
+    MMAP_STORAGE_UI_RESET_QOI = 363,        /*!< ui_reset.qoi */
+    MMAP_STORAGE_UI_RESUME_QOI = 364,        /*!< ui_resume.qoi */
+    MMAP_STORAGE_UI_RETIRE_QOI = 365,        /*!< ui_retire.qoi */
+    MMAP_STORAGE_UI_SCREENSHOT_QOI = 366,        /*!< ui_screenshot.qoi */
+    MMAP_STORAGE_UI_SD_QOI = 367,        /*!< ui_sd.qoi */
+    MMAP_STORAGE_UI_SEASON_REWARD_QOI = 368,        /*!< ui_season_reward.qoi */
+    MMAP_STORAGE_UI_SETTINGS_QOI = 369,        /*!< ui_settings.qoi */
+    MMAP_STORAGE_UI_SLEEP_QOI = 370,        /*!< ui_sleep.qoi */
+    MMAP_STORAGE_UI_SOUND_QOI = 371,        /*!< ui_sound.qoi */
+    MMAP_STORAGE_UI_SOUNDTRACK_QOI = 372,        /*!< ui_soundtrack.qoi */
+    MMAP_STORAGE_UI_STATUS_QOI = 373,        /*!< ui_status.qoi */
+    MMAP_STORAGE_UI_TODAY_QOI = 374,        /*!< ui_today.qoi */
+    MMAP_STORAGE_UI_TRAINING_QOI = 375,        /*!< ui_training.qoi */
+    MMAP_STORAGE_UI_TREATS_QOI = 376,        /*!< ui_treats.qoi */
+    MMAP_STORAGE_UI_TRICK_BOW_QOI = 377,        /*!< ui_trick_bow.qoi */
+    MMAP_STORAGE_UI_TRICK_SPIN_QOI = 378,        /*!< ui_trick_spin.qoi */
+    MMAP_STORAGE_UI_TRICK_WAVE_QOI = 379,        /*!< ui_trick_wave.qoi */
+    MMAP_STORAGE_UI_UNPIN_QOI = 380,        /*!< ui_unpin.qoi */
+    MMAP_STORAGE_UI_USB_CHIMES_QOI = 381,        /*!< ui_usb_chimes.qoi */
+    MMAP_STORAGE_UI_VISITOR_QOI = 382,        /*!< ui_visitor.qoi */
+    MMAP_STORAGE_UI_VOLUME_QOI = 383,        /*!< ui_volume.qoi */
+    MMAP_STORAGE_UI_WEATHER_QOI = 384,        /*!< ui_weather.qoi */
+    MMAP_STORAGE_UI_WIFI_QOI = 385,        /*!< ui_wifi.qoi */
+    MMAP_STORAGE_UI_XP_QOI = 386,        /*!< ui_xp.qoi */
 };

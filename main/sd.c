@@ -8,8 +8,10 @@
 #include "sd.h"
 
 #include "save.h"
+#include "album.h"
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "driver/sdmmc_host.h"
@@ -39,7 +41,7 @@ static uint8_t s_operation;
 static atomic_uint s_generation;
 static bool s_backup_exists;
 static bool s_restored;
-static game_state_t s_restored_state;
+static game_state_t *s_restored_state;
 static decor_item_t *s_restored_extra;
 static char s_screenshot_status[96];
 static bool write_screenshot(const sd_screenshot_t *image);
@@ -50,7 +52,9 @@ bool sd_take_restored(game_state_t *state)
 {
     if (!state) { ESP_LOGE(TAG, "restore copy rejected: null state"); return false; }
     if (sd_busy() || !s_restored) return false;
-    *state = s_restored_state;
+    *state = *s_restored_state;
+    heap_caps_free(s_restored_state);
+    s_restored_state = NULL;
     decor_restore_extra(s_restored_extra);
     s_restored_extra = NULL;
     s_restored = false;
@@ -58,8 +62,13 @@ bool sd_take_restored(game_state_t *state)
 }
 bool sd_request(uint8_t operation)
 {
-    if (operation < SD_JOB_MOUNT || operation > SD_JOB_RESTORE) {
+    if (operation < SD_JOB_MOUNT || operation > SD_JOB_ALBUM_DELETE ||
+        operation == SD_JOB_SCREENSHOT) {
         ESP_LOGW(TAG, "SD request rejected: invalid operation");
+        return false;
+    }
+    if (operation >= SD_JOB_ALBUM_SCAN && !album_busy()) {
+        ESP_LOGW(TAG, "SD album request rejected: use album request API");
         return false;
     }
     bool expected = false;
@@ -67,11 +76,11 @@ bool sd_request(uint8_t operation)
         ESP_LOGW(TAG, "SD request rejected: busy");
         return false;
     }
+    s_operation = operation;
     if (!save_request_sd(operation)) {
         atomic_store(&s_busy, false);
         return false;
     }
-    s_operation = operation;
     return true;
 }
 bool sd_request_screenshot(const sd_screenshot_t *image)
@@ -99,12 +108,18 @@ bool sd_run_job(uint8_t operation, const game_state_t *snapshot, const sd_screen
     if (s_restored) {
         ESP_LOGE(TAG, "SD job rejected: restored enclosure awaits UI adoption");
         s_status = "Restore Pending / Try Again";
+        if (operation >= SD_JOB_ALBUM_SCAN && operation <= SD_JOB_ALBUM_DELETE)
+            album_fail_job("Restore Pending / Try Again");
         atomic_store(&s_busy, false);
         atomic_fetch_add(&s_generation, 1);
         return false;
     }
     s_restored = false;
     bool ok = sd_mount();
+    if (operation >= SD_JOB_ALBUM_SCAN && operation <= SD_JOB_ALBUM_DELETE) {
+        ok = album_run_job(operation, ok);
+        s_status = album_status_text();
+    }
     if (ok && operation == SD_JOB_BACKUP) {
         ok = snapshot && save_save(snapshot, sizeof *snapshot +
                                   snapshot->decor_extra_count * sizeof(decor_item_t));
@@ -112,8 +127,18 @@ bool sd_run_job(uint8_t operation, const game_state_t *snapshot, const sd_screen
         s_status = ok ? "Backup Saved and Verified" : "Backup Failed; See Serial Log";
     }
     if (ok && operation == SD_JOB_RESTORE) {
-        ok = sd_restore_save();
-        if (ok) ok = save_load_snapshot(&s_restored_state, sizeof s_restored_state, &s_restored_extra);
+        s_restored_state = heap_caps_malloc(sizeof *s_restored_state,
+                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_restored_state) {
+            ESP_LOGE(TAG, "restore rejected: snapshot PSRAM exhausted");
+            ok = false;
+        }
+        if (ok) ok = sd_restore_save();
+        if (ok) ok = save_load_snapshot(s_restored_state, sizeof *s_restored_state, &s_restored_extra);
+        if (!ok) {
+            heap_caps_free(s_restored_state);
+            s_restored_state = NULL;
+        }
         s_restored = ok;
         s_status = ok ? "Save Restored" : "Restore Failed; See Serial Log";
     }
@@ -268,6 +293,10 @@ const char *sd_status_text(void)
     case SD_JOB_BACKUP: return "Backing Up; Please Wait";
     case SD_JOB_RESTORE: return "Restoring; Please Wait";
     case SD_JOB_SCREENSHOT: return "Saving Screenshot; Please Wait";
+    case SD_JOB_ALBUM_SCAN: return "Reading Photo Album; Please Wait";
+    case SD_JOB_ALBUM_CAPTURE: return "Saving Album Photo; Please Wait";
+    case SD_JOB_ALBUM_LOAD: return "Loading Album Photo; Please Wait";
+    case SD_JOB_ALBUM_DELETE: return "Deleting Album Photo; Please Wait";
     default: return "Checking Card; Please Wait";
     }
 }

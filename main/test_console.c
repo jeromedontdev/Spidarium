@@ -137,10 +137,12 @@ static void cmd_help(void)
     printf("  pet                  pet the spider at its current position\n");
     printf("  sleep                press SLEEP\n");
     printf("  menu                 open the main menu\n");
-    printf("  open NAME            open a menu (main gift chrome nochrome)\n");
+    printf("  open NAME            main, gift, chrome, nochrome, personality, today, diary\n");
+    printf("                       training, calendar, album, photos, generations (and Settings pages)\n");
+    printf("  pick ID              activate an enabled item ID in the open menu (real action)\n");
     printf("  spawn [SPECIES]      spawn unlocked bug (0..7, or random)\n");
     printf("  state N              force spider state\n");
-    printf("  set FIELD VALUE      needs; auto_feed/auto_hunt accept 0 or 1, volume 0..100\n");
+    printf("  set FIELD VALUE      needs; auto_feed/auto_hunt/usb_sounds accept 0 or 1, volume 0..100\n");
     printf("  silk add N           add 1..2147483647 testing Silk and save\n");
     printf("  refresh              rebuild the visual layers\n");
     printf("  save                 save now\n");
@@ -532,13 +534,25 @@ static void cmd_save_schema(void)
         {"lights_dimmed", "u8", offsetof(game_state_t, lights_dimmed), 0, 10},
         {"music_volume", "u8", offsetof(game_state_t, music_volume), 0, 11},
         {"music_track", "u8", offsetof(game_state_t, music_track), 0, 11},
+        {"usb_sounds", "u8", offsetof(game_state_t, usb_sounds), 0, 15},
         {"decor_extra_count", "u32", offsetof(game_state_t, decor_extra_count), 0, 10},
+        {"decor_locked", "u8", offsetof(game_state_t, decor_locked), 0, 18},
+        {"auto_clean", "u8", offsetof(game_state_t, auto_clean), 0, 18},
 #undef SAVE_FIELD
-    };    enum { SCHEMA_CAP = 5120 };
+    };    enum { SCHEMA_CAP = 7168 };
     char *json = heap_caps_malloc(SCHEMA_CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!json) { printf("ERR save schema allocation failed\n"); return; }
     int pos = snprintf(json, SCHEMA_CAP,
-        "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"maxPayload\":20480,\"decorTail\":{\"offset\":268,\"stride\":6,\"countField\":\"decor_extra_count\"},\"fields\":[",
+        "{\"magic\":%u,\"version\":%u,\"headerSize\":12,\"payloadSizes\":[%u,%u],\"maxPayload\":23308,\"decorTail\":{\"offset\":3100,\"stride\":6,\"countField\":\"decor_extra_count\"},"
+        "\"life\":{\"offset\":860,\"size\":2236,\"minVersion\":16,\"visitor_day\":0,\"season_highwater\":4,"
+        "\"progress\":{\"offset\":8,\"count\":3},\"cooldown\":11,\"daynight\":12,\"weather\":13,\"retired_count\":14,\"light_gesture_disabled\":{\"offset\":15,\"minVersion\":17},"
+        "\"retired\":{\"offset\":16,\"count\":3,\"stride\":740,\"core\":{\"offset\":0,\"count\":120},\"daily\":{\"offset\":120,\"count\":24},"
+        "\"companion\":{\"offset\":144,\"size\":592},\"progress\":{\"offset\":736,\"count\":3},\"reserved\":739}},"
+        "\"companion\":{\"offset\":268,\"size\":592,\"minVersion\":15,"
+        "\"request_day\":0,\"seen_achievements\":4,\"requests\":{\"offset\":8,\"count\":2,\"stride\":4,\"fields\":{\"kind\":0,\"target\":1,\"progress\":2,\"state\":3}},"
+        "\"treat_counts\":{\"offset\":16,\"count\":12},\"gift_counts\":{\"offset\":28,\"count\":36},\"play_counts\":{\"offset\":64,\"count\":3},"
+        "\"favorite_treat\":67,\"favorite_gift\":68,\"favorite_play\":69,\"diary_count\":70,\"clock_mode\":71,\"initialized\":72,\"bond_level\":73,\"last_stage\":74,\"was_sick\":75,"
+        "\"reserved\":{\"offset\":76,\"count\":2},\"padding\":{\"offset\":78,\"count\":2},\"diary\":{\"offset\":80,\"count\":64,\"stride\":8,\"fields\":{\"day\":0,\"kind\":4,\"value\":5,\"pinned\":6,\"calendar\":7}}},\"fields\":[",
         (unsigned)SAVE_MAGIC, SAVE_VERSION, (unsigned)offsetof(game_state_t, silk),
         (unsigned)sizeof(game_state_t));
     bool ok = pos > 0 && pos < SCHEMA_CAP;
@@ -955,7 +969,9 @@ static void cmd_state(int state)
 static void cmd_set(const char *field, int value)
 {
     if ((!strcmp(field, "auto_feed") || !strcmp(field, "auto_hunt") ||
-         !strcmp(field, "music_enabled") || !strcmp(field, "muted")) &&
+         !strcmp(field, "music_enabled") || !strcmp(field, "usb_sounds") ||
+         !strcmp(field, "muted") || !strcmp(field, "decor_locked") ||
+         !strcmp(field, "auto_clean")) &&
         (value < 0 || value > 1)) {
         printf("ERR automation checkboxes require 0 or 1\n");
         return;
@@ -979,11 +995,14 @@ static void cmd_set(const char *field, int value)
     else if (!strcmp(field, "auto_hunt")) action = GAME_UI_SET_AUTO_HUNT;
     else if (!strcmp(field, "volume"))  action = GAME_UI_SET_VOLUME;
     else if (!strcmp(field, "music_enabled")) action = GAME_UI_SET_MUSIC;
+    else if (!strcmp(field, "usb_sounds")) action = GAME_UI_SET_USB_SOUNDS;
     else if (!strcmp(field, "music_volume")) action = GAME_UI_SET_MUSIC_VOLUME;
     else if (!strcmp(field, "music_track")) action = GAME_UI_SET_MUSIC_TRACK;
     else if (!strcmp(field, "muted")) action = GAME_UI_SET_MUTED;
+    else if (!strcmp(field, "decor_locked")) action = GAME_UI_SET_DECOR_LOCKED;
+    else if (!strcmp(field, "auto_clean")) action = GAME_UI_SET_AUTO_CLEAN;
     else {
-        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt volume music_enabled music_volume music_track muted)\n",
+        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt volume music_enabled music_volume music_track usb_sounds muted decor_locked auto_clean)\n",
                field);
         return;
     }
@@ -1012,7 +1031,7 @@ static void cmd_open(const char *name)
         printf("OK open %s\n", name);
     } else {
         printf("ERR unknown menu \"%s\" "
-               "(main settings wifi saved password ota about species sd theme sound ach reset gift chrome nochrome close)\n",
+               "(main settings wifi saved password ota about species sd theme sound ach reset gift chrome nochrome personality today diary training calendar album photos generations close)\n",
                name);
     }
 }
@@ -1196,6 +1215,13 @@ static void run_line(char *line)
     else if (!strcmp(line, "sleep"))    cmd_sleep();
     else if (!strcmp(line, "menu"))     cmd_menu();
     else if (!strcmp(line, "open"))     cmd_open(arg ? arg : "");
+    else if (!strcmp(line, "pick")) {
+        char *end = NULL;
+        long id = arg ? strtol(arg, &end, 10) : -1;
+        if (!arg || end == arg || *end || id < 0 || id > 255)
+            printf("ERR usage: pick ID (0..255)\n");
+        else printf("%s pick %ld\n", game_ui_call_value(GAME_UI_MENU_PICK, (int)id) ? "OK" : "ERR", id);
+    }
     else if (!strcmp(line, "spawn"))    cmd_spawn(arg ? n : -1);
     else if (!strcmp(line, "state"))    cmd_state(n);
     else if (!strcmp(line, "refresh"))  cmd_refresh();
@@ -1213,6 +1239,11 @@ static void run_line(char *line)
             return;
         }
         *val++ = '\0';
+        while (*val == ' ' || *val == '\t') val++;
+        if (!strcmp(field, "usb_sounds") && strcmp(val, "0") && strcmp(val, "1")) {
+            printf("ERR usb_sounds requires 0 or 1\n");
+            return;
+        }
         cmd_set(field, atoi(val));
     }
     else printf("ERR unknown command \"%s\" (try help)\n", line);

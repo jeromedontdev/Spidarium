@@ -343,6 +343,18 @@ Forces a save to NVS. Prints `OK save`.
 
 ### `uitest`
 
+The companion checks cover preference discovery/stability, one-time request
+rewards, clock high-water behavior, dismissal,64-record eviction/eight-pin
+limits and invalid fields. Real menu dispatch opens Your Spider, Today and
+Diary; the summary includes `companion=1`. Use `open personality`, `open today`
+and `open diary` to inspect them. `open daily` is a compatibility alias for
+Today, which now contains Check In, the rotating daily task and both optional
+requests on one page. UITEST verifies unique loaded icons in the companion/
+Sound controls and that a check-in cannot be claimed twice through Today.
+Calendar menu headings and diary dates omit the technical UTC suffix; the
+underlying daily clock is unchanged. These checks restore their in-memory pet
+fixture; always retain a fresh raw backup around a full mutating regression run.
+
 Runs diagnostics on the LVGL task: real paged-card/buttonmatrix callbacks,
 last-page selection, blank-panel/backdrop taps that do not navigate, explicit
 Back navigation, no disabled dash, QWERTY/case/symbol/backspace editing, the 63-character
@@ -928,24 +940,56 @@ using Web Serial. Browser credentials go only to the selected USB device.
 
 The schema is generated from compiled `offsetof(game_state_t, ...)` values,
 not guessed browser offsets. It includes the header magic/version, 12-byte
-header size, legacy 120/current 268-byte fixed payload sizes and 52 named fields with
+header size, legacy 120/current 3,096-byte fixed payload sizes and 53 named fields with
 little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
 Export snapshots on LVGL, waits for the existing internal-stack persistence
-worker on the console task, then reads the raw NVS blob. A new v14 backup is
-280 bytes plus six bytes per extra decor slot; supported v2-v13 payloads remain
-readable. `decorTail` identifies offset 268, stride 6 and the count field;
+worker on the console task, then reads the raw NVS blob. A new v17 backup is
+3,108 bytes plus six bytes per extra decor slot; supported v2-v16 payloads remain
+readable. `decorTail` identifies offset 3,096, stride 6 and the count field;
 v10/v11 tails retain their historical offset 260 when read.
 v13 reuses each six-byte record's blocking byte for path0/1/2; only path1
 collides. Record order encodes layer order within Floor and Canopy, so reordering
 may change slot indices. Path2 in older versions and path3 are rejected.
-v14 additionally permits music tracks0..9 without moving offsets; v11-v13
-permit only0..2. Old firmware cannot read v14 backups: export before updating.
-`maxPayload` is the 20 KB NVS/protocol storage bound. It contains no
+v14 additionally permits music tracks0..9 without moving those fields; v11-v13
+permit only0..2. v15 appends the592-byte companion state at268: preference
+counters/favorites, two requests, clock/reward state and64 eight-byte diary
+records/eight pins. The schema's companion descriptor documents these offsets.
+Historical v12-v14 decor tails remain at268, v10-v11 at260.
+v16 appends2,236 bytes at860, described by `life`: three trick progress
+bytes/cooldown, cosmetic flags, visitor/season highwaters and three740-byte
+pet archives (identity/stats, daily progress, companion state and training).
+Archives exclude shared inventory/currency/settings. Its23,304-byte payload
+bound preserves3,368 extra decor records. v15 decor tails remain at860.
+v17 reuses life byte15 for `light_gesture_disabled` (strict0/1):0 enables the
+double-tap lighting gesture,1 disables it. Its descriptor has `minVersion:17`;
+the fixed prefix, archives and decor tail do not move. v2-v16 migrate to0.
+Malformed v16 backups with a nonzero former reserved byte remain rejected.
+Old firmware cannot read v17 backups: export before updating.
+`set usb_sounds 0` disables automatic plug-in/unplug chimes; `1` enables them.
+Other values are rejected. Sound > USB Chimes uses the same saved flag at
+former padding byte267; old backups default on. Master mute/zero volume still
+silence enabled chimes. Direct `sound 10`/`sound 11` remain diagnostic playback,
+not simulated PMIC events.
+`maxPayload` is the 23,304-byte protocol bound in v16/v17, preserving the old
+3,368-extra-decor capacity after both companion/life extensions. Actual
+storage/allocation failures remain explicit; this is not an NVS capacity claim.
+The exported pet contains no
 network credentials. Background ownership/selection and power preferences are
 included, along with extended decor ownership, music and enclosure lighting;
 saved WiFi credentials remain separate NVS keys.
+
+`open training|calendar|album|generations` opens the corresponding real menu.
+`pick ID` activates an enabled menu item by its internal ID, marshalled onto
+LVGL. It is a real action, not a dry run: purchases, claims, photo writes and
+confirmed retirement have their normal effects. Disabled/missing IDs and
+out-of-range input are rejected; confirmation pages are not bypassed.
+For photo diagnostics, `open album`, wait for the SD scan, then `pick 0`
+captures the current menu-free playfield. Wait for completed status before
+`pick 2` opens slot0. `open main` detaches the viewer before freeing pixels.
+Do not invoke generation confirmations without a fresh original-pet backup.
+
 Music volume and track occupy former padding at offsets 254/255. Older saves
 default to 100 and track 0. `set music_volume 0..100` and `set music_track 0..9`
 use copied LVGL requests; invalid values are rejected. Tracks are Silk Garden,
@@ -1001,7 +1045,11 @@ returns, without advancing logic, closing the menu or changing pet state.
 `capturetest` (with a menu open) compares menu pixels before/after clean capture
 and asserts the playfield differs, is 480x480, and leaves pet state unchanged.
 
-Settings > Save Screenshot and `screenshot sd` always select the clean playfield.
+`screenshot sd` always selects the clean playfield. Settings no longer offers
+Save Screenshot; player captures live under Photo Album, with confirmed
+per-photo deletion. This serial numbered-file diagnostic remains available.
+`open album` opens Take Photo, Storage Status and Photo Storage and queues a
+scan. `open photos` scans the eight slots and lists saved photos only.
 Files are numbered `/sdcard/spidarium-00001.bmp` through `99999`, never overwrite
 existing files, and are RGB565 bitfield BMPs with top-down rows (460,866 bytes at
 480x480). The existing persistence worker mounts on demand without formatting,
@@ -1012,7 +1060,7 @@ After completion, LVGL destroys the snapshot; no duplicate full-screen copy is
 allocated, and the worker never frees LVGL-owned pixels.
 Capture allocation, queue, card, write and verification failures are explicit.
 All capture targets reject while WiFi is busy: snapshots must not draw the tank
-while the radio owns internal DMA RAM. Settings disables capture until it finishes.
+while the radio owns internal DMA RAM. Photo Album disables capture until it finishes.
 
 The stream starts with `SCREEN BEGIN width height rgb565le` (or `bgra8888`),
 then `SCREEN PART row byte_offset hex` chunks and `OK screenshot`. Chunks contain

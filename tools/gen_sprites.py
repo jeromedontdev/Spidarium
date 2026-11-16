@@ -22,11 +22,13 @@ try:
 except ImportError:
     sys.exit("ERROR: Pillow is required. Install it with: pip install Pillow")
 
-from asset_build import APPROVED_CRYSTAL_PIXEL_SHA256, APPROVED_CRYSTAL_BORDER_SOURCE_SHA256
+from asset_build import APPROVED_CRYSTAL_BORDER_SOURCE_SHA256
+import approved_sources
 import terrain_art
 import core_decor_art
 import furnishing_art
 import small_art
+import companion_icon_art
 
 # ---------------------------------------------------------------------------
 # Tunables — retune the art here without touching the drawing code.
@@ -72,6 +74,7 @@ UI_ICONS = [
     "daily", "treats", "backgrounds", "achievements", "prey", "settings",
     "wifi", "sd", "about", "battery", "display", "sound", "auto_feed",
     "screenshot", "reset", "volume", "music",
+    *companion_icon_art.NAMES,
 ]
 
 ACHIEVEMENT_NAMES = [
@@ -740,6 +743,8 @@ def _pixel_star(d, color):
 
 def draw_icon(name):
     """Native 48 px controls, with no translucent badge or runtime downscale."""
+    if name in companion_icon_art.NAMES:
+        return companion_icon_art.draw(name)
     img, d = _pixel_canvas(24, 24)
     accent = _rgba({
         "feed": 0xE9A44F, "clean": 0x68C8C0, "play": 0x72C58B,
@@ -991,8 +996,8 @@ def draw_gift(name):
         d.line([(4, 7), (6, 6), (9, 6)], fill=light)
         d.point((6, 9), fill=grain)
         d.point((11, 10), fill=shadow)
-    elif name in ("leaf", "acorn", "bone", "diamond"):
-        body, lit, shade = (c, hi, dark) if name in ("bone", "diamond") else (wood, light, shadow)
+    elif name in ("leaf", "acorn", "diamond"):
+        body, lit, shade = (c, hi, dark) if name == "diamond" else (wood, light, shadow)
         _blob(d, 8, 9, 7, 5, body, lit, shade, ink)
         if name == "leaf":
             for base, tip in (((2, 7), (10, 1)), ((7, 7), (14, 4))):
@@ -1002,10 +1007,6 @@ def draw_gift(name):
             for x in (4, 7, 10):
                 d.line([(x, 4), (x + 1, 5)], fill=light)
             d.line([(8, 2), (9, 0), (11, 0)], fill=wood)
-        elif name == "bone":
-            for x in (2, 13):
-                d.line([(x, 7), (x, 12)], fill=hi, width=2)
-                d.point((x, 9), fill=mid)
         else:
             d.line([(3, 7), (6, 4), (10, 4), (13, 7)], fill=light)
             d.line([(4, 6), (8, 5), (11, 6)], fill=cut)
@@ -1014,15 +1015,40 @@ def draw_gift(name):
         d.ellipse((5, 8, 10, 14), fill=ink)
         d.line([(5, 14), (10, 14)], fill=grain)
         d.line([(3, 9), (3, 12)], fill=cut)
+    elif name == "bone":
+        # A bone is a shaft with two knuckled ends, not a blob with two bars.
+        d.line([(4, 8), (11, 8)], fill=ink, width=5)
+        d.line([(4, 8), (11, 8)], fill=hi, width=3)
+        d.line([(4, 9), (11, 9)], fill=mid, width=1)
+        for x in (3, 12):
+            _blob(d, x, 6, 2, 2, hi, light, mid, ink)
+            _blob(d, x, 10, 2, 2, hi, light, mid, ink)
+        d.line([(5, 7), (10, 7)], fill=light)
+        d.line([(5, 10), (10, 10)], fill=shadow)
+        # A dry crack and a worn patch, so the bone reads as old material.
+        d.line([(7, 8), (8, 9)], fill=shadow)
+        d.line([(6, 11), (9, 11)], fill=mid)
+        d.line([(4, 6), (6, 5)], fill=light)
+        d.line([(10, 11), (12, 11)], fill=shadow)
+        # A leather thong tied round the shaft, giving the bone a second
+        # material so it is not one flat ivory mass.
+        d.line([(7, 6), (7, 10)], fill=grain, width=2)
+        d.line([(8, 6), (8, 10)], fill=cut, width=1)
     elif name == "twig":
+        # A twig is a solid limb with a fork, not two crossing scratches: the
+        # main stem is thickest at the base and tapers, and the fork is a
+        # separate limb of its own thickness.
         slab((3, 12, 12, 15))
-        d.line([(7, 13), (7, 7), (4, 3)], fill=ink, width=4)
-        d.line([(8, 9), (12, 5), (13, 2)], fill=ink, width=3)
-        d.line([(7, 12), (7, 7), (4, 3)], fill=wood, width=2)
-        d.line([(8, 9), (12, 5), (13, 2)], fill=cut)
-        d.line([(6, 10), (6, 7), (3, 3)], fill=light)
-        d.point((9, 8), fill=grain)
-        d.point((12, 3), fill=shadow)
+        d.line([(7, 13), (7, 7), (4, 3)], fill=ink, width=5)
+        d.line([(8, 9), (12, 5), (13, 2)], fill=ink, width=4)
+        d.line([(7, 12), (7, 7), (4, 3)], fill=wood, width=3)
+        d.line([(8, 9), (12, 5), (13, 2)], fill=wood, width=2)
+        d.line([(6, 11), (6, 7), (3, 3)], fill=light, width=1)
+        d.line([(9, 8), (12, 5), (13, 3)], fill=cut, width=1)
+        d.line([(8, 12), (8, 8)], fill=shadow, width=1)
+        # Bark grain along the main stem, so the limb reads as wood.
+        d.line([(7, 11), (7, 9)], fill=grain)
+        d.line([(5, 6), (4, 4)], fill=grain)
         _leaf_shape(d, (11, 5), (15, 4), 2, c, hi, dark, ink)
     elif name in ("crystal", "sapphire", "crown"):
         slab((2, 12, 13, 15))
@@ -1031,19 +1057,26 @@ def draw_gift(name):
             gem(9, 1, 12, 4)
             d.line([(4, 11), (11, 11)], fill=light)
         elif name == "sapphire":
-            slab((5, 6, 10, 13))
-            gem(4, 2, 8, 3)
-            gem(11, 1, 7, 3)
-            slab((2, 7, 13, 10))
-            d.point((8, 11), fill=hi)
+            # A sapphire is one faceted stone on a stand, not a stack of slabs.
+            slab((3, 12, 12, 15))
+            d.polygon([(8, 2), (13, 6), (12, 11), (4, 11), (3, 6)], fill=ink)
+            d.polygon([(8, 3), (12, 6), (11, 10), (5, 10), (4, 6)], fill=c)
+            d.polygon([(8, 3), (4, 6), (5, 10), (8, 10)], fill=hi)
+            d.polygon([(8, 3), (12, 6), (11, 10), (8, 10)], fill=dark)
+            d.line([(8, 3), (8, 10)], fill=mid)
+            d.line([(4, 6), (12, 6)], fill=mid)
+            d.line([(5, 5), (7, 4)], fill=light)
         else:
-            d.line([(4, 12), (3, 5), (11, 3), (12, 12)], fill=ink, width=3)
-            d.line([(4, 11), (3, 5), (11, 3), (12, 11)], fill=cut)
-            slab((2, 8, 13, 11))
-            for x, y in ((4, 2), (8, 0), (12, 2)):
-                d.polygon([(x - 1, y + 3), (x, y), (x + 1, y + 3)], fill=c)
-                d.point((x, y + 1), fill=hi)
-                d.point((x, y + 3), fill=dark)
+            # A crown is a band with three points and a jewelled rim.
+            d.polygon([(2, 12), (2, 6), (5, 9), (8, 3), (11, 9), (14, 6),
+                       (14, 12)], fill=ink)
+            d.polygon([(3, 11), (3, 7), (5, 10), (8, 4), (11, 10), (13, 7),
+                       (13, 11)], fill=cut)
+            d.line([(3, 7), (5, 10), (8, 4), (11, 10), (13, 7)], fill=light)
+            d.line([(3, 11), (13, 11)], fill=wood)
+            for x in (5, 8, 11):
+                d.point((x, 9), fill=c)
+                d.point((x, 10), fill=dark)
     elif name == "moss":
         for x, y, rx, ry in ((5, 10, 4, 4), (11, 10, 4, 4), (8, 6, 4, 3)):
             _blob(d, x, y, rx, ry, c, hi, dark, ink)
@@ -1052,14 +1085,17 @@ def draw_gift(name):
             d.point((x + 1, y + 1), fill=mid)
         d.line([(4, 14), (11, 14)], fill=shadow)
     elif name == "sap":
-        d.line([(2, 13), (7, 10), (10, 6), (13, 3)], fill=ink, width=5)
-        d.line([(2, 12), (7, 9), (10, 5), (13, 2)], fill=wood, width=3)
-        d.line([(2, 11), (7, 8), (10, 4), (13, 1)], fill=cut)
-        d.point((6, 11), fill=grain)
-        d.point((9, 8), fill=shadow)
-        for x, y in ((3, 11), (8, 8), (12, 4)):
-            _blob(d, x, y, 2, 2, c, hi, dark, ink)
-            d.point((x - 1, y - 1), fill=light)
+        # A resin run down a branch: the branch is a solid tapered limb and the
+        # resin is a connected bead chain lying on it, not a dotted line.
+        d.line([(2, 13), (7, 10), (10, 6), (13, 3)], fill=ink, width=6)
+        d.line([(2, 12), (7, 9), (10, 5), (13, 2)], fill=wood, width=4)
+        d.line([(2, 11), (7, 8), (10, 4), (13, 1)], fill=cut, width=2)
+        d.line([(3, 13), (8, 10), (11, 6), (13, 4)], fill=shadow, width=1)
+        for x, y, r in ((4, 11, 2), (7, 9, 2), (10, 6, 2), (12, 3, 2)):
+            _blob(d, x, y, r, r, c, hi, dark, ink)
+        # A single drip hanging off the lowest bead, so the resin reads as wet.
+        d.line([(4, 13), (4, 14)], fill=c)
+        d.point((4, 14), fill=hi)
     elif name == "flower":
         green, green_hi = map(_rgba, (0x387344, 0xB5D65C))
         d.line([(8, 8), (8, 15)], fill=ink, width=3)
@@ -1077,25 +1113,39 @@ def draw_gift(name):
         d.line([(5, 6), (6, 4), (8, 3)], fill=light)
         d.line([(7, 7), (9, 6), (8, 8)], fill=shadow)
     elif name == "coral":
+        # Coral is a branching colony, not a scribble of sticks: each branch is
+        # a tapered tube with a lit upper face, a shadowed lower face and a
+        # rounded polyp tip, and the branches thicken toward the base.
         _blob(d, 8, 13, 6, 2, wood, light, shadow, ink)
-        for points in (((8, 13), (8, 4)), ((8, 10), (3, 7), (3, 2)),
-                       ((8, 9), (12, 6), (12, 1)), ((4, 7), (1, 5))):
-            d.line(points, fill=ink, width=3)
-            d.line(points, fill=c, width=2)
-            d.line([(x - 1, y) for x, y in points], fill=hi)
-        for x, y in ((3, 3), (8, 6), (12, 3), (6, 9)):
-            d.point((x, y), fill=dark)
-        d.point((9, 12), fill=mid)
+        for points, width in (
+            (((8, 13), (8, 5)), 4),
+            (((8, 10), (4, 7), (3, 3)), 3),
+            (((8, 9), (12, 6), (12, 2)), 3),
+            (((4, 7), (2, 5)), 2),
+        ):
+            d.line(points, fill=ink, width=width + 2)
+            d.line(points, fill=c, width=width)
+            # Lit upper-left face and shadowed lower-right face along the tube.
+            d.line([(x - 1, y - 1) for x, y in points], fill=hi, width=1)
+            d.line([(x + 1, y + 1) for x, y in points], fill=dark, width=1)
+        # Rounded polyp tips, so each branch ends in a knob rather than a point.
+        for x, y in ((3, 3), (12, 2), (2, 5), (8, 5)):
+            _blob(d, x, y, 2, 2, c, hi, dark, ink)
+        d.line([(6, 12), (10, 12)], fill=mid)
     elif name == "silk":
+        # A silk hammock slung between two posts: the posts are solid timber and
+        # the hammock is a filled cloth curve, not a thin V of lines.
         slab((0, 2, 4, 15))
         slab((11, 2, 15, 15))
-        d.polygon([(3, 5), (7, 8), (9, 8), (12, 5), (11, 12), (8, 14),
-                   (5, 12)], fill=ink)
-        d.polygon([(4, 6), (7, 9), (9, 9), (11, 6), (10, 12), (7, 13),
-                   (5, 11)], fill=c)
-        d.line([(4, 6), (7, 9), (9, 9), (11, 6)], fill=hi)
-        d.line([(5, 10), (7, 12), (10, 11)], fill=dark)
-        d.line([(6, 9), (6, 11), (9, 11), (10, 8)], fill=mid)
+        d.polygon([(3, 5), (7, 9), (9, 9), (12, 5), (11, 13), (8, 15),
+                   (5, 13)], fill=ink)
+        d.polygon([(4, 6), (7, 10), (9, 10), (11, 6), (10, 12), (8, 14),
+                   (5, 12)], fill=c)
+        # Cloth folds: connected bands across the hammock, not stray strokes.
+        d.line([(4, 7), (7, 10), (9, 10), (11, 7)], fill=hi, width=2)
+        d.line([(5, 11), (7, 12), (10, 11)], fill=dark, width=2)
+        d.line([(6, 9), (6, 12)], fill=mid)
+        d.line([(9, 9), (9, 12)], fill=mid)
     elif name == "pearl":
         _blob(d, 8, 8, 6, 6, c, hi, dark, ink)
         d.line([(4, 5), (6, 3), (8, 3)], fill=light)
@@ -1103,16 +1153,28 @@ def draw_gift(name):
         d.line([(6, 14), (11, 14)], fill=shadow)
         d.point((10, 4), fill=cut)
     elif name == "ruby":
-        d.polygon([(1, 14), (1, 9), (11, 2), (14, 3), (14, 14)], fill=ink)
-        d.polygon([(3, 13), (3, 9), (12, 3), (13, 4), (13, 13)], fill=wood)
-        d.line([(3, 9), (12, 3)], fill=hi, width=2)
-        d.line([(4, 10), (12, 5)], fill=c)
-        d.line([(5, 11), (12, 6)], fill=dark)
-        d.line([(6, 12), (12, 8)], fill=grain)
-        d.line([(8, 12), (12, 9)], fill=cut)
-        d.point((12, 12), fill=shadow)
-        d.point((3, 13), fill=light)
-        d.point((11, 7), fill=mid)
+        # A ruby is a cut stone: a table facet on top, crown facets around it
+        # and a pavilion below, all inside one ink silhouette.
+        d.polygon([(2, 13), (2, 8), (6, 3), (11, 3), (14, 8), (14, 13)], fill=ink)
+        d.polygon([(3, 12), (3, 8), (6, 4), (11, 4), (13, 8), (13, 12)], fill=c)
+        # Table facet, lit from the top-left.
+        d.polygon([(5, 5), (11, 5), (12, 8), (4, 8)], fill=hi)
+        # Crown facets.
+        d.polygon([(3, 8), (4, 8), (5, 5), (6, 4)], fill=light)
+        d.polygon([(12, 8), (13, 8), (11, 4), (11, 5)], fill=dark)
+        # Pavilion, converging to a point.
+        d.polygon([(4, 8), (12, 8), (8, 12)], fill=mid)
+        d.polygon([(4, 8), (8, 8), (8, 12)], fill=dark)
+        d.line([(4, 8), (12, 8)], fill=light)
+        d.line([(5, 5), (11, 5)], fill=light)
+        # A small table highlight and a girdle shadow, so the stone reads as cut.
+        d.line([(6, 6), (9, 6)], fill=light)
+        d.line([(5, 9), (11, 9)], fill=shadow)
+        d.line([(3, 11), (13, 11)], fill=mid)
+        d.line([(9, 10), (8, 12)], fill=light)
+        # A gold setting under the stone, giving it a second material.
+        d.line([(3, 12), (13, 12)], fill=grain, width=2)
+        d.line([(4, 13), (12, 13)], fill=cut)
     elif name == "emerald":
         slab((1, 10, 14, 15))
         d.line([(8, 11), (8, 2)], fill=ink, width=3)
@@ -2217,15 +2279,9 @@ _BACKGROUND_SCENES = {
 
 
 def draw_background(name):
-    if name == "crystal":
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                            "assets", "sources", "crystal_floor.png")
-        with Image.open(path) as source:
-            source.load()
-            if (source.format != "PNG" or source.mode != "RGBA" or source.size != (240, 240) or
-                    hashlib.sha256(source.tobytes()).hexdigest() != APPROVED_CRYSTAL_PIXEL_SHA256):
-                raise ValueError("Crystal source differs from the approved 240x240 RGBA floor")
-            return source.copy()
+    approved = approved_sources.floor(name)
+    if approved is not None:
+        return approved
     return terrain_art.background(name)
 
 
@@ -2599,10 +2655,21 @@ def _draw_catalogue_gift(name):
         _poly(d, [(1, 8), (7, 1), (15, 8)], leaf)
         _oval(d, (6, 9, 10, 15), gem)
     elif name == "moon_bed":
-        _oval(d, (2, 1, 13, 13), gem)
-        d.ellipse((6, 0, 15, 10), fill=(0, 0, 0, 0))
-        _panel(d, (2, 11, 14, 14), wood)
-        _panel(d, (5, 10, 12, 12), leaf)
+        # A crescent bed: a thick crescent shell with a soft mattress laid in
+        # its curve. The crescent is a filled polygon rather than a disc with a
+        # disc removed, because `_oval` draws an ink outline and cutting a hole
+        # through it would leave only the outline behind.
+        _poly(d, [(2, 3), (7, 1), (12, 3), (14, 8), (13, 13), (9, 15),
+                  (4, 14), (1, 9)], gem)
+        # The bite out of the upper right, drawn as background-free ink so the
+        # crescent keeps a solid body.
+        d.polygon([(9, 2), (15, 4), (15, 10), (11, 8)], fill=(0, 0, 0, 0))
+        # Mattress laid in the crescent's curve.
+        _oval(d, (4, 8, 12, 14), leaf)
+        _oval(d, (5, 9, 11, 13), gem)
+        # Frame and feet.
+        _panel(d, (2, 13, 14, 16), wood)
+        d.line((3, 14, 13, 14), fill=leaf)
     elif name == "reading_nook":
         _panel(d, (1, 2, 5, 14), wood)
         for y in (4, 8, 12):
@@ -3184,8 +3251,9 @@ def draw_border(name):
     """A theme-specific 2x pixel frame with a genuinely transparent play opening."""
     if name not in BACKGROUND_NAMES:
         raise ValueError(f"Unknown border theme: {name}")
-    if name == "crystal":
-        return _draw_crystal_border()
+    approved = approved_sources.border(name)
+    if approved is not None:
+        return approved
     return terrain_art.border(name)
 
 

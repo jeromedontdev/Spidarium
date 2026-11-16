@@ -80,7 +80,7 @@ test('native, browser and website expose the same complete, readable help topics
   const native=[...header.matchAll(/\{"([^"]+)","([^"]+)","([^"]+)"\}/g)]
     .map(([,name,icon,text])=>({name,icon,text}));
   assert.deepEqual(native,HELP_TOPICS);
-  assert.equal(native.length,17);
+  assert.equal(native.length,23);
   for(const t of native){
     assert.ok(t.text.length<430,t.name);
     await readFile(new URL(`../../assets/ui_${t.icon}.png`,import.meta.url));
@@ -132,5 +132,5 @@ test('updates live in About; settings tiles use distinct descriptive artwork',()
   ui.back('Help Guide');assert.equal(ui.modal.name,'Menu');
   ui.open('Sound');
   assert.equal(new Set(rows.map(row=>row.icon)).size,rows.length);
-  ui.open('Help Guide');assert.equal(rows.length,17);
+  ui.open('Help Guide');assert.equal(rows.length,23);
 });

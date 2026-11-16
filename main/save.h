@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include "sd.h"
 #include "decor.h"
-#define SAVE_MAX_PAYLOAD 20480u
+#define SAVE_MAX_PAYLOAD 23308u
 #define SAVE_MAX_RAW (SAVE_MAX_PAYLOAD + 12u)
 
 /* Allocate the queue and internal flash-writing stack before starting LVGL. */
@@ -30,6 +30,9 @@ bool save_save(const void *src, size_t size);
 
 /* Snapshot and enqueue on the UI task; flash commits use an internal-stack worker. */
 bool save_request(const void *src, size_t size);
+/* Dedicated completion receipt; ordinary later jobs cannot overwrite it. */
+bool save_request_tracked(const void *src, size_t size, uint32_t *ticket);
+bool save_tracked_result(uint32_t ticket, bool *ok);
 bool save_request_erase(void);
 bool save_busy(void);
 bool save_writing(void);

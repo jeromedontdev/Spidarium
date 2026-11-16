@@ -114,10 +114,14 @@ test('autoFeed and autoHunt default OFF independently; manual aim still works',(
 test('wild timing/flower/daily visitors honor auto_feed rather than manual feed',()=>{
   const s=state();s.autoFeed=true;tick(s);assert.equal(preyCount(s),1);
   care(s,'clean');
-  // Runtime scheduling is directly controllable for focused long-period tests.
+  /* Runtime scheduling is directly controllable for focused long-period tests.
+   * The interval is derived from the hunger deficit, so a spider at the target
+   * waits the full WILD_SPAWN_MS and a hungrier one waits less. */
+  s.hunger=50;
   s._engine.last_wild=s._engine.now_ms-1199950;
   tick(s);assert.equal(preyCount(s),1);
   care(s,'clean');s.level=40;s.xp=1950;s.silk=1000;placeGift(s,6);
+  s.hunger=50;
   s._engine.last_wild=s._engine.now_ms-599950;
   tick(s);assert.equal(preyCount(s),1);
   s.days_lived=1;tick(s);assert.equal(preyCount(s),2);assert.equal(s.prey[1].species,7);
@@ -256,13 +260,13 @@ test('a bug left in the tank leaves a speckle every BUG_POOP_MS',()=>{
   assert.equal(s.poop[0].dirt,CONFIG.POOP_DIRT_BUG);
   assert.equal(cleanReward(s),1);
 });
-test('clean/play pay exact native XP plus one-time achievement Silk',()=>{
+test('clean/play pay native XP, one-time achievement Silk and automatic optional request Silk',()=>{
   const s=state();bug(s);s.poop.push({expires:10000,dirt:CONFIG.POOP_DIRT_SPIDER});
   care(s,'clean');
   assert.equal(s.hygiene,100);assert.equal(s.cleans,1);assert.equal(s.xp,18);
-  assert.equal(preyCount(s),0);assert.equal(s.poop.length,0);assert.equal(s.silk,40);
+  assert.equal(preyCount(s),0);assert.equal(s.poop.length,0);assert.equal(s.silk,45);
   care(s,'play');assert.equal(s.mood,70);assert.equal(s.energy,75);assert.equal(s.plays,1);
-  assert.equal(s.xp,37);assert.equal(s.silk,60);assert.equal(s.state,7);
+  assert.equal(s.xp,37);assert.equal(s.silk,65);assert.equal(s.state,7);
   assert.throws(()=>care(s,'pet')); // Defined on device, but not currently wired.
 });
 test('native integer decay runs every 3s, empty tank regenerates hygiene',()=>{
@@ -346,13 +350,13 @@ test('36 gift shop levels/prices/native effective bonuses and neutral removal',a
   placeGift(s,16);near(giftBonus(s).pounce_range_mult,1.2);
   removeGift(s);for(const [key,value] of Object.entries(giftBonus(s)))assert.equal(value,key==='wild_spawn_bonus'?0:1);
 });
-test('gift visits walk, hold 3s, reward only mood+4 energy+4, then cooldown60s',()=>{
+test('gift visits walk, hold 3s, reward mood+4 energy+4 and optional request, then cooldown60s',()=>{
   const s=state();placeGift(s,0,245,240);s.hunger=80;s.energy=50;s.mood=50;
   visitGift(s);tick(s);assert.equal(s.spider.gift_visiting,true);
   assert.equal(s._engine.gift_hold_until,s._engine.now_ms+3000);
   const before=[s.xp,s.silk];tick(s,3);
   assert.equal(s.visits,1);assert.equal(s.spider.gift_visiting,false);
-  assert.equal(s.energy,54);assert.deepEqual([s.xp,s.silk],before);
+  assert.equal(s.energy,54);assert.deepEqual([s.xp,s.silk],[before[0],before[1]+5]);
   assert.equal(s._engine.gift_visit_at,s._engine.now_ms+60000);
 });
 test('bond gift adds two Silk independently of one-time friendship/gift achievements',()=>{
@@ -407,7 +411,7 @@ test('restore migrates old progress/ownership and resets runtime, no offline dec
   assert.equal(BACKGROUNDS.length,48);
 });
 test('null restore creates fresh state but corrupt saves throw descriptive errors',()=>{
-  assert.equal(restoreSim(null,{random:()=>.5}).version,14);
+  assert.equal(restoreSim(null,{random:()=>.5}).version,18);
   const good=()=>JSON.parse(JSON.stringify(state()));
   for(const value of [[],new Date(),42,'{}',{}, {version:99}, {version:4}]){
     assert.throws(()=>restoreSim(value),/Invalid browser progress:/);
@@ -433,7 +437,7 @@ test('both valid legacy versions retain earned progress and clamp legacy need ra
     const raw={version,hunger:-5,mood:102,energy:999,hygiene:70.5,xp:80,silk:24,
       name:'Legacy spider',owned:[0,1],gift:1,background:'fern',autoFeed:true,autoHunt:true};
     const s=restoreSim(raw,{random:()=>.5});
-    assert.equal(s.version,14);assert.equal(s.level,3);assert.equal(s.xp,100);
+    assert.equal(s.version,18);assert.equal(s.level,3);assert.equal(s.xp,100);
     assert.deepEqual([s.hunger,s.mood,s.energy,s.hygiene],[0,100,100,70]);
     assert.equal(s.silk,24);assert.equal(s.gifts_owned,3);assert.equal(s.gift.kind,1);
     assert.equal(s.name,'Legacy spider');assert.equal(s.auto_feed,0);assert.equal(s.auto_hunt,0);
@@ -553,7 +557,7 @@ test('a v5 save restores with fresh daily fields and a baseline on first tick',(
   for(const key of ['daily_day','daily_base_day','daily_task_base','daily_streak','daily_task_done'])
     delete raw[key];
   const s=restoreSim(raw,{random:()=>.5});
-  assert.equal(s.version,14);
+  assert.equal(s.version,18);
   assert.equal(s.daily_day,CONFIG.DAILY_NEVER);
   assert.equal(s.daily_streak,0);
   assert.equal(dailyAvailable(s),true);

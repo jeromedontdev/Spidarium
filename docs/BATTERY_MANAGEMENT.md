@@ -68,6 +68,54 @@ The MCU RTC timer wakes it even without an external RTC backup battery;
 retention of external RTC time after losing main power needs its own test.
 No flash erase or battery cutoff occurs.
 
+### What the two sleep settings actually do
+
+They are separate controls and are easy to confuse:
+
+- **Deep Sleep After** is the *idle wait before sleeping*. It is a delay, not a
+  wake time. Never means the device never enters deep sleep on its own.
+- **RTC Wake Interval** is the *timer that wakes the board again*. It is only
+  used once the device is already asleep, and it is also the interval used by
+  Deep Sleep Now.
+
+So "Deep Sleep After 15 minutes, RTC Wake 1 hour" means: sit idle for 15
+minutes, sleep, then wake an hour later. The wake is a full boot, not a resume:
+the firmware reloads the save, applies offline catch-up from `last_seen`, and
+carries on. Nothing runs in between, so needs do not decay in real time while
+asleep — the catch-up applies the elapsed time in one step on wake.
+
+Automatic sleep is gated on **RTC Sleep** power mode specifically. Balanced and
+Battery Saver never sleep on their own, so a board left on either of those stays
+awake until the battery is flat. That is deliberate: those modes are for
+interactive use, and a surprise sleep mid-session reads as a crash.
+
+## Unused hardware and disabled features
+
+An audit of `sdkconfig` for capabilities this firmware does not use:
+
+- **Bluetooth is already off** (`CONFIG_BT_ENABLED` is not set). Nothing in the
+  firmware references it, so there is no radio to disable at runtime.
+- **WiFi is already torn down after every job.** The radio is only up for a
+  scan, a sync or an OTA, and `net` deinitialises it afterwards. There is no
+  idle association to power down.
+- **Dynamic frequency scaling and automatic light sleep are available but
+  disabled** (`CONFIG_PM_ENABLE` is not set, CPU is pinned at 240 MHz). Enabling
+  them would let the CPU drop to 80/160 MHz and enter light sleep between
+  frames. It is deliberately left off: the display adapter, the LVGL timers and
+  the audio path all assume a stable clock, and light sleep interacts badly with
+  the adapter's pause/acknowledgement protocol. Turning it on is a real
+  optimisation but needs its own measurement round, not a config flip.
+- **The SD card is mounted on demand**, not held mounted, so it draws nothing
+  while idle.
+- **The camera, the second I2C bus and the unused AXP2101 rails** are not
+  configured at all; the PMIC is left at its board defaults apart from the
+  battery ADC channel.
+
+The honest conclusion is that the remaining battery wins are the ones already
+exposed as settings — brightness, screen timeout, power mode and deep sleep —
+plus the RTC Sleep mode itself. There is no large unused peripheral left to
+switch off.
+
 ## Thread and memory ownership
 
 A 3,072-byte PSRAM-stack worker reads the PMIC once per second. An atomic packed

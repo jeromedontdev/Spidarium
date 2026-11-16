@@ -1,8 +1,77 @@
 # Device-coordinate browser port and v1.1.0 verification
 
+## Companion features (v1.1.31 / save v18)
+
+Training, expressive idle reactions, RTC daily rhythms, subtle opt-in weather,
+visitors, seasonal rewards, photos and explicitly confirmed generations now
+mirror the device. See [the complete life-system contract](COMPANION_LIFE.md).
+The browser uses real IndexedDB PNG photos (eight slots), not device SD files.
+Pet backups do not contain photos. Archive/resume keeps both pets and shares
+habitat/currency; it does not duplicate purchases. These features remain local
+development work until a matching firmware/browser/schema publication.
+
+Both roots put gameplay first, memories/family next, customization afterward,
+then Help and Settings. Settings no longer duplicates album capture.
+Display saves Double-Tap Lights (default on) independently of Dim Enclosure;
+ordinary tap/petting works with the gesture off. Save17 reuses life byte15
+without moving the3096-byte prefix; legacy browser JSON reserved0 migrates.
+Photo deletion needs confirmation and frees only the selected image's slot.
+Native unlink/absence verification and browser IndexedDB commit gate success;
+Cancel never deletes. Damaged device slots are deletable, not evicted.
+Photo Album contains Take Photo, Storage Status and Photo Storage. Only images
+are inside Photo Storage; Generations stays separate in the main menu.
+Native close remembers outgoing
+pages before reset; browser async loading preserves requested pages and clamps
+after deletion. Back returns to the last root/Settings/catalogue/photo page.
+
+Native and browser expose Your Spider, Today and Diary in Menu. Today combines
+Check In, the daily task and both optional requests in one four-tile page.
+The separate Daily Check-In destination is removed; the old Daily route aliases
+Today. Existing streaks, task rewards and once-only claim guards are preserved.
+Claimed check-in/completed task rows remain visible but disabled. Optional
+requests still pay automatically and do not require a check-in.
+Existing Bold/Timid/Greedy/Lazy temperament and bond are retained. Three
+beneficial treat uses, completed minigames of the same kind or completed gift
+visits discover stable favorites. Favorites add two mood and the existing
+happy bounce; a favorite furnishing is revisited after 45 rather than 60 seconds.
+No new spider artwork is used.
+
+Two deterministic optional requests use unlocked prey/currently placed gifts
+and current needs. Only manual catches count; cancelled games, placing/buying
+gifts, spotless cleaning and held/repeated pet taps do not bypass their normal
+completion/cooldown rules. Each request pays five Silk automatically once.
+Not Today dismisses without penalty. Progress/rewards/dismissals survive save.
+Reliable time still uses UTC days internally, but headings and diary dates do
+not display "UTC". Absent time uses labeled play days. Backward clock
+changes cannot reroll, and first calendar acquisition retains the existing set.
+An unobtrusive reminder appears at most once per visible session/day.
+
+The diary stores 64 compact memories, newest first in UI: favorites, newly
+earned achievements, bond thresholds, growth, recovery and grouped requests.
+Existing progress is snapshotted without invented historical memories.
+Eight pins are retained while the oldest unpinned records roll out.
+Pin limits are explicit. Native selection follows record eviction rather than
+pinning a different memory if entries roll out while a detail page is open.
+JSON and raw backups include the complete validated companion state.
+Your Spider rows, request kinds, memory categories, Pin/Unpin, dismissal and
+Sound controls use dedicated deterministic icons, not shared placeholders.
+Repeated memories of the same kind or the same action retain consistent icons.
+
+Save v15 appended592 bytes after the existing268-byte v14 fields. Save v16
+adds2236 life bytes after that860-byte prefix, before the six-byte decor tail
+(new tail offset3096). Save v18 appends `decor_locked` and `auto_clean` at
+bytes3096/3097 plus two reserved bytes, moving the decor tail to3100 and the
+maximum payload to23308. Old v2-v17 raw saves and historical
+browser saves migrate. Old firmware cannot read new saves.
+The former padding byte267 now stores `usb_sounds` (0/1). Sound > USB Chimes toggles
+both physical plug sounds independently, defaulting on for new/old pets.
+Master mute and volume-zero remain authoritative. Browser saves the checkbox
+without simulating board USB edges. Schema has 53 fields; JSON/raw roundtrips
+preserve the flag, while pre-v15 padding is ignored and migrates to enabled.
+
 ## Current working changes: help, progression and interaction
 
-Both game UIs and the website share seventeen help topics, with parity tests
+Both game UIs and the website share twenty-three help topics, with parity tests
 against the native text. WiFi scan results are separate from its four-action/
 status page; Firmware Update lives in About. Browser updates route to real USB
 tools, never an emulated radio. The web flasher omits file/hash listings but

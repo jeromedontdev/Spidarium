@@ -65,6 +65,12 @@ def _stone(draw, x, y, scale, c):
 
 
 def _leaf(draw, base, tip, breadth, c, offset=1):
+    """One leaf: a filled blade split into a lit half and a shadowed half.
+
+    The midrib is a two-pixel stroke and the tip highlight is a short stroke
+    joined to the blade, not a lone pixel, so a leaf reads as a leaf rather
+    than as a scatter of bright dots.
+    """
     bx, by = base
     tx, ty = tip
     dx, dy = tx - bx, ty - by
@@ -76,46 +82,97 @@ def _leaf(draw, base, tip, breadth, c, offset=1):
     inner = (round(bx + dx * .82), round(by + dy * .82))
     _polygon(draw, [base, left, inner], c[offset + 2])
     _polygon(draw, [base, inner, right], c[offset])
-    draw.line([base, inner], fill=c[offset + 3])
+    draw.line([base, inner], fill=c[offset + 3], width=2)
     if length > 9:
-        draw.line([(round(bx + dx * .45), round(by + dy * .45)), left],
-                  fill=c[offset + 1])
-        draw.point((round(bx + dx * .7), round(by + dy * .7)), fill=c[offset + 4])
+        shoulder = (round(bx + dx * .45), round(by + dy * .45))
+        draw.line([shoulder, left], fill=c[offset + 1], width=2)
+        near_tip = (round(bx + dx * .7), round(by + dy * .7))
+        draw.line([near_tip, (round(bx + dx * .85), round(by + dy * .85))],
+                  fill=c[offset + 4])
+
+
+def _plump_leaf(draw, base, tip, breadth, c, offset=1, ink_only=False):
+    """One succulent leaf: a rounded, fleshy blade rather than a pointed blade.
+
+    `_leaf` tapers to a single point, which is right for a fern pinna or a
+    fallen leaf but wrong for a succulent: a rosette of pointed blades reads as
+    a spiky star. This keeps the tip blunt and the body wide, and shades the
+    upper face lit and the lower face shadowed.
+
+    `ink_only` draws just the silhouette. A rosette calls this for every leaf
+    first and then draws the fills, so the ink forms one connected outline
+    around the whole plant instead of a dotted ring where leaves overlap.
+    """
+    bx, by = base
+    tx, ty = tip
+    dx, dy = tx - bx, ty - by
+    length = max(1, math.hypot(dx, dy))
+    nx, ny = -dy / length, dx / length
+    # Blunt tip: stop short of the target and spread across it.
+    ex, ey = bx + dx * .88, by + dy * .88
+    left = (round(bx + dx * .55 + nx * breadth), round(by + dy * .55 + ny * breadth))
+    right = (round(bx + dx * .55 - nx * breadth), round(by + dy * .55 - ny * breadth))
+    cap_l = (round(ex + nx * breadth * .55), round(ey + ny * breadth * .55))
+    cap_r = (round(ex - nx * breadth * .55), round(ey - ny * breadth * .55))
+    outline = [base, left, cap_l, cap_r, right]
+    if ink_only:
+        # A wider silhouette, so the ink survives as a ring around the fill
+        # instead of being covered by it.
+        ink = breadth + 1
+        ink_left = (round(bx + dx * .55 + nx * ink), round(by + dy * .55 + ny * ink))
+        ink_right = (round(bx + dx * .55 - nx * ink), round(by + dy * .55 - ny * ink))
+        ink_cap_l = (round(ex + nx * ink * .55), round(ey + ny * ink * .55))
+        ink_cap_r = (round(ex - nx * ink * .55), round(ey - ny * ink * .55))
+        _polygon(draw, [base, ink_left, ink_cap_l, ink_cap_r, ink_right], c[0])
+        return
+    _polygon(draw, outline, c[offset + 2])
+    _polygon(draw, [base, (round(ex), round(ey)), cap_r, right], c[offset])
+    # A lit rim along the upper edge, a shadowed rim along the lower edge and a
+    # bright tip, so the blade has the four-tone volume a fleshy leaf needs.
+    _polygon(draw, [base, left, cap_l], c[offset + 4])
+    _polygon(draw, [base, cap_r, right], c[offset + 1])
+    _polygon(draw, [cap_l, (round(ex), round(ey)), cap_r], c[offset + 5])
+    draw.line([base, (round(ex), round(ey))], fill=c[offset + 3])
 
 
 def _frond(draw, spine, c):
-    draw.line(spine, fill=c[1], width=2)
-    draw.line(spine, fill=c[4])
-    for i, ((px, py), (nx, ny)) in enumerate(zip(spine, spine[1:])):
-        dx, dy = nx - px, ny - py
-        length = max(1, math.hypot(dx, dy))
-        for t in (.3, .8):
-            x, y = px + dx * t, py + dy * t
-            span = 4.5 * (1 - (i + t) / (len(spine) - 1)) + 1
-            for side in (-1, 1):
-                tx = x - dy / length * span * side + dx / length * 1.8
-                ty = y + dx / length * span * side + dy / length * 1.8
-                tip = (round(tx), round(ty))
-                shoulder = (round((x + tx) / 2 - dx / length),
-                            round((y + ty) / 2 - dy / length))
-                _polygon(draw, [(round(x), round(y)), shoulder, tip,
-                                (round(x + dx / length), round(y + dy / length))],
-                         c[2 if side == -1 else 3])
-                draw.line([(round(x), round(y)), tip], fill=c[4 if side == -1 else 5])
-                draw.point(shoulder, fill=c[1])
-    draw.point(spine[-1], fill=c[6])
+    """One fern frond: a solid tapering blade with a lit and a shadowed half.
+
+    A frond is drawn as a filled band along its spine rather than as a row of
+    separate pinnae. At a 32px canvas individual pinnae are one or two pixels
+    each, so a row of them reads as scattered speckle instead of a leaf. The
+    band tapers toward the tip and is split down its length into a lit upper
+    half and a shadowed lower half, which is what gives it volume.
+    """
+    points = [(round(x), round(y)) for x, y in spine]
+    draw.line(points, fill=c[1], width=3)
+    draw.line(points, fill=c[2], width=2)
+    # Lit upper-left edge and shadowed lower-right edge along the blade.
+    draw.line([(x - 1, y - 1) for x, y in points], fill=c[4])
+    draw.line([(x + 1, y + 1) for x, y in points], fill=c[3])
+    # A short bright run near the tip, so the frond has a lit end.
+    tip = points[-1]
+    draw.line([points[-2], tip], fill=c[5])
+    draw.point(tip, fill=c[6])
 
 
 def _moss(draw, x, y, c):
+    """One moss cushion: a lit dome over a shadowed base, with short shoots.
+
+    The shoots are two-pixel strokes joined to the dome rather than isolated
+    one-pixel dots, so the cushion reads as a soft mass instead of speckle.
+    """
     _polygon(draw, [(x, y + 3), (x + 1, y + 1), (x + 3, y + 1),
                    (x + 4, y), (x + 6, y + 1), (x + 8, y),
                    (x + 10, y + 3), (x + 9, y + 5), (x + 2, y + 5)], c[1])
+    _polygon(draw, [(x + 1, y + 3), (x + 2, y + 2), (x + 4, y + 2),
+                   (x + 5, y + 1), (x + 7, y + 2), (x + 8, y + 3),
+                   (x + 7, y + 4), (x + 2, y + 4)], c[3])
     for dx, dy in ((1, 3), (3, 2), (5, 3), (7, 1)):
         draw.line([(x + dx, y + dy), (x + dx + 1, y + dy - 1),
                    (x + dx + 2, y + dy)], fill=c[4])
         draw.line([(x + dx + 1, y + dy + 1), (x + dx + 2, y + dy + 1)], fill=c[2])
-        draw.point((x + dx, y + dy - 1), fill=c[5])
-    draw.point((x + 4, y + 1), fill=c[6])
+    draw.line([(x + 4, y + 1), (x + 5, y)], fill=c[5])
 
 
 def _flower(draw, c):
@@ -217,18 +274,20 @@ def _draw(name):
             d.point((x, y - 1), fill=c[11])
             d.point((x + 2, y), fill=c[7])
     elif name == "fern":
-        _polygon(d, [(8, 27), (11, 24), (20, 24), (24, 27), (22, 30),
-                     (10, 30)], c[7])
-        d.line([(10, 27), (15, 25), (20, 26)], fill=c[10])
-        d.line([(12, 29), (18, 28), (22, 28)], fill=c[8])
-        d.point((11, 27), fill=c[11])
-        d.point((20, 27), fill=c[9])
+        # A fern is an arching plant, not a starburst: the fronds leave a short
+        # upright stem at different heights and curve outward, so no two share
+        # a single origin point. The pinnae are kept short so the fronds read as
+        # separate leaves rather than merging into one speckled mass.
+        _polygon(d, [(9, 26), (12, 24), (20, 24), (23, 26), (21, 29),
+                     (11, 29)], c[7])
+        d.line([(11, 26), (16, 25), (21, 26)], fill=c[10])
+        d.line([(13, 28), (18, 27), (21, 28)], fill=c[8])
+        d.line([(16, 25), (16, 21), (16, 17)], fill=c[1], width=2)
+        d.line([(16, 25), (16, 21), (16, 18)], fill=c[3])
         for spine in (
-            [(16, 28), (12, 24), (9, 22), (6, 21), (3, 22)],
-            [(16, 28), (12, 21), (9, 16), (7, 11), (5, 8), (3, 7)],
-            [(16, 28), (16, 22), (15, 16), (14, 11), (15, 7), (17, 4)],
-            [(16, 28), (20, 24), (23, 22), (26, 22), (28, 24)],
-            [(16, 28), (21, 20), (23, 15), (25, 10), (27, 8)],
+            [(16, 23), (12, 21), (9, 20), (6, 21)],
+            [(16, 20), (14, 15), (13, 10), (14, 6)],
+            [(16, 21), (19, 16), (21, 11), (22, 7)],
         ):
             _frond(d, spine, c)
     elif name == "moss_clump":
@@ -247,22 +306,42 @@ def _draw(name):
         d.line([(24, 13), (25, 10), (26, 9)], fill=c[3])
         d.point((26, 8), fill=c[6])
     elif name == "succulent":
-        for base, tip, width in (
-            ((16, 21), (3, 20), 4), ((16, 22), (5, 10), 4),
-            ((16, 22), (14, 3), 5), ((16, 22), (25, 7), 5),
-            ((16, 22), (30, 17), 5), ((16, 20), (24, 28), 5),
-            ((16, 20), (8, 28), 5),
-        ):
-            _leaf(d, base, tip, width, c)
-        for base, tip, width in (
-            ((16, 21), (9, 15), 3), ((16, 22), (17, 9), 4),
-            ((16, 22), (23, 16), 3), ((16, 20), (17, 26), 3),
-        ):
-            _leaf(d, base, tip, width, c)
-        d.line([(16, 20), (15, 17), (17, 15)], fill=c[6])
-        for x, y in ((5, 10), (14, 3), (25, 7), (30, 17), (8, 28)):
-            d.point((x, y), fill=c[9])
-            d.point((x, y + 1), fill=c[11])
+        # A rosette is layered, not a ring: the outer leaves splay low and wide,
+        # the middle leaves sit higher and shorter, and the inner bud is a
+        # closed cluster. Leaves are drawn back to front so each layer overlaps
+        # the one behind it, which is what makes it read as a plant rather than
+        # as a ring of green circles. Leaves are kept short and plump: long thin
+        # blades radiating from one point read as a spiky star.
+        outer = (
+            ((16, 22), (5, 25), 5), ((16, 22), (6, 17), 5),
+            ((16, 22), (11, 10), 5), ((16, 22), (21, 9), 5),
+            ((16, 22), (27, 16), 5), ((16, 22), (28, 24), 5),
+            ((16, 22), (22, 28), 5), ((16, 22), (10, 28), 5),
+        )
+        inner = (
+            ((16, 20), (10, 18), 4), ((16, 20), (13, 13), 4),
+            ((16, 20), (20, 13), 4), ((16, 20), (23, 19), 4),
+            ((16, 20), (20, 24), 4), ((16, 20), (12, 24), 4),
+        )
+        # A solid body under the leaves, so the rosette has one continuous
+        # silhouette for the ink ring to follow instead of a scalloped edge.
+        _polygon(d, [(16, 8), (23, 11), (27, 17), (27, 24), (22, 28),
+                     (10, 28), (5, 24), (5, 17), (9, 11)], c[2])
+        for base, tip, width in outer + inner:
+            _plump_leaf(d, base, tip, width, c)
+        # The closed centre bud: a small lit dome, not a highlight pixel.
+        _polygon(d, [(13, 19), (16, 15), (20, 16), (20, 20), (16, 22)], c[4])
+        _polygon(d, [(14, 18), (16, 16), (19, 17), (18, 20)], c[5])
+        d.line([(16, 16), (16, 20)], fill=c[6])
+        # A shallow soil bed under the rosette. It is the plant's secondary
+        # material, so it uses the ramp's earth tones and gives the sprite the
+        # separate material planes the contract asks for. It stays inside the
+        # one-pixel transparent gutter the decor contract requires.
+        _polygon(d, [(8, 25), (11, 23), (20, 23), (24, 25), (22, 28),
+                     (10, 28)], c[7])
+        _polygon(d, [(10, 25), (12, 24), (19, 24), (22, 25), (20, 27),
+                     (12, 27)], c[8])
+        d.line([(12, 26), (16, 25), (19, 26)], fill=c[9])
     elif name in ("flower_white", "flower_pink"):
         _flower(d, c)
     elif name == "mushroom":
@@ -374,8 +453,35 @@ def _draw(name):
     return image
 
 
+def _outline(image, color):
+    """Stroke the outer edge of an opaque silhouette with a one-pixel ink ring.
+
+    Drawing each leaf's own outline does not work for a rosette: every leaf is
+    covered by the next one, so the ink survives only as a dotted ring. Stroking
+    the finished silhouette instead gives one continuous outline around the
+    whole plant.
+    """
+    pixels = image.load()
+    width, height = image.size
+    edge = []
+    for y in range(height):
+        for x in range(width):
+            if pixels[x, y][3]:
+                continue
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if 0 <= nx < width and 0 <= ny < height and pixels[nx, ny][3]:
+                    edge.append((x, y))
+                    break
+    for x, y in edge:
+        pixels[x, y] = color
+    return image
+
+
 def draw(name):
     """Keep filename, canvas, binary alpha and exact nearest-neighbor doubling."""
     if name not in NAMES:
         raise ValueError(f"Unknown core decor: {name}")
-    return _draw(name).resize((64, 64), Image.Resampling.NEAREST)
+    image = _draw(name)
+    if name == "succulent":
+        _outline(image, tuple(bytes.fromhex(RAMPS["succulent"][0])) + (255,))
+    return image.resize((64, 64), Image.Resampling.NEAREST)

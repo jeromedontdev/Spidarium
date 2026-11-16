@@ -280,7 +280,9 @@ void power_tick(void)
     unsigned sample = atomic_load(&s_sample);
     unsigned chime = atomic_exchange(&s_usb_chime, 0);
     if (chime) {
-        if (audio_muted() || audio_volume() == 0)
+        if (!g.usb_sounds)
+            ESP_LOGI("spidarium.power", "USB chime disabled by setting");
+        else if (audio_muted() || audio_volume() == 0)
             ESP_LOGI("spidarium.power", "USB chime silenced by sound settings");
         else if (!audio_play((sfx_t)chime))
             ESP_LOGW("spidarium.power", "USB chime rejected; see audio log");

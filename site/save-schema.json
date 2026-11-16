@@ -1,16 +1,116 @@
 {
   "magic": 1397770564,
-  "version": 14,
+  "version": 18,
   "headerSize": 12,
   "payloadSizes": [
     120,
-    268
+    3100
   ],
-  "maxPayload": 20480,
+  "maxPayload": 23308,
   "decorTail": {
-    "offset": 268,
+    "offset": 3100,
     "stride": 6,
     "countField": "decor_extra_count"
+  },
+  "life": {
+    "offset": 860,
+    "size": 2236,
+    "minVersion": 16,
+    "visitor_day": 0,
+    "season_highwater": 4,
+    "progress": {
+      "offset": 8,
+      "count": 3
+    },
+    "cooldown": 11,
+    "daynight": 12,
+    "weather": 13,
+    "retired_count": 14,
+    "light_gesture_disabled": {
+      "offset": 15,
+      "minVersion": 17
+    },
+    "retired": {
+      "offset": 16,
+      "count": 3,
+      "stride": 740,
+      "core": {
+        "offset": 0,
+        "count": 120
+      },
+      "daily": {
+        "offset": 120,
+        "count": 24
+      },
+      "companion": {
+        "offset": 144,
+        "size": 592
+      },
+      "progress": {
+        "offset": 736,
+        "count": 3
+      },
+      "reserved": 739
+    }
+  },
+  "companion": {
+    "offset": 268,
+    "size": 592,
+    "minVersion": 15,
+    "request_day": 0,
+    "seen_achievements": 4,
+    "requests": {
+      "offset": 8,
+      "count": 2,
+      "stride": 4,
+      "fields": {
+        "kind": 0,
+        "target": 1,
+        "progress": 2,
+        "state": 3
+      }
+    },
+    "treat_counts": {
+      "offset": 16,
+      "count": 12
+    },
+    "gift_counts": {
+      "offset": 28,
+      "count": 36
+    },
+    "play_counts": {
+      "offset": 64,
+      "count": 3
+    },
+    "favorite_treat": 67,
+    "favorite_gift": 68,
+    "favorite_play": 69,
+    "diary_count": 70,
+    "clock_mode": 71,
+    "initialized": 72,
+    "bond_level": 73,
+    "last_stage": 74,
+    "was_sick": 75,
+    "reserved": {
+      "offset": 76,
+      "count": 2
+    },
+    "padding": {
+      "offset": 78,
+      "count": 2
+    },
+    "diary": {
+      "offset": 80,
+      "count": 64,
+      "stride": 8,
+      "fields": {
+        "day": 0,
+        "kind": 4,
+        "value": 5,
+        "pinned": 6,
+        "calendar": 7
+      }
+    }
   },
   "fields": [
     {
@@ -371,11 +471,32 @@
       "minVersion": 11
     },
     {
+      "name": "usb_sounds",
+      "offset": 267,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 15
+    },
+    {
       "name": "decor_extra_count",
       "offset": 256,
       "type": "u32",
       "length": 0,
       "minVersion": 10
+    },
+    {
+      "name": "decor_locked",
+      "offset": 3096,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 18
+    },
+    {
+      "name": "auto_clean",
+      "offset": 3097,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 18
     }
   ]
 }

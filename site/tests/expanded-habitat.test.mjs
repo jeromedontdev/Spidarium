@@ -89,7 +89,7 @@ test('Sound is one reversible master checkbox beside independent music and volum
       audio:{unlock:enabled=>unlocked.push(enabled)},list:items=>{rows=items;},
     });
     ui.open('Sound');
-    assert.deepEqual(rows.map(row=>row.label),['Volume','Sound','Background Music','Music Volume','Soundtrack']);
+    assert.deepEqual(rows.map(row=>row.label),['Volume','Sound','Background Music','Music Volume','Soundtrack','USB Chimes']);
     assert.equal(new Set(rows.slice(0,3).map(row=>row.icon)).size,3);
     assert.equal(rows[1].checkbox,true);assert.equal(rows[1].selected,true);
     rows[1].click();
@@ -124,8 +124,8 @@ test('root and species icons are distinct and redundant movement entries are abs
       list:items=>{rows=items;},
     });
     ui.open('Menu');
-    assert.equal(rows.length,9);
-    assert.equal(new Set(rows.map(row=>row.icon)).size,9);
+    assert.equal(rows.length,15);
+    assert.equal(new Set(rows.map(row=>row.icon)).size,15);
     assert.equal(rows.some(row=>['Arrange Decor','Placed Gift','Placed Items'].includes(row.label)),false);
     ui.open('Prey Species');
     assert.deepEqual(rows.map(row=>row.icon),E.SPECIES.map(item=>`prey_${item.key}_walk_0`));

@@ -45,6 +45,41 @@ typedef struct {
  * the petting budget, so a v6 blob is likewise a valid prefix. */
 #define SAVE_V6_PAYLOAD 152
 
+_Static_assert(offsetof(game_state_t, companion) == 268, "v14 prefix changed");
+_Static_assert(offsetof(game_state_t, usb_sounds) == 267, "USB sounds ABI changed");
+_Static_assert(offsetof(game_state_t, life) == 860, "v15 save ABI changed");
+_Static_assert(sizeof(game_state_t) == 3100, "v18 save ABI changed");
+_Static_assert(offsetof(companion_state_t, request_day) == 0, "day ABI changed");
+_Static_assert(offsetof(companion_state_t, seen_achievements) == 4, "achievement ABI changed");
+_Static_assert(offsetof(companion_state_t, requests) == 8, "request ABI changed");
+_Static_assert(offsetof(companion_state_t, treat_counts) == 16, "treat ABI changed");
+_Static_assert(offsetof(companion_state_t, gift_counts) == 28, "gift ABI changed");
+_Static_assert(offsetof(companion_state_t, play_counts) == 64, "play ABI changed");
+_Static_assert(offsetof(companion_state_t, favorite_treat) == 67, "favorite ABI changed");
+_Static_assert(offsetof(companion_state_t, favorite_gift) == 68, "gift favorite ABI changed");
+_Static_assert(offsetof(companion_state_t, favorite_play) == 69, "play favorite ABI changed");
+_Static_assert(offsetof(companion_state_t, diary_count) == 70, "diary count ABI changed");
+_Static_assert(offsetof(companion_state_t, clock_mode) == 71, "clock ABI changed");
+_Static_assert(offsetof(companion_state_t, initialized) == 72, "initialized ABI changed");
+_Static_assert(offsetof(companion_state_t, bond_level) == 73, "bond ABI changed");
+_Static_assert(offsetof(companion_state_t, last_stage) == 74, "stage ABI changed");
+_Static_assert(offsetof(companion_state_t, was_sick) == 75, "sick ABI changed");
+_Static_assert(offsetof(companion_state_t, reserved) == 76, "reserved ABI changed");
+_Static_assert(offsetof(companion_state_t, diary) == 80, "diary ABI changed");
+_Static_assert(sizeof(companion_memory_t) == 8, "memory ABI changed");
+_Static_assert(sizeof(companion_request_t) == 4, "request size ABI changed");
+_Static_assert(offsetof(companion_memory_t, day) == 0, "memory day ABI changed");
+_Static_assert(offsetof(companion_memory_t, kind) == 4, "memory kind ABI changed");
+_Static_assert(offsetof(companion_memory_t, value) == 5, "memory value ABI changed");
+_Static_assert(offsetof(companion_memory_t, pinned) == 6, "memory pin ABI changed");
+_Static_assert(offsetof(companion_memory_t, calendar) == 7, "memory calendar ABI changed");
+
+static size_t payload_prefix(uint16_t version)
+{
+    return version >= 18 ? sizeof(game_state_t) : version >= 16 ? 3096 :
+           version >= 15 ? 860 : version >= 12 ? 268 : 260;
+}
+
 static bool s_nvs_ready;
 typedef struct {
     size_t size;
@@ -56,12 +91,15 @@ typedef struct {
     uint32_t sleep_seconds;
     sd_screenshot_t screenshot;
     uint8_t *payload;
+    uint32_t ticket;
 } save_job_t;
 static QueueHandle_t s_queue;
 static atomic_uint s_pending;
 static atomic_bool s_writing;
 static atomic_bool s_last_ok = true;
 static atomic_bool s_restore_pending;
+static atomic_uint s_ticket_next, s_ticket_pending, s_ticket_done;
+static atomic_bool s_ticket_ok;
 static bool background_write(uint8_t id);
 
 static void migrate_automation(game_state_t *state, uint16_t version)
@@ -129,6 +167,19 @@ static void migrate_automation(game_state_t *state, uint16_t version)
         state->borders_owned_extra = 0;
         state->border_id = 255;
     }
+    if (version < 15) {
+        state->usb_sounds = 1;
+        companion_defaults(&state->companion);
+    }
+    if (version < 16) life_defaults(&state->life);
+    if (version < 17) state->life.light_gesture_disabled = 0;
+    /* v18 appended two automation switches. A zeroed payload reads as "off",
+     * which is the safe default for both: decor stays movable and the tank is
+     * cleaned by hand until the player opts in. */
+    if (version < 18) {
+        state->decor_locked = 0;
+        state->auto_clean = 0;
+    }
 }
 
 static void save_worker(void *arg)
@@ -162,6 +213,11 @@ static void save_worker(void *arg)
             power_sleep_failed();
         }
         heap_caps_free(job.payload);
+        if (job.ticket) {
+            atomic_store(&s_ticket_ok, ok);
+            atomic_store(&s_ticket_done, job.ticket);
+            atomic_store(&s_ticket_pending, 0);
+        }
         if (job.raw && !ok) atomic_store(&s_restore_pending, false);
         atomic_store(&s_writing, false);
         atomic_fetch_sub(&s_pending, 1);
@@ -251,13 +307,38 @@ bool save_request(const void *src, size_t size)
     save_job_t job = {0};
     return snapshot_job(&job, src, size) && queue_owned(&job);
 }
+
+bool save_request_tracked(const void *src, size_t size, uint32_t *ticket)
+{
+    if (!ticket || atomic_load(&s_ticket_pending)) {
+        ESP_LOGW(TAG, "tracked save rejected: receipt pending or missing");
+        return false;
+    }
+    save_job_t job = {0};
+    if (!snapshot_job(&job, src, size)) return false;
+    uint32_t id = atomic_fetch_add(&s_ticket_next, 1) + 1;
+    if (!id) id = atomic_fetch_add(&s_ticket_next, 1) + 1;
+    job.ticket = id;
+    atomic_store(&s_ticket_pending, id);
+    if (!queue_owned(&job)) { atomic_store(&s_ticket_pending, 0); return false; }
+    *ticket = id;
+    return true;
+}
+
+bool save_tracked_result(uint32_t ticket, bool *ok)
+{
+    if (!ticket || !ok || atomic_load(&s_ticket_done) != ticket) return false;
+    *ok = atomic_load(&s_ticket_ok);
+    return true;
+}
 bool save_request_sleep(uint32_t seconds)
 {
     save_job_t job = { .sleep_seconds = seconds };
-    game_state_t snapshot = g;
+    if (!snapshot_job(&job, &g, sizeof g)) return false;
+    game_state_t *snapshot = (game_state_t *)job.payload;
     time_t now = time(NULL);
-    if (now >= 946684800) snapshot.last_seen = (uint32_t)now;
-    return snapshot_job(&job, &snapshot, sizeof snapshot) && queue_owned(&job);
+    if (now >= 946684800) snapshot->last_seen = (uint32_t)now;
+    return queue_owned(&job);
 }
 bool save_request_erase(void) { return queue_save(&(save_job_t){ .erase = true }); }
 bool save_request_sd(uint8_t operation)
@@ -377,25 +458,27 @@ bool save_load_snapshot(void *dst, size_t size, decor_item_t **extra)
     if (err == ESP_OK && save_raw_valid(buf, len)) {
         save_header_t header;
         memcpy(&header, buf, sizeof header);
-        game_state_t state = {0};
-        size_t prefix = header.version >= 12 ? sizeof state : 260;
-        memcpy(&state, buf + sizeof header, header.size < prefix ? header.size : prefix);
-        migrate_automation(&state, header.version);
+        game_state_t *state = heap_caps_calloc(1, sizeof *state, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!state) { heap_caps_free(buf); ESP_LOGE(TAG, "load state: PSRAM exhausted"); return false; }
+        size_t prefix = payload_prefix(header.version);
+        memcpy(state, buf + sizeof header, header.size < prefix ? header.size : prefix);
+        migrate_automation(state, header.version);
         if (header.size == offsetof(game_state_t, silk)) {
-            state.silk = 20;
-            state.brightness = 50;
-            if (state.gift.used && state.gift.kind < GIFT_KINDS)
-                state.gifts_owned = 1u << state.gift.kind;
+            state->silk = 20;
+            state->brightness = 50;
+            if (state->gift.used && state->gift.kind < GIFT_KINDS)
+                state->gifts_owned = 1u << state->gift.kind;
         }
-        size_t extra_bytes = state.decor_extra_count * sizeof(decor_item_t);
+        size_t extra_bytes = state->decor_extra_count * sizeof(decor_item_t);
         *extra = extra_bytes ? heap_caps_malloc(extra_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL;
         bool loaded = !extra_bytes || *extra;
         if (loaded && extra_bytes) memcpy(*extra, buf + sizeof header + prefix, extra_bytes);
         if (!loaded) ESP_LOGE(TAG, "save extra records: PSRAM exhausted");
-        if (loaded) memcpy(dst, &state, size);
+        if (loaded) memcpy(dst, state, size);
         heap_caps_free(buf);
         ESP_LOGI(TAG, "loaded v%u base=%u extra_decor=%lu", header.version,
-                 (unsigned)size, (unsigned long)state.decor_extra_count);
+                 (unsigned)size, (unsigned long)state->decor_extra_count);
+        heap_caps_free(state);
         return loaded;
     }
     heap_caps_free(buf);
@@ -491,7 +574,7 @@ size_t save_read_raw(void *dst, size_t cap)
     return len;
 }
 
-bool save_raw_valid(const void *src, size_t len)
+static bool raw_valid_state(const void *src, size_t len, game_state_t *state)
 {
     if (!src || len < sizeof(save_header_t) || len > SAVE_MAX_RAW) {
         ESP_LOGW(TAG, "raw save rejected: invalid length");
@@ -509,17 +592,16 @@ bool save_raw_valid(const void *src, size_t len)
     if (hdr.version != SAVE_VERSION && hdr.version != 2 && hdr.version != 5 &&
         hdr.version != 3 && hdr.version != 4 &&
         hdr.version != 6 && hdr.version != 7 && hdr.version != 8 && hdr.version != 9 &&
-        hdr.version != 10 && hdr.version != 11 && hdr.version != 12 && hdr.version != 13) {
+        hdr.version != 10 && hdr.version != 11 && hdr.version != 12 && hdr.version != 13 &&
+        hdr.version != 14 && hdr.version != 15 && hdr.version != 16 && hdr.version != 17) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;
     }
-    size_t prefix = hdr.version >= 12 ? sizeof(game_state_t) : 260;
-    if (!(hdr.version >= 10 && hdr.size >= prefix) &&
-        hdr.size != sizeof(game_state_t) && hdr.size != 132 && hdr.size != 248 &&
-        hdr.size != offsetof(game_state_t, silk) &&
-        hdr.size != SAVE_V5_PAYLOAD && hdr.size != SAVE_V6_PAYLOAD &&
-        hdr.size != SAVE_V7_PAYLOAD && hdr.size != SAVE_V8_PAYLOAD) {
+    size_t prefix = payload_prefix(hdr.version);
+    if (hdr.size > (hdr.version >= 16 ? SAVE_MAX_PAYLOAD : hdr.version >= 15 ? 21072u : 20480u) ||
+        (hdr.version >= 10 && hdr.size < prefix) ||
+        (hdr.version == 2 && hdr.size != 120 && hdr.size != 132)) {
         ESP_LOGW(TAG, "raw write: game-state size %u != %u",
                  (unsigned)hdr.size, (unsigned)sizeof(game_state_t));
         return false;
@@ -534,13 +616,22 @@ bool save_raw_valid(const void *src, size_t len)
         ESP_LOGW(TAG, "raw save rejected: historical version/size mismatch");
         return false;
     }
-    game_state_t state = {0};
-    memcpy(&state, (const uint8_t *)src + sizeof hdr,
+    memset(state, 0, sizeof *state);
+    memcpy(state, (const uint8_t *)src + sizeof hdr,
            hdr.size < prefix ? hdr.size : prefix);
+    if (hdr.version >= 16 && (!life_valid(&state->life) ||
+        (hdr.version == 16 && state->life.light_gesture_disabled != 0))) {
+        ESP_LOGW(TAG, "raw save rejected: invalid life fields");
+        return false;
+    }
+    if (hdr.version >= 15 && (state->usb_sounds > 1 || !companion_valid(&state->companion))) {
+        ESP_LOGW(TAG, "raw save rejected: invalid companion fields");
+        return false;
+    }
     if (hdr.version >= 8) {
         int kinds = hdr.version >= 12 ? DECOR_COUNT : hdr.version >= 10 ? 34 : 16;
         for (int i = 0; i < DECOR_SLOTS; i++) {
-            const decor_item_t *item = &state.decor[i];
+            const decor_item_t *item = &state->decor[i];
             if ((item->kind != 255 && item->kind >= kinds) || item->blocking > (hdr.version >= 13 ? 2 : 1) ||
                 item->x < 0 || item->x > 480 || item->y < 0 || item->y > 480) {
                 ESP_LOGW(TAG, "raw save rejected: invalid inline decor record %d", i);
@@ -549,54 +640,63 @@ bool save_raw_valid(const void *src, size_t len)
         }
     }
     if (hdr.version >= 10) {
-        if (state.decor_extra_count > (SAVE_MAX_PAYLOAD - prefix) / sizeof(decor_item_t) ||
-            hdr.size != prefix + state.decor_extra_count * sizeof(decor_item_t) ||
-            state.music_enabled > 1 || state.lights_dimmed > 1 ||
-            (hdr.version < 12 && state.decor_owned_extra > 3)) {
+        if (state->decor_extra_count > (SAVE_MAX_PAYLOAD - prefix) / sizeof(decor_item_t) ||
+            hdr.size != prefix + state->decor_extra_count * sizeof(decor_item_t) ||
+            state->music_enabled > 1 || state->lights_dimmed > 1 ||
+            (hdr.version < 12 && state->decor_owned_extra > 3)) {
             ESP_LOGW(TAG, "raw save rejected: invalid extended habitat");
             return false;
         }
-        if (hdr.version >= 11 && (state.music_volume > 100 ||
-            state.music_track >= (hdr.version >= 14 ? AUDIO_MUSIC_TRACK_COUNT : 3))) {
+        if (hdr.version >= 11 && (state->music_volume > 100 ||
+            state->music_track >= (hdr.version >= 14 ? AUDIO_MUSIC_TRACK_COUNT : 3))) {
             ESP_LOGW(TAG, "raw save rejected: invalid music preferences");
             return false;
         }
         const decor_item_t *extra = (const decor_item_t *)((const uint8_t *)src + sizeof hdr + prefix);
-        for (uint32_t i = 0; i < state.decor_extra_count; i++)
+        for (uint32_t i = 0; i < state->decor_extra_count; i++)
             if ((extra[i].kind != 255 && extra[i].kind >= (hdr.version >= 12 ? DECOR_COUNT : 34)) || extra[i].blocking > (hdr.version >= 13 ? 2 : 1) ||
                 extra[i].x < 0 || extra[i].x > 480 || extra[i].y < 0 || extra[i].y > 480) {
                 ESP_LOGW(TAG, "raw save rejected: invalid extended decor record %lu", (unsigned long)i);
                 return false;
             }
-        if (hdr.version >= 12 && state.border_id != 255 &&
-            (state.border_id >= THEME_COUNT ||
-             !(state.border_id < 32 ? state.borders_owned & (1u << state.border_id) :
-                 state.borders_owned_extra & (1u << (state.border_id - 32))))) {
+        if (hdr.version >= 12 && state->border_id != 255 &&
+            (state->border_id >= THEME_COUNT ||
+             !(state->border_id < 32 ? state->borders_owned & (1u << state->border_id) :
+                 state->borders_owned_extra & (1u << (state->border_id - 32))))) {
             ESP_LOGW(TAG, "raw save rejected: invalid border ownership");
             return false;
         }
     }
-    if (state.hunger > 100 || state.mood > 100 || state.energy > 100 ||
-        state.hygiene > 100 || state.stage > STAGE_ADULT || state.sick > 1 ||
-        state.muted > 1 || state.gift.used > 1 ||
-        (state.gift.used && state.gift.kind >= (hdr.version >= 12 ? GIFT_KINDS : 18)) ||
-        state.bond > 100 || !memchr(state.name, 0, sizeof state.name) ||
-        !isfinite(state.spider_heading) || state.state > SPIDER_SICK ||
-        (hdr.version >= 3 && (state.auto_feed > 1 || state.auto_hunt > 1)) ||
-        (hdr.version >= 4 && state.volume > 100) ||
-        (hdr.size >= SAVE_V5_PAYLOAD && (state.brightness < 10 || state.brightness > 100)) ||
-        (hdr.version < 12 && state.gifts_owned > 0x3ffffu) ||
-        (hdr.version >= 9 && (state.background_id >= (hdr.version >= 12 ? THEME_COUNT : 24) ||
-         (hdr.version < 12 && state.backgrounds_owned > 0xffffff) ||
-         !(state.backgrounds_owned & 1u) ||
-         !(state.background_id < 32 ? state.backgrounds_owned & (1u << state.background_id) :
-             state.backgrounds_owned_extra & (1u << (state.background_id - 32))) ||
-         state.power_mode > 2 || state.screen_timeout > 4 ||
-         state.deep_sleep_after > 4 || state.rtc_wake > 2))) {
+    if (state->hunger > 100 || state->mood > 100 || state->energy > 100 ||
+        state->hygiene > 100 || state->stage > STAGE_ADULT || state->sick > 1 ||
+        state->muted > 1 || state->gift.used > 1 ||
+        (state->gift.used && state->gift.kind >= (hdr.version >= 12 ? GIFT_KINDS : 18)) ||
+        state->bond > 100 || !memchr(state->name, 0, sizeof state->name) ||
+        !isfinite(state->spider_heading) || state->state > SPIDER_SICK ||
+        (hdr.version >= 3 && (state->auto_feed > 1 || state->auto_hunt > 1)) ||
+        (hdr.version >= 4 && state->volume > 100) ||
+        (hdr.size >= SAVE_V5_PAYLOAD && (state->brightness < 10 || state->brightness > 100)) ||
+        (hdr.version < 12 && state->gifts_owned > 0x3ffffu) ||
+        (hdr.version >= 9 && (state->background_id >= (hdr.version >= 12 ? THEME_COUNT : 24) ||
+         (hdr.version < 12 && state->backgrounds_owned > 0xffffff) ||
+         !(state->backgrounds_owned & 1u) ||
+         !(state->background_id < 32 ? state->backgrounds_owned & (1u << state->background_id) :
+             state->backgrounds_owned_extra & (1u << (state->background_id - 32))) ||
+         state->power_mode > 2 || state->screen_timeout > 4 ||
+         state->deep_sleep_after > 4 || state->rtc_wake > 2))) {
         ESP_LOGW(TAG, "raw save rejected: invalid pet fields");
         return false;
     }
     return true;
+}
+
+bool save_raw_valid(const void *src, size_t len)
+{
+    game_state_t *state = heap_caps_malloc(sizeof *state, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!state) { ESP_LOGE(TAG, "raw validator: PSRAM exhausted"); return false; }
+    bool ok = raw_valid_state(src, len, state);
+    heap_caps_free(state);
+    return ok;
 }
 
 bool save_write_raw(const void *src, size_t len)
@@ -621,87 +721,116 @@ bool save_write_raw(const void *src, size_t len)
 
 bool save_format_test(void)
 {
-    game_state_t base = g;
-    base.decor_extra_count = 0;
-    base.gift.used = 0;
-    base.gifts_owned = 0;
-    base.background_id = 0;
-    base.backgrounds_owned = 1;
-    base.decor_owned_extra = 0;
-    base.border_id = 255;
+    struct {
+        game_state_t base;
+        game_state_t state;
+        uint8_t blob[sizeof(save_header_t) + sizeof(game_state_t)];
+    } *work = heap_caps_malloc(sizeof *work, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!work) {
+        ESP_LOGE(TAG, "save format test: PSRAM exhausted");
+        return false;
+    }
+    game_state_t *base = &work->base;
+    uint8_t *blob = work->blob;
+    const size_t blob_size = sizeof work->blob;
+    *base = g;
+    base->decor_extra_count = 0;
+    base->gift.used = 0;
+    base->gifts_owned = 0;
+    base->background_id = 0;
+    base->backgrounds_owned = 1;
+    base->decor_owned_extra = 0;
+    base->border_id = 255;
     /* Historical fixtures must not inherit newer catalogue IDs from the pet. */
     for (int i = 0; i < DECOR_SLOTS; i++)
-        base.decor[i] = (decor_item_t){.kind = 0xFF};
-    uint8_t blob[sizeof(save_header_t) + sizeof(game_state_t)];
+        base->decor[i] = (decor_item_t){.kind = 0xFF};
     save_header_t header = { .magic = SAVE_MAGIC, .version = SAVE_VERSION, .size = sizeof g };
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &base, sizeof base);
-    bool ok = save_raw_valid(blob, sizeof blob);
-    game_state_t paths = base;
-    paths.decor[0] = (decor_item_t){0, DECOR_WALK_BEHIND, 200, 200};
-    memcpy(blob + sizeof header, &paths, sizeof paths);
-    ok = save_raw_valid(blob, sizeof blob) && ok;
+    memcpy(blob + sizeof header, base, sizeof *base);
+    bool ok = save_raw_valid(blob, blob_size);
+    game_state_t *state = &work->state;
+    for (unsigned flag = 0; flag <= 2; flag++) {
+        *state = *base;
+        state->life.light_gesture_disabled = flag;
+        memcpy(blob + sizeof header, state, sizeof *state);
+        ok = (save_raw_valid(blob, blob_size) == (flag <= 1)) && ok;
+        /* A v16 blob is its own prefix length, not the current sizeof g: the
+         * v18 payload is four bytes longer, so the length must match too. */
+        header.version = 16;
+        header.size = 3096;
+        memcpy(blob, &header, sizeof header);
+        ok = (save_raw_valid(blob, sizeof header + header.size) == (flag == 0)) && ok;
+        header.version = SAVE_VERSION;
+        header.size = sizeof g;
+        memcpy(blob, &header, sizeof header);
+    }
+    *state = *base;
+    state->decor[0] = (decor_item_t){0, DECOR_WALK_BEHIND, 200, 200};
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = save_raw_valid(blob, blob_size) && ok;
     header.version = 12;
     memcpy(blob, &header, sizeof header);
-    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    ok = !save_raw_valid(blob, blob_size) && ok;
     header.version = SAVE_VERSION;
     memcpy(blob, &header, sizeof header);
-    paths.decor[0].blocking = DECOR_PATH_COUNT;
-    memcpy(blob + sizeof header, &paths, sizeof paths);
-    ok = !save_raw_valid(blob, sizeof blob) && ok;
-    memcpy(blob + sizeof header, &base, sizeof base);
-    game_state_t invalid_music = base;
-    invalid_music.music_volume = 101;
-    memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
-    ok = !save_raw_valid(blob, sizeof blob) && ok;
-    invalid_music = base;
-    invalid_music.music_track = AUDIO_MUSIC_TRACK_COUNT;
-    memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
-    ok = !save_raw_valid(blob, sizeof blob) && ok;
-    invalid_music.music_track = AUDIO_MUSIC_TRACK_COUNT - 1;
-    memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
-    ok = save_raw_valid(blob, sizeof blob) && ok;
+    state->decor[0].blocking = DECOR_PATH_COUNT;
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = !save_raw_valid(blob, blob_size) && ok;
+    memcpy(blob + sizeof header, base, sizeof *base);
+    *state = *base;
+    state->music_volume = 101;
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = !save_raw_valid(blob, blob_size) && ok;
+    *state = *base;
+    state->music_track = AUDIO_MUSIC_TRACK_COUNT;
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = !save_raw_valid(blob, blob_size) && ok;
+    state->music_track = AUDIO_MUSIC_TRACK_COUNT - 1;
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = save_raw_valid(blob, blob_size) && ok;
     header.version = 13;
     memcpy(blob, &header, sizeof header);
-    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    ok = !save_raw_valid(blob, blob_size) && ok;
     header.version = 10;
     header.size = 260;
     memcpy(blob, &header, sizeof header);
-    invalid_music.music_volume = 255;
-    memcpy(blob + sizeof header, &invalid_music, sizeof invalid_music);
+    state->music_volume = 255;
+    memcpy(blob + sizeof header, state, sizeof *state);
     ok = save_raw_valid(blob, sizeof header + 260) && ok;
-    migrate_automation(&invalid_music, 10);
-    ok = invalid_music.music_volume == 100 && invalid_music.music_track == 0 && ok;
+    migrate_automation(state, 10);
+    ok = state->music_volume == 100 && state->music_track == 0 && ok;
     header.version = SAVE_VERSION;
     header.size = sizeof g;
     memcpy(blob, &header, sizeof header);
-    game_state_t state = base;
-    state.auto_feed = 2;
-    memcpy(blob + sizeof header, &state, sizeof state);
-    ok = !save_raw_valid(blob, sizeof blob) && ok;
+    *state = *base;
+    state->auto_feed = 2;
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = !save_raw_valid(blob, blob_size) && ok;
     header.version = 2;
+    header.size = 132;
     memcpy(blob, &header, sizeof header);
-    ok = save_raw_valid(blob, sizeof blob) && ok;
-    state.auto_feed = 0xA5;
-    state.auto_hunt = 0x5A;
-    memcpy(blob + sizeof header, &state, sizeof state);
-    ok = save_raw_valid(blob, sizeof blob) && ok;
-    migrate_automation(&state, header.version);
-    ok = state.auto_feed == 0 && state.auto_hunt == 0 && ok;
+    ok = save_raw_valid(blob, sizeof header + header.size) && ok;
+    state->auto_feed = 0xA5;
+    state->auto_hunt = 0x5A;
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = save_raw_valid(blob, sizeof header + header.size) && ok;
+    migrate_automation(state, header.version);
+    ok = state->auto_feed == 0 && state->auto_hunt == 0 && ok;
     header.version = SAVE_VERSION;
-    state = base;
-    state.auto_hunt = 2;
+    header.size = sizeof g;
+    *state = *base;
+    state->auto_hunt = 2;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &state, sizeof state);
-    ok = !save_raw_valid(blob, sizeof blob) && ok;
-    state = base;
-    state.volume = 101;
-    memcpy(blob + sizeof header, &state, sizeof state);
-    ok = !save_raw_valid(blob, sizeof blob) && ok;
-    state.volume = 0;
-    memcpy(blob + sizeof header, &state, sizeof state);
-    ok = save_raw_valid(blob, sizeof blob) && ok;
-    memcpy(blob + sizeof header, &base, sizeof base);
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = !save_raw_valid(blob, blob_size) && ok;
+    *state = *base;
+    state->volume = 101;
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = !save_raw_valid(blob, blob_size) && ok;
+    state->volume = 0;
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = save_raw_valid(blob, blob_size) && ok;
+    memcpy(blob + sizeof header, base, sizeof *base);
     header.version = 2;
     header.size = offsetof(game_state_t, silk);
     memcpy(blob, &header, sizeof header);
@@ -713,71 +842,104 @@ bool save_format_test(void)
     header.version = 5;
     header.size = SAVE_V5_PAYLOAD;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &base, SAVE_V5_PAYLOAD);
+    memcpy(blob + sizeof header, base, SAVE_V5_PAYLOAD);
     ok = save_raw_valid(blob, sizeof header + SAVE_V5_PAYLOAD) && ok;
     /* ...but a v5 header with a v6-sized payload is a lie and must be refused. */
     header.size = sizeof(game_state_t);
     memcpy(blob, &header, sizeof header);
     ok = !save_raw_valid(blob, sizeof header + SAVE_V5_PAYLOAD) && ok;
     /* The migration must default the daily fields rather than inherit garbage. */
-    game_state_t migrated = g;
-    migrated.daily_day = 12345;
-    migrated.daily_streak = 9;
-    migrate_automation(&migrated, 5);
-    ok = migrated.daily_day == DAILY_NEVER && migrated.daily_streak == 0 &&
-         migrated.daily_base_day == DAILY_NEVER && ok;
+    *state = g;
+    state->daily_day = 12345;
+    state->daily_streak = 9;
+    migrate_automation(state, 5);
+    ok = state->daily_day == DAILY_NEVER && state->daily_streak == 0 &&
+         state->daily_base_day == DAILY_NEVER && ok;
 
     /* A v6 blob is likewise a valid prefix of the v7 struct: the petting budget
      * was appended, so an upgrade must not wipe the pet. */
     header.version = 6;
     header.size = SAVE_V6_PAYLOAD;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &base, SAVE_V6_PAYLOAD);
+    memcpy(blob + sizeof header, base, SAVE_V6_PAYLOAD);
     ok = save_raw_valid(blob, sizeof header + SAVE_V6_PAYLOAD) && ok;
     /* ...and a v6 header claiming a v7 payload is a lie. */
     header.size = sizeof(game_state_t);
     memcpy(blob, &header, sizeof header);
     ok = !save_raw_valid(blob, sizeof header + SAVE_V6_PAYLOAD) && ok;
     /* The v6 migration must open the petting budget rather than inherit it. */
-    migrated = g;
-    migrated.pet_xp_day = 12345;
-    migrated.pet_xp_today = 200;
-    migrate_automation(&migrated, 6);
-    ok = migrated.pet_xp_day == DAILY_NEVER && migrated.pet_xp_today == 0 && ok;
+    *state = g;
+    state->pet_xp_day = 12345;
+    state->pet_xp_today = 200;
+    migrate_automation(state, 6);
+    ok = state->pet_xp_day == DAILY_NEVER && state->pet_xp_today == 0 && ok;
 
     /* A v7 blob is a valid prefix of the v8 struct: decor was appended, so an
      * upgrade must keep the pet and start with an empty enclosure. */
     header.version = 7;
     header.size = SAVE_V7_PAYLOAD;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &base, SAVE_V7_PAYLOAD);
+    memcpy(blob + sizeof header, base, SAVE_V7_PAYLOAD);
     ok = save_raw_valid(blob, sizeof header + SAVE_V7_PAYLOAD) && ok;
     /* ...and a v7 header claiming a v8 payload is a lie. */
     header.size = sizeof(game_state_t);
     memcpy(blob, &header, sizeof header);
     ok = !save_raw_valid(blob, sizeof header + SAVE_V7_PAYLOAD) && ok;
     /* The v7 migration must empty the decor slots rather than inherit them. */
-    migrated = g;
+    *state = g;
     for (int i = 0; i < DECOR_SLOTS; i++) {
-        migrated.decor[i].kind = 0;
-        migrated.decor[i].blocking = 1;
-        migrated.decor[i].x = 40;
-        migrated.decor[i].y = 40;
+        state->decor[i].kind = 0;
+        state->decor[i].blocking = 1;
+        state->decor[i].x = 40;
+        state->decor[i].y = 40;
     }
-    migrate_automation(&migrated, 7);
+    migrate_automation(state, 7);
     bool decor_empty = true;
     for (int i = 0; i < DECOR_SLOTS; i++)
-        decor_empty = decor_empty && migrated.decor[i].kind == 0xFF;
+        decor_empty = decor_empty && state->decor[i].kind == 0xFF;
     ok = decor_empty && ok;
     header.version = 8;
     header.size = SAVE_V8_PAYLOAD;
     memcpy(blob, &header, sizeof header);
-    memcpy(blob + sizeof header, &base, SAVE_V8_PAYLOAD);
+    memcpy(blob + sizeof header, base, SAVE_V8_PAYLOAD);
     ok = save_raw_valid(blob, sizeof header + SAVE_V8_PAYLOAD) && ok;
-    migrated = g;
-    migrate_automation(&migrated, 8);
-    ok = migrated.backgrounds_owned == 1 && migrated.background_id == 255 &&
-         migrated.screen_timeout == 3 && migrated.deep_sleep_after == 0 &&
-         migrated.power_mode == 0 && migrated.rtc_wake == 0 && ok;
+    *state = g;
+    migrate_automation(state, 8);
+    ok = state->backgrounds_owned == 1 && state->background_id == 255 &&
+         state->screen_timeout == 3 && state->deep_sleep_after == 0 &&
+         state->power_mode == 0 && state->rtc_wake == 0 && ok;
+    for (unsigned version = 10; version <= 14; version++) {
+        *state = *base;
+        state->music_track = 0;
+        header.version = version;
+        header.size = payload_prefix(version);
+        memcpy(blob, &header, sizeof header);
+        memcpy(blob + sizeof header, state, header.size);
+        ok = save_raw_valid(blob, sizeof header + header.size) && ok;
+        memset(&state->companion, 0xA5, sizeof state->companion);
+        migrate_automation(state, version);
+        ok = companion_valid(&state->companion) &&
+             state->companion.favorite_treat == COMPANION_UNKNOWN && ok;
+    }
+    *state = *base;
+    state->usb_sounds = 2;
+    header.version = SAVE_VERSION;
+    header.size = sizeof *state;
+    memcpy(blob, &header, sizeof header);
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = !save_raw_valid(blob, blob_size) && ok;
+    for (unsigned enabled = 0; enabled <= 1; enabled++) {
+        state->usb_sounds = enabled;
+        memcpy(blob + sizeof header, state, sizeof *state);
+        ok = save_raw_valid(blob, blob_size) && ok;
+    }
+    *state = *base;
+    state->companion.clock_mode = 3;
+    header.version = SAVE_VERSION;
+    header.size = sizeof *state;
+    memcpy(blob, &header, sizeof header);
+    memcpy(blob + sizeof header, state, sizeof *state);
+    ok = !save_raw_valid(blob, blob_size) && ok;
+    heap_caps_free(work);
     return ok;
 }

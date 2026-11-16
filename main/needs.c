@@ -31,9 +31,23 @@ static float s_energy_acc;
 static uint32_t s_last_decay;
 static uint32_t s_last_age;
 static uint32_t s_last_pet;
+/* When the spider next drops. 0 = not scheduled yet. */
+static uint32_t s_poop_at;
+/* When auto clean next runs. 0 = not scheduled. */
+static uint32_t s_auto_clean_at;
 static bool s_petted_once;
 /* Console-only day override. DAILY_NEVER means "use the real clock". */
 static uint32_t s_daily_override = DAILY_NEVER;
+
+void needs_reset_runtime(uint32_t now_ms)
+{
+    s_hunger_acc = s_hygiene_acc = s_energy_acc = 0;
+    s_last_decay = s_last_age = now_ms;
+    s_last_pet = now_ms;
+    s_petted_once = true;
+    s_poop_at = 0;
+    s_auto_clean_at = 0;
+}
 
 static void daily_ensure_base(void);
 
@@ -191,6 +205,7 @@ uint32_t needs_clean(void)
     int dirt = terrarium_dirt();
     g.hygiene = CLEAN_HYGIENE_SET;
     g.cleans++;
+    companion_event(COMPANION_CLEAN, 0);
 
     terrarium_clear_poop();
     prey_clear();
@@ -238,6 +253,7 @@ bool needs_pet(int x, int y)
     g.mood = clamp100((int)g.mood + PET_MOOD_GAIN);
     g.pets++;
     if (g.bond < 100) g.bond++;
+    companion_event(COMPANION_PET, 0);
 
     /* Affection is uncapped; the currency is not. A tap is the cheapest gesture
      * in the game, so an uncapped reward turned a bored thumb into an XP
@@ -473,6 +489,46 @@ void needs_tick(uint32_t now_ms, float dt_s)
         g.energy = clamp100((int)g.energy + whole);
     }
     needs_recompute_mood();
+
+    /* --- the spider's own droppings -------------------------------- */
+    /* A catch used to be the only source of a spider dropping, so a spider that
+     * was fed and left alone never dirtied its tank. It now drops one every
+     * SPIDER_POOP_MS while it is awake and still has something to pass, which
+     * is what makes Clean a recurring job rather than a post-meal chore. */
+    if (g.state != SPIDER_SLEEP && g.hunger >= SPIDER_POOP_MIN_HUNGER) {
+        if (!s_poop_at) s_poop_at = now_ms + SPIDER_POOP_MS;
+        else if ((int32_t)(now_ms - s_poop_at) >= 0) {
+            s_poop_at = now_ms + SPIDER_POOP_MS;
+            terrarium_add_poop(g.spider_x + (rand() % 17) - 8,
+                               g.spider_y + (rand() % 17) - 8);
+            ESP_LOGI(TAG, "spider dropped; tank dirt=%d", terrarium_dirt());
+        }
+    } else if (s_poop_at) {
+        /* Asleep or empty: hold the timer rather than letting it expire, so the
+         * spider does not drop the instant it wakes. */
+        s_poop_at = now_ms + SPIDER_POOP_MS;
+    }
+
+    /* --- auto clean ------------------------------------------------ */
+    /* Opt-in, and deliberately not a second Clean button: it sweeps droppings
+     * but pays no XP and no achievement, so leaving it on is a convenience
+     * rather than a way to farm the manual action.
+     *
+     * It also leaves live prey alone. The manual Clean shoos bugs out, but an
+     * automatic sweep that removed a bug the player had just fed would fight
+     * the Feed button. */
+    if (g.auto_clean && (terrarium_poop_count() > 0 || g.hygiene < CLEAN_HYGIENE_SET)) {
+        if (!s_auto_clean_at) s_auto_clean_at = now_ms + AUTO_CLEAN_MS;
+        else if ((int32_t)(now_ms - s_auto_clean_at) >= 0) {
+            s_auto_clean_at = now_ms + AUTO_CLEAN_MS;
+            int dirt = terrarium_dirt();
+            g.hygiene = CLEAN_HYGIENE_SET;
+            terrarium_clear_poop();
+            ESP_LOGI(TAG, "auto clean: dirt=%d (no XP, prey kept)", dirt);
+        }
+    } else {
+        s_auto_clean_at = 0;
+    }
 
     /* --- sickness ---------------------------------------------------- */
     /* Neglect produces a recoverable SICK state. The spider never dies.
@@ -743,6 +799,7 @@ bool treat_buy(treat_t kind)
         return false;
     }
     g.silk -= cost;
+    uint32_t before = g.hunger | (g.mood << 8) | (g.energy << 16) | (g.hygiene << 24);
 
     switch (kind) {
     case TREAT_HUNGER:
@@ -792,6 +849,8 @@ bool treat_buy(treat_t kind)
         break;
     }
     needs_recompute_mood();
+    uint32_t after = g.hunger | (g.mood << 8) | (g.energy << 16) | (g.hygiene << 24);
+    if (before != after) companion_event(COMPANION_TREAT, kind);
     audio_play(SFX_EAT);
     ESP_LOGI(TAG, "treat %u bought: silk=%lu", (unsigned)kind,
              (unsigned long)g.silk);

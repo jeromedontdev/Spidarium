@@ -4,6 +4,7 @@
 #include "behaviour.h"
 
 #include "audio.h"
+#include "cspider.h"
 #include "decor.h"
 #include "game_config.h"
 #include "gift.h"
@@ -12,6 +13,7 @@
 #include "ui_hud.h"
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -64,6 +66,32 @@ static uint32_t s_stuck_at;
 static bool     s_sleep_forced;
 static uint32_t s_sleep_start;
 static uint32_t s_molt_start;
+static uint32_t s_trick_started;
+static uint8_t s_trick_kind;
+static bool s_trick_active;
+static float s_trick_heading;
+
+bool behaviour_trick_active(void) { return s_trick_active; }
+
+bool behaviour_trick(unsigned kind)
+{
+    if (kind > 2 || g.sick || g.energy < 10 || s_dragging || s_aim_active ||
+        s_pouncing || s_trick_active || s_sleep_forced ||
+        (g.state != SPIDER_IDLE && g.state != SPIDER_WANDER && g.state != SPIDER_PLAY)) {
+        ESP_LOGW("spidarium.behaviour", "trick rejected: busy, resting or unwell");
+        return false;
+    }
+    behaviour_set_state(kind == 2 ? SPIDER_AIM : SPIDER_PLAY);
+    s_trick_kind = kind;
+    s_trick_heading = g.spider_heading;
+    s_trick_started = lv_tick_get();
+    s_trick_active = true;
+    if (kind == 0) cspider_pet_react();
+    /* Every trick gets its own visible pose. Spin is the heading rotation below;
+     * Wave and Bow are drawn by the canvas overlay. */
+    cspider_trick_react(kind);
+    return true;
+}
 
 /* Sub-pixel position accumulator. g.spider_x/y are int16_t, so moving at
  * 55 px/s in 50 ms ticks (2.75 px) is fine, but any speed below ~20 px/s
@@ -387,6 +415,28 @@ static void clamp_to_playfield(void)
     if (g.spider_x > g_play.right)  { g.spider_x = (int16_t)g_play.right;  s_px = (float)g.spider_x; }
     if (g.spider_y < g_play.top)    { g.spider_y = (int16_t)g_play.top;    s_py = (float)g.spider_y; }
     if (g.spider_y > g_play.bottom) { g.spider_y = (int16_t)g_play.bottom; s_py = (float)g.spider_y; }
+
+    /* Last line of defence against standing inside a solid item. advance()
+     * refuses those steps and the pounce landing is pushed out, but a decor
+     * item placed on top of the spider, or a restored save, can still leave it
+     * embedded. Nudge it to the nearest free point instead of leaving it there
+     * for the steering to grind against. */
+    if (decor_blocks_point(g.spider_x, g.spider_y)) {
+        int16_t bx, by;
+        float bd;
+        if (decor_nearest_blocking(g.spider_x, g.spider_y, 200.0f, &bx, &by, &bd)) {
+            float ax = (float)(g.spider_x - bx), ay = (float)(g.spider_y - by);
+            float ad = sqrtf(ax * ax + ay * ay);
+            if (ad < 1.0f) { ax = 0.0f; ay = -1.0f; ad = 1.0f; }
+            float r = 24.0f;
+            g.spider_x = (int16_t)((float)bx + ax / ad * r);
+            g.spider_y = (int16_t)((float)by + ay / ad * r);
+            s_px = (float)g.spider_x;
+            s_py = (float)g.spider_y;
+            ESP_LOGW("spidarium.behaviour", "spider was inside solid decor; moved to (%d,%d)",
+                     (int)g.spider_x, (int)g.spider_y);
+        }
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -411,6 +461,7 @@ bool behaviour_sleep_forced(void)
 
 void behaviour_set_state(spider_state_t state)
 {
+    if (state != g.state) s_trick_active = false;
     if (g.state == state) return;
 
     g.state = (uint8_t)state;
@@ -732,6 +783,18 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
     /* Player aiming owns the creature; AI cannot wander/crouch or auto-fire
      * midway through a held drag. Prey uses the same signal to hold position. */
     if (s_dragging && behaviour_aim_active()) return;
+    if (s_trick_active) {
+        uint32_t elapsed = now_ms - s_trick_started;
+        if (g.sick || g.energy < 10 || elapsed >= 1800u) {
+            g.spider_heading = s_trick_heading;
+            s_trick_active = false;
+            behaviour_set_state(SPIDER_IDLE);
+        } else {
+            if (s_trick_kind == 1)
+                g.spider_heading = wrap_pi(s_trick_heading + (float)elapsed * 2.0f * PI_F / 1800.0f);
+            return;
+        }
+    }
     if (!g.auto_hunt && (g.state == SPIDER_STALK || g.state == SPIDER_AIM))
         behaviour_set_state(SPIDER_IDLE);
     /* Sick spiders move at a fraction of normal speed. */
@@ -774,8 +837,9 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
             } else if ((int32_t)(now_ms - s_gift_hold_until) >= 0) {
                 g.mood = g.mood > 96 ? 100 : g.mood + 4;
                 g.energy = g.energy > 96 ? 100 : g.energy + 4;
+                companion_event(COMPANION_VISIT, g.gift.kind);
                 s_gift_visiting = false;
-                s_gift_visit_at = now_ms + 60000;
+                s_gift_visit_at = now_ms + (g.companion.favorite_gift == g.gift.kind ? 45000 : 60000);
             }
 
             if ((int32_t)(now_ms - s_gift_visit_end) >= 0) {
@@ -797,11 +861,15 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
          * awake" report.
          *
          * A player-initiated sleep now holds for a minimum duration, so the
-         * button always visibly works. Automatic sleep (from exhaustion) still
-         * wakes on the energy threshold.
+         * button always visibly works. Automatic sleep (from exhaustion) wakes
+         * on SLEEP_AUTO_WAKE_ENERGY, which is deliberately well above the
+         * temperament threshold that caused the sleep. Waking at the same value
+         * the spider fell asleep at made the two rules oscillate every tick,
+         * and because the eyes are drawn black while asleep the symptom was a
+         * spider whose eyes flickered.
          *
-         * A SICK spider wakes much earlier: sleeping to 95 takes ~12 min at the
-         * asleep regen rate, during which mood sits at 0 and it cannot feed
+         * A SICK spider wakes much earlier: sleeping to full takes ~12 min at
+         * the asleep regen rate, during which mood sits at 0 and it cannot feed
          * itself, which would make SICK permanent. */
         if (s_sleep_forced) {
             /* Player asked for this. Hold until the spider is actually rested,
@@ -818,7 +886,9 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
         }
 
         if (g.sick ? (g.energy >= 30)
-                   : ((g.energy >= 95) || (g.hunger < 25))) {
+                   : ((g.energy >= SLEEP_AUTO_WAKE_ENERGY) ||
+                      (g.hunger < SLEEP_HUNGER_WAKE &&
+                       g.energy >= game_temperament()->sleep_threshold + 5))) {
             behaviour_set_state(SPIDER_IDLE);
         }
         break;
@@ -856,8 +926,39 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
         }
 
         if ((int32_t)(now_ms - s_pounce_end) >= 0) {
-            g.spider_x = (int16_t)s_pounce_tx;
-            g.spider_y = (int16_t)s_pounce_ty;
+            /* A pounce is ballistic, so it can land inside a solid item. The
+             * walk path refuses those steps, but the landing was written
+             * straight into g.spider_x/y, which is why the spider appeared to
+             * stand on top of blocking decor. Push the landing back out to the
+             * nearest free point before handing over to prey.c. */
+            int16_t lx = (int16_t)s_pounce_tx, ly = (int16_t)s_pounce_ty;
+            if (decor_blocks_point(lx, ly)) {
+                int16_t bx, by;
+                float bd;
+                if (decor_nearest_blocking(lx, ly, 200.0f, &bx, &by, &bd)) {
+                    float ax = (float)(lx - bx), ay = (float)(ly - by);
+                    float ad = sqrtf(ax * ax + ay * ay);
+                    if (ad < 1.0f) { ax = 0.0f; ay = -1.0f; ad = 1.0f; }
+                    /* Land just outside the item's radius, on the side the
+                     * pounce came from. */
+                    const decor_def_t *def = NULL;
+                    for (int i = 0; i < decor_slot_count(); i++) {
+                        const decor_item_t *it = decor_at(i);
+                        if (it && it->blocking == DECOR_SOLID && it->x == bx && it->y == by) {
+                            def = decor_def(it->kind);
+                            break;
+                        }
+                    }
+                    float r = (float)(def ? def->radius : 16) + 4.0f;
+                    lx = (int16_t)((float)bx + ax / ad * r);
+                    ly = (int16_t)((float)by + ay / ad * r);
+                    ESP_LOGI("spidarium.behaviour",
+                             "pounce landing pushed out of solid decor to (%d,%d)",
+                             (int)lx, (int)ly);
+                }
+            }
+            g.spider_x = lx;
+            g.spider_y = ly;
             behaviour_sync_position();
             s_pouncing = false;
             /* Hand control to prey.c, which resolves the catch. */
@@ -1102,7 +1203,9 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
 
 bool behaviour_gift_test(void)
 {
-    game_state_t original = g;
+    game_state_t *original = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!original) { ESP_LOGW("spidarium.behaviour", "gift test rejected: PSRAM exhausted"); return false; }
+    *original = g;
     float px = s_px, py = s_py;
     bool pos_init = s_pos_init, visiting = s_gift_visiting;
     uint32_t visit_at = s_gift_visit_at, hold = s_gift_hold_until;
@@ -1119,7 +1222,8 @@ bool behaviour_gift_test(void)
     behaviour_tick(now + 3001, 0.05f);
     ok = ok && !s_gift_visiting && g.energy == 54 && g.mood == 54 &&
          s_gift_visit_at == now + 3001 + 60000;
-    g = original; s_px = px; s_py = py; s_pos_init = pos_init;
+    g = *original; s_px = px; s_py = py; s_pos_init = pos_init;
+    heap_caps_free(original);
     s_gift_visiting = visiting; s_gift_visit_at = visit_at; s_gift_hold_until = hold;
     s_gift_visit_end = end; s_idle_until = idle;
     return ok;

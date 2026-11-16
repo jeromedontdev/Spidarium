@@ -13,6 +13,75 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- Development v1.1.31/save v18 adds optional training, subtle RTC rhythms and
+  weather, visitors/season rewards, real photos and safe generations. See
+  [the life-system guide](COMPANION_LIFE.md) for gates, limits and verification
+  boundaries. `life.c` owns bounded model state, `album.c` uses the existing
+  persistence worker, and only LVGL owns screenshots/viewer objects. Keep
+  three archived pets with explicit confirmed swaps; habitat/currency remain
+  shared. Never overwrite an archive or photo automatically. Keep
+  firmware/browser/schema paired.
+  Large diagnostic state backups must use explicit PSRAM, not the8KB LVGL stack.
+  Photo deletion is confirmed and worker-owned, including damaged slots;
+  success needs verified absence or a committed browser IDB transaction.
+  Gameplay precedes memories/customization; Help and Settings are last.
+  Display saves Double-Tap Lights (default enabled) plus independent manual
+  Dim Enclosure. No Settings screenshot row; keep diagnostic console captures.
+  v17 reuses life byte15 for light_gesture_disabled (0/1), with no size growth.
+  Preserve the global preference across generation swaps; v2-v16 migrate0.
+  Audio hardware gain is fixed; existing PCM gets logarithmic master gain
+  and20ms ramps. Refill telemetry is not proof of crackle-free audible output.
+  Photo Album contains Take Photo, Storage Status and Photo Storage.
+  Photo Storage lists only saved images; Generations is a separate main-menu
+  feature with no album shortcut. Album entry queues a scan for current status.
+  Both UIs retain session menu pages across Back/rebuild. Native page capture
+  occurs before ui_menu_close resets its page; browser list clamps deleted pages.
+  Older short effects taper their last5ms to zero; music/pet/USB hashes stay intact.
+
+- Save v18 appends `decor_locked` and `auto_clean` at bytes3096/3097 plus two
+  reserved bytes, keeping the payload 4-byte aligned. Current fixed prefix is
+  3,100 bytes, payload bound23,308 and the compiled schema has55 fields.
+  v17 and earlier default both settings to off. Read all v2-v17 backups using
+  their original tail offsets.
+- Save v16 appends the pointer-free 2,236-byte optional life state at byte860:
+  three training tracks, an active-time cooldown, real-calendar reward
+  highwaters, cosmetic toggles and three complete 740-byte retired-pet records.
+  Current fixed prefix is3,096 bytes; payload bound23,304 retains all3,368
+  extra decor slots. Read all v2-v15 backups using their original tail offsets.
+  Retirement/resume swap pet-only state and enqueue one complete snapshot;
+  capacity never evicts pets and queue rejection rolls back the full state.
+  No RTC means unavailable calendar events, not invented seasonal rewards.
+  `life_test()` is non-destructive and never submits a real save.
+- Icon policy: distinct features/actions need dedicated recognizable artwork;
+  no shared generic placeholders, recolors or renamed duplicates. Repeating
+  the same action (Back/Next) may retain its icon. Apply across device/browser/
+  website; see [the style contract](ART_STYLE.md#dedicated-icons-no-reuse-for-different-meanings).
+  Companion and Sound submenu entries now have dedicated deterministic icons;
+  native UITEST checks distinct loaded icon indices, not just filenames.
+- Development v1.1.31 adds companion preferences, optional Today requests and
+  a pinnable Diary. The existing temperament/bond/art are preserved. Main-menu
+  Your Spider/Today/Diary expose the new state. Today combines Check In, the
+  original daily task and both optional requests; old Daily routes alias it.
+  Preserve once-only claim guards, task rewards and check-in streaks.
+  Treat/game/gift favorites discover after three actual successful events,
+  remain stable and add two mood. Manual catches only, completed minigames,
+  completed gift visits, accepted petting and needed cleaning feed requests.
+  Two requests/day pay five Silk automatically once; Not Today has no penalty.
+  UTC is used internally when reliable, without visible UTC labels; otherwise
+  use explicit play days. Backward time
+  cannot reroll; acquiring calendar time retains the current pair/progress.
+  Sixty-four memories/eight pins use bounded copied records, never screenshots.
+  Save v15 appends 592 bytes at 268 (860-byte prefix), then six-byte decor tail.
+  Historical v12-v14 tails stay at 268 and v10-v11 at 260. Old backups migrate
+  without fabricated historical memories.
+- Sound > USB Chimes controls both attach/detach cues independently of effects
+  and music; master mute/zero volume still win. The saved usb_sounds flag uses
+  former padding byte267; it defaults on for new pets and all pre-v15 backups.
+  Save v15 retains an 860-byte prefix/592-byte companion state; schema has 53 fields.
+  Its 21,072-byte payload bound preserves the old maximum decor capacity.
+  Console `set usb_sounds 0|1` is strict. Browser mirrors the saved checkbox but
+  does not pretend to monitor USB; actual device PMIC boot checks verify output.
+
 - USB chimes: the battery worker confirms two one-second PMIC samples for
   attach/detach and atomically posts the rising/falling event, including USB boot.
   Read errors/contact bounce/charging-full changes must not re-arm it.
@@ -92,7 +161,7 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   shared UI icons against native/browser mappings; every achievement bit must
   be covered. Use the complete PNG-only pipeline, not just its unit tests.
 
-- Current working changes add seventeen help topics in the native/browser game
+- Current working changes include twenty-three help topics in the native/browser game
   and website, simplify WiFi, move Firmware Update into About, center grid art,
   enlarge/inset slider targets, gate affordability and fix the missing native
   Borders route. Keep Wipe Spider last in Settings. Achievements now show all

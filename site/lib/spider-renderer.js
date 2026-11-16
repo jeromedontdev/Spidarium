@@ -34,9 +34,14 @@ export function rgb565Channels(rgb) {
   const r = (rgb >> 19) & 31, g = (rgb >> 10) & 63, b = (rgb >> 3) & 31;
   return [(r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2)];
 }
-export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote = 'none', now = 0, phase = 0, walking = false, colour = 0, pupilColour = 0, legColour = 2, fangColour = 1, sick = false } = {}) {
+export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote = 'none', now = 0, phase = 0, walking = false, colour = 0, pupilColour = 0, legColour = 2, fangColour = 1, sick = false, fangDrop = 0 } = {}) {
   if (!(pixels instanceof Uint8ClampedArray) || pixels.length !== 96 * 96 * 4) throw new Error('Spider needs a 96×96 RGBA buffer');
   pixels.fill(0);
+  /* fangDrop moves the fangs down the face for the large hero portrait only.
+   * The device canvas and the exported PNGs keep the native geometry, so this
+   * defaults to 0 and the pixel-for-pixel parity test still holds. */
+  const fangFwd = f(15.5 + fangDrop), fangLen = f(4.5 - fangDrop * .125),
+        fangHalfW = f(3.0 - fangDrop * .125), fangDx = f(4.0 - fangDrop * .125);
   let scaleF = 1, scaleR = 1;
   if (state === 'pounce') { scaleF = 1.17; scaleR = .82; }
   else if (state === 'aim') { scaleF = 1.11; scaleR = .84; }
@@ -133,9 +138,9 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
     for (const side of [-1, 1]) circle(...toCanvas(15, f(side * 5.5)), 4, pupil);
     for (const side of [-1, 1]) circle(...toCanvas(16, f(f(side * 5.5) - 2)), 1, dull(0xffffff));
     for (const side of [-1, 1]) {
-      triangle([toCanvas(f(8 + 15.5 - f(4.5 * .5)), f(f(side * 4) - 3)),
-        toCanvas(f(8 + 15.5 - f(4.5 * .5)), f(f(side * 4) + 3)),
-        toCanvas(f(8 + 15.5 + f(4.5 * .5)), f(side * 4))], fang);
+      triangle([toCanvas(f(8 + fangFwd - f(fangLen * .5)), f(f(side * fangDx) - fangHalfW)),
+        toCanvas(f(8 + fangFwd - f(fangLen * .5)), f(f(side * fangDx) + fangHalfW)),
+        toCanvas(f(8 + fangFwd + f(fangLen * .5)), f(side * fangDx))], fang);
     }
   }
   return pixels;

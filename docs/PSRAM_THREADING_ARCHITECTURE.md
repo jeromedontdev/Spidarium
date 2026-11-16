@@ -20,6 +20,8 @@ Choose memory by the consumer's capabilities, not just allocation size.
 | Additional decor records / renderer object-pointer pool | Explicit PSRAM; grows on placement/restore, never per frame |
 | Placement preview image/ring and Done/Cancel controls | Retained LVGL objects created at boot; existing decoded art reused, no per-drag object/canvas creation |
 | Save job snapshots and raw/SD transfer buffers | Explicit PSRAM; copied before enqueue, freed after completion/rejection |
+| Life-system archive/rollback/test snapshots | Fixed pointer-free save data; temporary full-state copies explicitly in PSRAM, never on the8KB LVGL stack |
+| v16/v17 life/generation/save-test snapshots | Explicit PSRAM; no 3,096-byte game-state locals on the LVGL stack; theme rollback copies only changed scalar fields |
 | Audio and serial-worker stacks | `xTaskCreateWithCaps`, SPIRAM + 8BIT |
 | Network and save/SD worker stacks | Explicit internal RAM: flash operations disable caches |
 | Synthesized audio PCM buffer | Explicit PSRAM, 12,800 bytes |
@@ -86,14 +88,58 @@ Do not disable the assertion or assume a deduplicated NVS write proves safety.
   LVGL destroys that snapshot after worker completion/generation acknowledgement;
   workers neither free its pixels nor call LVGL. A second full-screen copy
   would exceed the expanded habitat's available PSRAM.
+  The on-device Photo Album uses this same borrowed snapshot and persistence
+  worker, never a new worker or LVGL-side file access. Eight fixed SD BMP paths
+  are scanned asynchronously and created exclusively, with flush/fsync and
+  pixel readback before success. Viewer loads validate RGB565 BMP headers,
+  exact lengths and dimensions up to480x480 before allocating one explicit
+  PSRAM pixel buffer (at most460,800 bytes). Completion transfers ownership to
+  LVGL, which detaches the image before freeing it. Unclaimed loaded images
+  reject replacement requests. Album files are separate from pet backups;
+  damaged/full albums never trigger automatic overwrites or deletion.
   Restored state is loaded on that worker and copied back to LVGL; no NVS read
   occurs from the external-stack LVGL task.
+  The pending SD restore prefix also allocates explicitly in PSRAM, rather
+  than growing internal static BSS with the save ABI. Allocate before changing
+  NVS; free on worker failure or after LVGL adopts its copied state.
   Save acknowledgements propagate queue rejection instead of reporting success.
   Background ownership/selection, power, music and enclosure lighting share
-  the v14 pet snapshot: 268-byte fixed prefix plus six bytes per extra decor
-  slot. The original twelve slots/older offsets remain unchanged. The 20 KB
-  serialized-payload ceiling is a storage-resource/protocol bound, not a
+  the v16 pet snapshot: 3096-byte fixed prefix plus six bytes per extra decor
+  slot. The original twelve slots/older offsets remain unchanged. The v15
+  serialized-payload ceiling was21,072 bytes, adding592 bytes to the former20KB
+  bound, preserving the old maximum extra-decor count. This is a protocol bound, not a
   twelve-item gameplay limit; storage/allocation/commit failures are explicit.
+  Save v16 additionally appends2236 bounded life bytes at860 and raises the
+  exact maximum valid payload to23304 bytes, preserving3368 extra decor records.
+  Three740-byte archived pets contain selected pet data, not duplicated
+  currency/inventory/habitat. Model changes do not create a new worker.
+  v17 reuses life byte15 for the global lighting-gesture disable flag without
+  growing a snapshot. Confirmed photo deletion is SD job8 on the same worker:
+  unlink only the selected fixed slot and verify ENOENT before success.
+  No filesystem work or worker wait is added to a menu callback.
+  Album entry and Photo Storage entry queue scans; neither performs card I/O
+  or waits in the LVGL callback. Capture and status remain on the album root.
+  Session page history uses bounded scalar menu arrays, not a persisted pet
+  field, stack-sized game backup or extra worker. Capture the outgoing page
+  before generic ui_menu_close resets it.
+  Day/night overlay, six weather pixels and visitor image are retained LVGL
+  objects; no weather network calls or per-frame object creation.
+  The592-byte companion extension contains fixed preference counters, two
+  requests and64 eight-byte diary records (at most eight pinned). It stays
+  inline in the existing authoritative game-state object so save snapshots
+  remain pointer-free; this adds592 bytes of internal BSS, measured against
+  the DMA floor. Diary UI strings and test backups allocate explicitly in
+  PSRAM. No journal I/O, screenshot buffers or worker LVGL calls are introduced.
+  Audio master gain now scales existing PCM in place on its worker with20ms
+  ramps and at most50ms chunks; fixed codec gain avoids queued-sample jumps.
+  This adds no buffer, LVGL work or blocking control call.
+  Legacy short-effect tails taper their last5ms in that same buffer to exact
+  zero before idle DMA silence; music, pet and USB source hashes stay unchanged.
+  Request/milestone changes enqueue copied snapshots; no write occurs on LVGL.
+  v12-v14 retain their 268-byte prefix/decor-tail boundary during migration.
+  Former padding byte267 is the saved USB-chime toggle, defaulting on for
+  pre-v15 saves. LVGL checks it before queuing either PMIC edge effect;
+  master mute/zero volume still suppress playback. No extra audio buffer.
   Queue entries own their variable PSRAM payloads. SD restore transfers owned
   records to LVGL after worker completion instead of mutating active records.
   Boot reads the old separate background key only for one-time v8 migration.

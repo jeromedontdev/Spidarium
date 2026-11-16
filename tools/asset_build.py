@@ -8,6 +8,8 @@ import struct
 import subprocess
 import sys
 from terrain_art import MOSS_FLOOR_SHA, MOSS_BORDER_SHA
+from companion_icon_art import NAMES as COMPANION_ICONS
+import approved_sources
 
 try:
     from PIL import Image, ImageDraw
@@ -17,8 +19,8 @@ except ImportError:
 
 SPIDER_COUNT = 39
 PREY_SPECIES = ("fly", "cricket", "moth", "beetle", "roach", "mealworm", "fruitfly", "waxworm")
-ASSET_COUNT = 337
-NON_SPIDER_COUNT = 298
+ASSET_COUNT = 387
+NON_SPIDER_COUNT = 348
 APPROVED_CRYSTAL_PIXEL_SHA256 = "89d076f4219d5839d72f9b137a0f893647177223f745ee95887a5886f76f8c6b"
 APPROVED_CRYSTAL_BORDER_SOURCE_SHA256 = "7ea7c587861a0844e9296a01b01a22859f631f5ac1d7602af157081bdeac9c09"
 APPROVED_CRYSTAL_BORDER_PIXEL_SHA256 = "e6160c76ed9bc30aea45595ba507e4a5155e55f9687c49382702e23d314c6e1a"
@@ -41,6 +43,7 @@ UI_ICONS = (
     "backgrounds", "achievements", "prey", "settings", "wifi", "sd", "about",
     "battery", "display", "sound", "auto_feed", "screenshot", "reset", "volume",
     "music",
+    *COMPANION_ICONS,
 )
 ACHIEVEMENTS = (
     "first_meal", "first_pet", "first_clean", "first_play", "first_hunt",
@@ -197,10 +200,19 @@ def validate_pixel_art(image, name):
             raise ValueError(f"{name}: border must be 240x240")
         if image.getchannel("A").crop((16, 16, 224, 224)).getbbox():
             raise ValueError(f"{name}: border paints inside the transparent opening")
-        if name == "border_crystal_0.png" and hashlib.sha256(image.tobytes()).hexdigest() != APPROVED_CRYSTAL_BORDER_PIXEL_SHA256:
-            raise ValueError(f"{name}: pixels differ from the fitted PixelLab Crystal border")
-        if name == "border_moss_0.png" and hashlib.sha256(image.tobytes()).hexdigest() != MOSS_BORDER_SHA:
-            raise ValueError(f"{name}: pixels differ from the approved moss border")
+        theme = name[len("border_"):-len("_0.png")]
+        if approved_sources.is_border_approved(theme):
+            # Approved frames are pinned by pixel hash, so their richer detail
+            # is verified exactly rather than bounded by tone limits.
+            if theme == "moss":
+                if hashlib.sha256(image.tobytes()).hexdigest() != MOSS_BORDER_SHA:
+                    raise ValueError(f"{name}: pixels differ from the approved moss border")
+            else:
+                expected = approved_sources.APPROVED_BORDERS[theme][1]
+                if hashlib.sha256(image.tobytes()).hexdigest() != expected:
+                    raise ValueError(
+                        f"{name}: pixels differ from the approved {theme} border"
+                    )
     if name.startswith(("decoritem_", "gift_", "treat_")) and len(colors) < 8:
         raise ValueError(f"{name}: furnishings need at least 8 visible material tones")
     minimum = (6 if "_dead_" in name else 9) if name.startswith("prey_") else (
@@ -210,12 +222,18 @@ def validate_pixel_art(image, name):
     if is_background:
         if len(colors) > MAX_BACKGROUND_COLORS:
             raise ValueError(f"{name}: background exceeds {MAX_BACKGROUND_COLORS} colors")
-        if name == "background_crystal_0.png":
-            if image.size != (240, 240) or hashlib.sha256(image.tobytes()).hexdigest() != APPROVED_CRYSTAL_PIXEL_SHA256:
-                raise ValueError(f"{name}: pixels differ from the approved textured Crystal floor")
-            return len(colors)
         if image.size != (240, 240):
             raise ValueError(f"{name}: background must be 240x240")
+        theme = name[len("background_"):-len("_0.png")]
+        if approved_sources.is_approved(theme):
+            # Approved imports are pinned by pixel hash, so their richer
+            # texture is verified exactly rather than bounded by tone limits.
+            expected = approved_sources.APPROVED_FLOORS[theme][1]
+            if hashlib.sha256(image.tobytes()).hexdigest() != expected:
+                raise ValueError(
+                    f"{name}: pixels differ from the approved {theme} floor"
+                )
+            return len(colors)
         is_moss = name == "background_moss_0.png"
         is_minimal = name == "background_minimal_0.png"
         tone_limit = 17 if is_moss else 3 if is_minimal else 16
@@ -328,6 +346,21 @@ def validate_splatters(directory):
                     raise ValueError(f"{filename}: resembles intact {clip}_{frame} prey")
 
 
+def validate_companion_icons(directory):
+    """New semantic actions must not copy any old or new icon pixels/silhouette."""
+    images = {name: logical_pixels(directory, f"ui_{name}.png") for name in UI_ICONS}
+    contents = {name: image.tobytes() for name, image in images.items()}
+    masks = {
+        name: image.getchannel("A").tobytes() for name, image in images.items()
+    }
+    for name in COMPANION_ICONS:
+        for other in UI_ICONS:
+            if other != name and contents[name] == contents[other]:
+                raise ValueError(f"ui_{name}.png: reused icon pixels from ui_{other}.png")
+            if other != name and masks[name] == masks[other]:
+                raise ValueError(f"ui_{name}.png: reused icon silhouette from ui_{other}.png")
+
+
 def validate(directory):
     expected = expected_dimensions()
     actual = {name for name in os.listdir(directory) if name.lower().endswith(".png")}
@@ -356,6 +389,7 @@ def validate(directory):
                 validate_pixel_art(image, name)
     validate_achievements(directory)
     validate_splatters(directory)
+    validate_companion_icons(directory)
     return expected
 
 
@@ -732,12 +766,15 @@ def main():
     print(f"ACHIEVEMENTS: {len(ACHIEVEMENTS)} unique dedicated badge contents and silhouettes")
     print(f"SPLATTERS: all {len(PREY_SPECIES)} species, colored puddles and detached droplets")
     print(f"BACKGROUNDS: {len(BACKGROUNDS)} opaque 240x240 keeper enclosures, "
-          f"at most {MAX_BACKGROUND_COLORS} colors; 46 bounded textured centers, "
-          "hash-verified approved moss and Crystal floors")
+          f"at most {MAX_BACKGROUND_COLORS} colors; "
+          f"{len(approved_sources.APPROVED_FLOORS)} hash-verified approved floors, "
+          "the rest bounded textured centers")
     print(f"DECOR: {len(DECOR_ITEMS)} placeable props with 8-12 material tones each")
     print(f"GIFTS: {len(GIFTS)} furnishings with 8-12 material tones each")
     print(f"TREATS: {len(TREATS)} dedicated 48x48 fictional game item icons")
-    print(f"BORDERS: {len(BACKGROUNDS)} 240x240 frames; transparent [16,224) opening")
+    print(f"BORDERS: {len(BACKGROUNDS)} 240x240 frames; transparent [16,224) opening; "
+          f"{len(approved_sources.APPROVED_BORDERS) + len(approved_sources.BORDER_SPECIAL)} "
+          "hash-verified approved frames")
 
 
 if __name__ == "__main__":

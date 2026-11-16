@@ -44,8 +44,12 @@ static bool s_check_items[MENU_ITEMS];
 static int s_icon_indices[MENU_ITEMS];
 static ui_menu_pick_cb s_cb;
 static ui_menu_back_cb s_back;
+static ui_menu_close_page_cb s_close_page;
 static const ui_menu_item_t *s_items;
 static int s_count, s_page;
+/* The page the last menu was showing when it closed. Row callbacks run after
+ * the teardown, so this is what ui_menu_page() reports to them. */
+static int s_last_page;
 static int s_destructive_id = -1;
 static lv_obj_t *s_input, *s_input_error, *s_keyboard, *s_visibility_label;
 static lv_obj_t *s_visibility_button;
@@ -73,7 +77,9 @@ static int menu_icon(const char *text)
 {
     if (!text) return sprite_icon_index("status");
     static const struct { const char *label, *icon; } icons[] = {
-        {"Daily","daily"}, {"Check In","daily"}, {"Treats","treats"}, {"Backgrounds","backgrounds"},
+        {"Daily","today"}, {"Today","today"}, {"Check In","checkin"},
+        {"Your Spider","personality"}, {"Diary","diary"},
+        {"Treats","treats"}, {"Backgrounds","backgrounds"},
         {"Achievements","achievements"}, {"Prey Species","prey"}, {"Decor","decor"},
         {"Settings","settings"}, {"WiFi","wifi"}, {"SD Card","sd"}, {"About","about"},
         {"Catch 3 Prey","feed"}, {"Clean 2 Times","clean"}, {"Play 3 Times","play"},
@@ -82,7 +88,8 @@ static int menu_icon(const char *text)
         {"RTC Wake Interval","daily"}, {"Deep Sleep Now","lock"}, {"Save and Sleep","sd"},
         {"Volume","volume"}, {"Sound","sound"},
         {"Background Music","music"},
-        {"Mute","sound"}, {"Soundtrack","backgrounds"}, {"Music Volume","music"},
+        {"Mute","sound"}, {"Soundtrack","soundtrack"}, {"Music Volume","music_volume"},
+        {"USB Chimes","usb_chimes"},
         {"Screen Rotation","display"}, {"Help Guide","about"},
         {"Network Status","status"}, {"Scan Networks","wifi"}, {"Add Network","feed"}, {"Saved Networks","sd"},
         {"Sync RTC Now","daily"}, {"Forget Network","reset"},
@@ -162,6 +169,7 @@ static lv_obj_t *button(lv_obj_t *parent, int x, int y, int w, int h,
 }
 
 void ui_menu_set_back(ui_menu_back_cb cb) { s_back = cb; }
+void ui_menu_set_close_page_cb(ui_menu_close_page_cb cb) { s_close_page = cb; }
 
 static void on_back(lv_event_t *e)
 {
@@ -173,6 +181,13 @@ static void on_back(lv_event_t *e)
 
 void ui_menu_close(void)
 {
+    ui_menu_close_page_cb closed = s_close_page;
+    s_close_page = NULL;
+    if (s_menu && closed) closed(s_page);
+    /* Remember the page across the close. A row callback runs *after* the menu
+     * has been torn down, so ui_menu_page() inside it always read 0 and every
+     * "toggle and stay on this page" action jumped back to page 1. */
+    if (s_menu) s_last_page = s_page;
     if (s_play_timer) lv_timer_delete(s_play_timer);
     s_play_timer = NULL;
     s_play_reward = NULL;
@@ -387,7 +402,7 @@ void ui_menu_set_slider_value(uint8_t item, uint8_t value)
     refresh_page();
 }
 
-int ui_menu_page(void) { return s_page; }
+int ui_menu_page(void) { return s_menu ? s_page : s_last_page; }
 
 void ui_menu_capture_hide(bool hidden)
 {
@@ -502,9 +517,10 @@ static void play_round_end(bool correct)
         return;
     }
     uint8_t score = s_play_score;
+    uint8_t kind = s_play_kind;
     ui_minigame_reward_cb reward = s_play_reward;
     ui_menu_close();
-    uint32_t xp = reward ? reward(score) : 0;
+    uint32_t xp = reward ? reward(score, kind) : 0;
     open_panel("Play Complete");
     char text[112];
     snprintf(text, sizeof text, "%u / %u\n+%lu XP / +%u Silk\nMood +%u / Energy -%u",
@@ -680,6 +696,16 @@ static void on_row(lv_event_t *e)
     if (cb) cb(id);
 }
 
+bool ui_menu_test_distinct_icons(void)
+{
+    for (int i = 0; i < s_count; i++) {
+        if (s_icon_indices[i] < 0 || !assets_image(s_icon_indices[i])) return false;
+        for (int j = 0; j < i; j++)
+            if (s_icon_indices[i] == s_icon_indices[j]) return false;
+    }
+    return s_count > 0;
+}
+
 bool ui_menu_test_pick(uint8_t id)
 {
     for (int i = 0; i < s_count; i++) {
@@ -688,7 +714,15 @@ bool ui_menu_test_pick(uint8_t id)
         lv_obj_send_event(s_row[i % page_size()], LV_EVENT_CLICKED, NULL);
         return true;
     }
+
     return false;
+}
+
+bool ui_menu_test_back(void)
+{
+    if (!s_menu) return false;
+    on_back(NULL);
+    return true;
 }
 
 /* Slider rows report live; the menu stays open so the value can be dragged. */
@@ -711,6 +745,22 @@ static void on_slider(lv_event_t *e)
         snprintf(text, sizeof text, "%u%%", (unsigned)value);
         lv_label_set_text(s_detail[row], text);
     }
+}
+
+void ui_menu_open_image(const char *title, const lv_image_dsc_t *image)
+{
+    if (!image || !image->data) {
+        ESP_LOGE("spidarium.menu", "photo viewer rejected: no pixels");
+        return;
+    }
+    open_panel(title);
+    lv_obj_t *photo = lv_image_create(s_menu);
+    lv_image_set_src(photo, image);
+    lv_obj_set_size(photo, MENU_WIDTH - 24, 288);
+    lv_obj_set_pos(photo, 12, 76);
+    lv_image_set_inner_align(photo, LV_IMAGE_ALIGN_CONTAIN);
+    lv_image_set_antialias(photo, false);
+    lv_obj_set_clickable(photo, false);
 }
 
 static void open_items(const char *title, const ui_menu_item_t *items, int count,
@@ -1011,8 +1061,9 @@ static bool test_slider_drag(int row)
 }
 static int s_test_rewards;
 static uint8_t s_test_score;
-static uint32_t test_reward(uint8_t score)
+static uint32_t test_reward(uint8_t score, uint8_t kind)
 {
+    (void)kind;
     s_test_rewards++;
     s_test_score = score;
     return 6 + score * 4;

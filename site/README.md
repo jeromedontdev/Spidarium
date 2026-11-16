@@ -189,8 +189,14 @@ Promotional spiders are rendered from the same `lib/spider-renderer.js` the game
 uses, so they match the device; each player's chosen colors are preserved.
 The unboxed battery icon appears only with care, inside the upper-right safe
 area below the identity panel. The page ear is flush with the square playfield
-corner at all sizes. Settings > Save Screenshot downloads a 480x480 PNG of the
-canvas only: no menu or HUD, no SD-card emulation.
+corner at all sizes. Photo Album > Take Photo captures 480x480 PNGs without menus or HUD;
+Delete Photo requires confirmation and committed IndexedDB deletion. Cancel
+preserves the photo; deletion frees one of eight slots. Settings no longer
+duplicates capture. Display saves Double-Tap Lights (on by default) separately
+from Dim Enclosure. Gameplay leads the root menu; Help and Settings are last.
+Back remembers the last session page, including asynchronously loaded photo
+lists. Take Photo and Storage Status stay in Photo Album; Photo Storage contains
+only saved images. Generations stays separate in the main menu.
 The locally bundled Montserrat font retains its OFL notice.
 
 WiFi/RTC/OTA, SD-card access and battery/charging telemetry require actual
@@ -251,13 +257,14 @@ Export reads `SAVE HEX …` plus `OK save export` and downloads the **complete r
 binary save**, not only its payload. Offline viewer accepts raw `.bin` or
 hex `.txt`/`.hex` and uses the bundled compiled schema. It checks the 12-byte
 little-endian magic/version/reserved/payload-size header, legacy fixed payloads
-v10/v11's 260-byte and v12's 268-byte prefixes plus counted six-byte decor tails,
+v10/v11's260-byte, v12-v14's268-byte, v15's860-byte and v16's3096-byte prefixes plus counted six-byte decor tails,
 schema field boundaries and finite numeric values. It shows absent appended
 fields in legacy saves without inventing values. It does not edit device blobs.
 Firmware remains the authority on field-level compatibility.
 
 Restore requires a live device schema, an explicit checkbox and a second
-confirmation. `save restore HEX` respects the schema's 20 KB payload ceiling
+confirmation. `save restore HEX` respects the schema's payload ceiling
+(23,304 bytes in v16; 21,072 in v15; 20KB in v10-v14)
 and paces serial chunks for the complete variable tail. Only
 `OK save restore; reboot required` counts as success.
 The device is left paused; **Reboot device** requires separate confirmation.
@@ -297,9 +304,25 @@ The corrected production page was also verified to render the native 96×96
 canvas, request no obsolete spider-sheet PNGs, default to “SPIDER” with an
 empty name input, and offer Play rather than Pet. Renderer tests compare all
 eight angular leg poses to the exact native C regression fixtures.
-The current hardware schema is v12 with 52 fields and a 268-byte fixed payload
-plus six bytes per extra decor slot. Save-codec tests exercise historical
-v2-v9 prefixes, variable tails, high ownership bits and malformed records.
+v1.1.31 uses schema v18 with a3100-byte fixed payload
+plus six bytes per extra decor slot. The 592-byte companion extension stores
+stable treat/game/gift preferences, two optional requests and 64 diary records
+(eight pins). Your Spider, Today and Diary mirror the device; old saves migrate
+without fabricated memories. Today combines Check In, the original daily task
+and two optional requests, retaining streaks and once-only rewards; the old
+Daily route aliases Today. Calendar headings/dates omit the technical UTC
+suffix without changing clock logic. Companion and Sound submenu meanings use
+dedicated pixel icons. Sound > USB Chimes persists a separate checkbox
+in former padding byte267; it defaults on for pre-v15 saves. Browser does not
+simulate board USB edges. Raw/JSON validation requires numeric 0/1.
+Save-codec/native-interoperability tests cover historical v2-v14 prefixes,
+variable tails, high ownership bits, companion validation and malformed records.
+Save v18 appends Lock Decor and Auto Clean at bytes3096/3097 plus two reserved
+bytes; v17 and earlier default both to off.
+Training, expression, Calendar rhythms/visitors/seasons, IndexedDB photo storage
+and confirmed safe generations are described in [the life-system guide](../docs/COMPANION_LIFE.md).
+The2236-byte life extension follows companion state at860. Photo images are
+separate from JSON/raw pet backups; export them before clearing browser storage.
 
 Captured screenshots are in `site/screenshots/`: `desktop.png` (whole website),
 `simulator.png` (interactive section), and `mobile.png` (390-CSS-pixel layout).

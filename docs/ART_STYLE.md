@@ -2,9 +2,16 @@
 
 ## Direction
 
-**16-bit SNES-era pixel art**, with crisp clusters, hue-shifted material ramps,
-top-left lighting, shaded volume and broken highlights. Not smooth noise,
-vector shapes, filtered photographs, or flat 8-bit silhouettes.
+**Modern hand-crafted pixel art**, with crisp clusters, hue-shifted material
+ramps, top-left lighting, shaded volume and broken highlights. Not smooth
+noise, vector shapes, filtered photographs, or flat 8-bit silhouettes.
+
+"Modern pixel art" is the working reference rather than a named console
+generation. The target is the standard used by contemporary indie games: real
+per-material shading, deliberate lighting, and enough tonal depth that surfaces
+read as objects rather than as flat fills. Naming specific commercial titles in
+a generation prompt is also counterproductive, because image services reject
+prompts that reference copyrighted works.
 
 The November 2026 reference is a nine-panel sheet of woodland, ruins, desert,
 mushroom glade, autumn, snow, shore, crystal cave and pond scenes. Its useful
@@ -75,12 +82,64 @@ The central **160x160 source pixels**,
 coordinates `[40,200)` on both axes,
 use at most **16 closely spaced substrate tones**, with luminance span
 at most **64/255** (integer luma weights 299/587/114). Minimal retains 3/24.
-The exact approved moss allows 17 tones/80 luminance span but is hash-pinned;
-the exact approved Crystal remains a separate richer hash-pinned source.
+The exact approved moss allows 17 tones/80 luminance span but is hash-pinned.
 On screen this protects a 320x320 play area. Strong outlines, large stones,
 foliage banks and accent colors
 stay outside it. Fine center texture is clustered and low contrast, never
 isolated bright/dark noise.
+
+### Approved imports are exempt from the tone limits
+
+A background may instead be imported unchanged from a reviewed source image
+and pinned by pixel hash. Approved imports are verified exactly rather than
+bounded by the tone limits above, because procedural drawing cannot reproduce
+their texture and the hash already guarantees the published art cannot drift.
+
+The approved **crystal** floor is the reference for what a richer import looks
+like: 64 colors, 56 center tones, and a center luminance span of 142/255
+against a mean of 65. Its richness comes from hue variation inside a narrow
+luminance band, not from high contrast. Measured over the central 160x160 play
+area it has a luminance standard deviation near 8 and a p10-p90 spread near 16,
+which is why the spider stays readable on it despite the color depth.
+
+Generated textures arrive far outside that band. `tools/import_background.py`
+pulls them into it: it reduces to 240x240, fits luminance contrast to the
+reference, retargets the mean, applies the shared top-left light, desaturates
+toward the reference, and quantizes to 64 colors without dithering. Adopt a
+source only after reviewing the converted result at native scale.
+
+**Contrast is fitted, brightness is per theme.** A brick floor comes back far
+contrastier than a snowfield, so a single contrast multiplier either flattens
+the snow or leaves the brick too busy to read the spider against; the tool
+searches for the factor that lands the central play area near the reference
+standard deviation of 8.1. Brightness is not shared, though: forcing every floor
+to crystal's mean of 65 would turn snow, sand and kitchen into mud. `THEME_MEAN`
+holds the mean each procedural floor already shipped with, so an imported floor
+keeps the brightness players associate with its theme.
+
+All 48 shipped floors are now approved imports except **moss**, which keeps its
+own pinned path in [terrain_art.py](../tools/terrain_art.py).
+
+### Organic ground must not repeat
+
+Repetition is correct for manufactured surfaces — brick, floorboards, tiling,
+paving, panelling — and those themes may tile visibly. **Organic ground must
+not.** Soil, moss, leaf litter, sand, gravel and ash must never show a repeating
+unit, a grid, a honeycomb, or an evenly spaced field of similar shapes. Every
+region of an organic background is unique, with mound sizes mixed across a wide
+range. A regular cobblestone-like field is a defect on an organic theme even
+when its palette and shading are otherwise correct.
+
+Two failure modes recur when generating organic ground, and both are defects
+even when the palette and shading are otherwise correct:
+
+- **The bubble field.** Asking for "soft rounded cushions" produces a uniform
+  field of similar rounded lumps, which reads as cobblestone. Ask for
+  fine-grained, feathery or fractured structure instead, and name the defect in
+  the avoid list.
+- **The starburst.** Asking for "fine fronds" can produce radiating star-shaped
+  clusters on a regular spacing, which is a repetition defect. Ask for an even
+  mat of tiny shoots instead.
 
 This is an intentional refinement of the former "ground texture only" brief:
 small non-blocking terrain-edge vegetation is allowed, but large logs,
@@ -133,6 +192,28 @@ shadowed halves and a midrib. Top-left lighting is shared throughout.
 Legacy `decor_*.png` derive from the same redesigned placeable art, including
 the newer core-prop drawings.
 
+### Organic props must read as their subject, not as speckle
+
+At a 32x32 logical canvas a one-pixel stroke is a sixteenth of the sprite, so a
+scatter of them reads as noise rather than as material. Three rules follow:
+
+- **A frond is a solid tapering blade, not a row of pinnae.** Individual pinnae
+  are one or two pixels each, so a row of them merges into a speckled mass.
+  `_frond()` draws a filled band along the spine, split into a lit upper half
+  and a shadowed lower half.
+- **A fern is an arching plant, not a starburst.** Fronds must leave the stem at
+  different heights and curve outward. Five fronds radiating from one point is
+  the "grass star" this contract forbids.
+- **A succulent is a layered rosette, not a ring of pointed blades.** Leaves are
+  short and plump with blunt tips (`_plump_leaf()`), drawn back to front so each
+  layer overlaps the one behind it, over a solid body that gives the ink ring a
+  continuous silhouette to follow. Long thin blades radiating from one point
+  read as a spiky star.
+
+Ink outlines are stroked onto the finished silhouette (`_outline()`) rather than
+drawn per element. Per-element outlines are covered by the next element, which
+leaves a dotted ring instead of a continuous edge.
+
 **Decor includes all thirty-six gift furnishings**, not only the sixty-eight
 `decoritem_*.png` props. Gifts use the same top-left light, ink rims, shaded
 wood/stone/foliage and 8-12 visible tones within their smaller 16x16 logical
@@ -141,6 +222,32 @@ Crystal/Sapphire Lookouts and Royal Perch are furniture; Leaf Shelter,
 Acorn Hide, Bone Tunnel and Diamond Retreat are usable-looking shelters.
 Shared cut-wood platforms have grain and lit edges; gemstone accents have
 facets, foliage has separate leaf planes, and silk has woven folds.
+
+### Gifts must read as their object at 16x16
+
+The same "no speckle" rule applies, and it bites harder here because the canvas
+is half the size. A gift is drawn as a solid body with a second material, never
+as a set of thin strokes:
+
+- **A bone is a shaft with two knuckled ends**, plus a leather thong so it is not
+  one flat ivory mass.
+- **A twig is a solid limb with a fork**, thickest at the base, with bark grain
+  along the stem.
+- **Coral is a branching colony**: tapered tubes with a lit upper face, a
+  shadowed lower face and rounded polyp tips.
+- **Sap is a resin run on a solid branch**: a connected bead chain, not a dotted
+  line.
+- **A ruby or sapphire is a cut stone**: table facet, crown facets and pavilion
+  inside one ink silhouette, on a gold setting.
+- **A crown is a band with three points** and a jewelled rim.
+- **A silk hammock is a filled cloth curve** slung between two solid posts, with
+  connected fold bands.
+- **A crescent bed is a filled crescent polygon** with a mattress laid in its
+  curve. `_oval()` draws an ink outline, so cutting a hole through one leaves
+  only the outline behind.
+
+Every gift needs at least eight visible tones, which in practice means a second
+material: a setting, a thong, a platform, a soil bed.
 
 Never change catalogue IDs, ordering, footprint radii, blocking defaults or
 save data for an art-only change. The C enum/catalogue, sprite mappings,
@@ -177,6 +284,37 @@ are not shaded wood; gothic stone is cool with burgundy accents; academia
 is oak/brass; household goods are porcelain/cloth; witchcraft is black-plum
 and herb green; fossils are umber/amber; Japanese props are bamboo/stone.
 
+### Approved border imports
+
+A border may also be imported from a reviewed source image and pinned by pixel
+hash, exactly like a floor. The approved **crystal** frame is the reference:
+chunky pale stone blocks with a lighter top face, a darker lower face, and
+small crystal accents growing out of the band.
+
+Unlike a floor, a frame is decorative, so it is allowed far more contrast than
+the quiet play area a floor must provide. Crystal already runs at a luminance
+standard deviation near 47 over its opaque pixels. `tools/import_border.py`
+therefore treats contrast as a **ceiling** rather than a target: it reduces
+contrast only until the rim comes in under `SD_CEILING` (80), so a generated
+frame keeps the shading that makes it read as carved. Fitting to crystal's
+exact sd instead flattens that shading into a flat strip.
+
+The tool also has to solve a geometry problem the generator does not. It
+usually draws a black margin around the frame and a band far wider than the
+contract's 8 logical pixels. The tool crops to the drawn content, finds the
+hollow middle by looking for the longest run of rows and columns that are
+mostly empty, then nine-slices the band down to exactly 8 pixels and forces
+everything inside the opening to alpha zero. That is the same geometry the
+crystal frame uses, so a generated frame lands on the same grid.
+
+All 48 shipped frames are now approved imports. Every theme, including
+**crystal**, is registered in `APPROVED_BORDERS` and pinned by the SHA256 of
+its published 240x240 pixels. Crystal used to be nine-sliced from a PixelLab
+frame by `gen_sprites._draw_crystal_border()`; it is now a plain approved
+import like the rest, so that special case is gone and `BORDER_SPECIAL` is
+empty. **moss** keeps its own pinned path in
+[terrain_art.py](../tools/terrain_art.py).
+
 ## Small-sprite translation
 
 The same language must remain legible on a 16px gift or 24px icon/prey canvas.
@@ -210,6 +348,28 @@ mint hygiene, amber food, blue energy, gold XP, and individual badge accents.
 existing clusters; it never changes alpha, ink or unrelated details.
 
 ## Menu and website chrome
+
+### Dedicated icons: no reuse for different meanings
+
+Every distinct feature, menu destination, item and achievement needs its own
+recognizable icon in the approved SNES-era style. Do not reuse a generic icon
+for unrelated entries, recolor the same glyph, or copy pixels under a new
+filename as a substitute for dedicated artwork. Your Spider, Today and Diary,
+for example, require different illustrations rather than shared status,
+calendar or achievement placeholders.
+
+The same action may retain its icon wherever it appears (such as Back or
+Next); this consistency does not permit different actions to share one.
+Apply the rule to native menus, the browser game and website. When adding a
+feature, include its artwork and wire every relevant surface before calling
+the icon work complete. Review silhouettes and meaning at actual menu size,
+not just filenames or palette differences. Preserve the approved spider.
+
+[companion_icon_art.py](../tools/companion_icon_art.py) authors the 28 dedicated
+companion/Today/Sound icons as distinct silhouettes on the same logical grid.
+The validator rejects duplicate decoded pixels and alpha silhouettes within
+that set and against existing UI icons. Native menu tests also verify distinct
+loaded indices for the new controls; inspect actual-size captures as well.
 
 Native modal rows, setup, status, care cards, editor keys, sliders and minigame
 tiles use flat palette fills, opaque two-pixel borders, two-pixel corner steps
@@ -250,9 +410,9 @@ powershell -File build.ps1
 ```
 
 For a complete review sheet, add `--preview PATH.png` to the validator.
-It lays out all 298 non-spider assets with nearest-neighbor sampling.
+It lays out all348 non-spider assets with nearest-neighbor sampling.
 
-The validator checks 337 RGBA PNGs, dimensions/names, binary alpha, sprite grid,
+The validator checks387 RGBA PNGs, dimensions/names, binary alpha, sprite grid,
 palette limits, quiet centers, deterministic hashes across two passes, runtime
 mappings, and every decoded QOI pixel in the existing pack. Every source PNG,
 including backgrounds, badges and spider exports, must remain byte-identical

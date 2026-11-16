@@ -19,6 +19,10 @@ void terrarium_refresh_gift(void);
 /* Rebuild the decor layer (after placing, removing or toggling an item). */
 void terrarium_refresh_decor(void);
 
+/* Re-parent walk-behind items so only their top half covers the spider. Cheap
+ * enough for the render tick: it only touches items whose side changed. */
+void terrarium_decor_depth(void);
+
 /* Rebuild the background after a theme change. */
 void terrarium_rebuild(void);
 bool terrarium_test(void);

@@ -99,7 +99,7 @@ def validate_save_schema(root: Path) -> Path:
     names = set()
     ends = []
     for field in fields:
-        width = {"u8": 1, "u16": 2, "u32": 4}.get(field["type"], field["length"])
+        width = {"u8": 1, "u16": 2, "u32": 4}.get(field["type"]) or field.get("length", 0)
         if (field["name"] in names or width <= 0 or field["offset"] < 0 or
                 (field["type"] == "decor[12]" and width != 72) or
                 field["offset"] + width > sizes[1]):
@@ -109,12 +109,56 @@ def validate_save_schema(root: Path) -> Path:
     alignment = max((4 if field["type"] == "u32" else
                      2 if field["type"] in ("u16", "decor[12]") else 1
                      for field in fields), default=1)
+    if schema["version"] >= 15:
+        expected = {
+            "offset": 268, "size": 592, "minVersion": 15,
+            "request_day": 0, "seen_achievements": 4,
+            "requests": {"offset": 8, "count": 2, "stride": 4,
+                         "fields": {"kind": 0, "target": 1, "progress": 2, "state": 3}},
+            "treat_counts": {"offset": 16, "count": 12},
+            "gift_counts": {"offset": 28, "count": 36},
+            "play_counts": {"offset": 64, "count": 3},
+            "favorite_treat": 67, "favorite_gift": 68, "favorite_play": 69,
+            "diary_count": 70, "clock_mode": 71, "initialized": 72, "bond_level": 73,
+            "last_stage": 74, "was_sick": 75, "reserved": {"offset": 76, "count": 2},
+            "padding": {"offset": 78, "count": 2},
+            "diary": {"offset": 80, "count": 64, "stride": 8,
+                      "fields": {"day": 0, "kind": 4, "value": 5, "pinned": 6, "calendar": 7}},
+        }
+        if (sizes != [120, 3100 if schema["version"] >= 18 else 3096 if schema["version"] >= 16 else 860]
+                or schema.get("companion") != expected or
+                any(field["offset"] < expected["offset"] + expected["size"] and
+                    field["offset"] + {"u8": 1, "u16": 2, "u32": 4}.get(
+                        field["type"], field.get("length", 0)) > expected["offset"]
+                    for field in fields)):
+            raise ValueError("Save schema does not describe companion metadata")
+        if not any(field["name"] == "usb_sounds" and field["type"] == "u8" and
+                   field["offset"] == 267 and field.get("minVersion") == 15 for field in fields):
+            raise ValueError("Save schema does not describe USB sound preference")
+        ends.append(expected["offset"] + expected["size"])
+    if schema["version"] >= 16:
+        expected_life = {
+            "offset": 860, "size": 2236, "minVersion": 16, "visitor_day": 0, "season_highwater": 4,
+            "progress": {"offset": 8, "count": 3}, "cooldown": 11, "daynight": 12, "weather": 13,
+            "retired_count": 14,
+            "retired": {"offset": 16, "count": 3, "stride": 740,
+                        "core": {"offset": 0, "count": 120}, "daily": {"offset": 120, "count": 24},
+                        "companion": {"offset": 144, "size": 592},
+                        "progress": {"offset": 736, "count": 3}, "reserved": 739}}
+        if schema["version"] >= 17:
+            expected_life["light_gesture_disabled"] = {"offset": 15, "minVersion": 17}
+        else:
+            expected_life["reserved"] = 15
+        if schema.get("life") != expected_life:
+            raise ValueError("Save schema does not describe life metadata")
+        ends.append(3100 if schema["version"] >= 18 else 3096)
     if not ends or (max(ends) + alignment - 1) // alignment * alignment != sizes[1]:
         raise ValueError("Save schema does not describe the complete current payload")
     if schema["version"] >= 10:
-        expected_tail = {"offset": 268 if schema["version"] >= 12 else 260,
+        expected_tail = {"offset": 3100 if schema["version"] >= 18 else 3096 if schema["version"] >= 16 else 860 if schema["version"] >= 15 else 268 if schema["version"] >= 12 else 260,
                          "stride": 6, "countField": "decor_extra_count"}
-        if (schema.get("decorTail") != expected_tail or schema.get("maxPayload") != 20480 or
+        if (schema.get("decorTail") != expected_tail or
+                schema.get("maxPayload") != (23308 if schema["version"] >= 18 else 23304 if schema["version"] >= 16 else 21072 if schema["version"] >= 15 else 20480) or
                 not any(field["name"] == "decor_extra_count" and field["offset"] == 256 and
                         field["type"] == "u32" for field in fields)):
             raise ValueError("Save schema does not describe variable decoration records")

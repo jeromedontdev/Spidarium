@@ -1,9 +1,9 @@
 import { SerialConsole } from './lib/protocol.js';
-import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.30';
-import { loadFirmware, flashFirmware } from './lib/flasher.js?v=1.1.30';
-import { DeviceGame } from './lib/device-ui.js?v=1.1.30';
+import { decodeSave, fromHex, toHex, validateSchema, validateWifi } from './lib/save.js?v=1.1.31';
+import { loadFirmware, flashFirmware } from './lib/flasher.js?v=1.1.31';
+import { DeviceGame } from './lib/device-ui.js?v=1.1.31';
 import { renderSpider } from './lib/spider-renderer.js';
-import { HELP_TOPICS } from './lib/help.js?v=1.1.30';
+import { HELP_TOPICS } from './lib/help.js?v=1.1.31';
 
 const $ = selector => document.querySelector(selector);
 for (const topic of HELP_TOPICS) {
@@ -11,9 +11,16 @@ for (const topic of HELP_TOPICS) {
   summary.textContent=topic.name; text.textContent=topic.text;
   entry.append(summary,text);$('#help-topics').append(entry);
 }
-for (const [id, state, emote] of [['hero-spider', 'idle', 'happy'], ['sleeping-spider', 'sleep', 'sleepy']]) {
+/* The hero portrait is the one place the fangs are drawn lower on the face: at
+ * 200 px the native geometry reads as if the fangs grow out of the eyes. The
+ * device canvas, the exported PNGs and the in-page game keep the native
+ * geometry, so this is a hero-only offset rather than a change to the art. */
+for (const [id, state, emote, fangDrop] of [
+  ['hero-spider', 'idle', 'happy', 4.5],
+  ['care-spider', 'idle', 'alert', 0],
+]) {
   const ctx = $(`#${id}`).getContext('2d'), frame = ctx.createImageData(96, 96);
-  renderSpider(frame.data, { state, emote, fangColour: 7 });
+  renderSpider(frame.data, { state, emote, fangColour: 7, fangDrop });
   ctx.putImageData(frame, 0, 0);
 }
 new DeviceGame($('#browser-game'));

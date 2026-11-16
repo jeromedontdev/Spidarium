@@ -1,9 +1,9 @@
-import * as E from './sim.js?v=1.1.30';
+import * as E from './sim.js?v=1.1.31';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
-import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.30';
-import { HELP_TOPICS } from './help.js?v=1.1.30';
+import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.31';
+import { HELP_TOPICS } from './help.js?v=1.1.31';
 
 // Carry the UI revision to its artwork so returning players cannot mix releases.
 const assetRevision = new URL(import.meta.url).search;
@@ -13,20 +13,30 @@ const SPLAT_COLOURS = ['#8a6a3a', '#4f6b2f', '#8a7a5a', '#3f3a2a', '#5a3a2a', '#
 const title = name => name.split(/[ _]+/).map(word => word[0].toUpperCase() + word.slice(1)).join(' ');
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const MENU_ICONS = {
-  Daily:'daily', 'Check In':'daily', Treats:'treats', Backgrounds:'backgrounds', Achievements:'achievements',
+  Daily:'today', 'Check In':'checkin', Treats:'treats', Backgrounds:'backgrounds', Achievements:'achievements',
   'Prey Species':'prey', Decor:'decor', 'Placed Items':'decor',
   Settings:'settings', WiFi:'wifi', 'SD Card':'sd', About:'about',
   Battery:'battery', Runtime:'daily', Display:'display', Brightness:'energy',
   Sound:'sound', Volume:'volume', 'Background Music':'music',
-  'Auto Feed':'auto_feed', 'Save Screenshot':'screenshot', 'Wipe Spider':'reset',
+  'Auto Feed':'auto_feed', 'Wipe Spider':'reset',
   'Catch 3 Prey':'feed', 'Clean 2 Times':'clean', 'Play 3 Times':'play', 'Pet 4 Times':'mood',
   Move:'decor', 'Move Gift':'decor', 'Put Away':'back', 'Put Gift Away':'back', Blocking:'lock',
   'Power Mode':'energy', 'Screen Timeout':'display', 'Deep Sleep After':'sleep', 'RTC Wake Interval':'daily',
   'Deep Sleep Now':'lock',
-  'Help Guide':'about', 'Screen Rotation':'display', Mute:'sound', Soundtrack:'backgrounds',
-  'Music Volume':'music', 'Back Up Save':'sd', 'Restore Save':'back', 'SD Status':'status',
+  'Help Guide':'about', 'Screen Rotation':'display', Mute:'sound', Soundtrack:'soundtrack',
+  'Music Volume':'music_volume', 'Back Up Save':'sd', 'Restore Save':'back', 'SD Status':'status',
   'Firmware Update':'wifi', 'Browser Edition':'about',
   'Hardware':'settings', 'License':'xp',
+  'Your Spider':'personality', Today:'today', Diary:'diary',
+  Temperament:'personality', Bond:'bond', 'Favorite Treat':'favorite_treat',
+  'Favorite Gift':'favorite_place', 'Favorite Play':'favorite_game',
+  'USB Chimes':'usb_chimes',
+  Training:'training', 'Photo Album':'album', Calendar:'calendar', Generations:'generations',
+  'Photo Storage':'album',
+  'Day and Night':'daylight', Weather:'weather', Visitor:'visitor', 'Season Reward':'season_reward',
+  Practice:'practice', Perform:'perform', 'Retire Spider':'retire', Resume:'resume',
+  'Capture Photo':'camera',
+  'Delete Photo':'delete_photo', 'Double-Tap Lights':'light_gesture', 'Dim Enclosure':'enclosure_light',
 };
 const POWER_MODES = ['Balanced','Battery Saver','RTC Sleep'];
 const SCREEN_TIMEOUTS = ['30 Seconds','1 Minute','2 Minutes','5 Minutes','Never'];
@@ -60,6 +70,7 @@ export class DeviceGame {
     catch (error) { this.report(`Local storage unavailable: ${error.message}`, true); storage = { getItem() { throw error; }, setItem() { throw error; } }; }
     this.progress = new LocalProgress(storage, value => E.restoreSim(value), message => this.report(message, true));
     this.state = this.progress.load();
+    this.album = new E.PhotoAlbum();
     this.started = this.state.setup_complete ?? Boolean(this.state.createdAt);
     this.buildHUD();
     if (!this.started) this.setup();
@@ -103,7 +114,24 @@ export class DeviceGame {
     clearTimeout(this.noticeTimer);
     this.noticeTimer = setTimeout(() => { this.notice.hidden = true; }, error ? 10000 : 6000);
   }
-  persist() { if (this.started) this.progress.save(this.state); }
+  persist() { return this.started ? this.progress.save(this.state) : false; }
+  lifeAction(action, message) {
+    if(this.progress.blocked) {
+      this.report('Progress storage is blocked. Download a backup and restore storage before changing life progress.',true);
+      return false;
+    }
+    const before=JSON.parse(JSON.stringify(this.state));
+    if(!action(this.state)) {
+      this.report(this.state.lastEvent?.reason??'That action is unavailable.',true);return false;
+    }
+    if(!this.persist()) {
+      this.state=E.restoreSim(before);
+      this.report('Life action was not saved and has been undone. Download a backup and check site storage.',true);
+      return false;
+    }
+    if(message)this.report(message);
+    this.refreshHUD();return true;
+  }
   async fullscreen() {
     try {
       if (document.fullscreenElement === this.root) await document.exitFullscreen();
@@ -237,13 +265,22 @@ export class DeviceGame {
     return { overlay, panel };
   }
   close() {
+    if(this.modal?.name && Number.isInteger(this.modal.page)) {
+      this.menuPages??=new Map();
+      this.menuPages.set(this.modal.name,this.modal.page);
+    }
+    if(this.photoURL){URL.revokeObjectURL(this.photoURL);this.photoURL=null;}
     this.modal?.overlay.remove(); this.modal = null;
     if (this.game) { this.game.engine.cancel(); this.game.overlay.remove(); this.game = null; }
     this.refreshHUD();
   }
-  open(name, page = 0, slot = null) {
+  open(name, page = null, slot = null) {
+    if (name === 'Daily') name = 'Today';
     this.cancelTap();
-    this.close(); this.modal = this.panel(name === 'Gifts' ? `Gifts / ${this.state.silk} Silk` : name, () => this.back(name)); this.modal.name = name; this.modal.page = page;
+    this.close();
+    page??=this.menuPages?.get(name)??0;
+    const heading=name==='Gifts'?`Gifts / ${this.state.silk} Silk`:name.startsWith('Trick ')?`${E.TRICKS[Number(name.slice(-1))]} / Training`:name;
+    this.modal = this.panel(heading, () => this.back(name)); this.modal.name = name; this.modal.page = page;
     if (slot !== null) this.decorSlot = slot;
     this.refreshHUD();
     const toggle = field => {
@@ -257,20 +294,100 @@ export class DeviceGame {
     let rows;
     switch (name) {
       case 'Menu': rows = [
-        row('Daily', () => this.open('Daily'), this.dailyDetail(), { submenu: true }),
+        row('Your Spider', () => this.open('Your Spider'), 'Personality and Favorites', { submenu: true }),
+        row('Today', () => this.open('Today'), `${this.dailyDetail()} / One Optional Request`, { submenu: true }),
+        row('Training', () => this.open('Training'), 'Three Tricks / No Silk Rewards', {submenu:true}),
+        row('Calendar', () => this.open('Calendar'), 'Activity, Visitors and Seasons', {submenu:true}),
         row('Treats', () => this.open('Treats'), 'Spend Silk', { submenu: true }),
-        row('Backgrounds', () => this.open('Backgrounds'), 'Enclosure Themes', { submenu: true }),
         row('Achievements', () => this.open('Achievements'), this.achievementDetail(), { submenu: true }),
         row('Prey Species', () => this.open('Prey Species'), this.speciesDetail(), { submenu: true }),
+        row('Diary', () => this.open('Diary'), 'Memories and Pinned Moments', { submenu: true }),
+        row('Photo Album', () => this.open('Photo Album'), 'Eight Persistent Browser Photos', {submenu:true}),
+        row('Generations', () => this.open('Generations'), 'Optional / Keep Every Spider', {submenu:true}),
         row('Decor', () => this.open('Decor'), `${E.decorPlacedCount(this.state)} Placed`,
           { submenu: true }),
+        row('Backgrounds', () => this.open('Backgrounds'), 'Enclosure Themes', { submenu: true }),
         row('Borders', () => this.open('Borders'), 'Mix and Match Frames',
           { submenu: true,icon:`border_${this.state.background}_0` }),
         /* Settings is always the last row: it is the least-used entry. */
         row('Help Guide',()=>this.open('Help Guide'),'All Features and Controls'),
         row('Settings', () => this.open('Settings'), 'Sound, Display, WiFi', { submenu: true }),
       ]; break;
-      case 'Daily': {
+      case 'Your Spider': {
+        E.companionTick(this.state);
+        const c=this.state.companion;
+        const favorite=(id,items)=>id===255?'Still discovering':items[id].name;
+        rows=[
+          row('Temperament',null,`${title(E.TEMPERAMENTS[this.state.temperament].name)} / ${['Quick, confident hunter','Patient, cautious hunter','Hearty appetite','Unhurried explorer'][this.state.temperament]}`),
+          row('Bond',null,`${this.state.bond}/100 / ${E.lifeContext(this.state).expression}`),
+          row('Favorite Treat',null,favorite(c.favorite_treat,E.TREATS)),
+          row('Favorite Gift',null,favorite(c.favorite_gift,E.GIFTS)),
+          row('Favorite Play',null,c.favorite_play===255?'Still discovering':GAME_NAMES[c.favorite_play]),
+        ];
+        break;
+      }
+      case 'Training':
+        rows=E.TRICKS.map((trick,id)=>row(trick,()=>this.open(`Trick ${id}`),
+          `${this.state.life.progress[id]}/5${this.state.life.progress[id]===5?' / Mastered':''}`,
+          {icon:`ui_trick_${trick.toLowerCase()}`,submenu:true}));
+        rows.push(row('Practice Cooldown',null,`${this.state.life.cooldown}s of active play remaining`,{icon:'ui_practice'}));
+        break;
+      case 'Trick 0': case 'Trick 1': case 'Trick 2': {
+        const id=Number(name.slice(-1)), ready=E.lifeTrainReady(this.state,id);
+        const canPerform=this.state.life.progress[id]===5 && !this.state.sick &&
+          ![E.STATES.SLEEP,E.STATES.MOLT].includes(this.state.state) && this.state.energy>=20;
+        rows=[
+          row(E.TRICKS[id],null,`${this.state.life.progress[id]}/5 / Healthy, awake, 20+ energy`,{icon:`ui_trick_${E.TRICKS[id].toLowerCase()}`}),
+          row('Practice',()=>{
+            if(this.lifeAction(s=>E.lifeTrain(s,id),'Practice saved. Play in the enclosure to recharge.'))this.open(name);
+          },`−2 Energy / +1 Mood / ${this.state.life.cooldown}s cooldown`,{enabled:ready}),
+          row('Perform',()=>{
+            if(this.lifeAction(s=>E.lifePerform(s,id),`${E.TRICKS[id]}! No Silk or XP awarded.`)){this.close();this.hud=false;this.refreshHUD();}
+          },'Mastered Trick / No Rewards',{enabled:canPerform}),
+        ];break;
+      }
+      case 'Calendar': {
+        const c=E.lifeContext(this.state);
+        rows=[
+          row('Calendar',null,c.reliable?`${c.phase} / ${c.season}`:'Calendar unavailable / No invented season'),
+          row('Activity',null,c.activity==='None'?'Quiet time':c.activity,{icon:'ui_activity'}),
+          row('Visitor',()=>{
+            if(this.lifeAction(s=>E.lifeVisitorClaim(s),'Visitor thanked you: +3 Silk saved.'))this.open(name);
+          },c.reliable?'Every third day / 12–18 / +3 Silk once':'Needs a reliable calendar',{enabled:E.lifeVisitorAvailable(this.state)}),
+          row('Season Reward',()=>{
+            if(this.lifeAction(s=>E.lifeSeasonClaim(s),'Season reward: +10 Silk saved.'))this.open(name);
+          },'10 Silk / Once per calendar quarter',{enabled:E.lifeSeasonAvailable(this.state)}),
+          ...[['Day and Night','daynight'],['Weather','weather']].map(([label,key])=>row(label,()=>{
+            if(this.lifeAction(s=>{s.life[key]^=1;return true;}))this.open(name,page);
+          },key==='weather'?'Optional Tiny Edge Particles':'Subtle Background Tint',
+          {checkbox:true,selected:!!this.state.life[key]})),
+        ];break;
+      }
+      case 'Generations':
+        rows=[
+          row('Retire Spider',()=>this.generationConfirm('retire'),
+            `${this.state.life.retired_count}/3 Archived / Healthy Adult Only`,
+            {enabled:this.state.stage===2&&!this.state.sick&&this.state.life.retired_count<3}),
+          ...this.state.life.retired.map((pet,index)=>{
+            const archived=E.decodeLifePet(pet);
+            return row(`Resume ${archived.name||'Spider'}`,()=>this.generationConfirm('resume',index),
+              'Swap Pets / Nothing Discarded',{icon:'ui_resume'});
+          }),
+        ];break;
+      case 'Photo Album':
+      case 'Photo Storage':
+        this.albumMenu();return;
+      case 'Diary': {
+        E.companionTick(this.state);
+        rows=this.state.companion.diary.map((memory,index)=>{
+          const text=this.memoryText(memory);
+          return row(text.title,()=>this.memoryDetail(index,page),text.detail,{submenu:true,icon:text.icon});
+        }).reverse();
+        if(!rows.length)rows=[row('A new chapter',null,'New memories will appear as you care together.',{icon:'ui_diary'})];
+        break;
+      }
+      case 'Today': {
+        E.companionTick(this.state);
         const today = E.dailyToday(this.state);
         const available = E.dailyAvailable(this.state);
         const next = available
@@ -289,11 +406,26 @@ export class DeviceGame {
           : E.dailyTaskReady(this.state) ? 'Complete / Tap to Claim'
             : `${E.dailyTaskProgress(this.state)} of ${E.dailyTaskGoal(this.state)}`;
         rows = [
-          row('Check In', () => { E.dailyClaim(this.state); this.persist(); this.open('Daily'); },
+          row('Check In', () => { E.dailyClaim(this.state); this.persist(); this.open('Today'); },
             claimDetail, { enabled: available }),
           row(E.dailyTaskName(task),
-            () => { E.dailyTaskClaim(this.state); this.persist(); this.open('Daily'); },
-            taskDetail, { enabled: E.dailyTaskReady(this.state) }),
+            () => { E.dailyTaskClaim(this.state); this.persist(); this.open('Today'); },
+            taskDetail, { enabled: E.dailyTaskReady(this.state), icon:'ui_daily_task' }),
+          /* One request row, no submenu. Two dismissible rows plus a "Not Today"
+           * confirmation made Today read as a chore list; the rotating daily
+           * task is a single tap, so the request is too. The first request that
+           * has not been dismissed is the one shown, so a completed request
+           * stays visible with its "Complete" line. */
+          (() => {
+            const slot = this.state.companion.requests.findIndex(r => r.state !== 2);
+            if (slot < 0) return row('Requests Done', null, 'New Ones Tomorrow', { icon:'ui_dismiss' });
+            const request = this.state.companion.requests[slot];
+            const text = E.companionRequestText(this.state, slot, {species:E.SPECIES,gifts:E.GIFTS});
+            return row(text.title, () => {
+              if (!request.state) E.companionDismiss(this.state, slot);
+              this.persist(); this.open('Today');
+            }, text.detail, { icon:text.icon });
+          })(),
         ];
         break;
       }
@@ -333,7 +465,8 @@ export class DeviceGame {
         row('Display', () => this.open('Display'), 'Brightness and Rotation', { submenu: true }),
         row('Sound', () => this.open('Sound'), 'Volume and Mute', { submenu: true }),
         row('Auto Feed', () => toggle('autoFeed'), 'Wild Prey and Unattended Hunting', { checkbox: true, selected: this.state.autoFeed }),
-        row('Save Screenshot', () => this.screenshot(), 'Download Playfield PNG'),
+        row('Auto Clean', () => toggle('auto_clean'), 'Sweep Droppings Automatically', { checkbox: true, selected: !!this.state.auto_clean }),
+        row('Lock Decor', () => toggle('decor_locked'), 'Placed Items Cannot Be Moved', { checkbox: true, selected: !!this.state.decor_locked }),
         row('Wipe Spider', () => this.newTank(), 'Erases This Spider', { destructive: true }),
       ]; break;
       case 'Sound': rows = [
@@ -343,12 +476,14 @@ export class DeviceGame {
           { checkbox:true, selected:this.state.sound }),
         row('Background Music', () => { this.state.music_enabled = this.state.music_enabled ? 0 : 1; this.persist(); this.open(name); },
           'Gentle Ambient Score', { checkbox:true, selected:!!this.state.music_enabled }),
-        row('Music Volume', null, `${this.state.music_volume}%`, { icon:'ui_energy',
+        row('Music Volume', null, `${this.state.music_volume}%`, {
           slider:{value:this.state.music_volume,min:0,max:100,step:5,change:value=>{
             this.state.music_volume=value;this.persist();
           }} }),
         row('Soundtrack', () => this.open('Soundtrack'), SOUNDTRACKS[this.state.music_track],
-          {submenu:true,icon:TRACK_ART[this.state.music_track]}),
+          {submenu:true}),
+        row('USB Chimes', () => { this.state.usb_sounds=this.state.usb_sounds?0:1; this.persist(); this.open(name,page); },
+          `${this.state.usb_sounds?'On':'Off'} / Device Only`, {checkbox:true,selected:!!this.state.usb_sounds}),
       ]; break;
       case 'Soundtrack': rows = SOUNDTRACKS.map((label,id)=>row(label,()=>{
         this.state.music_track=id;this.persist();this.open(name,page);
@@ -422,6 +557,17 @@ export class DeviceGame {
       case 'Display': rows = [
         row('Brightness', null, 'Controlled by Your Screen'),
         row('Screen Rotation', () => this.rotate(), this.rotationName(), { submenu: true }),
+        row('Double-Tap Lights',()=>{
+          this.cancelTap();
+          this.lifeAction(s=>{s.life.light_gesture_disabled=s.life.light_gesture_disabled?0:1;return true;});
+          this.open('Display');
+        },'Allow Enclosure Light Gesture',{checkbox:true,selected:!this.state.life.light_gesture_disabled}),
+        row('Dim Enclosure',()=>{
+          this.lifeAction(s=>{s.lights_dimmed=s.lights_dimmed?0:1;return true;});
+          this.open('Display');
+        },'Manual Light Control / Always Available',{checkbox:true,selected:!!this.state.lights_dimmed}),
+        row('Day and Night',()=>this.open('Calendar',1),'Subtle Background Tint / Calendar Settings'),
+        row('Weather',()=>this.open('Calendar',1),'Optional Tiny Edge Particles'),
       ]; break;
       case 'About': rows=[
         row('Browser Edition',null,'Spidarium / Local Progress'),
@@ -444,18 +590,144 @@ export class DeviceGame {
   }
   back(name) {
     if (name === 'Menu' || name === 'Gifts') this.close();
-    else if (name === 'Soundtrack') this.open('Sound', 1);
+    else if (name === 'Soundtrack') this.open('Sound');
     else if (name === 'Firmware Update') this.open('About');
     else if (name === 'Help Guide') this.open('Menu');
-    else if (name === 'Daily' || name === 'Treats') this.open('Menu');
+    else if (name === 'Photo Storage') this.open('Photo Album');
+    else if (name === 'Generations') this.open('Menu');
+    else if (['Daily','Treats','Your Spider','Today','Diary','Training','Photo Album','Calendar'].includes(name)) this.open('Menu');
+    else if (name.startsWith('Trick ')) this.open('Training');
     else if (name === 'Decor Item') this.open('Decor');
     else this.open(['Backgrounds', 'Borders', 'Achievements', 'Prey Species', 'Decor', 'Settings'].includes(name) ? 'Menu' : 'Settings');
   }
-  /** The Daily row's subtitle: what is waiting for the player right now. */
+  generationConfirm(kind, index=0, step=1) {
+    const retire=kind==='retire';
+    this.close();this.modal=this.panel(retire?'Retire Spider?':'Resume Spider?',()=>this.open('Generations'));
+    this.modal.name='Generation Confirmation';
+    this.copy(retire
+      ? 'Optional: archive this healthy adult, its training and companion memories. Start a hatchling with the same color presets. Shared Silk, inventory and habitat stay unchanged. Only three archives; none are evicted.'
+      : 'Swap the current spider, training and companion memories with this archive. Both spiders are kept. Shared Silk, inventory and habitat stay unchanged.',
+    ()=>{
+      if(step===1){this.generationConfirm(kind,index,2);return;}
+      const done=this.lifeAction(s=>retire?E.lifeRetire(s,true):E.lifeResume(s,index,true),
+        retire?'Adult archived and hatchling saved. No shared items lost.':'Spider swap saved. Both spiders are kept.');
+      if(done)this.open('Generations');
+    },step===1?'Continue':retire?'Confirm Retirement':'Confirm Swap',
+    {icon:retire?'ui_retire':'ui_resume',actionIcon:step===1?undefined:retire?'ui_retire':'ui_resume'});
+    this.button(this.modal.panel,'Cancel',112,382,176,48,()=>this.open('Generations'),'ui_confirm_cancel');
+  }
+  async albumMenu() {
+    const modal=this.modal;
+    const storage=modal.name==='Photo Storage';
+    const page=modal.page??0;
+    const albumRows=(status,ready=false)=>[
+      {label:'Take Photo',detail:'Save Playfield PNG / Eight Slots',icon:'ui_camera',
+        enabled:ready&&!this.albumBusy,click:()=>this.capturePhoto()},
+      {label:'Storage Status',detail:status,icon:'ui_status'},
+      {label:'Photo Storage',detail:'View and Delete Saved Photos',icon:'ui_album',
+        click:()=>this.open('Photo Storage')},
+    ];
+    this.list(storage?[{label:'Loading Photos',detail:'Browser IndexedDB',icon:'ui_photo'}]:
+      albumRows('Loading Storage...'),0,2);
+    modal.page=page;
+    try {
+      const photos=await this.album.list();
+      if(this.modal!==modal)return;
+      modal.overlay.remove();this.modal=this.panel(storage?`Photo Storage / ${photos.length}/8`:'Photo Album',
+        ()=>this.open(storage?'Photo Album':'Menu'));
+      this.modal.name=storage?'Photo Storage':'Photo Album';
+      const rows=storage?photos.map(photo=>({label:photo.name||'Spider Photo',detail:new Date(photo.created).toLocaleString(),
+          icon:'ui_photo',click:()=>this.viewPhoto(photo)}))
+        :albumRows(`${photos.length}/8 Photos / Browser Storage`,photos.length<8);
+      if(!rows.length)rows.push({label:'No Saved Photos',detail:'Take Photo in Photo Album',icon:'ui_photo'});
+      this.list(rows,Math.min(page,Math.floor((rows.length-1)/4)),2);
+    } catch(error) {
+      if(this.modal!==modal)return;
+      this.report(`Album could not be loaded: ${error.message}`,true);
+      modal.overlay.remove();this.modal=this.panel(storage?'Photo Storage':'Photo Album',
+        ()=>this.open(storage?'Photo Album':'Menu'));this.modal.name=storage?'Photo Storage':'Photo Album';
+      this.list(storage?[{label:'Photos Unavailable',detail:'No Photos Changed / See Album Status',icon:'ui_photo'}]:
+        albumRows(`Storage Unavailable: ${error.message}`),0,2);
+    }
+  }
+  async capturePhoto() {
+    if(this.albumBusy)return;
+    this.albumBusy=true;
+    try {
+      this.draw();
+      await this.album.capture(this.canvas,this.state.name||'Spider');
+      this.report('Photo saved to the browser album. Device SD card was not changed.');
+    } catch(error) {this.report(`Photo was not saved: ${error.message}`,true);}
+    finally {
+      this.albumBusy=false;
+      if(this.modal?.name==='Photo Album')this.open('Photo Album');
+    }
+  }
+  viewPhoto(photo) {
+    this.close();this.modal=this.panel('Browser Photo',()=>this.open('Photo Storage'));this.modal.name='Photo View';
+    const modal=this.modal;
+    this.photoURL=URL.createObjectURL(photo.blob);
+    const image=box(element('img',''),58,78,284,284);image.src=this.photoURL;
+    image.alt=`${photo.name||'Spider'} / ${new Date(photo.created).toLocaleString()}`;
+    image.onerror=()=>{if(this.modal===modal)this.report('Stored photo could not be displayed.',true);};
+    this.modal.panel.append(image);
+    this.button(this.modal.panel,'Delete Photo',100,374,200,48,()=>this.confirmDeletePhoto(photo),'ui_delete_photo');
+  }
+  confirmDeletePhoto(photo) {
+    this.close();this.modal=this.panel('Delete Photo?',()=>this.viewPhoto(photo));this.modal.name='Photo Delete';
+    const modal=this.modal;
+    const text=box(element('p','copy-text'),24,94,352,180);
+    text.textContent='Delete this photo permanently? Only this image is removed. Your spider, pet backup and other photos stay safe.';
+    this.modal.panel.append(text);
+    let deleting=false;
+    this.button(this.modal.panel,'Confirm Delete',70,290,260,52,async()=>{
+      if(deleting)return;
+      deleting=true;
+      try {
+        await this.album.remove(photo.id);
+        this.report('Photo deleted. Album slot available.');
+        if(this.modal===modal)this.open('Photo Storage');
+      } catch(error) {
+        deleting=false;this.report(`Photo deletion failed: ${error.message}`,true);
+      }
+    },'ui_delete_photo');
+    this.button(this.modal.panel,'Cancel',112,370,176,48,()=>this.viewPhoto(photo),'ui_confirm_cancel');
+  }
+  requestDetail(slot) {
+    const request=this.state.companion.requests[slot];
+    const text=E.companionRequestText(this.state,slot,{species:E.SPECIES,gifts:E.GIFTS});
+    this.close();this.modal=this.panel('Optional Request',()=>this.open('Today'));this.modal.name='Request Detail';
+    const instructions=request.kind===4?'Finish a visit to the placed gift. Buying or placing does not count.':
+      request.kind===3?'Catch this prey with your own pounce, not unattended hunting.':
+      request.kind===6?'Clean a real mess. Spotless cleaning does not count.':
+      request.kind===2?'Finish any minigame. Starting or cancelling does not count.':
+      'Pet three times, with a little pause between taps.';
+    this.copy(`${text.title}\n${text.detail}\n\n${instructions}\n\nNo deadline pressure, penalties or claim button.`,
+      request.state===0?()=>{
+        E.companionDismiss(this.state,slot);this.persist();this.open('Today');
+      }:()=>this.open('Today'),request.state===0?'Not Today':'Back to Today',
+      {icon:text.icon,actionIcon:request.state===0?'ui_dismiss':'ui_today'});
+    this.refreshHUD();
+  }
+  memoryText(memory) {
+    return E.companionMemoryText(memory,{treats:E.TREATS,gifts:E.GIFTS,achievements:E.ACHIEVEMENTS});
+  }
+  memoryDetail(index,page=0) {
+    const memory=this.state.companion.diary[index];
+    if(!memory)return;
+    const text=this.memoryText(memory);
+    this.close();this.modal=this.panel('Diary Memory',()=>this.open('Diary',page));this.modal.name='Diary Detail';
+    this.copy(`${text.title}\n\n${text.detail}\n\nKeep up to eight pinned memories. The diary keeps 64 memories, replacing the oldest unpinned one when full.`,()=>{
+      if(!E.companionPin(this.state,index)) {this.report('Eight memories are already pinned. Unpin one first.',true);return;}
+      this.persist();this.memoryDetail(index,page);
+    },memory.pinned?'Unpin':'Pin',{icon:text.icon,actionIcon:memory.pinned?'ui_unpin':'ui_pin'});
+    this.refreshHUD();
+  }
+  /** Today's subtitle: what is waiting for the player right now. */
   dailyDetail() {
     if (E.dailyAvailable(this.state)) return 'Check In Ready';
     if (E.dailyTaskReady(this.state)) return 'Task Complete';
-    return `Streak ${this.state.daily_streak}`;
+    return `Check In Claimed / Streak ${this.state.daily_streak}`;
   }
   achievementDetail() {
     const earned = E.ACHIEVEMENTS.filter(item => this.state.achievements & item.bit).length;
@@ -465,14 +737,23 @@ export class DeviceGame {
     const unlocked = E.SPECIES.filter(item => this.state.level >= item.unlock_level).length;
     return `${unlocked} of ${E.SPECIES.length} Unlocked`;
   }
-  copy(text, action, label = 'Done') {
-    this.modal.panel.append(element('div', 'd-copy', text));
-    this.button(this.modal.panel, label, 60, 308, 280, 64, action ?? (() => this.back(this.modal.name)));
+  copy(text, action, label = 'Done', {icon,actionIcon} = {}) {
+    const content=element('div', 'd-copy');
+    if(icon) {
+      const image=element('img','');image.src=asset(icon);image.alt='';
+      Object.assign(image.style,{width:'36px',height:'36px',float:'left',marginRight:'8px',imageRendering:'pixelated'});
+      content.append(image);
+    }
+    content.append(element('span','',text));
+    this.modal.panel.append(content);
+    this.button(this.modal.panel, label, 60, 308, 280, 64, action ?? (() => this.back(this.modal.name)),actionIcon);
   }
   list(rows, page, columns = 0) {
     const grid = columns !== 0, size = grid ? columns * 2 : 3;
     const width = grid ? (376 - (columns - 1) * 8) / columns : 376;
     const pages = Math.max(1, Math.ceil(rows.length / size));
+    page=clamp(page,0,pages-1);
+    this.modal.page=page;
     rows.slice(page * size, page * size + size).forEach((item, i) => {
       const button = this.button(this.modal.panel, '', grid ? 12 + i % columns * (width + 8) : 12,
         grid ? 76 + Math.floor(i / columns) * 124 : 76 + i * 84,
@@ -838,7 +1119,7 @@ export class DeviceGame {
       Math.hypot(point.x-this.pointerOrigin.x,point.y-this.pointerOrigin.y) <= (this.aiming?17:24);
     this.pointerOrigin=null;
     if(tapping){
-      if(this.lastTap && now-this.lastTap.time<=450 &&
+      if(!this.state.life.light_gesture_disabled && this.lastTap && now-this.lastTap.time<=450 &&
           Math.hypot(point.x-this.lastTap.x,point.y-this.lastTap.y)<=48){
         this.cancelTap();
         this.aiming=false;E.cancelAim(this.state);
@@ -889,11 +1170,14 @@ export class DeviceGame {
   }
   spiderOptions() {
     const s = this.state;
-    const state = E.STATE_NAMES[s.state];
+    let state = E.STATE_NAMES[s.state];
     // The petting reaction is a timed overlay, not a state: it forces a happy
     // wave for a moment without interrupting whatever the spider is doing.
     const reacting = (s.now_ms ?? 0) < (s._engine?.pet_react_until ?? 0);
-    return { state, emote: reacting ? 'happy' : s.gift_visit ? 'happy' : state === 'sleep' ? 'sleepy' : ['aim', 'stalk'].includes(state) ? 'alert' : state === 'sick' || s.mood < 18 ? 'sad' : state === 'eat' || state === 'play' ? 'happy' : 'none',
+    const performance=s._engine?.life_performance;
+    const performing=performance && s.now_ms-performance.start<performance.duration;
+    if(performing&&performance.trick===2)state='aim';
+    return { state, emote: reacting || performing ? 'happy' : s.gift_visit ? 'happy' : state === 'sleep' ? 'sleepy' : ['aim', 'stalk'].includes(state) ? 'alert' : state === 'sick' || s.mood < 18 ? 'sad' : state === 'eat' || state === 'play' || s.mood>=80 || s.bond>=75 ? 'happy' : 'none',
       heading: s.heading, phase: s.gait_phase, now: s.now_ms ?? 0,
       walking: s.spider.walking, colour: s.bodyColour, pupilColour: s.eyeColour,
       legColour: s.legColour, fangColour: s.fangColour, sick: s.sick !== 0 };
@@ -902,6 +1186,7 @@ export class DeviceGame {
     const s = this.state, ctx = this.ctx;
     ctx.fillStyle = '#101c2c'; ctx.fillRect(0, 0, 480, 480);
     const bg = this.image(`background_${s.theme}_0`); if (bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, 480, 480);
+    this.drawCalendar();
     if(s.border_id!==255){
       const border=this.image(`border_${E.BACKGROUNDS[s.border_id]}_0`);
       if(border.complete&&border.naturalWidth)ctx.drawImage(border,0,0,480,480);
@@ -939,7 +1224,14 @@ export class DeviceGame {
     // PET_REACT_PX / PET_REACT_MS overlay.
     const reactLeft = (s._engine?.pet_react_until ?? 0) - (s.now_ms ?? 0);
     const lift = reactLeft > 0 ? -Math.round(9 * Math.sin((1 - reactLeft / E.CONFIG.PET_REACT_MS) * Math.PI)) : 0;
-    ctx.drawImage(this.spiderCanvas, s.spider_x - half, s.spider_y - half + lift, half * 2, half * 2);
+    const trickPerformance=s._engine?.life_performance;
+    const t=trickPerformance?clamp((s.now_ms-trickPerformance.start)/trickPerformance.duration,0,1):1;
+    if(trickPerformance&&t<1){
+      ctx.save();ctx.translate(s.spider_x,s.spider_y+lift-(trickPerformance.trick===0?Math.sin(t*Math.PI)*9:0));
+      if(trickPerformance.trick===1)ctx.rotate(t*Math.PI*2);
+      ctx.drawImage(this.spiderCanvas,-half,-half,half*2,half*2);
+      ctx.restore();
+    }else ctx.drawImage(this.spiderCanvas, s.spider_x - half, s.spider_y - half + lift, half * 2, half * 2);
     if (s.state === E.STATES.AIM) {
       ctx.strokeStyle = '#f5c86b'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath();
       ctx.moveTo(s.spider_x, s.spider_y); ctx.lineTo(s.aim_x, s.aim_y); ctx.stroke(); ctx.setLineDash([]);
@@ -981,9 +1273,34 @@ export class DeviceGame {
       ctx.fillStyle='rgba(7,12,32,0.43)';ctx.fillRect(0,0,480,480);
     }
   }
+  drawCalendar() {
+    const s=this.state,c=E.lifeCalendar(),ctx=this.ctx;
+    if(!c.reliable || !s.life)return;
+    if(s.life.daynight) {
+      ctx.fillStyle=({Morning:'rgba(255,215,145,0.035)',Afternoon:'rgba(255,235,180,0.02)',
+        Evening:'rgba(105,65,112,0.075)',Night:'rgba(10,20,55,0.12)'})[c.phase];
+      ctx.fillRect(0,0,480,480);
+    }
+    if(!s.life.weather)return;
+    const time=(s.now_ms??0)/1000;
+    ctx.fillStyle=c.season==='Winter'?'rgba(224,235,242,0.45)':'rgba(174,199,177,0.38)';
+    for(let i=0;i<6;i++){
+      const x=i%2?462+(i*3)%14:4+(i*3)%14,y=20+(i*59+time*8)%440;
+      ctx.fillRect(Math.floor(x),Math.floor(y),2,c.season==='Winter'?2:4);
+    }
+  }
   drawDecor(canopy){
     const p=this.placement&&!this.placement.gift?this.placement:null,ctx=this.ctx;
-    const slots=E.decorLayerSlots(this.state,canopy?2:0,p?.slot??-1);
+    /* A walk-behind item may only cover the spider with its TOP half. The
+     * sprite is centred on the item, so its centre line is the halfway point:
+     * while the spider is above that line it is genuinely behind the item, and
+     * once it is level with or below it the spider is standing in front of the
+     * base and the item must drop behind it. Drawing the whole sprite in the
+     * canopy layer made the spider vanish over the item's footprint, which
+     * broke the perspective. */
+    const spiderY=this.state.spider_y;
+    const slots=E.decorLayerSlots(this.state,canopy?2:0,p?.slot??-1)
+      .filter(slot=>!canopy||this.state.decor[slot].y>spiderY);
     const draw=item=>{
       const image=this.image(E.decorSprite(item.kind)),size=E.DECOR_KINDS[item.kind].radius*4;
       if(image.complete&&image.naturalWidth)ctx.drawImage(image,item.x-size/2,item.y-size/2,size,size);
@@ -1001,7 +1318,8 @@ export class DeviceGame {
     const elapsed = Math.min(.15, Math.max(0, (now - this.last) / 1000)); this.last = now;
     if (!document.hidden && this.started && !this.hud && !this.modal && !this.game &&
         this.giftKind === null && this.decorKind === null && this.decorMoveSlot === null) {
-      this.accumulator += elapsed; while (this.accumulator >= .05) { E.tick(this.state, .05); this.accumulator -= .05; }
+      this.accumulator += elapsed; while (this.accumulator + 1e-8 >= .05) { E.tick(this.state, .05); this.accumulator = Math.max(0,this.accumulator-.05); }
+      this.companionTip();
     } else this.accumulator = 0;
     if (this.game) this.gameFrame(now);
     if (this.started) this.audio.tick(E.STATE_NAMES[this.state.state], now, this.state.sound && !document.hidden,
@@ -1010,6 +1328,17 @@ export class DeviceGame {
     this.draw(); this.refreshHUD();
     if (now - this.lastSave >= 5000) { this.persist(); this.lastSave = now; }
     requestAnimationFrame(time => this.frame(time));
+  }
+  companionTip() {
+    const c=this.state.companion;
+    if(!c.initialized||this.placement||this.modal||this.game||this.hud||this.error)return;
+    if(this.companionTipMode===2&&c.clock_mode===1) {
+      this.companionTipMode=1;this.companionTipDay=c.request_day;return;
+    }
+    if(this.companionTipMode===c.clock_mode&&this.companionTipDay===c.request_day)return;
+    if(this.notice&&!this.notice.hidden)return;
+    this.companionTipMode=c.clock_mode;this.companionTipDay=c.request_day;
+    this.report('One optional request / Menu > Today');
   }
   download() {
     try {

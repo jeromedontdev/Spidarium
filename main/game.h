@@ -10,6 +10,8 @@
 #pragma once
 #include "lvgl.h"
 #include "decor.h"
+#include "companion.h"
+#include "life.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -223,9 +225,19 @@ typedef struct {
     uint32_t borders_owned;
     uint16_t borders_owned_extra;
     uint8_t border_id;        /* 255 = no frame; otherwise background theme ID */
+    uint8_t usb_sounds;
+    companion_state_t companion;
+    life_state_t life;
+    /* Appended in v18. */
+    uint8_t decor_locked;     /* 1 = placed decor cannot be moved or put away */
+    uint8_t auto_clean;       /* 1 = the tank is swept automatically */
+    uint8_t reserved_v18[2];  /* keeps the payload 4-byte aligned */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 268, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 3100, "save payload ABI changed");
+_Static_assert(offsetof(game_state_t, life) == 860, "life ABI changed");
+_Static_assert(offsetof(game_state_t, companion) == 268, "companion ABI changed");
+_Static_assert(offsetof(game_state_t, usb_sounds) == 267, "USB chime setting ABI changed");
 _Static_assert(offsetof(game_state_t, borders_owned) == 260, "border ownership ABI changed");
 _Static_assert(offsetof(game_state_t, border_id) == 266, "border selection ABI changed");
 _Static_assert(offsetof(game_state_t, catalogue_owned_high) == 245, "catalogue ownership ABI changed");
@@ -250,6 +262,8 @@ _Static_assert(offsetof(game_state_t, pet_xp_day) == 152, "pet_xp_day ABI change
 _Static_assert(offsetof(game_state_t, pet_xp_today) == 156, "pet_xp_today ABI changed");
 _Static_assert(offsetof(game_state_t, decor_owned) == 160, "decor_owned ABI changed");
 _Static_assert(offsetof(game_state_t, decor) == 164, "decor ABI changed");
+_Static_assert(offsetof(game_state_t, decor_locked) == 3096, "decor lock ABI changed");
+_Static_assert(offsetof(game_state_t, auto_clean) == 3097, "auto clean ABI changed");
 
 /* Live LVGL object handles. */
 typedef struct {
@@ -297,6 +311,7 @@ extern uint8_t g_decor_selected;  /* chosen decor kind in placement mode */
 /* Slot being repositioned, or 0xFF when not moving. */
 extern int g_decor_move_slot;
 void game_add_silk(uint32_t amount);
+void game_diary_removed(unsigned slot);
 
 void game_init(void);
 
@@ -358,6 +373,9 @@ typedef enum {
     GAME_UI_SET_MUSIC_VOLUME,
     GAME_UI_SET_MUSIC_TRACK,
     GAME_UI_SET_MUTED,
+    GAME_UI_SET_USB_SOUNDS,
+    GAME_UI_SET_DECOR_LOCKED,
+    GAME_UI_SET_AUTO_CLEAN,
     GAME_UI_TEST_UI,
     GAME_UI_BACKGROUND,
     GAME_UI_TEST_HUNT,
@@ -378,6 +396,7 @@ typedef enum {
     GAME_UI_DEEP_SLEEP,
     GAME_UI_BORDER,
     GAME_UI_ADD_SILK,
+    GAME_UI_MENU_PICK,
 } game_ui_action_t;
 typedef enum {
     DECOR_EDIT_STATUS, DECOR_EDIT_CLEAR, DECOR_EDIT_PLACE, DECOR_EDIT_MOVE, DECOR_EDIT_BLOCK
@@ -410,7 +429,7 @@ void game_on_placement_blocking(lv_event_t *e);
 uint8_t game_placement_blocking(void);
 int game_placement_layer(void);
 int game_placement_layers(void);
-void game_on_placement_path(lv_event_t *e);
+
 void game_on_placement_layer(lv_event_t *e);
 bool game_placement_existing(void);
 

@@ -83,3 +83,29 @@ dialog {
 dialog::backdrop { background:#0a1220cc; backdrop-filter:none; }
 .game-tile.target { background:#2b6a5f; color:var(--ink); border-color:var(--lime); }
 .game-board.memory-hidden .target { background:var(--panel2); color:var(--ink); border-color:var(--line); }
+
+/* Field guide. The old section was a bare stack of <details> with no container,
+   no columns and no visual relationship to the rest of the page, which is why it
+   read as busy and out of place. It is now a proper section: a heading block
+   matching the others, then a two-column card grid. */
+.help-section { border-top:1px solid var(--line); }
+.help-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+.help-grid details {
+  background:var(--panel); border:1px solid var(--line); border-radius:9px;
+  padding:0 18px; transition:border-color .2s;
+}
+.help-grid details[open] { border-color:#5c7350; }
+.help-grid summary {
+  cursor:pointer; padding:15px 0; font-size:12px; font-weight:600;
+  letter-spacing:.4px; color:var(--ink); list-style:none;
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+}
+.help-grid summary::-webkit-details-marker { display:none; }
+.help-grid summary::after {
+  content:"+"; color:var(--lime); font-size:15px; font-weight:400; line-height:1;
+}
+.help-grid details[open] summary::after { content:"\2212"; }
+.help-grid details p {
+  font-size:12px; color:var(--muted); margin:0 0 16px; line-height:1.7;
+}
+@media(max-width:900px){ .help-grid { grid-template-columns:1fr; } }

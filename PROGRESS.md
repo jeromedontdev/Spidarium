@@ -8690,3 +8690,942 @@ evidence proves delivery and continuity, not that the player likes the sound.
   and current instructions. No stale13 schema/firmware bundle is served.
 - Local test server is stopped. Published app is the actual flashed/tested
   binary, not a later unverified rebuild. Original pet remains restored.
+
+## Round 96 - Companion life and independent USB-chime control
+
+### Decisions made
+
+- Preserve the approved spider/artwork, existing temperament, bond and pet.
+  Add Your Spider, Today and Diary to native/browser menus; keep the original
+  Daily Check-In separate. Three beneficial treat uses, completed games or
+  completed furnishing visits discover stable favorites. Favorites add two
+  mood; favorite-place revisits use 45 rather than 60 seconds.
+- Two optional requests/day use actual successful care/game/hunt/visit events,
+  require no purchases and automatically pay five Silk once. Not Today has no
+  penalty/streak loss. Reliable UTC days or explicitly labeled play days avoid
+  backward-clock rerolls; acquiring UTC retains current progress/reward state.
+- Keep 64 compact diary memories/eight pins. Log only new discoveries,
+  milestones, achievements, recovery and grouped requests; do not fabricate
+  historical memories for an existing pet. Evict oldest unpinned entries.
+  Native open-detail selection follows eviction or reports Memory Rolled Out,
+  never silently pins a different entry.
+- Save v15 appends 592 bytes at 268 (860-byte fixed prefix), preserving old named
+  field offsets and historical decor-tail boundaries. Explicit PSRAM menu
+  strings/test/snapshot buffers keep blocking I/O off LVGL. The pointer-free
+  companion state adds 592 bytes to existing internal BSS; do not call it PSRAM.
+- Preserve maximum v14 extra-decor capacity: raise the v15 protocol bound from
+  20,480 to 21,072 bytes, not shrink the accepted 3368-record historical tail.
+  Keep old-version 20,480-byte bounds and explicit real storage failures; this
+  does not assert a larger NVS partition or successful maximum-size NVS commit.
+- Sound > USB Chimes independently controls both automatic plug/unplug cues,
+  default on. Master mute/zero volume still win; music remains independent.
+  Use former padding byte267 for usb_sounds (0/1): pre-v15 backups default on,
+  current raw/JSON backups preserve 0/1 and reject 2. Compiled schema has 53 fields.
+  Browser saves the device-only checkbox without pretending to detect USB.
+  Console `set usb_sounds` accepts only 0/1 and marshals changes onto LVGL.
+- Update shared nineteen-topic help, README, browser/console/architecture/
+  handoff docs and package validators. Development source/board use 1.1.31;
+  no commit/push/tag/publication was requested for these new features.
+  Public release/site remain 1.1.30: do not deploy browser15 with firmware14.
+
+### Exact evidence and corrections
+
+- Build/full-flash wrappers exit0, no compiler warnings. Native 52/52 PASS;
+  actual COM7 save15/53-field schema verifies preferences, request/reward state,
+  diary pins, USB flag, track9 and 273 decor across reboot, invalid rejection
+  and exact restoration. Browser 214/214 and host 79/79 PASS; browser build and
+  public-asset preparation succeed. Actual C/browser interoperability covers
+  old versions and maximum 3368-record v14 migration without dropping records.
+- First UITEST failure was a test misuse: text-copy fitting checks do not test
+  ordinary item menus. Replace it with actual dispatch/content assertions.
+  The first legacy restore comparison also incorrectly compared the old EOF
+  against the new extension. Verify exact stored 280-byte backup before reboot,
+  then original ownership/habitat/Silk fields after migration, including the
+  intentional padding-to-enabled USB flag. Original Silk 4606 remains intact.
+- Native Sound regression toggles USB Chimes twice, verifies master/music
+  independence and retains page1. Actual browser checkbox clicks toggle 1->0->1
+  with two persistence calls, page1 retained and unrelated audio unchanged.
+- Four actual PMIC USB-boot cases PASS: disabled yields zero charge writes and
+  explicit disabled log; enabled yields exactly one 5120-sample codec completion;
+  master-muted and volume-zero each yield zero writes and explicit silencing.
+  Both attach/detach use that same gate. Physical unplug/listening unclaimed.
+- render500 and scanloop5: both largest drift0, all five scans successful.
+  DMA/internal largest remains 63,488 (floor 51,200). Final firmware software-
+  reboot 40-second soak reports VERDICT: PASS, zero faults; final largest 63,488,
+  internal free 133,147, DMA free 125,415 and console stack free 5716 bytes.
+  Software reboot is used because earlier physical RTS reset/re-enumeration
+  was unreliable on Windows; no battery/SD/association/SNTP claim is inferred.
+- Captured actual 480x480 LVGL Your Spider/Today/Diary menus and inspected them.
+  Shortened Today's clipped info caption to Auto Rewards / No Purchases,
+  rebuilt/flashed and repeated focused native UITEST, capture and 40-second
+  soak successfully on that final binary. App 2,082,544 bytes; per-slot free
+  1,063,184 bytes. Both final raw restore and migrated pet checks PASS.
+- Packed 337 QOI entries verify decoded pixels; all 337 source PNG bytes and 39
+  spider exports remain unchanged. Deterministic generation passes.
+  Browser 390px menus have no horizontal overflow. All work remains local;
+  no public deployment, hosted update, physical-touch or SD-media claim.
+
+## Round 97 - One Today page and dedicated submenu icons
+
+### Decisions made
+
+- Combine Check In, the original rotating daily task and both optional
+  requests into one four-tile Today page on device and browser. Remove the
+  separate main-menu Daily Check-In tile; old Daily routes alias Today.
+  Preserve existing check-in streaks, XP/Silk task payouts, claim guards and
+  automatic request rewards. Claimed/unready reward tiles stay visible but
+  cannot be claimed again or before completion.
+- Remove visible UTC suffixes from Today, request headings, diary dates and
+  player help. Keep internal calendar calculations unchanged; the fallback
+  still says Play Day rather than pretending a reliable date is available.
+- Add 28 independently authored companion/Today/Sound icons: destinations,
+  bond/favorites, check-in/task, request kinds, memory categories, Pin/Unpin,
+  dismissal and audio controls. Different meanings do not share placeholders,
+  recolors or renamed copies; repeated instances of the same kind/action can
+  retain their consistent glyph. Update the documented style/pipeline rule.
+- Preserve all original 337 PNG bytes, including all 39 spider exports and
+  both spider renderers. Catalogue now contains 365 PNGs / 58 UI icons.
+  New icons use the existing deterministic generation, mapped QOI packing and
+  decoded-image cache, not per-frame artwork or a new display buffer.
+  No save-schema/ABI change; still development1.1.31/save15. No publication.
+
+### Exact evidence and corrections
+
+- Build/full-flash wrappers exit0, no compiler warnings. Native52/52 PASS,
+  browser217/217 PASS, host81/81 PASS; focused art38/38 PASS.
+  Browser build and365-image website preparation succeed.
+- Native UITEST dispatches actual Today/request/legacy-alias routes, verifies
+  Check In appears with task and two requests, and confirms a second claim
+  neither dispatches nor changes XP/Silk. Your Spider, Today, request details
+  and Sound require distinct loaded icon indices backed by decoded images.
+  Browser tests preserve task payouts/request progress and forbid double pay.
+- Actual browser DOM check: Today check-in pays4 Silk once, disables the
+  claimed button and pays0 on a second click. Main menu has one Today route;
+  Daily aliases it. At390px, Today, both Your Spider/Sound pages and Diary
+  retain button containment, distinct visible icons and no UTC label.
+- Inspect actual480x480 LVGL captures of main menu, Your Spider, Today, Diary
+  and Sound plus the28-icon contact sheet. Today displays all four tiles on
+  one page, with distinct check-in/task/request illustrations and no UTC.
+- Packed365 QOI entries verify decoded pixels; exact2x grids, binary alpha,
+  finite palettes, deterministic generation and original337 hashes PASS.
+  Validator rejects duplicated pixels and silhouettes in the new icon set,
+  including reuse of existing UI silhouettes.
+- render500 and scanloop5 each largest drift0; all five scans succeed.
+  DMA/internal largest remains63,488 (floor51,200). Final40-second software-
+  reboot soak VERDICT: PASS, zero faults; internal free132,387, DMA124,655,
+  largest63,488, console stack free5720. App2,083,872 bytes.
+- Hardware save test confirms actual15/53-field schema and273-decor/reward/
+  preference roundtrips. The first combined acceptance helper completed these
+  tests/captures but hit the known console-ready/trailing-help race during its
+  final restore. Add a boot-settle delay and acknowledged open-main barrier
+  to the session helper, explicitly recover the pet, then run the final soak
+  successfully. Exact original872-byte stored restore and reboot comparison
+  of ownership/habitat/settings/Silk both PASS. Do not treat the first failed
+  helper exit as acceptance or leave its temporary fixture installed.
+- Shared help stays within its430-character readability budget. Update
+  README, website instructions, browser parity, console, art and handoff docs.
+  Local preview only; public release/site remain1.1.30. No physical touchscreen,
+  authorized WiFi association, SD media or hosted OTA claim.
+
+## Photo Album worker slice - host verification
+
+### Decisions made
+
+- Add eight real RGB565 BMP album slots at `spidarium-photo-0.bmp` through
+  `spidarium-photo-7.bmp` on SD, separate from pet-save backups. Scan and load
+  existing files on the serialized persistence worker; no new worker or LVGL
+  file access. Retain the existing screenshot snapshot until SD completion.
+- Create album files exclusively, flush/fsync and compare header/pixels/padding
+  on readback before publishing success. Preserve all pre-existing files;
+  reject full/damaged albums without automatic overwrite/deletion. Only remove
+  incomplete files exclusively created by the failed capture itself.
+- Validate exact BMP sizes, RGB565 bitfield masks and dimensions up to480x480
+  before a single explicit PSRAM viewer allocation. Transfer immutable loaded
+  pixels to LVGL ownership; detach the viewer before freeing them. Queue
+  acceptance is not completion; expose completed generation and success.
+
+### Exact evidence
+
+- `python -m unittest tools.test_album_native -v`: PASS. GCC compiles production
+  album worker/API source with `-std=c11 -Wall -Wextra -Werror`; actual host
+  files verify odd-width padding/stride, top-down/bottom-up pixel roundtrips,
+  480x480 pixels, queue rejection, missing mount, failed sync cleanup, PSRAM
+  exhaustion, invalid masks/dimensions/lengths, full-slot rejection, preserved
+  damaged files, ownership transfer and metadata reconstruction after RAM reset.
+- This slice does not run firmware build/flash or physical SD media tests.
+  Native UI/CMake integration is owned by the parent task. Host filesystem
+  evidence is not a claim about real-card availability or physical appearance.
+- Follow-up ABI audit moves the pending SD restore prefix from static internal
+  BSS to an explicit PSRAM allocation made before modifying NVS, freeing it on
+  failure or UI adoption. Production restore ownership host test passes
+  allocation failure, restore failure, load failure, busy adoption rejection
+  and complete copy/free/extra-record transfer. Both tests compile warning-free.
+  Later combined reruns encounter Windows Application Control `WinError4551`
+  when launching generated test executables; no policy bypass is attempted.
+  Earlier album worker execution and the first restore ownership execution
+  each pass, but the latest combined run is blocked, not an all-green result.
+
+### Native life core and save-v16 persistence
+
+**Decisions made**
+- Append a pointer-free2,236-byte life record at860; fixed prefix3,096 and
+  payload bound23,304 preserve the full3,368 extra decor capacity. Accept and
+  migrate every old v2-v15 layout, leaving historical tails at their old offsets.
+- Three optional five-step tricks cost2 energy/add1 mood, with30 active seconds
+  between practices and no Silk payouts. Calendar periods/quarter seasons and
+  scheduled context require a real UTC epoch from2024; unavailable clocks pay
+  nothing. Visitor3-Silk/day and seasonal10-Silk highwaters prevent repeat or
+  rollback claims, and queue failure restores both currency and the highwater.
+- Confirmed healthy-adult retirement archives exact pet identity/stats/daily/
+  companion/training progress without shared inventory or currency. Three slots,
+  no eviction; resume swaps instead of cloning. One copied save includes active
+  pet and every archive, and rejected enqueue restores the whole previous state.
+- Move grown persistence, sleep, format-test and behavior-test snapshots into
+  PSRAM; theme/background rollback retains only changed scalars. No LVGL,
+  network, storage waits or animation work in the new life core.
+
+**Exact host evidence**
+- `PYTHONPATH=tools; python -m unittest tools.test_save_native tools.test_package_release -q`:
+  20/20 PASS. Native production life/save functions compile with
+  `-std=c11 -Wall -Wextra -Werror` and execute training/care/cooldown, all-day
+  periods, missing-clock/repeat/backward-clock/rejected-save rewards, adult/full
+  gates, exact pet restore, whole-state queue rollback and v2-v15 migrations.
+  Browser/native archives and corruptions plus maximum old decor migration PASS.
+- Focused browser raw-save and life suites28/28 PASS; schema and archive stride
+  tampering rejected. Earlier generated-executable launches intermittently
+  failed Windows Application Control4551; normal later runs above complete
+  successfully, without any policy bypass.
+- No build wrapper, flash, physical touchscreen, real RTC retention, actual NVS
+  write or hardware memory acceptance is claimed by this host-only slice.
+- Integration follow-up adds `needs_reset_runtime(now_ms)` to discard the
+  previous pet's fractional decay and timer phase while retaining saved
+  petting budgets. Generation snapshots now carry dedicated save-worker
+  receipts: `life_generation_save_status()` reports waiting(-1), failed(0)
+  or completed snapshot(1), unaffected by unrelated ordinary queued jobs.
+  Complete native host harness still compiles warning-free after this change;
+  its latest execution attempt is blocked by Windows Application Control4551,
+  so the earlier20/20 run is not claimed as execution of this follow-up.
+
+## Round 98 - Optional life systems integrated and verified on the device
+
+### Decisions made
+
+- Add gentle mood/bond/temperament idle greetings and bounded Wave/Spin/Bow
+  animations using existing approved spider poses. Five practices learn each
+  trick;2 energy/practice,30 active seconds of shared rest, no trick Silk/XP.
+  Keep the post-practice animation gate compatible with energy20 becoming18.
+  Never interrupt sleep, sickness, molting or an active hunt.
+- Add Calendar with reliable RTC-based phases, northern calendar quarters,
+  scheduled cosmetic activities, subtle day/night shading, opt-in six-particle
+  edge weather, occasional afternoon visitors and once-per-season rewards.
+  No invented clock, downloaded weather, forced sleep or calendar care penalty.
+- Add real Photo Album capture/list/view on SD, with eight exclusive BMP slots
+  and verified worker completion. Viewer pixels remain explicit PSRAM and are
+  freed only after LVGL objects/cache references detach. Browser uses actual
+  IndexedDB PNGs with eight slots, explicit storage failures and export.
+- Keep optional Generations behind confirmation: three bounded family archive
+  slots, no eviction, adult/health gates, inherited existing colour presets and
+  exact active/archive swaps. Habitat/inventory/current Silk remain shared.
+  Reset only runtime decay phases when adopting a pet. Dedicated worker
+  receipts report the actual generation snapshot commit, not queue acceptance
+  or an unrelated save's status. No forced retirement, replacement or death.
+- Add19 dedicated, independently drawn life icons, including a separate
+  Scheduled Activity icon. Preserve every prior365 PNG and both live spider
+  renderers. Total384 PNGs/77 UI icons;345 non-spider PNGs.
+- Complete save-v16/native/browser/schema/script migration:2236 life bytes
+  at860,3096 fixed bytes,23304 maximum valid payload, old3368-extra-decor
+  capacity retained. Move grown full-state scratch/rollback/test copies into
+  explicit PSRAM; preserve existing internal save/SD worker stacks.
+- Add safe LVGL-marshalled `pick ID` diagnostics, respecting enabled items and
+  real confirmations. Document all features in23 identical native/browser/
+  website help topics and `docs/COMPANION_LIFE.md`. Public release stays
+  v1.1.30; this is development v1.1.31, not a publication.
+
+### Exact evidence
+
+- Fresh current-task pet backup:872 bytes, read back before any flash. Final
+  recovery restores those exact stored bytes, reboots, and verifies original
+  name/level/stage/Silk plus habitat/ownership/settings. No NVS erase.
+- Final `build.ps1`: exit0, no main warnings. App2,103,744 bytes
+  (`0x2019c0`), with33% of the3MiB OTA slot free. Final full `flash.ps1 COM7`:
+  exit0 and image hashes verified, including assets/table.
+- Final physical `run_tests.py COM7`:52/52 PASS. Embedded UITEST includes
+  life core, training routes, dedicated Calendar icons and family menu gates.
+- Real hardware fixture verifies energy20 ->18 and exactly one practice
+  point, cooldown rejection, unchanged cancellation, actual NVS retirement
+  snapshot, safe hatchling creation, exact resume and both pets retained after
+  reboot. Resume preserves the latest shared balance, including any legitimate
+  intervening achievement payouts; comparing to the pre-hatchling balance was
+  an invalid test proxy. Training setup now freezes the menu before forcing
+  idle, avoiding a legitimate AI busy-state race. Fixtures are removed by
+  exact original-pet restoration afterward.
+- Actual SD card: captured the original pet's menu-free480x480 playfield,
+  worker verified the write/readback, loaded it into the native viewer and
+  captured the resulting image. One real photo remains in slot0; no original
+  files were overwritten. Inspected native Training, Calendar, Album,
+  Generations, archived stats and photo-viewer captures.
+- Actual compiled save schema captured from the final board. Physical
+  `tools/test_web_device.py COM7`: PASS, including life progress/cooldown/
+  weather, invalid life records, companion/preferences/pins, track9,
+  USB-chime flag,273 decor placements and slot271 edits across reboot,
+  exact restore and5540-byte console stack headroom.
+- Browser full suite230/230 PASS against the compiled schema; build PASS.
+  Browser agent verified eight persistent actual PNG blobs and ninth-slot
+  rejection, plus the two-stage retirement confirmation in an isolated
+  browser fixture. Isolated storage and its temporary server were cleaned.
+- Full host run:83 passed, one album-worker executable launch blocked by
+  Windows Application Control4551. No policy bypass; not84/84 PASS. Earlier
+  worker filesystem/pixel tests passed; the final real-card capture/view and
+  actual NVS generation receipt path also pass. Latest SD restore ownership
+  and native life/save host tests execute successfully.
+- Packed validator:384 MMAP entries, all decoded QOI pixels verified; two
+  deterministic passes, all384 PNGs preserved. Original365 aggregate hash
+  unchanged. Final local website copied all384 assets; no deployment.
+- `render 500`: largest_drift=0. `scanloop 5`: ok=5/failed=0,
+  largest_drift=0. Largest internal/DMA block63488 >=51200.
+  Final40-second software-reboot soak: `VERDICT: PASS`, zero faults,
+  console stack headroom5788 bytes; original pet remains active.
+- RTC backup-battery retention, authorized association/NTP and a uniquely
+  hosted HTTPS firmware update are not established by these tests. No claim
+  about physical-touch appearance or provisioning signed firmware is added.
+
+## Round 99 - Photo deletion, gameplay-first menus and smoother audio
+
+### Decisions made
+
+- Keep all eight photo slots non-evicting. Selecting a native photo opens
+  View/Delete; Delete requires a separate destructive confirmation. Cancel
+  never deletes. The existing internal persistence worker unlinks only that
+  fixed path and verifies ENOENT before publishing completion. Damaged files
+  remain selectable for explicit removal. Browser deletion gets the selected
+  IndexedDB record and reports success only after the transaction commits.
+  Stale viewer decode errors and old asynchronous confirmations cannot replace
+  the current screen.
+- Put Your Spider, Today, Training and Calendar first, followed by treats,
+  achievements/species, diary/photos/generations, customization, Help, Settings.
+  Remove Settings' redundant Save Screenshot row, retaining serial capture
+  diagnostics. Refresh actual native root/Settings/Display documentation images.
+- Display > Double-Tap Lights defaults on; disabling it retains ordinary taps
+  and petting. Independent Dim Enclosure permits manual control even when the
+  gesture is disabled. Save17 reuses life byte15 for the numeric0/1 disable
+  flag; prefix3096, life2236, archive740 and extra-decor capacity3368 do not
+  grow. v2-v16 migrate enabled, invalid old reserved bytes/new flags reject,
+  legacy JSON reserved0 normalizes without mutating its input. Generation swaps
+  preserve the preference.
+- Avoid ES8311 hardware master-gain changes while nonzero PCM is queued.
+  Keep codec gain fixed and apply equivalent logarithmic gain in existing PCM
+  with20ms ramps, checking controls in at most50ms chunks. No new buffer,
+  worker or LVGL blocking. This addresses a discontinuous transition path;
+  physical listening is still needed before claiming all crackle is gone.
+- Add dedicated delete-photo, light-gesture and enclosure-light artwork:
+  total387 PNGs /80 UI icons /348 non-spider assets. Spider artwork unchanged.
+  Development remains v1.1.31; no commit, push or publication in this request.
+
+### Exact evidence
+
+- Final wrapper build/flash exit0; full build.log has no warnings/errors.
+  Application0x2029b0 =2,107,824 bytes,33% of the3MiB app partition free.
+  Packed validation:387 MMAP/QOI entries, decoded dimensions/opcodes/pixels
+  verified; deterministic two-pass regeneration preserves all387 source PNGs.
+- Native suite52/52 PASS after draining the startup help-probe tail. The
+  initial51/52 was a console-ready/help interleaving in the first mem command,
+  not a memory-floor failure. UITEST verifies exact root order, distinct
+  Display/photo-action icons, absent Settings capture, confirmation/cancel and
+  disabled-gesture touch behavior.
+- Real SD: preserved original photo slot0. Captured a new slot1, cancelled
+  deletion and loaded it, confirmed deletion and rejected its absent menu
+  entry, captured into the freed slot again, deleted only that test photo,
+  then loaded the original. Early automation selected a slot before the next
+  LVGL adoption tick; retried with a frame-adoption wait after cleaning only
+  its newly created test file. Awake native confirmation/menu captures inspected.
+- Real NVS: toggled gesture preference, verified stored byte and reboot,
+  then changed manual dim independently. Original fresh3108-byte task backup
+  restored byte-for-byte; reboot checks preserve identity, Silk, habitat,
+  companion and life state. No NVS erase, user photo deletion or pet replacement.
+- Physical tools/test_web_device.py PASS: compiled v17/53-field schema,
+  persisted disabled gesture, strict v16 reserved-byte rejection/default-on
+  migration,273 decor placements/slot271/reboot, exact restore and5540-byte
+  console stack headroom. Corrected its obsolete invalid-flag fixture from
+  value1 (now valid) to2 before the successful run.
+- Actual audio load: volume65/20/0/50, mute/unmute, effects and all ten tracks
+  while navigating menus.1649 streaming chunks, maximum refill gap30846us,
+  late=0. Physical speaker listening remains unverified.
+- Focused host46/46 PASS: art, actual production album files/pixels/deletion,
+  audio gain/mute/retarget/error transitions and native save migration.
+  Full host run83 passed, three generated executable launches blocked by
+  Windows Application Control4551; no policy bypass or all-green claim.
+- Browser240/240 PASS against final hardware schema; website build PASS.
+  Real IndexedDB:8 photos, confirmed selected removal leaves7, slot reuse
+  returns8, missing-ID rejection. Actual DOM confirmation/Cancel preserves
+  the image; committed confirmation removes it. Rejection, duplicate submit,
+  stale confirmation and stale-image failures have regression tests.
+- render500 largest_drift=0; scanloop5 ok=5/failed=0, largest_drift=0.
+  Largest internal/DMA63488 >=51200. Final software-reboot40-second soak:
+  VERDICT: PASS, zero faults, console stack headroom5784 bytes.
+
+## Round 100 - Nested photo storage, return pages and remaining effect edges
+
+### Decisions made
+
+- Dim Enclosure is the manual equivalent of enclosure double-tap lighting,
+  retained so disabling the gesture does not remove light control. It is
+  independent of screen brightness and the calendar's day/night shading.
+- Photo Album now contains Photo Storage and Generations. Capture, storage
+  status and saved photos are inside Photo Storage. Rename the misleading
+  Family Album shortcut to Generations; its Back returns to Photo Album,
+  whereas the main Generations entry returns to the main menu.
+  Card scans are queued only when entering storage, not the album root.
+- Remember each menu's last session page. Native ui_menu captures the outgoing
+  page before pick/Back/rebuild resets its fields; game restores that menu's
+  page. Browser close/open caches pages and list clamps deleted pages.
+  Temporary loading screens must not overwrite a remembered photo page:
+  native loading panels suppress page capture; browser preserves the requested
+  page across asynchronous loading and cancellation. No save-format change.
+- The user reports crackle improved but not gone. Measured an additional
+  transition path: older short effects leave nonzero final samples before
+  idle DMA silence. Taper only their final5ms to exact zero in the existing
+  buffer. Preserve music, pet-bell and USB-chime source hashes. This addresses
+  that edge, not a claim that every audible crackle is eliminated.
+- Keep the approved spider and all387 artwork files unchanged. Documentation,
+  shared23-topic help, website instructions and actual album/storage captures
+  describe the new hierarchy and return-page behavior. No commit/push/publish
+  was requested; development remains v1.1.31/save17, public v1.1.30 unchanged.
+
+### Exact evidence
+
+- Final wrapper build exit0 with no warnings/errors in full build.log.
+  Application0x202e30 =2,108,976 bytes;33% of the3MiB app partition remains.
+  Full flash wrapper exit0; no NVS or flash-wide erase.
+- Browser244/244 PASS and website build PASS. Native UITEST exercises
+  Photo Storage labels, photo action Back, Generations album-origin Back,
+  Settings page1 and root page3 restoration, and loading-page retention.
+- Real browser DOM/IndexedDB checks: returning from Sound yields Settings
+  page1, then root page3; album root contains Photo Storage/Generations;
+  opening Photo8 then Back restores Photo Storage page2; Generations Back
+  restores Photo Album. The first actual browser check caught the spinner
+  overwriting the requested page; fixed it and added the asynchronous
+  loading/clamping/cancellation regressions before the successful check.
+- Actual device album scan began with0/8 images. An initial script incorrectly
+  assumed the previous task's slot0 still existed; it rejected that selection
+  without changing files, restored the fresh pet, then retested the observed
+  empty album. Captured a new image inside Photo Storage, cancelled deletion
+  and viewed it, confirmed deletion and rejected the absent slot. Deleted only
+  this task's newly created test image. Inspected real root/storage captures.
+- Fresh current-request backup3108 bytes, verified before flash. Restored exact
+  stored bytes and checked identity, Silk, habitat, companion and life state
+  after reboot. Never substitute an earlier task's pet backup.
+- Native production audio tests now assert all seven older effects begin/end
+  at zero; original waveform hashes and music transitions still pass.
+  On-device source tails observed: pounce1, molt-2, tap-2, aim-2, perfect4;
+  all seven completed outputs report endpoints0/0 after the taper.
+  Ten-track/effect/menu load:966 stream chunks, maximum refill gap6691us,
+  late=0. Physical listening remains necessary for residual crackle.
+- Focused host45 passed; one SD-restore ownership executable launch blocked
+  by Windows Application Control4551. No bypass or all-green host claim.
+  Production album filesystem/deletion and updated audio transition tests
+  executed successfully. Browser/artwork remain unchanged and validated.
+- render500 largest_drift=0; scanloop5 ok=5/failed=0, largest_drift=0.
+  Largest internal/DMA63488 >=51200. Temporary browser fixture storage and
+  helper server cleaned up; no user browser progress was modified.
+- Final exact firmware hardware suite52/52 PASS, including the added
+  loading-page guard. Fresh current pet restored again before the final
+  software-reboot40-second soak: VERDICT: PASS, zero faults, largest63488,
+  console stack headroom5720 bytes.
+
+## Round 101 - Photo controls on the album root, images-only storage
+
+### Decisions made
+
+- Follow the clarified hierarchy exactly: Photo Album contains Take Photo,
+  Storage Status and Photo Storage. Only saved images appear inside Photo
+  Storage, with explicit loading/empty/unavailable messages when appropriate.
+  Generations is independent, only in the main menu; remove album-origin
+  tracking and its shortcut from both native and browser navigation.
+- Keep camera/status/album icons distinct. Preserve photo slot IDs, confirmed
+  deletion, viewer ownership and session Back-page history. Eight browser
+  images now occupy two pages without a ninth capture tile.
+- Album entry queues a worker scan for accurate SD status. Capture stays on
+  the album root and completion refreshes its controls. No SD I/O or worker
+  waits in LVGL, new save schema, audio/art changes, pet replacement or eviction.
+- Update native/browser help, website, menu/life/architecture/serial guides
+  and actual device album/storage screenshots. Public release remains1.1.30;
+  development1.1.31/save17 is flashed locally, not committed or published.
+
+### Exact verification evidence
+
+- Fresh current-task pet backup3108 bytes captured before hardware mutations.
+  Final restore matches exact stored bytes; identity/Silk/habitat/companion/
+  life preserved after reboot. No older task backup was used.
+- Wrapper build/flash exit0, zero main warnings. Final app0x202ec0
+  (2,109,120 bytes),33% of the3MiB app partition remains free.
+- Browser246/246 PASS, covering exact root rows/icons, images-only storage,
+  empty/full/error states, completed capture returning to the album,
+  two-page eight-photo pagination, deletion clamp and stale-loading guards.
+  Website build and assets-only preparation exit0;23 identical help topics.
+- Native hardware suite52/52 PASS, including album rows/distinct icons,
+  no capture/status tiles inside storage and main-menu Generations Back page.
+  Focused host album worker tests2/2 PASS; no policy blocks in this focused run.
+- Actual device captures show root Take Photo/Storage Status/Photo Storage,
+  then only Photo1 inside storage. Initial status0/8. Captured/read back only
+  this task's new Photo1, verified view and deletion Cancel, confirmed deletion
+  and unavailable deleted-slot pick. No pre-existing photo was removed.
+- render500 largest_drift=0; scanloop5 ok=5/failed=0, largest_drift=0.
+  Internal/DMA largest63488 >=51200. Final restored-pet40-second software
+  reboot soak VERDICT: PASS with zero faults and console stack headroom5716.
+- One initial verification helper expected a scan success log that production
+  does not emit; it timed out before any photo mutation and restored the pet.
+  Corrected verification inspected actual completed storage status in the
+  device capture and awaited real capture/load/delete completion logs.
+
+## Round 102 - Nineteen reported issues: menus, sleep, decor, automation, site
+
+### Decisions made
+
+- **Decor placement overlay** collapsed from a full-screen stack (three path
+  buttons at y=232, layer row at y=286, Put Away at y=338, Cancel/Done at
+  y=388) into two transparent rows pinned to the bottom of the screen: one
+  cycling path button plus Back/label/Front at y=364, and Cancel/Put Away/Done
+  at y=412. `place_action()` sets `LV_OPA_30` fill, `LV_OPA_60` border and
+  `LV_OPA_40` outline so the item being positioned and the spider stay readable
+  underneath. The rows stop short of the squircle corner wedges, which have no
+  pixels and clipped the outer buttons at y=424. `game_on_placement_path` was
+  deleted; `game_on_placement_blocking` already cycled the same three paths, so
+  the three buttons were redundant as well as oversized.
+- **Today** now shows Check In, the rotating task and ONE request row with no
+  submenu. `MENU_REQUEST` and `back_to_today` were removed entirely. The row
+  shows the first request that has not been dismissed, so a completed request
+  stays visible with its "Complete / +5 Silk paid" line; tapping an unfinished
+  one dismisses it, tapping a finished one only re-renders.
+- **Sleep/wake oscillation** was a genuine two-rule fight, not a rendering bug.
+  IDLE slept at `energy < sleep_threshold` (15..30) while SLEEP woke at
+  `energy >= 95 || hunger < 25`; the hunger half fired on the very tick the
+  spider fell asleep, so the pair repeated at the 20 Hz logic rate and the
+  black asleep eyes flickered. Added `SLEEP_AUTO_WAKE_ENERGY 60` and
+  `SLEEP_HUNGER_WAKE 25` (the hunger shortcut now also needs
+  `energy >= sleep_threshold + 5`), giving a real hysteresis band.
+- **Feeding wakes the spider.** `game_on_feed` calls `behaviour_force_sleep(false)`
+  when the spider is asleep. Prey only becomes food when caught, so feeding a
+  sleeping spider previously did nothing visible - the "stuck asleep so I
+  cannot feed them" report.
+- **Spider droppings** are now periodic: `SPIDER_POOP_MS 420000` (7 min) while
+  awake and `hunger >= SPIDER_POOP_MIN_HUNGER 20`, reusing
+  `terrarium_add_poop()`. A catch was previously the only source, so a fed and
+  undisturbed spider never dirtied its tank.
+- **Decor is refused while live prey is out** (`decor_begin_placement`,
+  `decor_begin_move`) and **while `g.decor_locked`** is set. The long-press
+  handler now checks `g_decor_mode` after `decor_begin_move` so a refused move
+  does not start a drag.
+- **Two new persisted settings** appended at the end of `game_state_t`:
+  `decor_locked` @3096 and `auto_clean` @3097, plus `reserved_v18[2]` to keep
+  the payload 4-byte aligned. `SAVE_VERSION` 17 -> 18, `sizeof(game_state_t)`
+  3096 -> 3100, `SAVE_MAX_PAYLOAD` 23304 -> 23308 (the extra decor tail starts
+  four bytes later), `payload_prefix()` gained a `>= 18` branch, the raw-write
+  version whitelist gained 17, and `migrate_automation()` defaults both to 0
+  for `version < 18`. Settings gained Auto Clean and Lock Decor rows; Wipe
+  Spider moved to index 9.
+- **Auto Clean** sweeps droppings and restores hygiene every
+  `AUTO_CLEAN_MS 180000` but pays no XP and no achievement, and deliberately
+  leaves live prey alone so it cannot fight the Feed button.
+- **Auto Feed** now targets `AUTO_FEED_TARGET 50` instead of a fixed 20-minute
+  spawn. Hunger decays at 3/min, so the old rule cost 60 points per cycle and
+  the spider was permanently starving. The interval is derived from the hunger
+  deficit (`WILD_SPAWN_MS * WILD_HUNGER_GAIN / (deficit + WILD_HUNGER_GAIN)`,
+  floored at `AUTO_FEED_MIN_MS 60000`), and the clock restarts while a bug is
+  already waiting. Turning the switch on still spawns one immediately.
+- **Tricks have their own poses.** `cspider_trick_react(kind)` draws Wave (two
+  bobs with the happy front-leg lift) and Bow (a forward dip) for
+  `TRICK_REACT_MS 1800`; Spin was already visible via the heading rotation.
+  Previously Wave and Bow both fell through to the same idle crouch.
+- **Solid decor can no longer be stood on.** The pounce landing is pushed out
+  to the item's radius + 4 before `prey_resolve_pounce()`, and
+  `clamp_to_playfield()` has a last-resort nudge for a spider embedded by a
+  placed item or a restored save.
+- **Walk-behind covers only the top half.** `decor_canopy_now()` puts an item
+  in the canopy layer only while `g.spider_y < item->y`, and
+  `terrarium_decor_depth()` re-parents on the render tick. The preview and
+  `terrarium_preview_test()` follow the same rule.
+- **Autohunt page jump** was `ui_menu_page()` returning 0 inside a row
+  callback: `on_row` closes the menu first, and `ui_menu_close()` reset
+  `s_page`. Added `s_last_page`, set on close, and `ui_menu_page()` now reports
+  it when no menu is open. This fixed every "toggle and stay on this page"
+  action, not just Auto Feed.
+- **RTC sleep documented** in `docs/BATTERY_MANAGEMENT.md` with an explicit
+  "what the two sleep settings actually do" section, plus a hardware audit:
+  Bluetooth is already off, WiFi is already torn down per job, SD is
+  mount-on-demand, and `CONFIG_PM_ENABLE`/DFS/light sleep are available but
+  deliberately off because the adapter pause protocol assumes a stable clock.
+- **Website**: the feature-grid spider is now awake and alert instead of asleep
+  (black eyes and no fangs read as broken art); the `#help` section became a
+  proper `section-shell` with a heading block and a two-column card grid
+  instead of a bare `<details>` stack.
+- **Hero fangs only.** The fangs on the large circular hero portrait sat too
+  high on the face, so `renderSpider()` gained a `fangDrop` option that moves
+  them down and narrows them slightly. It defaults to 0, so the device canvas,
+  the exported PNGs and the in-page game keep the native geometry and the
+  pixel-for-pixel parity test still holds; `app.js` passes `fangDrop: 4.5` for
+  `#hero-spider` only. `main/cspider.c` and `tools/gen_sprites.py` were left at
+  the original `FANG_FWD 15.5` after an initial attempt changed them too.
+- **"Now has no animation"** has no literal referent: an exhaustive search
+  found no bare "Now" UI element in the firmware or the site. Read as **Bow**,
+  the third trick, which genuinely had no animation and is now fixed. Stated
+  here rather than guessed silently.
+
+### Exact verification evidence
+
+- Wrapper build exit 0, zero main warnings. Flash exit 0.
+- Native hardware suite 52/52 PASS, including the reworked `uitest` (Today has
+  three rows with ids 3/4/2 and no request submenu; the compact placement strip
+  is driven at its new bottom-row coordinates; the walk-behind preview is
+  exercised with the spider above the item).
+- Browser 246/246 PASS, including the pixel-for-pixel PNG parity test, which
+  confirms the device artwork is unchanged by the hero-only `fangDrop`.
+  `site/build.mjs` exit 0.
+- Device captures confirm the placement overlay now occupies only the bottom
+  two rows with the tank fully visible behind it, and the hero portrait draws
+  the fangs below the eyes.
+- `render 500` largest_drift=0; `scanloop 5` ok=5/failed=0, largest_drift=0.
+  Internal/DMA largest 63488 >= 51200. Console stack headroom 5776.
+- 40-second software reboot soak VERDICT: PASS with zero faults.
+- Two real bugs were found by the hardware suite and fixed rather than
+  test-adjusted: `save_format_test` was validating a v16 header against the
+  current `sizeof g` (now sets `header.size = 3096` and passes the matching
+  length), and `test_furniture_pointer` started with live prey in the tank so
+  the new decor gate refused the drag (now calls `prey_clear()` first).
+- Save schema moved to v18/55 fields/3100-byte prefix/23308 max payload across
+  `main/game.h`, `main/save.c`, `main/save.h`, `main/test_console.c`,
+  `site/save-schema.json`, `site/lib/save.js` and `site/lib/device-engine.js`.
+  The v16 migration test now splices the four extra prefix bytes out before
+  relabelling the header, because a genuine v16 blob is 3096 bytes.
+
+---
+
+## Round 103 - Modern pixel-art backgrounds for all 48 themes
+
+**Status:** COMPLETE — built, flashed and verified on hardware.
+
+### What was wrong
+
+Only `crystal` looked like modern pixel art. The other 47 floors were
+procedural `terrain_art.py` output: 5-17 flat colors, a center luminance
+standard deviation of 5-13, and no real lighting or pixel shading. Measured
+against the approved crystal floor (64 colors, sd 8.1, p10-p90 16.0) they read
+as 8-bit NES-era swatches.
+
+### Decisions made
+
+- **Backgrounds are ground texture, not scenes.** The device composites a
+  separate `border_*` layer with a ~14px opaque frame over the floor at
+  runtime, so a floor that draws its own chunky rim duplicates that work. Every
+  prompt now says "flat material sample, not a scene" and forbids a border.
+- **Organic ground must not repeat; manufactured ground must.** Brick,
+  floorboards, tiling, paving and panelling are supposed to tile. Soil, moss,
+  litter, sand, gravel, ash, snow and cloud are not. `background_prompts.py`
+  declares this per theme and emits either the long non-repetition rule or a
+  named repeat unit.
+- **Never name a commercial game in a prompt.** Naming titles made the provider
+  refuse with `IMAGE_RECITATION` and bill the request as a failure. The style is
+  described as "modern hand-crafted pixel art, the kind used in contemporary
+  indie games" instead.
+- **Contrast is fitted, not fixed.** A brick floor returns far contrastier than
+  a snowfield, so one multiplier either flattens the snow or leaves the brick
+  too busy to read the spider against. `fit_contrast()` searches for the factor
+  that lands the central play area near the reference sd of 8.1. Every theme
+  landed in 7.6-8.7.
+- **Brightness is per theme, not global.** Forcing every floor to crystal's mean
+  of 65 would turn snow, sand and kitchen into mud. `THEME_MEAN` holds the mean
+  each procedural floor already shipped with, so an imported floor keeps the
+  brightness players associate with the theme.
+- **Regional contrast compression was rejected.** A radial-falloff adjustment
+  limited to the play area left a visible halo ring at its boundary. Uniform
+  global scaling has no boundary, so no ring.
+- **Sparkle injection was rejected.** Isolated bright pixels violate the
+  contract's "never isolated bright/dark noise" rule.
+- **Moss keeps its own pinned path.** `terrain_art.approved_moss()` already
+  serves a reviewed, hash-pinned moss floor and border, so it is deliberately
+  absent from `APPROVED_FLOORS`.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `tools/background_prompts.py` | **New.** Per-theme prompt recipes with organic/manufactured classification, sparse-theme tonal variant, and a `missing()` coverage check. |
+| `tools/background_batch.py` | **New.** Drives generation and conversion together, writes `report.json`, never installs. |
+| `tools/import_background.py` | Added `THEME_MEAN`/`theme_mean()` and `fit_contrast()`; `--contrast` and `--mean` are now optional overrides. |
+| `tools/approved_sources.py` | `APPROVED_FLOORS` grew from 1 to 47 hash-pinned floors. |
+| `tools/asset_build.py` | Background summary now reports the registry size instead of naming two themes. |
+| `tools/test_background_prompts.py` | **New.** 13 tests covering coverage, the no-game-title rule, organic vs manufactured wording, and CLI behaviour. |
+| `tools/test_import_background.py` | Added `ThemeMeanTests`; retargeted the dry-run test off now-approved themes. |
+| `tools/test_approved_sources.py` | Registry tests now iterate every registered theme and assert full shipped coverage. |
+| `tools/test_art_style.py` | Procedural tone-limit test now uses an unregistered name, since every shipped theme is approved. |
+| `assets/sources/*_floor.png` | 45 new approved 240x240 RGBA floors. |
+| `docs/ART_STYLE.md` | Documented fitted contrast, per-theme brightness, and the two recurring organic failure modes (bubble field, starburst). |
+| `docs/PIXELLAB_WORKFLOW.md` | Added "Prompts are generated, not hand-written" and "Batch generation"; documented fitted contrast and per-theme brightness. |
+| `assets/README.md` | Adoption steps now start from `background_prompts.py`. |
+
+### Exact verification evidence
+
+- `asset_build.py`: `VALID: 387 PNGs`, `PIXEL ART: 348 non-spider PNGs`,
+  `DETERMINISTIC: two generation passes have identical SHA-256 hashes`,
+  `PRESERVED: all 387 source PNGs are byte-identical across generation`,
+  `BACKGROUNDS: 48 opaque 240x240 keeper enclosures, at most 64 colors;
+  47 hash-verified approved floors`, `PACKED: 387 MMAP entries, QOI
+  dimensions/opcodes/pixels verified`.
+- Every converted floor measured 64 colors, 63-64 center tones, sd 7.6-8.7,
+  p10-p90 16.1-25.4 — inside crystal's band.
+- Tools suite: 173 tests, 1 failure + 2 errors, all pre-existing
+  `WinError 4551` Application Control blocks on native `.exe` tests
+  (`test_album_native`, `test_audio_native`, `test_save_native`). The art and
+  tooling suites alone are 126/126 OK.
+- Browser suite 246/246 PASS.
+- Wrapper build exit 0, zero main warnings. Flash exit 0, `Hash of data
+  verified`.
+- 40-second soak `VERDICT: PASS - clean boot window`, `FAULTS/ERRORS: 0`.
+- `mem`: internal largest 63488, dma-cap largest 63488, psram largest 1769472 —
+  above the 51200 floor.
+- Device capture confirms the new floor renders under the border with the
+  spider clearly readable against it.
+
+### Honest boundaries
+
+Physical appearance on the panel, and whether each of the 46 new floors suits
+its theme in play, still need the user's own eyes. The measurements prove the
+tonal band and the hash pinning, not aesthetic approval.
+
+## Round 104 - Modern pixel-art enclosure borders for all 48 themes
+
+The floors got the modern pixel-art treatment in Round 103. The frames were
+still the thin, flat, repetitive stone strips the user had already rejected on
+the floors, so this round applies the same treatment to all 48 borders.
+
+### Decisions made
+
+- **Borders are decorative, so contrast is a ceiling, not a target.** The
+  approved crystal frame already runs at a luminance standard deviation near
+  47 over its opaque pixels, far above a floor's calm 8. Fitting a generated
+  frame to crystal's exact sd flattened the shading that makes the band read
+  as carved, so `import_border.py` only reduces contrast until the rim comes in
+  under `SD_CEILING` (80). In practice 43 of 46 frames needed no reduction at
+  all.
+- **Brightness stays per theme.** `shipped_mean()` measures the procedural
+  frame the theme already shipped with, so a snow frame stays bright and a cave
+  frame stays dark. Forcing every frame to crystal's mean of 70 would have
+  turned snow and kitchen into mud.
+- **The generator does not honour the 8px rim, so the tool solves the geometry.**
+  Generated frames arrive with a black margin and a band 10-14px wide at 120.
+  `fit_frame()` crops to the drawn content, floods outward from the centre
+  pixel to find the hollow middle, then nine-slices the band down to exactly 8
+  logical pixels and forces the opening to alpha zero.
+- **Slicing happens at source resolution, not on a pre-reduced copy.** Reducing
+  1024 to 120 first averages about eight source pixels per output pixel, which
+  smeared a band that is only eight pixels wide once published. Slicing at full
+  resolution and reducing each band piece once keeps the generator's detail.
+- **Opening detection floods from the centre, not from a seed colour.** The
+  first attempt picked the most common colour as the seed, which landed on the
+  band for 17 frames. Generators fill the middle with white as often as black,
+  but the centre pixel is always inside the opening.
+- **A narrow band is upscaled, not rejected.** A generator that draws a 5px
+  band still drew a frame; widening it to the contract rim is better than
+  discarding an otherwise good candidate.
+- **Six frames were regenerated.** `dragon_heath`, `sunken_temple`,
+  `witch_garden`, `observatory`, `starship` and `cloud_sanctuary` came back too
+  low-contrast to read as a frame, so their prompts now state the contrast
+  relationship explicitly ("the embers are bright orange against the
+  near-black rock, so the band reads clearly").
+- **Crystal keeps its own pinned path.** It is nine-sliced by
+  `gen_sprites._draw_crystal_border()` rather than being a plain 2x enlargement,
+  so it is listed in `BORDER_SPECIAL` and pinned by its existing source and
+  pixel hashes. Moss keeps its own pinned path in `terrain_art`.
+
+### Files
+
+| File | Change |
+| --- | --- |
+| `tools/approved_sources.py` | Added `APPROVED_BORDERS` (47 themes), `BORDER_SPECIAL`, `border(theme)`, `is_border_approved(theme)`. |
+| `tools/import_border.py` | New. Border conversion: content crop, centre flood, nine-slice to 8px, tone match, 16-colour quantize, binary alpha. |
+| `tools/border_prompts.py` | New. 46 per-theme frame recipes with material, motif and palette. |
+| `tools/border_batch.py` | New. Generation + conversion driver, dry run by default. |
+| `tools/install_borders.py` | New. Adoption step: installs sources and rewrites `APPROVED_BORDERS`. |
+| `tools/test_import_border.py` | New. 22 tests. |
+| `tools/test_border_prompts.py` | New. 12 tests. |
+| `tools/test_approved_sources.py` | Added `BorderRegistryTests` (11 tests). |
+| `tools/gen_sprites.py` | `draw_border()` now delegates to `approved_sources.border()`. |
+| `tools/asset_build.py` | Border validation is registry-driven; summary reports approved frame count. |
+| `assets/sources/{theme}_border.png` | 46 new approved 120x120 frame sources. |
+| `docs/ART_STYLE.md` | Added "Approved border imports". |
+| `docs/PIXELLAB_WORKFLOW.md` | Added border prompt and conversion sections. |
+| `assets/README.md` | Documented the border adoption path. |
+
+### Exact verification evidence
+
+- `asset_build.py`: `VALID: 387 PNGs`, `PIXEL ART: 348 non-spider PNGs,
+  binary alpha; sprites use uniform 2x2 blocks, at most 12 colors
+  (borders: 16)`, `DETERMINISTIC: two generation passes have identical SHA-256
+  hashes`, `PRESERVED: all 387 source PNGs are byte-identical across
+  generation`, `BORDERS: 48 240x240 frames; transparent [16,224) opening;
+  48 hash-verified approved frames`.
+- Every one of the 46 new frames measured exactly 3584 opaque pixels and a
+  16px rim on all four sides at 240x240, i.e. the contract's 8 logical pixels.
+- Colour counts 5-15, all inside the 16-colour border cap.
+- Tools suite: 218 tests, 1 failure — the pre-existing `WinError 4551`
+  Application Control block on `test_save_native`. Verified pre-existing by
+  stashing the art changes and re-running: the same test still fails.
+- Browser suite 246/246 PASS.
+- Wrapper build exit 0, zero main warnings. Flash exit 0, `Hash of data
+  verified`.
+- 40-second soak `VERDICT: PASS - clean boot window`, `FAULTS/ERRORS: 0`.
+- `mem`: internal largest 63488, dma-cap largest 63488 — above the 51200 floor.
+- Device captures at themes 20 (snow), 9 (gothic), 30 (kitchen) and 14
+  (crystal) confirm the new frames render with their matching floors and the
+  spider stays readable.
+
+### Honest boundaries
+
+Physical appearance on the panel, and whether each of the 46 new frames suits
+its theme in play, still need the user's own eyes. The measurements prove the
+geometry, the colour cap and the hash pinning, not aesthetic approval.
+
+## Round 105 - Crystal border, decor and gift art pass
+
+Round 104 upgraded 47 of the 48 borders and left crystal on its original
+PixelLab frame. This round finishes crystal, then applies the same
+"read as the subject, not as speckle" standard to the 68 decor props and the
+36 gift furnishings.
+
+### Decisions made
+
+- **Crystal is now a plain approved import.** It was the only theme still
+  nine-sliced from a PixelLab frame by `gen_sprites._draw_crystal_border()`.
+  A generated frame with a violet-slate palette and lavender/cyan crystal
+  clusters replaced it, so `BORDER_SPECIAL` is now empty and all 48 frames go
+  through the same registry path. The first attempt came back grey rather than
+  violet, so the prompt now states the colour relationship explicitly.
+- **Decor and gifts were already shaded, so the defect was not colour count.**
+  All 68 props measured 8-12 tones and all 36 gifts 8-12, both inside contract.
+  The real defect was one-pixel detail strokes: at a 32x32 or 16x16 logical
+  canvas a single-pixel stroke is a sixteenth or an eighth of the sprite, so a
+  scatter of them reads as scratches rather than material.
+- **A frond is a solid tapering blade, not a row of pinnae.** Individual pinnae
+  are one or two pixels each, so a row of them merged into a speckled mass.
+  `_frond()` now draws a filled band along the spine split into a lit upper half
+  and a shadowed lower half.
+- **A fern is an arching plant, not a starburst.** The old fern had five fronds
+  radiating from one point, which is the "grass star" the contract forbids.
+  Fronds now leave a short upright stem at different heights and curve outward.
+- **A succulent is a layered rosette, not a ring of pointed blades.** Added
+  `_plump_leaf()` for blunt, fleshy blades, drew the layers back to front over a
+  solid body, and stroked the finished silhouette with `_outline()`.
+- **Ink outlines are stroked onto the finished silhouette.** Per-element
+  outlines are covered by the next element, which left a dotted ring instead of
+  a continuous edge.
+- **Gifts were rebuilt as solid bodies with a second material.** Bone became a
+  shaft with knuckled ends and a leather thong; twig a solid limb with a fork
+  and bark grain; coral a branching colony of tapered tubes with polyp tips; sap
+  a resin bead chain on a solid branch; ruby and sapphire cut stones with table,
+  crown and pavilion facets on a gold setting; crown a band with three points
+  and a jewelled rim; silk a filled cloth curve between two solid posts; and
+  moon_bed a filled crescent polygon with a mattress in its curve.
+- **`_oval()` draws an ink outline**, so cutting a hole through one leaves only
+  the outline behind. That is why moon_bed is a polygon rather than a disc with
+  a disc removed.
+- **A narrow band is upscaled, not rejected** in `import_border.py`, and the
+  opening is found by flooding from the centre pixel rather than by guessing a
+  seed colour: generators fill the middle with white as often as black.
+
+### Files
+
+| File | Change |
+| --- | --- |
+| `assets/sources/crystal_border.png` | Replaced with the generated violet-slate frame. |
+| `tools/approved_sources.py` | Crystal added to `APPROVED_BORDERS`; `BORDER_SPECIAL` emptied. |
+| `tools/gen_sprites.py` | `draw_border()` no longer special-cases crystal. Coral, sap, twig, bone, ruby, sapphire, crown, silk and moon_bed redrawn. |
+| `tools/core_decor_art.py` | `_frond()` draws solid blades; `_plump_leaf()` and `_outline()` added; fern and succulent redrawn; `_leaf()` and `_moss()` use connected planes. |
+| `tools/asset_build.py` | Crystal border validation is registry-driven. |
+| `tools/test_art_style.py` | Crystal border tests updated for the plain-import path. |
+| `tools/test_approved_sources.py` | `test_crystal_is_a_plain_registry_entry` replaces the old special-case test. |
+| `docs/ART_STYLE.md` | Added "Organic props must read as their subject" and "Gifts must read as their object at 16x16". |
+
+### Exact verification evidence
+
+- `asset_build.py`: `VALID: 387 PNGs`, `PIXEL ART: 348 non-spider PNGs,
+  binary alpha; sprites use uniform 2x2 blocks, at most 12 colors
+  (borders: 16)`, `DETERMINISTIC`, `PRESERVED: all 387 source PNGs are
+  byte-identical across generation`, `DECOR: 68 placeable props with 8-12
+  material tones each`, `GIFTS: 36 furnishings with 8-12 material tones each`,
+  `BORDERS: 48 240x240 frames; transparent [16,224) opening; 48 hash-verified
+  approved frames`.
+- All 48 borders measured exactly 3584 opaque pixels and a 16px rim on all four
+  sides at 240x240, i.e. the contract's 8 logical pixels.
+- Interior speckle (opaque pixels far from their 3x3 neighbourhood mean) fell
+  from 38.6 to 11.1 on moss_clump and from 30.7 to a solid-blade fern; the
+  metric is not a quality gate on its own, since approved prey art scores 40.1
+  and approved UI 38.9, so the visual review is what decided each fix.
+- Tools suite: 218 tests, 1 failure — the pre-existing `WinError 4551`
+  Application Control block on `test_save_native`, unchanged from Round 104.
+- Wrapper build exit 0, zero main warnings. Flash exit 0, `Hash of data
+  verified`.
+- 40-second soak `VERDICT: PASS - clean boot window`, `FAULTS/ERRORS: 0`.
+- `mem`: internal largest 63488, dma-cap largest 63488 — above the 51200 floor.
+- Device capture at theme 14 (crystal) confirms the new frame, floor and decor
+  render together with the spider readable.
+
+### Honest boundaries
+
+Physical appearance on the panel, and whether each redrawn prop and gift suits
+its theme in play, still need the user's own eyes. The measurements prove the
+geometry, the colour caps and the hash pinning, not aesthetic approval.
+
+## Round 106 - Publishing v1.1.31
+
+Rounds 96-105 were complete and verified on hardware but never committed. This
+round commits them, publishes v1.1.31 and deploys the matching website.
+
+### Decisions made
+
+- **Renumbered the three art rounds.** They had been appended as 33-35, which
+  collided with the existing Round 33-35 headings from the page-ear work. They
+  are now Rounds 103-105, so the file has one monotonic sequence.
+- **Restored `build_out.txt` rather than committing it.** It is a tracked build
+  log whose working-tree copy held a stale asset-generation transcript, not a
+  build. Committing it would have recorded a misleading log.
+- **Wrote `docs/RELEASE_v1.1.31.md`.** The release notes cover the artwork pass,
+  the care/sleep/automation fixes, the menu changes, the website changes, the
+  v18 save layout and the honest verification boundaries.
+- **Updated every version reference** in `README.md`, `docs/AGENT_HANDOFF.md`,
+  `docs/BROWSER_PARITY.md`, `docs/COMPANION_LIFE.md` and `site/README.md` from
+  "development v1.1.31 / save v17" to the published v1.1.31 / save v18, and
+  removed the "public firmware remains v1.1.30" caveats.
+- **Corrected two stale README art claims.** It still said the approved moss and
+  Crystal terrain were unchanged and described the floors as "quiet SNES-style",
+  both of which the art pass superseded.
+
+### Exact verification evidence
+
+- `asset_build.py`: `VALID: 387 PNGs`, `PIXEL ART: 348 non-spider PNGs, binary
+  alpha; sprites use uniform 2x2 blocks, at most 12 colors (borders: 16)`,
+  `DETERMINISTIC`, `PRESERVED: all 387 source PNGs are byte-identical across
+  generation`, `DECOR: 68 placeable props with 8-12 material tones each`,
+  `GIFTS: 36 furnishings with 8-12 material tones each`, `BORDERS: 48 240x240
+  frames; transparent [16,224) opening; 48 hash-verified approved frames`.
+- Wrapper build exit 0, zero main warnings. Flash exit 0, `Hash of data
+  verified`.
+- 40-second soak `VERDICT: PASS - clean boot window`, `FAULTS/ERRORS: 0`.
+- `mem`: internal largest 63488, dma-cap largest 63488, psram largest 1802240.
+- `render 500` `largest_drift=0`; `scanloop 5` `ok=5 failed=0
+  largest_drift=0`.
+- Device capture confirms the new frame, floor and props render together with
+  the spider readable.
+- Browser suite 246/246 PASS. Art and tooling tests pass. `test_package_release`
+  16/16 PASS. `site/build.mjs` exit 0.
+- Tools suite 218 tests with 4 errors, all the same
+  `OSError: [WinError 4551] An Application Control policy has blocked this file`
+  raised when the harness spawns a native test binary. That is a local
+  Application Control policy, not a firmware or artwork failure.
+- `package_release.py --version 1.1.31` produced
+  `spidarium-v1.1.31.zip` with 5 verified images and no NVS image.
+
+### Honest boundaries
+
+Physical appearance on the panel, and whether each redrawn floor, frame, prop
+and gift suits its theme in play, still need human eyes. No completed hosted
+OTA/reboot, signed firmware, encrypted NVS, functional rollback, physical
+touchscreen, SD media or RTC backup-battery claim is added.

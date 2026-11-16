@@ -3,7 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 import struct
-import tempfile
+import shutil
+import uuid
 import unittest
 import zipfile
 
@@ -47,9 +48,9 @@ class ManifestTests(unittest.TestCase):
                 ota_manifest({"version": version, "files": files})
 
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.build = Path(self.temp.name)
+        self.build = Path.cwd() / "release" / ("package-test-" + uuid.uuid4().hex)
+        self.build.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, self.build)
         (self.build / "project_description.json").write_text(json.dumps({
             "project_name": "spidarium", "project_version": "1.0.0", "target": "esp32s3"}))
         self.flash = {"flash_files": {}}
@@ -111,6 +112,43 @@ class ManifestTests(unittest.TestCase):
     def test_current_schema_is_accepted(self):
         path, _ = self.schema_fixture()
         self.assertEqual(validate_save_schema(self.build), path)
+
+    def test_v15_companion_metadata_and_tail_are_required(self):
+        root = Path(__file__).resolve().parents[1]
+        schema = json.loads((root / "site" / "save-schema.json").read_text())
+        path, _ = self.schema_fixture()
+        # Read the live version rather than pinning it: this test is about the
+        # companion/life/decor layout, not about which save version is current.
+        (self.build / "main" / "game_config.h").write_text(
+            f"#define SAVE_VERSION {schema['version']}\n")
+        path.write_text(json.dumps(schema))
+        self.assertEqual(validate_save_schema(self.build), path)
+        for key, value in (("size", 591), ("offset", 267), ("diary_count", 71)):
+            invalid = json.loads(json.dumps(schema))
+            invalid["companion"][key] = value
+            path.write_text(json.dumps(invalid))
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "companion"):
+                validate_save_schema(self.build)
+        invalid = json.loads(json.dumps(schema))
+        invalid["decorTail"]["offset"] = 268
+        path.write_text(json.dumps(invalid))
+        with self.assertRaisesRegex(ValueError, "decoration"):
+            validate_save_schema(self.build)
+        invalid = json.loads(json.dumps(schema))
+        invalid["life"]["retired"]["stride"] = 739
+        path.write_text(json.dumps(invalid))
+        with self.assertRaisesRegex(ValueError, "life"):
+            validate_save_schema(self.build)
+        invalid = json.loads(json.dumps(schema))
+        invalid["fields"] = [field for field in invalid["fields"] if field["name"] != "usb_sounds"]
+        path.write_text(json.dumps(invalid))
+        with self.assertRaisesRegex(ValueError, "USB sound"):
+            validate_save_schema(self.build)
+        invalid = json.loads(json.dumps(schema))
+        invalid["maxPayload"] = 20480
+        path.write_text(json.dumps(invalid))
+        with self.assertRaisesRegex(ValueError, "decoration"):
+            validate_save_schema(self.build)
 
     def test_stale_schema_is_rejected_before_publication(self):
         self.schema_fixture(5)

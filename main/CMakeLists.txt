@@ -1,6 +1,9 @@
 idf_component_register(
     SRCS "main.c"
          "game.c"
+         "companion.c"
+         "life.c"
+         "album.c"
          "save.c"
          "assets.c"
          "sprites.c"

@@ -9,7 +9,7 @@ it. You feed it by slingshotting it at bugs, clean the tank, play with it, and
 give it gifts. It remembers all of it across reboots.
 
 **[Website, web flasher and simulator](https://jeromedontdev.github.io/Spidarium/)**
-| **[Download v1.1.30](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.30)**
+| **[Download v1.1.31](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.31)**
 | [Screenshots and feature guide](docs/README.md)
 
 ![Actual device care HUD](docs/screenshots/device-hud.png)
@@ -17,6 +17,38 @@ give it gifts. It remembers all of it across reboots.
 ---
 
 ## What makes it interesting
+
+**A pet with preferences and memories.** Menu > Your Spider shows the existing
+temperament and bond alongside favorite treats, furnishings and minigames.
+Three uses of a treat, completed visits to a furnishing, or completed games
+of the same minigame reveal that preference; favorites stay stable and add a
+small mood bonus. Existing spiders keep their personality and progress.
+Menu > Today offers two optional requests, with automatic five-Silk rewards,
+saved progress and penalty-free Not Today dismissal. Requests require no
+purchases; manual hunting, real cleaning and completed interactions count,
+not opening a menu or enabling automation. Today combines Check In, the daily
+task and both optional requests on one page, preserving existing rewards and
+check-in streaks. Menu > Diary remembers newly earned achievements,
+bond/growth milestones, recoveries, favorite discoveries and a grouped request
+summary. Keep up to 64 memories and pin eight; older unpinned entries roll out.
+Preferences, requests and diary are included in backups.
+
+**A little more life, entirely optional.** v1.1.31 adds gentle
+mood/bond/temperament reactions, Training (Wave, Spin and Bow), and a Calendar
+with clock-based daily rhythms, quiet day/night shading, opt-in edge weather,
+occasional visitors and once-per-season rewards. Training needs five practices,
+2 energy per practice and 30 active seconds of rest; learned performances do
+not farm rewards. The reliable RTC calendar uses northern calendar quarters,
+not online weather or invented dates.
+
+Photo Album saves actual menu-free playfield images: eight SD BMP slots on the
+device, eight IndexedDB PNG slots in the browser. Missing, full or rejected
+storage reports an error; no automatic replacement. Photos are separate from
+pet backups. Generations also keeps a Family Album of up to three retired pets.
+Only a healthy adult can retire, with explicit confirmation; the hatchling
+inherits its parent's existing colour presets. Resume swaps pets without
+deleting either, and habitat, possessions and Silk stay shared. There is no
+forced replacement, eviction or death. See [the life-system guide](docs/COMPANION_LIFE.md).
 
 **An atmospheric, customizable habitat.** Gentle original background music has
 its own Sound switch, ten scores and independent music volume; master mute
@@ -34,9 +66,10 @@ travel-driven ground animation and heading-aware sprites; the spider is unchange
 Battery settings offer screen timeouts, saver profiles and saved RTC deep sleep.
 A soft rising chime confirms USB connection (including a full battery);
 a descending chime confirms unplugging.
-Sound mute/zero volume silence both. They work while screen-locked, but USB
+Sound > USB Chimes independently enables or disables both (on by default).
+Master mute/zero volume also silence them. They work while screen-locked, but USB
 insertion does not wake true deep sleep.
-The website and device Help Guide explain all features in seventeen topics.
+The website and device Help Guide explain all features in twenty-three topics.
 In-game Help is directly in Menu, not duplicated in Settings or About.
 Twenty achievements show their goals and automatically pay 15 XP plus 20 Silk
 once; existing earned badges are never paid twice. First Pet is available, and
@@ -52,7 +85,13 @@ resolve GitHub's latest stable release, verify the image and require matching
 artwork; art changes use USB. Slow HTTPS reads retry within a five-minute
 download limit. Single-tile sliders support held dragging; menu tiles omit
 submenu arrows. Decor previews now offer three spider paths and layer arrows.
-See [v1.1.30 release notes](docs/RELEASE_v1.1.30.md).
+Auto Feed holds hunger near 50% instead of starving the spider, and Auto Clean
+sweeps droppings every three minutes. Lock Decor refuses placement and movement,
+and decor is refused while live prey is out. Feeding wakes a sleeping spider,
+and the sleep/wake flicker is gone. The spider poops on its own every seven
+minutes while awake. Walk-behind now covers only the top half of an item, and
+solid decor can no longer be stood on. Wave and Bow have their own poses.
+See [v1.1.31 release notes](docs/RELEASE_v1.1.31.md).
 **OTA verification boundary:** GitHub discovery and safe partial-download
 recovery are tested, but a complete hosted download/reboot has not passed on
 the current hardware connection. Use USB for a verified installation.
@@ -76,9 +115,10 @@ RTC; its backup power keeps time while the device is off.
 consumers. Non-spider art follows a deterministic pixel-art generator and
 [style contract](docs/ART_STYLE.md); existing spider art is preserved.
 The complete catalogue now shares crisp material planes, chipped stone/wood,
-layered foliage and readable small-scale highlights. Exact approved moss and
-Crystal terrain remain unchanged; all 68 decor and 36 gifts match the richer
-direction. The lighting double tap accepts repeatable tap pairs with finger
+layered foliage and readable small-scale highlights. All 48 floors, 48 borders,
+68 decor props and 36 gifts were redrawn as modern hand-crafted pixel art with
+real lighting and pixel shading; the spider is unchanged. The lighting double
+tap accepts repeatable tap pairs with finger
 jitter, while holds, drags and furniture editing cannot toggle the lights.
 For testing currency, the documented console command `silk add 5000` adds
 exactly 5,000 Silk and acknowledges the completed save.
@@ -95,8 +135,8 @@ Drag toward a bug to jump; AI and prey hold still during the gesture.
 Flat pixel-framed lists and six-tile shops use visibly disabled Prev/Next paging
 rather than slow scrolling. Only Back navigates back; blank taps are ignored. The QWERTY
 keyboard includes WiFi Show/Hide
-password. Forty-eight authored top-down enclosure scenes use quiet SNES-style
-ground textures, composed at 240x240 and scaled with crisp pixels.
+password. Forty-eight authored top-down enclosure scenes use modern hand-crafted
+pixel-art ground textures, composed at 240x240 and scaled with crisp pixels.
 Everything that sits on the floor is placeable decor instead.
 Bent legs have visible knee joints.
 The selected enclosure survives reboot. Eight prey species unlock at levels
@@ -140,9 +180,11 @@ movement/Put Away controls without decor physics or layer choices.
 The catalogue order is shared with the
 browser port and checked by a test that parses the C table.
 
-Save v14 preserves these path modes, layer order and ten soundtracks without changing the
-six-byte item layout. It reads older saves; older firmware cannot safely read
-new v14 saves. Export a backup before updating or attempting a downgrade.
+Save v15 preserves these path modes, layer order and ten soundtracks without
+changing the six-byte item layout. It appends preferences, requests and diary
+before the extra-decor tail: the fixed prefix is now860 bytes. It reads older
+saves; older firmware cannot safely read new v15 saves. Export a backup before
+updating or attempting a downgrade.
 
 **A daily loop, and treats to spend Silk on.** Each in-game day offers a check-in
 whose reward grows with a consecutive-day streak (6 XP / 4 Silk on day one, up to
@@ -177,10 +219,30 @@ nothing and repeated taps cannot farm it. Achievement badges are distinct and
 every species has splatter art.
 Sound controls live under Settings.
 
-**Playfield screenshots.** Settings > Save Screenshot writes a numbered,
-verified BMP to SD without menus or HUD. The browser downloads a playfield PNG.
-Serial captures can include menus or isolate the playfield for agent diagnostics;
+**Playfield photos.** Menu > Photo Album has Take Photo, Storage Status and
+Photo Storage. Only saved images appear inside Photo Storage. Generations
+is a separate main-menu feature, not part of the photo album.
+Settings no longer has a duplicate Save Screenshot action.
+Serial captures still include menus or isolate the playfield for diagnostics;
 see [screenshot commands](docs/serial_console.md#screen-capture).
+
+**On-device Photo Album.** Eight actual playfield photos are stored separately
+on the SD card as `spidarium-photo-0.bmp` through `spidarium-photo-7.bmp`.
+Refresh rescans these files after reboot; opening a photo reads its RGB565 pixels
+from SD. Capture reports success only after flush, sync and pixel readback.
+Full albums reject new captures rather than overwriting photos. Open an album
+entry, choose Delete Photo, then Confirm Delete to free just that slot. Cancel
+keeps it; damaged files can also be explicitly removed. Browser photos offer
+the same confirmation and use IndexedDB. Missing
+cards, damaged files and read/write failures are reported. Album files are
+**not included in pet-save backups**; preserve the BMP files separately.
+
+**Gameplay-first menus.** Care, Today, Training and Calendar come first, followed
+by memories/family and customization; Help and Settings are last.
+Backing out retains your last page in the root, Settings and other menus.
+Settings > Display > Double-Tap Lights is saved and starts enabled. Disable it
+without losing ordinary taps/petting. Dim Enclosure remains available there
+even with the gesture off; enclosure lighting is independent of brightness.
 
 **Manual care by default.** Settings has one Auto Feed switch, off for new and
 migrated saves, that drives both wild prey and unattended hunting. Without it,

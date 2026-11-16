@@ -8,13 +8,24 @@ menu-stack/slider architecture; use the implemented API.
 
 ```
 Menu
-  Daily                  check-in and the rotating task
+  Your Spider            personality, bond and discovered favorites
+  Today                  check-in, daily task and optional requests
+  Training               Wave, Spin, Bow
+  Calendar               activities, visitors, seasons and subtle weather
   Treats                 twelve consumables bought with Silk
-  Backgrounds            forty-eight ground textures, buy once with Silk
   Achievements           twenty badges; tap for goal and one-time rewards
   Prey species           read-only unlock grid
+  Diary                  memories and pins
+  Photo Album
+    Take Photo           capture the playfield on SD
+    Storage Status       completed storage outcome
+    Photo Storage        only the eight saved images
+      Selected photo     View / Delete; separate deletion confirmation
+  Generations            three safe archives; confirmed retirement/resume
   Decor                  sixty-eight kinds; buy, then tap the tank to place
+  Backgrounds            forty-eight ground textures, buy once with Silk
   Borders                No Border + forty-eight theme frames; buy once with Silk
+  Help Guide             twenty-three readable feature/control topics
   Settings
     WiFi
       Scan networks      explicit on-demand action
@@ -25,19 +36,18 @@ Menu
     SD card              backup / restore / persistent status
     About                firmware and hardware information
       Firmware update    GitHub latest release / advanced HTTPS URL / status
-      Help guide         seventeen readable feature/control topics
     Battery              status, profiles, timeout, RTC sleep delay/wake
-    Display              brightness slider, screen rotation
+    Display              brightness, rotation, Double-Tap Lights, Dim Enclosure
     Sound                volume, Sound checkbox, Background Music switch
                          Music Volume on page 1; Soundtrack on page 2
     Auto Feed            one switch: wild prey and unattended hunting together
-    Save Screenshot      verified playfield BMP to SD (PNG in browser)
-    Help Guide           same topics as About and the website
     Wipe Spider          red text; confirmation before reset; always last
 ```
 
-Settings is always the last row of the root menu: it is the least-used entry and
-belongs at the bottom rather than in the middle. Daily and Treats have no
+Gameplay comes first, memories/family next, customization afterward, and Help
+and Settings last. Settings has no duplicate screenshot action: Photo Album
+owns player captures; serial screenshot diagnostics remain available.
+Today and Treats have no
 redundant full-width Back row because the corner Back button already exists.
 Gifts has thirty-six furnishings, one active at a time. Borders are independent
 of backgrounds: buying a frame does not buy/change its floor. Owned frames
@@ -60,6 +70,12 @@ page. Firmware Update
 returns to About, including its advanced URL editor and asynchronous status refresh.
 Back from saved network/editor
 returns to WiFi. Other submenus return to the root; root Back closes.
+All paged menus retain their last session page on Back and rebuild. Native
+ui_menu records the outgoing page before destroying objects for a pick/Back;
+game.c restores its per-menu page before registering the next close callback.
+Browser close records modal.page and open restores it unless explicitly paging;
+list clamps the page if entries were deleted. Generations is independent,
+only in the main menu. Page history is not persisted in pet saves.
 Only the explicit Back control navigates back. Blank panel/backdrop taps are
 absorbed without navigating; disabled cards do not dismiss the menu.
 Soundtrack offers Silk Garden, Moonlit Hollow and Rainy Canopy, with distinct
@@ -91,7 +107,9 @@ Native preview image/ring/buttons are created once; drags only update retained
 object positions and visibility, never rebuild the gift canvas.
 Placement storage grows beyond the twelve legacy
 save slots, subject to available PSRAM and NVS storage, not a twelve-item cap.
-Double tap the enclosure to toggle its dim lighting. The overlay stays below
+Double tap the enclosure to toggle its dim lighting unless the saved Display >
+Double-Tap Lights switch is off (default on). Display > Dim Enclosure works
+independently, so a disabled gesture never traps dim lighting. The overlay stays below
 HUD/menus and does not change screen brightness or power timeouts. Single-tap
 petting waits 450 ms so a double tap cannot also pet the spider.
 

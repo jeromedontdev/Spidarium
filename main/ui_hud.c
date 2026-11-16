@@ -25,7 +25,7 @@
 static lv_obj_t *s_stats[NUM_STATS], *s_values[NUM_STATS], *s_bars[NUM_STATS];
 static lv_obj_t *s_level, *s_progress, *s_resources, *s_hint, *s_bubble, *s_bubble_label;
 static lv_obj_t *s_care_button, *s_care_label, *s_place_done, *s_place_cancel;
-static lv_obj_t *s_place_away, *s_place_path[3], *s_place_back, *s_place_front, *s_place_layer_label;
+static lv_obj_t *s_place_away, *s_place_path, *s_place_path_label, *s_place_back, *s_place_front, *s_place_layer_label;
 static lv_obj_t *s_layer;
 static lv_obj_t *s_identity, *s_battery, *s_battery_fill, *s_battery_text, *s_charge;
 static uint32_t s_battery_key = UINT32_MAX;
@@ -33,11 +33,11 @@ static uint32_t s_bubble_until, s_last_refresh;
 static bool s_top_visible, s_bot_visible;
 void ui_hud_capture_hide(bool hidden)
 {
-    static bool was_hidden[14];
+    static bool was_hidden[12];
     lv_obj_t *objects[] = {s_layer, s_battery, s_care_button, s_bubble, s_place_done, s_place_cancel,
-                          s_place_away, s_place_path[0], s_place_path[1], s_place_path[2],
-                          s_place_back, s_place_front, s_place_layer_label, s_hint};
-    for (unsigned i = 0; i < 14; i++) {
+                          s_place_away, s_place_path, s_place_back, s_place_front,
+                          s_place_layer_label, s_hint};
+    for (unsigned i = 0; i < 12; i++) {
         if (hidden) was_hidden[i] = lv_obj_is_hidden(objects[i]);
         lv_obj_set_hidden(objects[i], hidden || was_hidden[i]);
     }
@@ -158,6 +158,13 @@ static lv_obj_t *place_action(lv_obj_t *parent, int x, int y, int w,
 {
     lv_obj_t *obj = make_action(parent, x, y, w, "", name, cb);
     lv_obj_set_height(obj, 48);
+    /* Placement controls sit over the tank, so they are deliberately see-through:
+     * the item being positioned and the spider must stay readable underneath.
+     * The border keeps the button legible without a solid fill. */
+    lv_obj_set_style_bg_opa(obj, LV_OPA_30, 0);
+    lv_obj_set_style_border_opa(obj, LV_OPA_60, 0);
+    lv_obj_set_style_outline_opa(obj, LV_OPA_40, 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_60, LV_STATE_PRESSED);
     lv_obj_t *label = lv_obj_get_child(obj, -1);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
     lv_obj_center(label);
@@ -327,17 +334,23 @@ void ui_hud_init(lv_obj_t *parent)
     s_care_label = make_label(s_care_button, LV_SYMBOL_CLOSE, &lv_font_montserrat_14, COL_TEXT);
     lv_obj_align(s_care_label, LV_ALIGN_TOP_LEFT, 12, 12);
     ui_hud_set_chrome(false);
-    s_place_cancel = make_action(parent, 80, 388, 148, "back", "Cancel", game_on_placement_cancel);
-    s_place_done = make_action(parent, 252, 388, 148, "decor", "Done", game_on_placement_done);
-    s_place_away = place_action(parent, 176, 338, 128, "Put Away", game_on_placement_put_away, 0);
-    static const char *names[] = {"Walk Over", "Solid", "Walk Behind"};
-    for (int i = 0; i < 3; i++)
-        s_place_path[i] = place_action(parent, 68 + i * 116, 232, 112, names[i], game_on_placement_path, i);
-    s_place_back = place_action(parent, 80, 286, 96, LV_SYMBOL_LEFT " Back", game_on_placement_layer, -1);
-    s_place_front = place_action(parent, 304, 286, 96, "Front " LV_SYMBOL_RIGHT, game_on_placement_layer, 1);
+    /* Placement controls are pinned to the bottom of the screen so the tank
+     * above them stays clear. The old layout stacked three path buttons, a
+     * layer row, Put Away and Cancel/Done up the middle of the screen and
+     * covered most of the terrarium. The rows stop short of the squircle's
+     * corner wedges, which have no pixels and would clip the outer buttons. */
+    s_place_cancel = place_action(parent, 48, 412, 120, "Cancel", game_on_placement_cancel, 0);
+    s_place_done = place_action(parent, 312, 412, 120, "Done", game_on_placement_done, 0);
+    s_place_away = place_action(parent, 176, 412, 128, "Put Away", game_on_placement_put_away, 0);
+    /* One cycling button instead of three: the path is a single choice, and
+     * three 112px buttons were the widest part of the overlay. */
+    s_place_path = place_action(parent, 48, 364, 152, "Walk Over", game_on_placement_blocking, 0);
+    s_place_path_label = lv_obj_get_child(s_place_path, -1);
+    s_place_back = place_action(parent, 208, 364, 64, LV_SYMBOL_LEFT, game_on_placement_layer, -1);
+    s_place_front = place_action(parent, 368, 364, 64, LV_SYMBOL_RIGHT, game_on_placement_layer, 1);
     s_place_layer_label = make_label(parent, "", &lv_font_montserrat_12, COL_TEXT);
-    lv_obj_set_size(s_place_layer_label, 128, 40);
-    lv_obj_set_pos(s_place_layer_label, 176, 292);
+    lv_obj_set_size(s_place_layer_label, 88, 48);
+    lv_obj_set_pos(s_place_layer_label, 276, 364);
     lv_obj_set_style_text_align(s_place_layer_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_hidden(s_place_layer_label, true);
     lv_obj_set_hidden(s_place_away, true);
@@ -345,7 +358,8 @@ void ui_hud_init(lv_obj_t *parent)
     lv_obj_set_hidden(s_place_cancel, true);
     s_hint = make_label(parent, "Slide to position; Done saves",
                          &lv_font_montserrat_12, 0xf5c86b);
-    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -HUD_BOTTOM_H - 18);
+    /* Just above the two control rows. */
+    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -124);
     lv_obj_set_hidden(s_hint, true);
     s_bubble = lv_obj_create(parent);
     lv_obj_remove_style_all(s_bubble);
@@ -383,26 +397,28 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_place_cancel, !on);
     bool decor = on && g_decor_mode;
     lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
-    for (int i = 0; i < 3; i++) {
-        lv_obj_set_hidden(s_place_path[i], !decor);
-        lv_obj_set_style_bg_color(s_place_path[i], lv_color_hex(
-            game_placement_blocking() == i ? 0x2b6a5f : COL_PANEL), 0);
-    }
+    lv_obj_set_hidden(s_place_path, !decor);
     lv_obj_set_hidden(s_place_back, !decor);
     lv_obj_set_hidden(s_place_front, !decor);
     lv_obj_set_hidden(s_place_layer_label, !decor);
-    lv_obj_set_state(s_place_back, LV_STATE_DISABLED, game_placement_layer() == 0);
-    lv_obj_set_state(s_place_front, LV_STATE_DISABLED,
-        game_placement_layer() >= game_placement_layers() - 1);
-    lv_label_set_text_fmt(s_place_layer_label, "%s Layer\n%d / %d",
-        game_placement_blocking() == DECOR_WALK_BEHIND ? "Canopy" : "Floor",
-        game_placement_layer() + 1, game_placement_layers());
     if (decor) {
+        static const char *names[] = {"Walk Over", "Solid", "Walk Behind"};
+        uint8_t path = game_placement_blocking();
+        lv_label_set_text(s_place_path_label, names[path]);
+        lv_obj_set_style_bg_color(s_place_path, lv_color_hex(0x2b6a5f), 0);
+        lv_obj_set_state(s_place_back, LV_STATE_DISABLED, game_placement_layer() == 0);
+        lv_obj_set_state(s_place_front, LV_STATE_DISABLED,
+            game_placement_layer() >= game_placement_layers() - 1);
+        lv_label_set_text_fmt(s_place_layer_label, "%s\n%d / %d",
+            path == DECOR_WALK_BEHIND ? "Canopy" : "Floor",
+            game_placement_layer() + 1, game_placement_layers());
         static const char *tips[] = {"Spider crosses above this item",
             "Spider steers around this item", "Spider passes underneath this item"};
-        lv_label_set_text(s_hint, tips[game_placement_blocking()]);
+        lv_label_set_text(s_hint, tips[path]);
     }
-    lv_obj_align(s_hint, LV_ALIGN_TOP_MID, 0, decor ? 208 : 286);
+    /* Keep the hint just above the control rows, which are pinned to the bottom
+     * of the screen so the tank above them stays clear. */
+    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -124);
 }
 
 void ui_hud_set_top(bool on)

@@ -9,10 +9,11 @@ import terrain_art
 import core_decor_art
 import furnishing_art
 import small_art
+import companion_icon_art
 
 from asset_build import (
     ACHIEVEMENT_ICONS, BACKGROUNDS, DECOR_ITEMS, GIFTS, TREATS, expected_dimensions,
-    validate_pixel_art, validate_runtime_mappings, write_preview,
+    validate_companion_icons, validate_pixel_art, validate_runtime_mappings, write_preview,
 )
 from gen_sprites import (
     ACHIEVEMENT_NAMES, BACKGROUND_NAMES, DECOR_ITEM_NAMES, GIFT_NAMES,
@@ -27,7 +28,8 @@ class ArtStyleTests(unittest.TestCase):
         self.assertEqual(set(furnishing_art.DECOR_DETAILS), set(DECOR_ITEM_NAMES[16:]))
         self.assertEqual(set(furnishing_art.GIFT_DETAILS), set(GIFT_NAMES))
         self.assertEqual(set(furnishing_art.TREAT_DETAILS), set(TREAT_NAMES))
-        self.assertEqual(set(small_art.ICON_DETAILS), set(UI_ICONS))
+        self.assertEqual(set(small_art.ICON_DETAILS) | set(companion_icon_art.NAMES), set(UI_ICONS))
+        self.assertFalse(set(small_art.ICON_DETAILS) & set(companion_icon_art.NAMES))
         self.assertEqual(set(small_art.BADGE_DETAILS), set(ACHIEVEMENT_NAMES))
         self.assertEqual(set(small_art.PREY_DETAILS), set(PREY_SPECIES))
         self.assertEqual(set(small_art.SPLATTER_DETAILS), set(PREY_SPECIES))
@@ -128,14 +130,18 @@ class ArtStyleTests(unittest.TestCase):
             self.assertNotEqual(tonal_layout(left), tonal_layout(right))
 
     def test_flat_terrain_and_excess_center_colors_are_rejected(self):
+        # Every shipped theme is now a hash-pinned approved import, so the
+        # procedural tone limits are exercised through an unregistered name.
+        name = "background_unregistered_0.png"
         image = Image.new("RGBA", (240, 240), (80, 90, 70, 255))
         with self.assertRaisesRegex(ValueError, "finite material shading"):
-            validate_pixel_art(image, "background_fern_0.png")
-        image = draw_background("fern")
+            validate_pixel_art(image, name)
+        # A small palette with too many distinct tones packed into the center.
+        image = Image.new("RGBA", (240, 240), (80, 90, 70, 255))
         for index in range(17):
             image.putpixel((100 + index, 100), (index + 60, 80, 65, 255))
         with self.assertRaisesRegex(ValueError, "quiet center"):
-            validate_pixel_art(image, "background_fern_0.png")
+            validate_pixel_art(image, name)
     def test_all_twenty_achievement_art_mappings_are_covered(self):
         root = Path(__file__).resolve().parents[1]
         validate_runtime_mappings(root)
@@ -174,18 +180,95 @@ class ArtStyleTests(unittest.TestCase):
         self.assertEqual(BACKGROUND_NAMES[16:24], [
             "house", "dark_cave", "night", "autumn", "snow", "pond", "ruins", "marsh",
         ])
-        self.assertEqual(len(UI_ICONS), 30)
-        self.assertEqual(UI_ICONS[13:], [
+        self.assertEqual(len(UI_ICONS), 80)
+        self.assertEqual(UI_ICONS[13:30], [
             "daily", "treats", "backgrounds", "achievements", "prey", "settings",
             "wifi", "sd", "about", "battery", "display", "sound", "auto_feed",
             "screenshot", "reset", "volume", "music",
         ])
+        self.assertEqual(tuple(UI_ICONS[30:]), companion_icon_art.NAMES)
         self.assertEqual(tuple(DECOR_ITEM_NAMES), DECOR_ITEMS)
         self.assertEqual(tuple(BACKGROUND_NAMES), BACKGROUNDS)
         self.assertEqual(tuple(GIFT_NAMES), GIFTS)
         self.assertEqual(tuple(TREAT_NAMES), TREATS)
         self.assertEqual(len(GIFT_NAMES), 36)
-        self.assertEqual(len(expected_dimensions()), 337)
+        dimensions = expected_dimensions()
+        self.assertEqual(len(dimensions), 387)
+        self.assertEqual(sum(not name.startswith("spider_") for name in dimensions), 348)
+
+    def test_companion_icons_are_dedicated_deterministic_and_match_sources(self):
+        names = (
+            "personality", "bond", "favorite_treat", "favorite_place", "favorite_game",
+            "today", "checkin", "request_pet", "request_play", "request_hunt",
+            "request_visit", "request_clean", "diary", "memory_treat", "memory_place",
+            "memory_game", "memory_bond", "memory_growth", "memory_recovery",
+            "memory_achievement", "memory_requests", "pin", "unpin", "dismiss",
+            "usb_chimes", "music_volume", "soundtrack", "daily_task",
+            "training", "trick_wave", "trick_spin", "trick_bow", "perform", "practice",
+            "album", "camera", "photo", "calendar", "daylight", "weather", "visitor",
+            "season_reward", "generations", "retire", "resume", "confirm_cancel",
+            "activity", "delete_photo", "light_gesture", "enclosure_light",
+        )
+        self.assertEqual(companion_icon_art.NAMES, names)
+        root = Path(__file__).resolve().parents[1]
+        validate_companion_icons(root / "assets")
+        for name in names:
+            with self.subTest(icon=name):
+                image = draw_icon(name)
+                self.assertEqual(image.tobytes(), companion_icon_art.draw(name).tobytes())
+                self.assertEqual(image.tobytes(), draw_icon(name).tobytes())
+                validate_pixel_art(image, f"ui_{name}.png")
+                with Image.open(root / "assets" / f"ui_{name}.png") as source:
+                    self.assertEqual(image.tobytes(), source.tobytes())
+                self.assertEqual(image.size, (48, 48))
+                x0, y0, x1, y1 = image.getbbox()
+                self.assertGreaterEqual(min(x0, y0), 2)
+                self.assertLessEqual(max(x1, y1), 46)
+        with self.assertRaisesRegex(ValueError, "Unknown companion icon"):
+            companion_icon_art.draw("unknown")
+
+    def test_companion_pixel_and_silhouette_reuse_is_rejected(self):
+        root = Path(__file__).resolve().parents[1]
+        from asset_build import logical_pixels
+        original = logical_pixels
+        def duplicate_pixels(directory, filename):
+            return original(directory, "ui_training.png" if filename == "ui_confirm_cancel.png"
+                            else filename)
+        with patch("asset_build.logical_pixels", side_effect=duplicate_pixels):
+            with self.assertRaisesRegex(ValueError, "reused icon pixels"):
+                validate_companion_icons(root / "assets")
+
+        def duplicate_silhouette(directory, filename):
+            image = original(directory, "ui_pin.png" if filename == "ui_confirm_cancel.png"
+                             else filename).copy()
+            if filename == "ui_confirm_cancel.png":
+                for y in range(image.height):
+                    for x in range(image.width):
+                        r, g, b, a = image.getpixel((x, y))
+                        image.putpixel((x, y), (g, b, r, a))
+            return image
+        with patch("asset_build.logical_pixels", side_effect=duplicate_silhouette):
+            with self.assertRaisesRegex(ValueError, "reused icon silhouette"):
+                validate_companion_icons(root / "assets")
+
+    def test_scheduled_activity_clock_differs_from_calendar_daylight_and_training(self):
+        from asset_build import logical_pixels
+
+        def silhouette(image):
+            return {
+                index for index, alpha in enumerate(
+                    image.resize((24, 24), Image.Resampling.NEAREST)
+                    .getchannel("A").get_flattened_data()
+                ) if alpha
+            }
+
+        activity = silhouette(companion_icon_art.draw("activity"))
+        for name in ("calendar", "daylight", "training"):
+            comparison = silhouette(logical_pixels(
+                Path(__file__).resolve().parents[1] / "assets", f"ui_{name}.png"
+            ))
+            intersection_over_union = len(activity & comparison) / len(activity | comparison)
+            self.assertLess(intersection_over_union, 0.72, name)
 
     def test_all_theme_frames_have_transparent_openings_and_distinct_art(self):
         contents = set()
@@ -204,14 +287,14 @@ class ArtStyleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "transparent opening"):
             validate_pixel_art(image, "border_woodland_0.png")
 
-    def test_crystal_border_fit_is_pinned_and_preserves_source_palette(self):
+    def test_crystal_border_is_pinned_and_preserves_source_palette(self):
         root = Path(__file__).resolve().parents[1]
         with Image.open(root / "assets" / "sources" / "crystal_border.png") as source:
             self.assertEqual(source.size, (120, 120))
-            self.assertIsNone(source.getchannel("A").crop((18, 18, 102, 102)).getbbox())
+            self.assertIsNone(source.getchannel("A").crop((8, 8, 112, 112)).getbbox())
             source_colors = {color for _, color in source.getcolors() if color[3]}
         image = draw_border("crystal")
-        self.assertEqual(validate_pixel_art(image, "border_crystal_0.png"), 16)
+        self.assertEqual(validate_pixel_art(image, "border_crystal_0.png"), len(source_colors))
         self.assertEqual({color for _, color in image.getcolors() if color[3]}, source_colors)
         with Image.open(root / "assets" / "border_crystal_0.png") as rendered:
             self.assertEqual(image.tobytes(), rendered.tobytes())
@@ -219,14 +302,14 @@ class ArtStyleTests(unittest.TestCase):
         colors = list(source_colors)
         replacement = next(color for color in colors if color != altered.getpixel((4, 4)))
         ImageDraw.Draw(altered).rectangle((4, 4, 5, 5), fill=replacement)
-        with self.assertRaisesRegex(ValueError, "fitted PixelLab Crystal border"):
+        with self.assertRaisesRegex(ValueError, "approved crystal border"):
             validate_pixel_art(altered, "border_crystal_0.png")
 
-    def test_changed_crystal_border_source_is_rejected_before_fitting(self):
+    def test_changed_crystal_border_source_is_rejected(self):
         source = Image.new("RGBA", (120, 120))
         source.format = "PNG"
         with patch("gen_sprites.Image.open", return_value=source):
-            with self.assertRaisesRegex(ValueError, "source differs"):
+            with self.assertRaisesRegex(ValueError, "differ from the approved border"):
                 draw_border("crystal")
 
     def test_theme_families_use_distinct_corner_silhouettes(self):
@@ -325,7 +408,7 @@ class ArtStyleTests(unittest.TestCase):
             replacement = image.getpixel((239, 239))
         self.assertNotEqual(replacement, image.getpixel((100, 100)))
         image.putpixel((100, 100), replacement)
-        with self.assertRaisesRegex(ValueError, "approved textured Crystal"):
+        with self.assertRaisesRegex(ValueError, "approved crystal floor"):
             validate_pixel_art(image, "background_crystal_0.png")
 
     def test_every_decor_item_has_richer_materials_on_the_pixel_grid(self):
@@ -409,7 +492,12 @@ class ArtStyleTests(unittest.TestCase):
             output = Path(directory) / "review.png"
             write_preview(Path(__file__).resolve().parents[1] / "assets", output)
             with Image.open(output) as sheet:
-                self.assertEqual(sheet.size, (960, 11000))
+                dimensions = expected_dimensions()
+                terrain_count = sum(name.startswith(("background_", "border_")) for name in dimensions)
+                sprite_count = sum(not name.startswith(("spider_", "background_", "border_"))
+                                   for name in dimensions)
+                self.assertEqual(sheet.size, (960, ((terrain_count + 3) // 4) * 260
+                                             + ((sprite_count + 5) // 6) * 140))
 
     def test_equal_pixels_preserve_source_bytes_across_png_encoders(self):
         image = draw_icon("feed")

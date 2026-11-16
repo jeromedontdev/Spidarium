@@ -529,6 +529,7 @@ void prey_resolve_pounce(void)
         game_add_silk(q == CATCH_PERFECT ? 5 : 3);
 
         g.meals++;
+        if (behaviour_pounce_by_player()) companion_event(COMPANION_HUNT, pr->species);
         /* ACH_FIRST_MEAL was defined and displayed on the status page but
          * never awarded anywhere, so "first meal" could never light up. */
         game_award(ACH_FIRST_MEAL);
@@ -585,14 +586,39 @@ void prey_tick(uint32_t now_ms, float dt_s)
         last_wild = now_ms;
         last_visitor_day = g.days_lived;
     } else {
+        /* Auto Feed holds hunger near AUTO_FEED_TARGET rather than topping the
+         * tank up on a fixed timer.
+         *
+         * The old rule spawned one wild bug every WILD_SPAWN_MS (20 min) and
+         * only when the tank was empty. Hunger decays at 3/min, so 20 minutes
+         * of waiting cost 60 points: the spider was permanently starving and
+         * the switch looked broken. A catch is worth WILD_HUNGER_GAIN, so the
+         * spawn interval is now derived from the gap between the current hunger
+         * and the target, which makes the tank hover around half full instead
+         * of oscillating between empty and stuffed. */
         if (!wild_seeded) {
             wild_seeded = true;
             last_wild = now_ms;
+            /* Turning Auto Feed on puts a bug in straight away, so the switch
+             * has a visible effect even when the spider is not hungry yet. */
             if (prey_count() == 0) prey_spawn_wild();
-        } else if (prey_count() == 0 &&
-                   now_ms - last_wild >= WILD_SPAWN_MS / (1u + gift->wild_spawn_bonus)) {
+        } else if (prey_count() == 0 && g.hunger <= AUTO_FEED_TARGET) {
+            /* One bug per WILD_HUNGER_GAIN points of deficit, so a spider that
+             * is only slightly hungry waits longer than a starving one. */
+            uint32_t deficit = (uint32_t)(AUTO_FEED_TARGET - g.hunger);
+            uint32_t wait = WILD_SPAWN_MS * WILD_HUNGER_GAIN / (deficit + WILD_HUNGER_GAIN);
+            wait /= 1u + gift->wild_spawn_bonus;
+            if (wait < AUTO_FEED_MIN_MS) wait = AUTO_FEED_MIN_MS;
+            if (now_ms - last_wild >= wait) {
+                last_wild = now_ms;
+                prey_spawn_wild();
+                ESP_LOGI(TAG, "auto feed: hunger %u, spawned wild prey", g.hunger);
+            }
+        } else if (prey_count() > 0) {
+            /* A bug is already waiting, so the clock restarts from now: the
+             * interval measures time without food, not time since the last
+             * spawn. */
             last_wild = now_ms;
-            prey_spawn_wild();
         }
         if (g.days_lived != last_visitor_day) {
             last_visitor_day = g.days_lived;

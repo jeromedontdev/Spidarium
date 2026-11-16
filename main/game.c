@@ -11,6 +11,7 @@
 #include "help_content.h"
 
 #include "assets.h"
+#include "album.h"
 #include "audio.h"
 #include "behaviour.h"
 #include "buttons.h"
@@ -22,6 +23,7 @@
 #include "sprites.h"
 #include "meminfo.h"
 #include "mind.h"
+#include "life.h"
 #include "needs.h"
 #include "net.h"
 #include "prey.h"
@@ -36,6 +38,8 @@
 #include "ui_hud.h"
 #include "ui_menu.h"
 #include "ui_setup.h"
+#include "src/misc/cache/instance/lv_image_cache.h"
+#include "src/misc/cache/instance/lv_image_header_cache.h"
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -62,7 +66,7 @@ static bool s_testing_placement;
 static uint32_t s_last_logic;
 static uint32_t s_last_save;
 static bool game_save_screenshot(void);
-static bool s_screenshot_failed;
+static bool game_save_album_photo(void);
 static lv_draw_buf_t *s_sd_capture;
 static const char *s_sd_message;
 
@@ -169,6 +173,8 @@ bool game_save_now(void)
 static void state_defaults(void)
 {
     memset(&g, 0, sizeof g);
+    companion_defaults(&g.companion);
+    life_defaults(&g.life);
     g.hunger  = 65;
     g.mood    = 60;
     g.energy  = 80;
@@ -185,6 +191,7 @@ static void state_defaults(void)
     g.border_id = 255;
     g.screen_timeout = 3;
     g.music_enabled = 1;
+    g.usb_sounds = 1;
     g.music_volume = 100;
 
     /* Sentinel: rolled in game_init() AFTER srand(). Rolling here would give
@@ -311,6 +318,15 @@ void game_on_feed(lv_event_t *e)
         ui_hud_bubble("Tank Full / Catch a Bug First", 0xf5c86b, 1800);
         return;
     }
+    /* Feeding wakes a sleeping spider. Prey only becomes food when the spider
+     * catches it, so dropping a bug in for a spider that is asleep did nothing
+     * visible: the player paid a tap, the bug wandered, and the spider stayed
+     * curled up. That is the "stuck asleep so I cannot feed them" report -- the
+     * spider had energy, just not enough to wake on its own. */
+    if (g.state == SPIDER_SLEEP) {
+        behaviour_force_sleep(false);
+        ESP_LOGI(TAG, "feed: woke the spider to hunt");
+    }
     g.taps++;
     needs_feed();
     /* No bubble: the spider reacting IS the feedback. */
@@ -337,10 +353,11 @@ void game_on_clean(lv_event_t *e)
     game_save_now();
 }
 
-static uint32_t play_reward(uint8_t score)
+static uint32_t play_reward(uint8_t score, uint8_t kind)
 {
     uint32_t before = g.xp;
     needs_play();
+    companion_event(COMPANION_PLAY, kind);
     /* Score drives the payout: a clean sweep is worth roughly four times a
      * blank run, so playing well is visibly better than tapping through. */
     game_add_xp(2 + score * 4);
@@ -386,18 +403,6 @@ void game_on_placement_blocking(lv_event_t *e)
     s_place_blocking = (s_place_blocking + 1) % DECOR_PATH_COUNT;
     if ((previous == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND))
         s_place_layer = decor_layer_count(s_place_blocking, g_decor_move_slot);
-    placement_position(s_place_x, s_place_y);
-    ui_hud_set_place_mode(true, NULL);
-}
-
-void game_on_placement_path(lv_event_t *e)
-{
-    if (!g_decor_mode) return;
-    uint8_t path = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
-    if (path == s_place_blocking) return;
-    if ((path == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND))
-        s_place_layer = decor_layer_count(path, g_decor_move_slot);
-    s_place_blocking = path;
     placement_position(s_place_x, s_place_y);
     ui_hud_set_place_mode(true, NULL);
 }
@@ -582,6 +587,23 @@ enum {
     MENU_BORDERS,
     MENU_WIFI_SCAN,
     MENU_HELP,
+    MENU_PERSONALITY,
+    MENU_TODAY,
+    MENU_DIARY,
+    MENU_MEMORY,
+    MENU_TRAINING,
+    MENU_TRICK,
+    MENU_CALENDAR,
+    MENU_ALBUM,
+    MENU_PHOTO_STORAGE,
+    MENU_PHOTO,
+    MENU_PHOTO_ACTIONS,
+    MENU_PHOTO_DELETE,
+    MENU_GENERATIONS,
+    MENU_RETIRED,
+    MENU_RETIRE_CONFIRM,
+    MENU_RESUME_CONFIRM,
+    MENU_COUNT,
 };
 
 static void menu_open(int which);
@@ -590,12 +612,34 @@ static void back_to_main(void);
 /* Which menu is currently on screen, or -1 when none is. Tracked here because
  * ui_menu only knows that *a* menu is open, not which one. */
 static int s_open_menu = -1;
+static int s_menu_pages[MENU_COUNT];
+static bool s_menu_page_known[MENU_COUNT];
+static int s_page_menu;
+static bool s_page_loading;
+static void remember_menu_page(int page)
+{
+    if (s_page_loading) return;
+    s_menu_pages[s_page_menu] = page;
+    s_menu_page_known[s_page_menu] = true;
+}
 /* The row table handed to ui_menu_open(). File scope so a value changed
  * outside the menu (the physical volume buttons) can be pushed into the open
  * panel without rebuilding it. */
 static ui_menu_item_t s_menu_items[DECOR_COUNT + 1];
 /* Slot whose per-item decor menu is open. */
 static int s_decor_item_slot = -1;
+static uint8_t s_request_slot, s_memory_slot;
+static uint8_t s_trick_slot, s_retired_slot, s_photo_slot;
+static bool s_pet_change_waiting;
+static lv_obj_t *s_daylight_overlay, *s_weather[6], *s_visitor;
+static lv_image_dsc_t s_album_image;
+static album_image_t s_album_loaded;
+void game_diary_removed(unsigned slot)
+{
+    if (s_open_menu != MENU_MEMORY || s_memory_slot == 255) return;
+    if (slot == s_memory_slot) s_memory_slot = 255;
+    else if (slot < s_memory_slot) s_memory_slot--;
+}
 static struct { decor_edit_t operation; int value, x, y, count; } s_decor_edit;
 static lv_obj_t *s_light_overlay;
 static lv_timer_t *s_pet_tap_timer;
@@ -768,13 +812,16 @@ static void on_border_pick(uint8_t id)
 static void on_sound_pick(uint8_t id)
 {
     if (id == 4) { menu_open(MENU_SOUNDTRACK); return; }
+    int page = ui_menu_page();
     if (id == 1) audio_set_muted(!audio_muted());
     if (id == 2) {
         g.music_enabled = !g.music_enabled;
         audio_set_music(g.music_enabled);
     }
+    if (id == 5) g.usb_sounds = !g.usb_sounds;
     game_save_now();
     menu_open(MENU_SOUND);
+    ui_menu_set_page(page);
 }
 
 static void on_soundtrack_pick(uint8_t id)
@@ -833,27 +880,192 @@ static void on_main_pick(uint8_t id)
     case MENU_BORDERS:      menu_open(MENU_BORDERS);      break;
     case MENU_HELP:         menu_open(MENU_HELP);         break;
     case MENU_GIFT_ITEM:    menu_open(MENU_GIFT_ITEM);    break;
+    case MENU_PERSONALITY: menu_open(MENU_PERSONALITY); break;
+    case MENU_TODAY:       menu_open(MENU_TODAY); break;
+    case MENU_DIARY:       menu_open(MENU_DIARY); break;
+    case MENU_TRAINING:    menu_open(MENU_TRAINING); break;
+    case MENU_CALENDAR:    menu_open(MENU_CALENDAR); break;
+    case MENU_ALBUM:
+        if (!album_request_scan()) ESP_LOGW(TAG, "album scan not queued");
+        menu_open(MENU_ALBUM);
+        break;
+    case MENU_GENERATIONS:
+        menu_open(MENU_GENERATIONS);
+        break;
     default: break;
     }
 }
 
-/* Daily page. Row 0 claims the check-in, row 1 claims the task once it is done.
- * Both rows stay visible so the player can see what is on offer even after
- * claiming; the subtitle carries the state. */
+static void back_to_training(void) { menu_open(MENU_TRAINING); }
+static void back_to_album(void) { menu_open(MENU_ALBUM); }
+static void back_to_photo_storage(void) { menu_open(MENU_PHOTO_STORAGE); }
+static void back_to_photo_actions(void) { menu_open(MENU_PHOTO_ACTIONS); }
+static void back_to_generations(void) { menu_open(MENU_GENERATIONS); }
+static void back_to_retired(void) { menu_open(MENU_RETIRED); }
+static void on_daily_pick(uint8_t id);
+static void back_to_diary(void)
+{
+    menu_open(MENU_DIARY);
+    if (s_memory_slot < g.companion.diary_count)
+        ui_menu_set_page((g.companion.diary_count - 1 - s_memory_slot) / 4);
+}
+static void on_request_pick(uint8_t id)
+{
+    /* Today shows one request row and no submenu. Tapping an unfinished
+     * request dismisses it; a finished one has already been paid, so the tap
+     * only re-renders. */
+    if (id == 2) {
+        if (s_request_slot < 2 && !g.companion.requests[s_request_slot].state)
+            companion_dismiss(s_request_slot);
+        menu_open(MENU_TODAY);
+    }
+    else if (id == 3 || id == 4) on_daily_pick(id - 3);
+}
+static void on_memory_pick(uint8_t id)
+{
+    if (id < g.companion.diary_count) { s_memory_slot = id; menu_open(MENU_MEMORY); }
+    else if (id == 255) { companion_pin(s_memory_slot); menu_open(MENU_MEMORY); }
+}
+
+static bool life_ready_to_animate(void)
+{
+    bool ready = !behaviour_trick_active() && !behaviour_aim_active() &&
+        !behaviour_pouncing() && !behaviour_sleep_forced() &&
+        (g.state == SPIDER_IDLE || g.state == SPIDER_WANDER || g.state == SPIDER_PLAY);
+    if (!ready) {
+        ESP_LOGW(TAG, "training rejected: spider busy or asleep");
+        ui_hud_bubble("Let Your Spider Finish First", 0xf5c86b, 2400);
+    }
+    return ready;
+}
+
+static void on_training_pick(uint8_t id)
+{
+    if (id < LIFE_TRICKS) { s_trick_slot = id; menu_open(MENU_TRICK); }
+}
+
+static void on_trick_pick(uint8_t id)
+{
+    if (!life_ready_to_animate()) return;
+    bool ok = id == 0 ? life_train(s_trick_slot) : id == 1 && life_perform(s_trick_slot);
+    if (!ok) {
+        ui_hud_bubble("Rest, Practice and Try Again / See Log", 0xf5c86b, 2400);
+        menu_open(MENU_TRICK);
+        return;
+    }
+    ui_menu_close();
+    ui_hud_set_chrome(false);
+    if (behaviour_trick(s_trick_slot))
+        ui_hud_bubble(life_trick_name(s_trick_slot), 0x76d6b1, 2000);
+}
+
+static void on_calendar_pick(uint8_t id)
+{
+    if (id == 2) { g.life.daynight ^= 1; game_save_now(); }
+    else if (id == 3) { g.life.weather ^= 1; game_save_now(); }
+    else if (id == 4 && !life_claim_visitor())
+        ui_hud_bubble("No Visitor Reward Available / See Log", 0xf5c86b, 2400);
+    else if (id == 5 && !life_claim_season())
+        ui_hud_bubble("Season Reward Unavailable / See Log", 0xf5c86b, 2400);
+    menu_open(MENU_CALENDAR);
+}
+
+static void pet_changed(void)
+{
+    state_finish_load();
+    behaviour_force_sleep(false);
+    behaviour_set_state(SPIDER_IDLE);
+    behaviour_sync_position();
+    needs_reset_runtime(lv_tick_get());
+    terrarium_clear_poop();
+    spider_refresh_colours();
+    s_pet_change_waiting = true;
+    ui_hud_bubble("Saving Family / Keep Power Connected", 0xf5c86b, 2600);
+    menu_open(MENU_GENERATIONS);
+}
+
+static void on_generations_pick(uint8_t id)
+{
+    if (id == 0) menu_open(MENU_RETIRE_CONFIRM);
+    else if (id >= 1 && id <= g.life.retired_count) {
+        s_retired_slot = id - 1;
+        menu_open(MENU_RETIRED);
+    }
+}
+
+static void on_retired_pick(uint8_t id)
+{
+    if (id == 0) menu_open(MENU_RESUME_CONFIRM);
+}
+
+static void on_family_confirm(uint8_t id)
+{
+    if (id != 0) { menu_open(MENU_GENERATIONS); return; }
+    if (save_busy() || net_busy() || sd_busy() || save_restore_pending()) {
+        ESP_LOGW(TAG, "family change rejected: persistence/radio busy");
+        ui_hud_bubble("Busy / Try Again When Saving Finishes", 0xf5c86b, 2400);
+        return;
+    }
+    bool ok = s_open_menu == MENU_RETIRE_CONFIRM ?
+              life_retire_confirmed() : life_resume(s_retired_slot);
+    if (ok) pet_changed();
+    else {
+        ui_hud_bubble("Family Change Rejected / See Log", 0xf5c86b, 2400);
+        menu_open(MENU_GENERATIONS);
+    }
+}
+
+static void on_album_pick(uint8_t id)
+{
+    if (id == 0) {
+        if (!game_save_album_photo())
+            ui_hud_bubble("Photo Not Queued / See Log", 0xf5c86b, 2400);
+        menu_open(MENU_ALBUM);
+    } else if (id == 1) {
+        if (!album_request_scan()) ESP_LOGW(TAG, "photo storage scan not queued");
+        menu_open(MENU_PHOTO_STORAGE);
+    }
+}
+
+static void on_photo_storage_pick(uint8_t id)
+{
+    if (id >= 2 && id < ALBUM_CAPACITY + 2) {
+        s_photo_slot = id - 2;
+        menu_open(MENU_PHOTO_ACTIONS);
+    }
+}
+
+static void on_photo_pick(uint8_t id)
+{
+    if (id == 0) {
+        if (album_request_load(s_photo_slot)) menu_open(MENU_PHOTO);
+        else ui_hud_bubble("Photo Load Rejected / See Log", 0xf5c86b, 2400);
+    } else if (id == 1) menu_open(MENU_PHOTO_DELETE);
+}
+
+static void on_photo_delete_pick(uint8_t id)
+{
+    if (id == 0) {
+        if (!album_request_delete(s_photo_slot))
+            ui_hud_bubble("Photo Delete Not Queued / See Log", 0xf5c86b, 2400);
+        menu_open(MENU_PHOTO_STORAGE);
+    } else if (id == 1) menu_open(MENU_PHOTO_ACTIONS);
+}
+
 static void on_daily_pick(uint8_t id)
 {
     if (id == 0) {
         uint32_t xp = needs_daily_claim();
         if (xp == 0) ESP_LOGI(TAG, "daily: nothing to claim");
         game_save_now();
-        menu_open(MENU_DAILY);
+        menu_open(MENU_TODAY);
         return;
     }
     if (id == 1) {
         uint32_t xp = needs_daily_task_claim();
         if (xp == 0) ESP_LOGI(TAG, "daily: task not ready");
         game_save_now();
-        menu_open(MENU_DAILY);
+        menu_open(MENU_TODAY);
         return;
     }
     back_to_main();
@@ -878,6 +1090,17 @@ static void decor_begin_placement(uint8_t kind)
 {
     const decor_def_t *def = decor_def(kind);
     if (!def) return;
+    if (g.decor_locked) {
+        ESP_LOGW(TAG, "decor placement rejected: decor is locked");
+        ui_hud_bubble("Decor Locked / Settings > Lock Decor", 0xf5c86b, 2200);
+        return;
+    }
+    /* Food out means the spider is hunting; see decor_begin_move(). */
+    if (prey_count() > 0) {
+        ESP_LOGW(TAG, "decor placement rejected: %d live prey in the tank", prey_count());
+        ui_hud_bubble("Catch the Bugs First", 0xf5c86b, 2000);
+        return;
+    }
     g_decor_selected = kind;
     g_decor_mode = 1;
     g_decor_move_slot = -1;
@@ -895,6 +1118,19 @@ static void decor_begin_placement(uint8_t kind)
 static void decor_begin_move(int slot)
 {
     if (!decor_at(slot)) return;
+    if (g.decor_locked) {
+        ESP_LOGW(TAG, "decor move rejected: decor is locked");
+        ui_hud_bubble("Decor Locked / Settings > Lock Decor", 0xf5c86b, 2200);
+        return;
+    }
+    /* Live prey in the tank means the spider is hunting. Moving furniture under
+     * a hunt let the player shove a bug's cover away mid-pounce, and the drag
+     * gesture competed with the aim gesture. */
+    if (prey_count() > 0) {
+        ESP_LOGW(TAG, "decor move rejected: %d live prey in the tank", prey_count());
+        ui_hud_bubble("Catch the Bugs First", 0xf5c86b, 2000);
+        return;
+    }
     g_decor_move_slot = slot;
     s_place_blocking = decor_at(slot)->blocking;
     s_place_layer = decor_layer_index(slot);
@@ -961,14 +1197,6 @@ static void on_gift_item_pick(uint8_t id)
  * than cluttering the main list. */
 static void on_settings_pick(uint8_t id)
 {
-    if (id == 7) {
-        int page = ui_menu_page();
-        s_screenshot_failed = !game_save_screenshot();
-        if (s_screenshot_failed) ESP_LOGW(TAG, "playfield screenshot not queued");
-        menu_open(MENU_SETTINGS);
-        ui_menu_set_page(page);
-        return;
-    }
     switch (id) {
     case 0:
         menu_open(MENU_WIFI);
@@ -990,6 +1218,25 @@ static void on_settings_pick(uint8_t id)
         g.auto_feed = on;
         g.auto_hunt = on;
         if (!on) behaviour_aim_cancel();
+        game_save_now();
+        menu_open(MENU_SETTINGS);
+        ui_menu_set_page(page);
+        break;
+    }
+    case 7: {
+        int page = ui_menu_page();
+        g.auto_clean = !g.auto_clean;
+        game_save_now();
+        menu_open(MENU_SETTINGS);
+        ui_menu_set_page(page);
+        break;
+    }
+    case 9: {
+        int page = ui_menu_page();
+        g.decor_locked = !g.decor_locked;
+        /* A lock that lands mid-placement would strand the player in a mode
+         * they can no longer commit, so cancel any staged edit first. */
+        if (g.decor_locked && g_decor_mode) game_cancel_decor_placement();
         game_save_now();
         menu_open(MENU_SETTINGS);
         ui_menu_set_page(page);
@@ -1073,6 +1320,15 @@ static void on_power_pick(uint8_t id)
 static void on_display_pick(uint8_t id)
 {
     if (id == 1) power_rotation_cycle();
+    else if (id == 2) {
+        g.life.light_gesture_disabled = !g.life.light_gesture_disabled;
+        cancel_enclosure_tap();
+        game_save_now();
+    } else if (id == 3) {
+        g.lights_dimmed = !g.lights_dimmed;
+        apply_enclosure_lights();
+        game_save_now();
+    }
     menu_open(MENU_DISPLAY);
 }
 /* BACK from a submenu returns to the main menu; BACK from the main menu just
@@ -1084,9 +1340,68 @@ static void back_to_main(void)
 
 static const uint8_t k_track_background[AUDIO_MUSIC_TRACK_COUNT] = {2,18,6,14,1,13,29,45,37,21};
 
+static const char *request_icon(uint8_t kind)
+{
+    switch (kind) {
+    case COMPANION_PET: return "request_pet";
+    case COMPANION_PLAY: return "request_play";
+    case COMPANION_HUNT: return "request_hunt";
+    case COMPANION_VISIT: return "request_visit";
+    default: return "request_clean";
+    }
+}
+
+static const char *memory_icon(uint8_t kind)
+{
+    static const char *const icons[] = {
+        "diary", "memory_treat", "memory_place", "memory_game", "memory_bond",
+        "memory_growth", "memory_recovery", "memory_achievement", "memory_requests"
+    };
+    return icons[kind <= 8 ? kind : 0];
+}
+
+static void daily_items(ui_menu_item_t *items)
+{
+    static char claim_sub[64], task_sub[64], task_name[48];
+    uint32_t today = needs_daily_today();
+    if (needs_daily_available()) {
+        uint32_t next = (g.daily_day != DAILY_NEVER && g.daily_day + 1 == today &&
+                         g.daily_streak > 0)
+                      ? (g.daily_streak < DAILY_STREAK_MAX ? g.daily_streak + 1u : DAILY_STREAK_MAX)
+                      : 1u;
+        uint32_t step = next - 1u;
+        snprintf(claim_sub, sizeof claim_sub, "Day %u / +%lu XP +%lu Silk",
+                 (unsigned)next,
+                 (unsigned long)(DAILY_XP_BASE + step * DAILY_XP_PER_DAY),
+                 (unsigned long)(DAILY_SILK_BASE + step * DAILY_SILK_PER_DAY));
+    } else {
+        snprintf(claim_sub, sizeof claim_sub, "Claimed / Streak %u", (unsigned)g.daily_streak);
+    }
+    items[0] = (ui_menu_item_t){"Check In", claim_sub, needs_daily_available(), false, false, 3};
+    uint8_t task = needs_daily_task();
+    ui_menu_format_name(task_name, sizeof task_name, needs_daily_task_name(task));
+    if (g.daily_task_done) {
+        snprintf(task_sub, sizeof task_sub, "Done / +%u XP +%u Silk", DAILY_TASK_XP, DAILY_TASK_SILK);
+    } else if (needs_daily_task_ready()) {
+        snprintf(task_sub, sizeof task_sub, "Complete / Tap to Claim");
+    } else {
+        snprintf(task_sub, sizeof task_sub, "%lu of %lu",
+                 (unsigned long)needs_daily_task_progress(), (unsigned long)needs_daily_task_goal());
+    }
+    items[1] = (ui_menu_item_t){task_name, task_sub, needs_daily_task_ready(), false, false, 4};
+}
+
 static void menu_open(int which)
 {
     cancel_enclosure_tap();
+    if (which == MENU_DAILY) which = MENU_TODAY;
+    if (which != MENU_PHOTO && s_album_loaded.pixels) {
+        ui_menu_close();
+        lv_image_cache_drop(&s_album_image);
+        lv_image_header_cache_drop(&s_album_image);
+        album_release_image(&s_album_loaded);
+        memset(&s_album_image, 0, sizeof s_album_image);
+    }
     ui_menu_item_t *items = s_menu_items;
 
     /* Remember which menu is on screen so the render tick can tell whether the
@@ -1118,22 +1433,342 @@ static void menu_open(int which)
         }
         snprintf(species_sub, sizeof species_sub, "%d of %d Unlocked",
                  unlocked, PREY_SPECIES_COUNT);
-        items[0] = (ui_menu_item_t){ "Daily", daily_sub, true, false, true, MENU_DAILY };
-        items[1] = (ui_menu_item_t){ "Treats", "Spend Silk", true, false, true, MENU_SHOP };
-        items[2] = (ui_menu_item_t){ "Backgrounds", "Enclosure Themes", true, false, true, MENU_THEME };
-        items[3] = (ui_menu_item_t){ "Achievements", ach_sub, true, false, true, MENU_ACHIEVEMENTS };
-        items[4] = (ui_menu_item_t){ "Prey Species", species_sub, true, false, true, MENU_SPECIES };
+        items[0] = (ui_menu_item_t){ "Your Spider", "Personality and Favorites", true, false, true, MENU_PERSONALITY };
+        items[1] = (ui_menu_item_t){ "Today", daily_sub, true, false, true, MENU_TODAY };
+        items[2] = (ui_menu_item_t){ "Training", "Learn Gentle Tricks", true, false, true, MENU_TRAINING };
+        items[3] = (ui_menu_item_t){ "Calendar", "Rhythms, Seasons and Visitors", true, false, true, MENU_CALENDAR };
+        items[4] = (ui_menu_item_t){ "Treats", "Spend Silk", true, false, true, MENU_SHOP };
+        items[5] = (ui_menu_item_t){ "Achievements", ach_sub, true, false, true, MENU_ACHIEVEMENTS };
+        items[6] = (ui_menu_item_t){ "Prey Species", species_sub, true, false, true, MENU_SPECIES };
         static char decor_sub[48];
         snprintf(decor_sub, sizeof decor_sub, "%d Placed", decor_placed_count());
-        items[5] = (ui_menu_item_t){ "Decor", decor_sub, true, false, true, MENU_DECOR };
-        /* Settings is always the last row: it is the least-used entry and the
-         * one the player reaches for least often, so it belongs at the bottom
-         * of the list rather than in the middle. */
-        items[6] = (ui_menu_item_t){ "Borders", "Mix and Match Frames", true, false, true, MENU_BORDERS };
-        items[7] = (ui_menu_item_t){ "Help Guide", "All Features and Controls", true, false, true, MENU_HELP };
-        items[8] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
-        ui_menu_open("Spidarium", items, 9, on_main_pick);
-        ui_menu_set_item_icon(6, sprite_border_index(g.border_id == 255 ? g.background_id : g.border_id));
+        items[7] = (ui_menu_item_t){ "Diary", "Memories Together", true, false, true, MENU_DIARY };
+        items[8] = (ui_menu_item_t){ "Photo Album", "Capture and Revisit Moments", true, false, true, MENU_ALBUM };
+        items[9] = (ui_menu_item_t){ "Generations", "Optional / Keep Every Spider Safe", true, false, true, MENU_GENERATIONS };
+        items[10] = (ui_menu_item_t){ "Decor", decor_sub, true, false, true, MENU_DECOR };
+        items[11] = (ui_menu_item_t){ "Backgrounds", "Enclosure Themes", true, false, true, MENU_THEME };
+        items[12] = (ui_menu_item_t){ "Borders", "Mix and Match Frames", true, false, true, MENU_BORDERS };
+        items[13] = (ui_menu_item_t){ "Help Guide", "All Features and Controls", true, false, true, MENU_HELP };
+        items[14] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
+        ui_menu_open("Spidarium", items, 15, on_main_pick);
+        ui_menu_set_item_icon(0, sprite_icon_index("personality"));
+        ui_menu_set_item_icon(1, sprite_icon_index("today"));
+        ui_menu_set_item_icon(2, sprite_icon_index("training"));
+        ui_menu_set_item_icon(3, sprite_icon_index("calendar"));
+        ui_menu_set_item_icon(7, sprite_icon_index("diary"));
+        ui_menu_set_item_icon(8, sprite_icon_index("album"));
+        ui_menu_set_item_icon(9, sprite_icon_index("generations"));
+        ui_menu_set_item_icon(12, sprite_border_index(g.border_id == 255 ? g.background_id : g.border_id));
+        break;
+    }
+    case MENU_ALBUM: {
+        static char status[96];
+        snprintf(status, sizeof status, "%s", album_status_text());
+        items[0] = (ui_menu_item_t){"Take Photo", "Real Playfield / SD Card Required / Eight Slots",
+            !sd_busy() && !net_busy() && !s_sd_capture, false, false, 0};
+        items[1] = (ui_menu_item_t){"Storage Status", status, false, false, false, 254};
+        items[2] = (ui_menu_item_t){"Photo Storage", "View and Delete Saved Photos",
+            !sd_busy(), false, true, 1};
+        ui_menu_open("Photo Album", items, 3, on_album_pick);
+        ui_menu_set_item_icon(0, sprite_icon_index("camera"));
+        ui_menu_set_item_icon(1, sprite_icon_index("status"));
+        ui_menu_set_item_icon(2, sprite_icon_index("album"));
+        ui_menu_set_back(back_to_main);
+        break;
+    }
+    case MENU_PHOTO_STORAGE: {
+        static char names[ALBUM_CAPACITY][24], details[ALBUM_CAPACITY][64];
+        int count = 0;
+        const album_slot_t *slots = album_slots();
+        for (int i = 0; i < ALBUM_CAPACITY; i++) {
+            if (album_busy()) break;
+            if (!slots[i].occupied) continue;
+            snprintf(names[i], sizeof names[i], "Photo %d", i + 1);
+            snprintf(details[i], sizeof details[i], "%s", slots[i].valid ?
+                     "Saved on SD / View or Delete" : "Unreadable / Tap for Delete");
+            items[count++] = (ui_menu_item_t){names[i], details[i],
+                !sd_busy(), false, true, i + 2};
+        }
+        if (!count) {
+            items[count++] = (ui_menu_item_t){album_busy() ? "Loading Photos" : "No Saved Photos",
+                "Take Photo in Photo Album", false, false, false, 254};
+        }
+        ui_menu_open("Photo Storage", items, count, on_photo_storage_pick);
+        for (int i = 0; i < count; i++) ui_menu_set_item_icon(i, sprite_icon_index("photo"));
+        ui_menu_set_back(back_to_album);
+        break;
+    }
+    case MENU_PHOTO: {
+        if (s_album_loaded.pixels) {
+            ui_menu_open_image("Photo Album", &s_album_image);
+        } else {
+            items[0] = (ui_menu_item_t){album_busy() ? "Loading Photo" : "Photo Unavailable",
+                album_status_text(), false, false, false, 254};
+            ui_menu_open_detail("Photo Album", items, 1, NULL);
+            ui_menu_set_item_icon(0, sprite_icon_index("photo"));
+        }
+        ui_menu_set_back(back_to_photo_actions);
+        break;
+    }
+    case MENU_PHOTO_ACTIONS: {
+        static char title[32];
+        snprintf(title, sizeof title, "Photo %u", s_photo_slot + 1);
+        bool ready = !sd_busy() && !net_busy();
+        items[0] = (ui_menu_item_t){"View Photo", "Open Saved Playfield Image",
+            ready && album_slots()[s_photo_slot].valid, false, true, 0};
+        items[1] = (ui_menu_item_t){"Delete Photo", "Free This Slot / Confirmation Required",
+            ready, false, true, 1};
+        ui_menu_open_detail(title, items, 2, on_photo_pick);
+        ui_menu_set_item_icon(0, sprite_icon_index("photo"));
+        ui_menu_set_item_icon(1, sprite_icon_index("delete_photo"));
+        ui_menu_set_destructive(1);
+        ui_menu_set_back(back_to_photo_storage);
+        break;
+    }
+    case MENU_PHOTO_DELETE: {
+        items[0] = (ui_menu_item_t){"Delete This Photo?", "Only This SD Photo / Cannot Be Undone",
+            false, false, false, 254};
+        items[1] = (ui_menu_item_t){"Confirm Delete", "Pet and Other Photos Stay Safe",
+            !sd_busy() && !net_busy(), false, false, 0};
+        items[2] = (ui_menu_item_t){"Cancel", "Keep This Photo", true, false, false, 1};
+        ui_menu_open_detail("Delete Photo?", items, 3, on_photo_delete_pick);
+        ui_menu_set_item_icon(0, sprite_icon_index("photo"));
+        ui_menu_set_item_icon(1, sprite_icon_index("delete_photo"));
+        ui_menu_set_item_icon(2, sprite_icon_index("confirm_cancel"));
+        ui_menu_set_destructive(0);
+        ui_menu_set_back(back_to_photo_actions);
+        break;
+    }
+    case MENU_TRAINING: {
+        static char details[LIFE_TRICKS][80];
+        static const char *const icons[] = {"trick_wave", "trick_spin", "trick_bow"};
+        for (int i = 0; i < LIFE_TRICKS; i++) {
+            snprintf(details[i], sizeof details[i], "%u of 5 / %s", g.life.progress[i],
+                     g.life.progress[i] >= 5 ? "Learned" : "Practice Gently");
+            items[i] = (ui_menu_item_t){life_trick_name(i), details[i], true, false, true, i};
+        }
+        ui_menu_open("Training", items, LIFE_TRICKS, on_training_pick);
+        for (int i = 0; i < LIFE_TRICKS; i++) ui_menu_set_item_icon(i, sprite_icon_index(icons[i]));
+        ui_menu_set_back(back_to_main);
+        break;
+    }
+    case MENU_TRICK: {
+        static char progress[80], practice[80];
+        snprintf(progress, sizeof progress, "%u of 5 / Healthy, Awake / Energy 20+", g.life.progress[s_trick_slot]);
+        snprintf(practice, sizeof practice, "Costs 2 Energy / Rest %u Seconds", g.life.cooldown);
+        items[0] = (ui_menu_item_t){"Learning", progress, false, false, false, 254};
+        items[1] = (ui_menu_item_t){"Practice", practice,
+            g.life.progress[s_trick_slot] < 5 && !g.life.cooldown, false, false, 0};
+        items[2] = (ui_menu_item_t){"Perform", "A Little Show / No Reward Grinding",
+            g.life.progress[s_trick_slot] >= 5 && !g.life.cooldown, false, false, 1};
+        ui_menu_open_detail(life_trick_name(s_trick_slot), items, 3, on_trick_pick);
+        static const char *const icons[] = {"trick_wave", "trick_spin", "trick_bow"};
+        ui_menu_set_item_icon(0, sprite_icon_index(icons[s_trick_slot]));
+        ui_menu_set_item_icon(1, sprite_icon_index("practice"));
+        ui_menu_set_item_icon(2, sprite_icon_index("perform"));
+        ui_menu_set_back(back_to_training);
+        break;
+    }
+    case MENU_CALENDAR: {
+        static char clock_text[64], activity[64], visitor[64], season[64];
+        time_t epoch = time(NULL);
+        life_clock_t clock = life_clock(epoch > 0 && (uint64_t)epoch <= UINT32_MAX ? (uint32_t)epoch : 0);
+        snprintf(clock_text, sizeof clock_text, "%s / %s",
+                 clock.available ? life_phase_name(clock.period) : "Clock Not Set",
+                 clock.available ? life_season_name(clock.season) : "Sync Clock in WiFi");
+        snprintf(activity, sizeof activity, "%s", clock.available ?
+                 life_activity_name(clock.activity) : "No Scheduled Events Without Clock");
+        snprintf(visitor, sizeof visitor, "%s", life_visitor_available() ?
+                 "A Friendly Visitor / Tap for 3 Silk" : "Occasional Afternoon Visits");
+        snprintf(season, sizeof season, "%s", clock.available &&
+                 clock.season_key > g.life.season_highwater ? "Season Keepsake / Tap for 10 Silk" : "Collected or Clock Unavailable");
+        items[0] = (ui_menu_item_t){"Enclosure Rhythm", clock_text, false, false, false, 0};
+        items[1] = (ui_menu_item_t){"Scheduled Activity", activity, false, false, false, 1};
+        items[2] = (ui_menu_item_t){"Day and Night", "Subtle Light / No Forced Sleep", true, g.life.daynight, false, 2};
+        items[3] = (ui_menu_item_t){"Gentle Weather", "Six Quiet Edge Particles / Optional", true, g.life.weather, false, 3};
+        items[4] = (ui_menu_item_t){"Visitor", visitor, life_visitor_available(), false, false, 4};
+        items[5] = (ui_menu_item_t){"Seasonal Reward", season, clock.available &&
+            clock.season_key > g.life.season_highwater, false, false, 5};
+        ui_menu_open("Calendar", items, 6, on_calendar_pick);
+        static const char *const icons[] = {"calendar", "activity", "daylight", "weather", "visitor", "season_reward"};
+        for (int i = 0; i < 6; i++) ui_menu_set_item_icon(i, sprite_icon_index(icons[i]));
+        ui_menu_set_item_checkbox(2);
+        ui_menu_set_item_checkbox(3);
+        ui_menu_set_back(back_to_main);
+        break;
+    }
+    case MENU_GENERATIONS: {
+        static char names[LIFE_RETIRED_CAP][20], details[LIFE_RETIRED_CAP][64];
+        items[0] = (ui_menu_item_t){"Retire and Raise Another", "Adult Only / Archived, Never Lost",
+            !s_pet_change_waiting && g.stage == STAGE_ADULT && !g.sick &&
+            g.life.retired_count < LIFE_RETIRED_CAP, false, true, 0};
+        for (int i = 0; i < g.life.retired_count; i++) {
+            memcpy(names[i], g.life.retired[i].core + offsetof(game_state_t, name), sizeof g.name);
+            names[i][sizeof g.name] = 0;
+            if (!names[i][0]) snprintf(names[i], sizeof names[i], "Spider %d", i + 1);
+            snprintf(details[i], sizeof details[i], "Retired / Safe / Tap to Revisit");
+            items[i + 1] = (ui_menu_item_t){names[i], details[i], !s_pet_change_waiting, false, true, i + 1};
+        }
+        ui_menu_open(s_pet_change_waiting ? "Family / Saving" : "Generations", items,
+                     1 + g.life.retired_count, on_generations_pick);
+        ui_menu_set_item_icon(0, sprite_icon_index("retire"));
+        for (int i = 0; i < g.life.retired_count; i++) ui_menu_set_item_icon(i + 1, sprite_icon_index("generations"));
+        ui_menu_set_back(back_to_main);
+        break;
+    }
+    case MENU_RETIRED: {
+        if (s_retired_slot >= g.life.retired_count) { menu_open(MENU_GENERATIONS); break; }
+        static char name[sizeof g.name + 1], identity[96], memories[96];
+        const life_pet_t *pet = &g.life.retired[s_retired_slot];
+        memcpy(name, pet->core + offsetof(game_state_t, name), sizeof g.name);
+        name[sizeof g.name] = 0;
+        uint32_t level;
+        memcpy(&level, pet->core + offsetof(game_state_t, level), sizeof level);
+        snprintf(identity, sizeof identity, "%s / Level %" PRIu32 " / Bond %u",
+                 name[0] ? name : "Your Spider", level, pet->core[offsetof(game_state_t, bond)]);
+        snprintf(memories, sizeof memories, "Wave %u / Spin %u / Bow %u / Diary %u",
+                 pet->progress[0], pet->progress[1], pet->progress[2], pet->companion.diary_count);
+        items[0] = (ui_menu_item_t){"Resume This Spider", "Current Spider Takes This Safe Archive Slot", true, false, true, 0};
+        items[1] = (ui_menu_item_t){"Family Memory", identity, false, false, false, 254};
+        items[2] = (ui_menu_item_t){"Learning and Memories", memories, false, false, false, 253};
+        items[3] = (ui_menu_item_t){"Always Safe", "No Death / No Automatic Replacement", false, false, false, 252};
+        ui_menu_open_detail("Retired Spider", items, 4, on_retired_pick);
+        ui_menu_set_item_icon(0, sprite_icon_index("resume"));
+        ui_menu_set_item_icon(1, sprite_icon_index("personality"));
+        ui_menu_set_item_icon(2, sprite_icon_index("diary"));
+        ui_menu_set_item_icon(3, sprite_icon_index("generations"));
+        ui_menu_set_back(back_to_generations);
+        break;
+    }
+    case MENU_RETIRE_CONFIRM:
+    case MENU_RESUME_CONFIRM: {
+        bool retire = which == MENU_RETIRE_CONFIRM;
+        items[0] = (ui_menu_item_t){retire ? "Keep This Adult in Your Family" : "Swap Active and Archived Spiders",
+            retire ? "Three Safe Archive Slots / No Eviction" : "Both Spiders Kept / Shared Habitat and Silk",
+            false, false, false, 254};
+        items[1] = (ui_menu_item_t){retire ? "Confirm Retirement" : "Confirm Resume",
+            retire ? "Raise a Hatchling / Inherit Parent Colors" : "No Spider Deleted",
+            !s_pet_change_waiting, false, false, 0};
+        items[2] = (ui_menu_item_t){"Cancel", "Keep Everything As It Is", true, false, false, 1};
+        ui_menu_open_detail(retire ? "Retire This Adult?" : "Resume This Spider?", items, 3, on_family_confirm);
+        ui_menu_set_item_icon(0, sprite_icon_index("generations"));
+        ui_menu_set_item_icon(1, sprite_icon_index(retire ? "retire" : "resume"));
+        ui_menu_set_item_icon(2, sprite_icon_index("confirm_cancel"));
+        ui_menu_set_back(retire ? back_to_generations : back_to_retired);
+        break;
+    }
+    case MENU_PERSONALITY:
+    case MENU_TODAY:
+    case MENU_DIARY:
+    case MENU_MEMORY: {
+        typedef struct { char title[64], detail[128]; } companion_row_t;
+        static companion_row_t *rows;
+        if (!rows) rows = heap_caps_calloc(COMPANION_DIARY_CAP, sizeof *rows,
+                                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!rows) {
+            ESP_LOGE(TAG, "companion menu allocation failed");
+            ui_hud_bubble("Memory Unavailable / See Log", 0xf5c86b, 2400);
+            break;
+        }
+        companion_tick();
+        int count = 0;
+        const char *heading = "Your Spider";
+        ui_menu_pick_cb callback = on_main_pick;
+        if (which == MENU_PERSONALITY) {
+            static const char *const games[] = {"Bug Hunt", "Color Match", "Quick Tap"};
+            const companion_state_t *c = &g.companion;
+            snprintf(rows[0].detail, sizeof rows[0].detail, "%s / Bond %u / %s",
+                     game_temperament()->name, g.bond,
+                     g.bond >= 75 ? "Devoted" : g.bond >= 50 ? "Trusted" : g.bond >= 25 ? "Familiar" : "Getting Acquainted");
+            snprintf(rows[1].detail, sizeof rows[1].detail, "%s",
+                     c->favorite_treat == 255 ? "Still Discovering / Try Treats" : treat_name(c->favorite_treat));
+            snprintf(rows[2].detail, sizeof rows[2].detail, "%s",
+                     c->favorite_gift == 255 ? "Still Discovering / Visits Build Familiarity" : gift_kind_name(c->favorite_gift));
+            snprintf(rows[3].detail, sizeof rows[3].detail, "%s",
+                     c->favorite_play == 255 ? "Still Discovering / Finish Games" : games[c->favorite_play]);
+            const char *labels[] = {"Temperament and Bond", "Favorite Treat", "Favorite Place", "Favorite Game"};
+            for (int i = 0; i < 4; i++)
+                items[count++] = (ui_menu_item_t){labels[i], rows[i].detail, false, false, false, i};
+        } else if (which == MENU_TODAY) {
+            heading = g.companion.clock_mode == 1 ? "Today" : "Today / Play Day";
+            callback = on_request_pick;
+            for (int i = 0; i < 2; i++) companion_request_text(i, rows[i].title, sizeof rows[i].title,
+                                                                rows[i].detail, sizeof rows[i].detail);
+            daily_items(items);
+            count = 2;
+            /* One request row, no submenu. Two dismissible rows plus a
+             * "Not Today" confirmation made Today read as a chore list; the
+             * rotating daily task is a single tap, so the request is too. The
+             * first request that has not been dismissed is the one shown, so a
+             * completed request stays visible with its "Complete" line. */
+            s_request_slot = 0;
+            while (s_request_slot < 2 && g.companion.requests[s_request_slot].state == 2)
+                s_request_slot++;
+            if (s_request_slot < 2) {
+                items[count++] = (ui_menu_item_t){rows[s_request_slot].title,
+                    rows[s_request_slot].detail, true, false, false, 2};
+            } else {
+                items[count++] = (ui_menu_item_t){"Requests Done", "New Ones Tomorrow",
+                    false, false, false, 2};
+            }
+        } else {
+            heading = "Diary";
+            callback = on_memory_pick;
+            if (which == MENU_MEMORY) {
+                if (s_memory_slot >= g.companion.diary_count) {
+                    items[count++] = (ui_menu_item_t){"Memory Rolled Out", "Older Unpinned Memories Are Replaced", false, false, false, 254};
+                    ui_menu_open_detail("Diary", items, count, on_memory_pick);
+                    ui_menu_set_item_icon(0, sprite_icon_index("diary"));
+                    ui_menu_set_back(back_to_diary);
+                    break;
+                }
+                companion_memory_text(s_memory_slot, rows[0].title, sizeof rows[0].title,
+                                      rows[0].detail, sizeof rows[0].detail);
+                items[count++] = (ui_menu_item_t){rows[0].title, rows[0].detail, false, false, false, 254};
+                items[count++] = (ui_menu_item_t){g.companion.diary[s_memory_slot].pinned ? "Unpin Memory" : "Pin Memory",
+                    "Eight Pins / Oldest Unpinned Memories Roll Out", true, false, false, 255};
+            } else {
+                for (int i = g.companion.diary_count - 1; i >= 0; i--) {
+                    companion_memory_text(i, rows[count].title, sizeof rows[count].title,
+                                          rows[count].detail, sizeof rows[count].detail);
+                    companion_memory_t *m = &g.companion.diary[i];
+                    char date[32];
+                    if (m->calendar) {
+                        time_t stamp = (time_t)m->day * 86400;
+                        struct tm tm;
+                        gmtime_r(&stamp, &tm);
+                        strftime(date, sizeof date, "%Y-%m-%d", &tm);
+                    } else snprintf(date, sizeof date, "Play Day %lu", (unsigned long)m->day + 1);
+                    snprintf(rows[count].detail, sizeof rows[count].detail, "%s%s / Tap to Read",
+                             m->pinned ? "Pinned / " : "", date);
+                    items[count] = (ui_menu_item_t){rows[count].title, rows[count].detail, true, false, true, i};
+                    count++;
+                }
+                if (!count) items[count++] = (ui_menu_item_t){"No Memories Yet", "Favorites and Milestones Appear Here", false, false, false, 254};
+            }
+        }
+        if (which == MENU_MEMORY || which == MENU_PERSONALITY)
+            ui_menu_open_detail(heading, items, count, callback);
+        else ui_menu_open(heading, items, count, callback);
+        for (int i = 0; i < count; i++) {
+            const char *icon;
+            if (which == MENU_PERSONALITY) {
+                static const char *const icons[] = {"bond", "favorite_treat", "favorite_place", "favorite_game"};
+                icon = icons[i];
+            } else if (which == MENU_TODAY) {
+                icon = i == 0 ? "checkin" : i == 1 ? "daily_task" :
+                       s_request_slot < 2 ? request_icon(g.companion.requests[s_request_slot].kind)
+                                          : "dismiss";
+            } else if (which == MENU_MEMORY) {
+                icon = i == 0 ? memory_icon(g.companion.diary[s_memory_slot].kind) :
+                       g.companion.diary[s_memory_slot].pinned ? "unpin" : "pin";
+            } else {
+                icon = count == 1 && !g.companion.diary_count ? "diary" :
+                       memory_icon(g.companion.diary[items[i].id].kind);
+            }
+            ui_menu_set_item_icon(i, sprite_icon_index(icon));
+        }
+        ui_menu_set_back(which == MENU_MEMORY ? back_to_diary : back_to_main);
         break;
     }
     case MENU_SETTINGS: {
@@ -1145,13 +1780,16 @@ static void menu_open(int which)
         items[5] = (ui_menu_item_t){ "Sound", "Volume and Mute", true, false, true, 5 };
         items[6] = (ui_menu_item_t){ "Auto Feed", "Wild Prey and Unattended Hunting",
                                      true, g.auto_feed, false, 6 };
-        items[7] = (ui_menu_item_t){ "Save Screenshot", net_busy() ? "Wait for WiFi" : sd_busy() ? "Saving..." :
-            s_screenshot_failed ? "Capture Failed; See Serial Log" : sd_status_text(),
-            !sd_busy() && !net_busy(), false, false, 7 };
-        items[8] = (ui_menu_item_t){ "Wipe Spider", "Erases This Spider", true, false, true, 8 };
-        ui_menu_open("Settings", items, 9, on_settings_pick);
+        items[7] = (ui_menu_item_t){ "Auto Clean", "Sweep Droppings Automatically",
+                                     true, g.auto_clean, false, 7 };
+        items[8] = (ui_menu_item_t){ "Lock Decor", "Placed Items Cannot Be Moved",
+                                     true, g.decor_locked, false, 9 };
+        items[9] = (ui_menu_item_t){ "Wipe Spider", "Erases This Spider", true, false, true, 8 };
+        ui_menu_open("Settings", items, 10, on_settings_pick);
         ui_menu_set_item_checkbox(6);
-        ui_menu_set_destructive(8);
+        ui_menu_set_item_checkbox(7);
+        ui_menu_set_item_checkbox(8);
+        ui_menu_set_destructive(9);
         ui_menu_set_back(back_to_main);
         break;
     }
@@ -1183,8 +1821,16 @@ static void menu_open(int which)
         items[0] = (ui_menu_item_t){ "Brightness", NULL, true, false, false, 0 };
         items[1] = (ui_menu_item_t){ "Screen Rotation", power_rotation_name(power_rotation()),
                                      true, false, true, 1 };
-        ui_menu_open("Display", items, 2, on_display_pick);
+        items[2] = (ui_menu_item_t){"Double-Tap Lights", "Allow Enclosure Light Gesture",
+            true, !g.life.light_gesture_disabled, false, 2};
+        items[3] = (ui_menu_item_t){"Dim Enclosure", "Manual Light Control / Always Available",
+            true, g.lights_dimmed, false, 3};
+        ui_menu_open("Display", items, 4, on_display_pick);
         ui_menu_set_item_slider(0, g.brightness, on_brightness_slider);
+        ui_menu_set_item_icon(2, sprite_icon_index("light_gesture"));
+        ui_menu_set_item_icon(3, sprite_icon_index("enclosure_light"));
+        ui_menu_set_item_checkbox(2);
+        ui_menu_set_item_checkbox(3);
         ui_menu_set_back(back_to_settings);
         break;
     }
@@ -1345,13 +1991,16 @@ static void menu_open(int which)
         items[3] = (ui_menu_item_t){ "Music Volume", NULL, true, false, false, 3 };
         items[4] = (ui_menu_item_t){ "Soundtrack", audio_music_track_name(g.music_track),
                                     true, false, true, 4 };
-        ui_menu_open("Sound", items, 5, on_sound_pick);
+        items[5] = (ui_menu_item_t){ "USB Chimes", "Plug In and Unplug", true, g.usb_sounds, false, 5 };
+        ui_menu_open("Sound", items, 6, on_sound_pick);
         ui_menu_set_item_checkbox(1);
         ui_menu_set_item_checkbox(2);
+        ui_menu_set_item_checkbox(5);
         ui_menu_set_item_slider(0, audio_volume(), on_volume_slider);
         ui_menu_set_item_slider(3, g.music_volume, on_volume_slider);
-        ui_menu_set_item_icon(3, sprite_icon_index("energy"));
-        ui_menu_set_item_icon(4, sprite_background_index(k_track_background[g.music_track]));
+        ui_menu_set_item_icon(3, sprite_icon_index("music_volume"));
+        ui_menu_set_item_icon(4, sprite_icon_index("soundtrack"));
+        ui_menu_set_item_icon(5, sprite_icon_index("usb_chimes"));
         ui_menu_set_back(back_to_settings);
         break;
     }
@@ -1404,46 +2053,6 @@ static void menu_open(int which)
             ui_menu_set_item_icon(i, sprite_prey_index(i, false, false, 0));
         ui_menu_set_back(back_to_main);
         break;
-    case MENU_DAILY: {
-        static char claim_sub[64], task_sub[64], task_name[48];
-        uint32_t today = needs_daily_today();
-        if (needs_daily_available()) {
-            uint32_t next = (g.daily_day != DAILY_NEVER && g.daily_day + 1 == today &&
-                             g.daily_streak > 0)
-                          ? (g.daily_streak < DAILY_STREAK_MAX ? g.daily_streak + 1u : DAILY_STREAK_MAX)
-                          : 1u;
-            uint32_t step = next - 1u;
-            snprintf(claim_sub, sizeof claim_sub, "Day %u / +%lu XP +%lu Silk",
-                     (unsigned)next,
-                     (unsigned long)(DAILY_XP_BASE + step * DAILY_XP_PER_DAY),
-                     (unsigned long)(DAILY_SILK_BASE + step * DAILY_SILK_PER_DAY));
-        } else {
-            snprintf(claim_sub, sizeof claim_sub, "Claimed / Streak %u",
-                     (unsigned)g.daily_streak);
-        }
-        items[0] = (ui_menu_item_t){ "Check In", claim_sub, true, false, true, 0 };
-
-        uint8_t task = needs_daily_task();
-        ui_menu_format_name(task_name, sizeof task_name, needs_daily_task_name(task));
-        if (g.daily_task_done) {
-            snprintf(task_sub, sizeof task_sub, "Done / +%u XP +%u Silk",
-                     DAILY_TASK_XP, DAILY_TASK_SILK);
-        } else if (needs_daily_task_ready()) {
-            snprintf(task_sub, sizeof task_sub, "Complete / Tap to Claim");
-        } else {
-            snprintf(task_sub, sizeof task_sub, "%lu of %lu",
-                     (unsigned long)needs_daily_task_progress(),
-                     (unsigned long)needs_daily_task_goal());
-        }
-        items[1] = (ui_menu_item_t){ task_name, task_sub, true, false, true, 1 };
-
-        static char daily_title[48];
-        snprintf(daily_title, sizeof daily_title, "Daily / Day %lu",
-                 (unsigned long)today);
-        ui_menu_open(daily_title, items, 2, on_daily_pick);
-        ui_menu_set_back(back_to_main);
-        break;
-    }
     case MENU_SHOP: {
         static char shop_sub[TREAT_COUNT][48];
         static char shop_name[TREAT_COUNT][32];
@@ -1528,6 +2137,12 @@ static void menu_open(int which)
     default:
         break;
     }
+    if (s_open_menu == which && ui_menu_showing(items)) {
+        if (s_menu_page_known[which]) ui_menu_set_page(s_menu_pages[which]);
+        s_page_menu = which;
+        s_page_loading = which == MENU_PHOTO_STORAGE && album_busy();
+        ui_menu_set_close_page_cb(remember_menu_page);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1597,6 +2212,22 @@ bool game_open_menu(const char *name)
     else if (!strcmp(name, "species"))  menu_open(MENU_SPECIES);
     else if (!strcmp(name, "about"))    menu_open(MENU_ABOUT);
     else if (!strcmp(name, "help"))     menu_open(MENU_HELP);
+    else if (!strcmp(name, "personality")) menu_open(MENU_PERSONALITY);
+    else if (!strcmp(name, "today"))    menu_open(MENU_TODAY);
+    else if (!strcmp(name, "training")) menu_open(MENU_TRAINING);
+    else if (!strcmp(name, "calendar")) menu_open(MENU_CALENDAR);
+    else if (!strcmp(name, "album")) {
+        if (!album_request_scan()) ESP_LOGW(TAG, "console album scan not queued");
+        menu_open(MENU_ALBUM);
+    }
+    else if (!strcmp(name, "photos")) {
+        if (!album_request_scan()) ESP_LOGW(TAG, "console photo storage scan not queued");
+        menu_open(MENU_PHOTO_STORAGE);
+    }
+    else if (!strcmp(name, "generations")) {
+        menu_open(MENU_GENERATIONS);
+    }
+    else if (!strcmp(name, "diary"))    menu_open(MENU_DIARY);
     else if (!strcmp(name, "sd"))       on_settings_pick(1);
     else if (!strcmp(name, "theme"))    menu_open(MENU_THEME);
     else if (!strcmp(name, "borders"))  menu_open(MENU_BORDERS);
@@ -1665,13 +2296,33 @@ static bool game_save_screenshot(void)
     return true;
 }
 
+static bool game_save_album_photo(void)
+{
+    if (sd_busy() || s_sd_capture || save_restore_pending() || net_busy()) {
+        ESP_LOGW(TAG, "album capture rejected: storage/radio busy");
+        return false;
+    }
+    lv_draw_buf_t *capture = capture_target(2);
+    if (!capture) { ESP_LOGE(TAG, "album snapshot allocation failed"); return false; }
+    sd_screenshot_t image = {.pixels = capture->data, .width = capture->header.w,
+        .height = capture->header.h, .stride = capture->header.stride};
+    if (!album_request_capture(&image)) {
+        lv_draw_buf_destroy(capture);
+        return false;
+    }
+    s_sd_capture = capture;
+    return true;
+}
+
 static bool capture_test(void)
 {
     if (!ui_menu_visible() || lv_screen_active() != ui.screen) {
         ESP_LOGE(TAG, "capture test requires an open menu on the tank");
         return false;
     }
-    game_state_t state = g;
+    game_state_t *state = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!state) { ESP_LOGE(TAG, "capture test backup allocation failed"); return false; }
+    *state = g;
     lv_draw_buf_t *before = capture_target(0);
     lv_draw_buf_t *field = capture_target(2);
     lv_draw_buf_t *after = capture_target(0);
@@ -1687,7 +2338,8 @@ static bool capture_test(void)
                 field->data + y * field->header.stride, before->header.w * 2);
         }
     }
-    bool unchanged = !memcmp(&state, &g, sizeof g);
+    bool unchanged = !memcmp(state, &g, sizeof g);
+    heap_caps_free(state);
     if (before) lv_draw_buf_destroy(before);
     if (field) lv_draw_buf_destroy(field);
     if (after) lv_draw_buf_destroy(after);
@@ -1699,7 +2351,9 @@ enum { UI_PREPARING = -1 };
 
 static bool test_gifts(void)
 {
-    game_state_t original = g;
+    game_state_t *original = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!original) { ESP_LOGE(TAG, "gift test backup allocation failed"); return false; }
+    *original = g;
     int tested = 0;
     for (int kind = 0; kind < GIFT_KINDS; kind++) {
         g.gift.used = 1;
@@ -1725,7 +2379,8 @@ static bool test_gifts(void)
     bool removed = gift_bonus()->energy_regen_mult == 1.0f &&
                    gift_bonus()->all_stats_decay_mult == 1.0f &&
                    gift_bonus()->catch_success_mult == 1.0f;
-    g = original;
+    g = *original;
+    heap_caps_free(original);
     gift_compute();
     bool economy = gift_economy_test();
     bool visits = behaviour_gift_test();
@@ -1739,7 +2394,8 @@ bool game_ui_call(game_ui_action_t action)
 
 bool game_ui_call_value(game_ui_action_t action, int value)
 {
-    if (power_sleep_pending() || action <= GAME_UI_NONE || action > GAME_UI_ADD_SILK ||
+    if (power_sleep_pending() || action <= GAME_UI_NONE || action > GAME_UI_MENU_PICK ||
+        (action == GAME_UI_MENU_PICK && (value < 0 || value > 255)) ||
         (action == GAME_UI_ADD_SILK && value <= 0) ||
         (action == GAME_UI_DEEP_SLEEP && (value < 5 || value > 86400)) ||
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
@@ -1813,12 +2469,18 @@ static void test_pointer_send(lv_indev_t *indev, test_pointer_t *pointer,
 
 static bool test_furniture_pointer(void)
 {
-    game_state_t original = g;
+    game_state_t *original = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!original) { ESP_LOGE(TAG, "pointer test backup allocation failed"); return false; }
+    *original = g;
     decor_item_t *original_extra = decor_detach_extra();
     s_testing_placement = true;
     ui_menu_close();
     ui_hud_set_chrome(false);
     decor_clear();
+    /* The decor gate refuses a move while live prey is in the tank, so the
+     * pointer test must start from an empty tank or it tests the gate instead
+     * of the drag. */
+    prey_clear();
     g.decor_owned = 1u;
     int slot = decor_place(0, 110, 150);
     g.gift = (gift_t){0};
@@ -1826,7 +2488,8 @@ static bool test_furniture_pointer(void)
     lv_indev_t *indev = lv_indev_create();
     if (!indev) {
         ESP_LOGE(TAG, "placement test: pointer allocation failed");
-        g = original;
+        g = *original;
+        heap_caps_free(original);
         decor_restore_extra(original_extra);
         s_testing_placement = false;
         return false;
@@ -1850,8 +2513,8 @@ static bool test_furniture_pointer(void)
                   g.decor[slot].x == 110 && g.decor[slot].y == 150;
     test_pointer_send(indev, &pointer, 330, 350, LV_INDEV_STATE_RELEASED);
     staged = staged && g_decor_mode && g.decor[slot].x == 110;
-    test_pointer_send(indev, &pointer, 326, 420, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 326, 420, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 372, 436, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 372, 436, LV_INDEV_STATE_RELEASED);
     bool moved = slot >= 0 && g.decor[slot].x == 330 && g.decor[slot].y == 350 &&
                  !g_decor_mode && g.decor_owned == 1;
     g.gift.kind = 0; g.gift.variant = 2; g.gift.used = 1; g.gift.x = 200; g.gift.y = 200;
@@ -1864,16 +2527,16 @@ static bool test_furniture_pointer(void)
              g.gift.x == 200 && g.gift.y == 200;
     test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_RELEASED);
     staged = staged && g.gift_mode && g.gift.x == 200;
-    test_pointer_send(indev, &pointer, 326, 420, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 326, 420, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 372, 436, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 372, 436, LV_INDEV_STATE_RELEASED);
     bool gift_moved = !g.gift_mode && g.gift.x == 350 && g.gift.y == 180 &&
                       g.gift.variant == 2 && g.silk == silk && g.gifts_owned == owned;
     on_gift_item_pick(0);
     test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_PRESSED);
     test_pointer_send(indev, &pointer, 300, 240, LV_INDEV_STATE_PRESSED);
     test_pointer_send(indev, &pointer, 300, 240, LV_INDEV_STATE_RELEASED);
-    test_pointer_send(indev, &pointer, 154, 420, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 154, 420, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 108, 436, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 108, 436, LV_INDEV_STATE_RELEASED);
     bool cancelled = !g.gift_mode && g.gift.x == 350 && g.gift.y == 180 &&
                      g.gift.variant == 2 && g.silk == silk;
     decor_begin_move(slot);
@@ -1897,8 +2560,8 @@ static bool test_furniture_pointer(void)
     created = created && g.gift.x == 260 && g.gift.y == 260 && g.silk == silk;
     decor_begin_move(slot);
     uint8_t blocking = g.decor[slot].blocking;
-    test_pointer_send(indev, &pointer, 240, 256, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 240, 256, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 124, 388, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 124, 388, LV_INDEV_STATE_RELEASED);
     bool actions = game_placement_blocking() != blocking && g.decor[slot].blocking == blocking;
     game_on_placement_cancel(NULL);
     actions = actions && g.decor[slot].blocking == blocking;
@@ -1907,12 +2570,12 @@ static bool test_furniture_pointer(void)
     game_on_placement_done(NULL);
     actions = actions && g.decor[slot].blocking != blocking;
     decor_begin_move(slot);
-    test_pointer_send(indev, &pointer, 240, 362, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 240, 362, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 240, 436, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 240, 436, LV_INDEV_STATE_RELEASED);
     actions = actions && !g_decor_mode && !decor_at(slot) && !ui_menu_visible() && decor_owned(0);
     on_gift_item_pick(0);
-    test_pointer_send(indev, &pointer, 240, 362, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 240, 362, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 240, 436, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 240, 436, LV_INDEV_STATE_RELEASED);
     actions = actions && !g.gift_mode && !g.gift.used && !ui_menu_visible() && g.silk == silk;
     decor_clear();
     int first = decor_place(0, 120, 150);
@@ -1920,20 +2583,30 @@ static bool test_furniture_pointer(void)
     int last = decor_place(0, 320, 150);
     terrarium_refresh_decor();
     decor_begin_move(last);
-    test_pointer_send(indev, &pointer, 120, 310, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 120, 310, LV_INDEV_STATE_RELEASED);
+    /* The layer arrows moved into the compact strip: Back is now at (240,340). */
+    test_pointer_send(indev, &pointer, 240, 388, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 240, 388, LV_INDEV_STATE_RELEASED);
     bool layers = s_place_layer == 1 && decor_at(last)->x == 320 &&
         terrarium_preview_test(DECOR_WALK_OVER, 1);
     game_on_placement_cancel(NULL);
     layers = layers && decor_at(last)->x == 320 && decor_at(first)->x == 120;
     decor_begin_move(last);
-    test_pointer_send(indev, &pointer, 120, 310, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 120, 310, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 240, 388, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 240, 388, LV_INDEV_STATE_RELEASED);
     game_on_placement_done(NULL);
     layers = layers && decor_at(1)->x == 320 && decor_at(2)->x == 220 && terrarium_decor_test();
     decor_begin_move(first);
-    test_pointer_send(indev, &pointer, 356, 256, LV_INDEV_STATE_PRESSED);
-    test_pointer_send(indev, &pointer, 356, 256, LV_INDEV_STATE_RELEASED);
+    /* A walk-behind item only covers the spider with its top half, so the
+     * preview is in the canopy layer only while the spider is above the item's
+     * centre line. Put the spider above it to exercise that branch. */
+    g.spider_y = 100;
+    placement_position(120, 150);
+    /* One cycling button replaces the three path buttons, so Walk Over ->
+     * Walk Behind is two taps. */
+    test_pointer_send(indev, &pointer, 124, 388, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 124, 388, LV_INDEV_STATE_RELEASED);
+    test_pointer_send(indev, &pointer, 124, 388, LV_INDEV_STATE_PRESSED);
+    test_pointer_send(indev, &pointer, 124, 388, LV_INDEV_STATE_RELEASED);
     bool paths = s_place_blocking == DECOR_WALK_BEHIND && decor_at(first)->blocking == 0 &&
         terrarium_preview_test(DECOR_WALK_BEHIND, 0);
     game_on_placement_done(NULL);
@@ -1947,6 +2620,7 @@ static bool test_furniture_pointer(void)
     game_on_placement_cancel(NULL);
     lv_indev_set_long_press_time(indev, 550);
     cancel_enclosure_tap();
+    g.life.light_gesture_disabled = 0;
     uint8_t before_lights = g.lights_dimmed;
     bool lights = true;
     for (int i = 0; i < 6; i++) {
@@ -1966,6 +2640,13 @@ static bool test_furniture_pointer(void)
     test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_RELEASED);
     lights = lights && g.lights_dimmed == before_lights;
     cancel_enclosure_tap();
+    g.life.light_gesture_disabled = 1;
+    for (int i = 0; i < 2; i++) {
+        test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_PRESSED);
+        test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_RELEASED);
+    }
+    lights = lights && g.lights_dimmed == before_lights;
+    cancel_enclosure_tap();
     for (int i = 0; i < 2; i++) {
         test_pointer_send(indev, &pointer, 400, 400, LV_INDEV_STATE_PRESSED);
         test_pointer_send(indev, &pointer, 450, 400, LV_INDEV_STATE_PRESSED);
@@ -1975,7 +2656,8 @@ static bool test_furniture_pointer(void)
     lights = lights && g.lights_dimmed == before_lights;
     cancel_enclosure_tap();
     lv_indev_delete(indev);
-    g = original;
+    g = *original;
+    heap_caps_free(original);
     decor_restore_extra(original_extra);
     apply_enclosure_lights();
     game_on_placement_cancel(NULL);
@@ -2047,7 +2729,9 @@ static bool test_hunt(void)
         ESP_LOGW(TAG, "hunt test requires no active jump and a free poop slot");
         return false;
     }
-    game_state_t original = g;
+    game_state_t *original = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!original) { ESP_LOGE(TAG, "hunt test backup allocation failed"); return false; }
+    *original = g;
     lv_obj_t *poop[MAX_POOP];
     memcpy(poop, ui.poop, sizeof poop);
     int original_prey = prey_count();
@@ -2068,12 +2752,13 @@ static bool test_hunt(void)
             lv_obj_delete(ui.poop[i]);
             ui.poop[i] = poop[i];
         }
-    g = original;
+    g = *original;
     behaviour_sync_position();
     spider_launch_pounce(0, 0);
-    ok = ok && prey_count() == original_prey && !memcmp(&g, &original, sizeof g);
+    ok = ok && prey_count() == original_prey && !memcmp(&g, original, sizeof g);
     printf("%s hunttest restored=%d\n", ok ? "OK" : "ERR",
-           !memcmp(&g, &original, sizeof g));
+           !memcmp(&g, original, sizeof g));
+    heap_caps_free(original);
     return ok;
 }
 
@@ -2184,6 +2869,34 @@ static void ui_service_request(void)
     case GAME_UI_SET_MUTED:
         audio_set_muted(s_ui_value != 0);
         game_save_now();
+        break;
+    case GAME_UI_SET_USB_SOUNDS:
+        g.usb_sounds = s_ui_value != 0;
+        game_save_now();
+        if (s_open_menu == MENU_SOUND) {
+            int page = ui_menu_page();
+            menu_open(MENU_SOUND);
+            ui_menu_set_page(page);
+        }
+        break;
+    case GAME_UI_SET_DECOR_LOCKED:
+        g.decor_locked = s_ui_value != 0;
+        if (g.decor_locked && g_decor_mode) game_cancel_decor_placement();
+        game_save_now();
+        if (s_open_menu == MENU_SETTINGS) {
+            int page = ui_menu_page();
+            menu_open(MENU_SETTINGS);
+            ui_menu_set_page(page);
+        }
+        break;
+    case GAME_UI_SET_AUTO_CLEAN:
+        g.auto_clean = s_ui_value != 0;
+        game_save_now();
+        if (s_open_menu == MENU_SETTINGS) {
+            int page = ui_menu_page();
+            menu_open(MENU_SETTINGS);
+            ui_menu_set_page(page);
+        }
         break;
     case GAME_UI_ADD_SILK: {
         uint32_t before = g.silk;
@@ -2313,8 +3026,22 @@ static void ui_service_request(void)
         ui_hud_set_chrome(scanloop_chrome);
         if (!scanloop_paused) game_resume();
         break;
+    case GAME_UI_MENU_PICK:
+        atomic_store(&s_ui_ok, ui_menu_test_pick((uint8_t)s_ui_value));
+        if (!atomic_load(&s_ui_ok)) ESP_LOGW(TAG, "menu pick rejected: item unavailable");
+        break;
     case GAME_UI_TEST_UI: {
         ui_menu_close();
+        int photo_page = s_menu_pages[MENU_PHOTO_STORAGE];
+        bool photo_known = s_menu_page_known[MENU_PHOTO_STORAGE];
+        s_page_menu = MENU_PHOTO_STORAGE;
+        s_menu_pages[MENU_PHOTO_STORAGE] = 2;
+        s_page_loading = true;
+        remember_menu_page(0);
+        bool loading_page_ok = s_menu_pages[MENU_PHOTO_STORAGE] == 2;
+        s_menu_pages[MENU_PHOTO_STORAGE] = photo_page;
+        s_menu_page_known[MENU_PHOTO_STORAGE] = photo_known;
+        s_page_loading = false;
         ui_hud_set_chrome(true);
         bool menu_ok = ui_menu_test();
         bool hud_ok = ui_hud_test();
@@ -2322,6 +3049,93 @@ static void ui_service_request(void)
         bool hunger_ok = needs_hunger_test();
         bool power_ok = power_ui_test();
         bool save_ok = save_format_test();
+        bool companion_ok = companion_test();
+        bool life_ok = life_test() && loading_page_ok;
+        menu_open(MENU_TRAINING);
+        life_ok = life_ok && ui_menu_test_distinct_icons() && ui_menu_test_pick(0) &&
+                  s_open_menu == MENU_TRICK && ui_menu_test_distinct_icons();
+        menu_open(MENU_CALENDAR);
+        life_ok = life_ok && ui_menu_test_distinct_icons();
+        menu_open(MENU_GENERATIONS);
+        life_ok = life_ok && !strcmp(s_menu_items[0].label, "Retire and Raise Another");
+        menu_open(MENU_MAIN);
+        static const char *const root_order[] = {
+            "Your Spider", "Today", "Training", "Calendar", "Treats", "Achievements",
+            "Prey Species", "Diary", "Photo Album", "Generations", "Decor",
+            "Backgrounds", "Borders", "Help Guide", "Settings"
+        };
+        for (unsigned i = 0; i < sizeof root_order / sizeof root_order[0]; i++)
+            life_ok = life_ok && !strcmp(s_menu_items[i].label, root_order[i]);
+        menu_open(MENU_DISPLAY);
+        life_ok = life_ok && ui_menu_test_distinct_icons() &&
+            !strcmp(s_menu_items[2].label, "Double-Tap Lights");
+        menu_open(MENU_SETTINGS);
+        for (unsigned i = 0; i < 8; i++)
+            life_ok = life_ok && strcmp(s_menu_items[i].label, "Save Screenshot");
+        s_photo_slot = 0;
+        menu_open(MENU_ALBUM);
+        life_ok = life_ok && !strcmp(s_menu_items[0].label, "Take Photo") &&
+            !strcmp(s_menu_items[1].label, "Storage Status") &&
+            !strcmp(s_menu_items[2].label, "Photo Storage") &&
+            ui_menu_test_distinct_icons();
+        on_photo_storage_pick(2);
+        life_ok = life_ok && ui_menu_test_back() && s_open_menu == MENU_PHOTO_STORAGE &&
+            strcmp(s_menu_items[0].label, "Take Photo") &&
+            strcmp(s_menu_items[0].label, "Storage Status") &&
+            ui_menu_test_back() && s_open_menu == MENU_ALBUM;
+        menu_open(MENU_MAIN);
+        life_ok = life_ok && ui_menu_test_pick(MENU_GENERATIONS) &&
+            ui_menu_test_back() && s_open_menu == MENU_MAIN && ui_menu_page() == 2;
+        menu_open(MENU_MAIN);
+        life_ok = life_ok && ui_menu_test_pick(MENU_SETTINGS) &&
+            ui_menu_test_pick(5) && ui_menu_test_back() &&
+            s_open_menu == MENU_SETTINGS && ui_menu_page() == 1 &&
+            ui_menu_test_back() && s_open_menu == MENU_MAIN && ui_menu_page() == 3;
+        menu_open(MENU_PHOTO_ACTIONS);
+        life_ok = life_ok && ui_menu_test_distinct_icons() && ui_menu_test_pick(1) &&
+            s_open_menu == MENU_PHOTO_DELETE && ui_menu_test_distinct_icons() &&
+            ui_menu_test_pick(1) && s_open_menu == MENU_PHOTO_ACTIONS;
+        menu_open(MENU_PERSONALITY);
+        companion_ok = ui_menu_visible() && ui_menu_test_distinct_icons() &&
+                       !strcmp(s_menu_items[0].label, "Temperament and Bond") && companion_ok;
+        menu_open(MENU_TODAY);
+        companion_ok = ui_menu_visible() && ui_menu_test_distinct_icons() &&
+                       !strcmp(s_menu_items[0].label, "Check In") &&
+                       s_menu_items[0].id == 3 && s_menu_items[1].id == 4 &&
+                       s_menu_items[2].id == 2 && companion_ok;
+        /* Today has no request submenu: the request row is a single tap that
+         * dismisses, exactly like the rotating daily task. */
+        companion_ok = ui_menu_test_pick(2) && companion_ok;
+        companion_ok = s_open_menu == MENU_TODAY && companion_ok;
+        menu_open(MENU_DAILY);
+        companion_ok = s_open_menu == MENU_TODAY && !strcmp(s_menu_items[0].label, "Check In") && companion_ok;
+        game_state_t *daily_backup = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (daily_backup) {
+            *daily_backup = g;
+            s_testing_placement = true;
+            g.daily_day = DAILY_NEVER;
+            g.daily_streak = 0;
+            menu_open(MENU_TODAY);
+            companion_ok = ui_menu_test_pick(3) && companion_ok;
+            uint32_t claimed_silk = g.silk, claimed_xp = g.xp;
+            companion_ok = s_open_menu == MENU_TODAY && !s_menu_items[0].enabled &&
+                           !ui_menu_test_pick(3) && g.silk == claimed_silk && g.xp == claimed_xp &&
+                           g.daily_streak == 1 && companion_ok;
+            g = *daily_backup;
+            heap_caps_free(daily_backup);
+            s_testing_placement = false;
+        } else {
+            ESP_LOGE(TAG, "daily UI test backup allocation failed");
+            companion_ok = false;
+        }
+        menu_open(MENU_DIARY);
+        companion_ok = ui_menu_visible() && s_open_menu == MENU_DIARY && companion_ok;
+        s_open_menu = MENU_MEMORY; s_memory_slot = 5;
+        game_diary_removed(2);
+        companion_ok = s_memory_slot == 4 && companion_ok;
+        game_diary_removed(4);
+        companion_ok = s_memory_slot == 255 && companion_ok;
+        s_open_menu = MENU_DIARY;
         bool decor_ok = decor_test();
         bool pointer_ok = test_furniture_pointer();
         bool original_muted = audio_muted();
@@ -2332,8 +3146,16 @@ static void ui_service_request(void)
                         g.music_enabled == original_music &&
                         !strcmp(s_menu_items[1].label, "Sound");
         on_sound_pick(1);
-        sound_ok = sound_ok && audio_muted() == original_muted &&
+        sound_ok = sound_ok && ui_menu_test_distinct_icons() && audio_muted() == original_muted &&
                    g.music_enabled == original_music;
+        uint8_t original_usb_sounds = g.usb_sounds;
+        ui_menu_set_page(1);
+        on_sound_pick(5);
+        sound_ok = sound_ok && g.usb_sounds != original_usb_sounds &&
+                   audio_muted() == original_muted && g.music_enabled == original_music &&
+                   ui_menu_page() == 1 && !strcmp(s_menu_items[5].label, "USB Chimes");
+        on_sound_pick(5);
+        sound_ok = sound_ok && g.usb_sounds == original_usb_sounds && ui_menu_page() == 1;
         uint8_t original_music_volume = g.music_volume;
         uint8_t original_track = g.music_track;
         uint8_t original_volume = audio_volume();
@@ -2372,7 +3194,14 @@ static void ui_service_request(void)
             on_help_pick(i);
             help_routes = ui_menu_test_text_fits() && help_routes;
         }
-        game_state_t original_state = g;
+        game_state_t *original_state = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!original_state) {
+            ESP_LOGE(TAG, "UI test state allocation failed");
+            s_testing_placement = false;
+            atomic_store(&s_ui_ok, false);
+            break;
+        }
+        *original_state = g;
         g.achievements = 0; g.xp = 0; g.level = 1; g.silk = 0;
         bool rewards = true;
         for (int i = 0; i < ACHIEVEMENT_COUNT; i++) {
@@ -2391,9 +3220,10 @@ static void ui_service_request(void)
                     (g.achievements & ACH_FIRST_MOLT);
         behaviour_tick(game_now() + 801u, .05f);
         molt = molt && g.state != SPIDER_MOLT;
-        g = original_state;
+        g = *original_state;
         behaviour_set_state(SPIDER_IDLE);
-        g.state = original_state.state;
+        g.state = original_state->state;
+        heap_caps_free(original_state);
         s_testing_placement = false;
         ui_menu_close();
         gift_t original_gift = g.gift;
@@ -2403,13 +3233,13 @@ static void ui_service_request(void)
         keep_gift_in_playfield();
         bool gift_bounds = g.gift.x == g_play.left && g.gift.y == g_play.bottom;
         g.gift = original_gift;
-        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d sound=%d music=%d sd_feedback=%d borders=%d shop_gates=%d help=%d rewards=%d molt=%d\n",
+        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d sound=%d music=%d sd_feedback=%d borders=%d shop_gates=%d help=%d rewards=%d molt=%d companion=%d life=%d\n",
                menu_ok && hud_ok && backgrounds_ok && gift_bounds && hunger_ok &&
                power_ok && save_ok && decor_ok && pointer_ok && sound_ok && music_ok && sd_feedback &&
-               borders_route && shop_gates && help_routes && rewards && molt ? "OK" : "ERR",
+               borders_route && shop_gates && help_routes && rewards && molt && companion_ok && life_ok ? "OK" : "ERR",
                menu_ok, menu_ok, menu_ok, hud_ok, backgrounds_ok, hunger_ok,
                power_ok, save_ok, decor_ok, pointer_ok, gift_bounds, sound_ok, music_ok, sd_feedback,
-               borders_route, shop_gates, help_routes, rewards, molt);
+               borders_route, shop_gates, help_routes, rewards, molt, companion_ok, life_ok);
         break;
     }
     default: break;
@@ -2609,6 +3439,9 @@ void game_on_terrarium_long_press(lv_event_t *e)
     behaviour_aim_cancel();
     s_decor_item_slot = slot;
     decor_begin_move(slot);
+    /* decor_begin_move() refuses when decor is locked or prey is out, so only
+     * start the drag if it actually staged the item. */
+    if (!g_decor_mode) return;
     s_place_dragging = true;
     s_place_dx = s_place_x - p.x;
     s_place_dy = s_place_y - p.y;
@@ -2641,7 +3474,7 @@ void game_on_terrarium_tap(lv_event_t *e)
         }
         dx = p.x - s_last_tap.x; dy = p.y - s_last_tap.y;
         uint32_t now = game_now();
-        if (s_tap_pending && now - s_last_tap_at <= ENCLOSURE_DOUBLE_TAP_MS &&
+        if (!g.life.light_gesture_disabled && s_tap_pending && now - s_last_tap_at <= ENCLOSURE_DOUBLE_TAP_MS &&
             dx * dx + dy * dy <= ENCLOSURE_DOUBLE_TAP_SLOP * ENCLOSURE_DOUBLE_TAP_SLOP) {
             enclosure_double_tap();
             return;
@@ -2750,6 +3583,15 @@ void game_tick_logic(lv_timer_t *timer)
 
     needs_tick(now, dt);
     game_check_achievements();
+    companion_tick();
+    life_tick_active(now, !tank_hidden);
+    static uint32_t request_notice_day = UINT32_MAX;
+    if (!tank_hidden && !g.gift_mode && !g_decor_mode && now > 15000 &&
+        request_notice_day != g.companion.request_day &&
+        (!g.companion.requests[0].state || !g.companion.requests[1].state)) {
+        request_notice_day = g.companion.request_day;
+        ui_hud_bubble("Optional Requests / Menu > Today", 0x76d6b1, 2400);
+    }
     buttons_tick(now);
     if (!tank_hidden) {
         behaviour_tick(now, dt);
@@ -2793,6 +3635,48 @@ void game_tick_logic(lv_timer_t *timer)
     }
 }
 
+static void life_visual_tick(uint32_t now)
+{
+    static uint32_t next_clock, next_expression;
+    static life_clock_t clock;
+    static uint8_t last_activity = 255;
+    if ((int32_t)(now - next_clock) >= 0) {
+        next_clock = now + 1000u;
+        time_t epoch = time(NULL);
+        clock = life_clock(epoch > 0 && (uint64_t)epoch <= UINT32_MAX ? (uint32_t)epoch : 0);
+        lv_opa_t shade = g.life.daynight && clock.available ?
+                         clock.period == 3 ? 24 : clock.period == 2 ? 12 : 0 : 0;
+        lv_obj_set_style_bg_opa(s_daylight_overlay, shade, 0);
+        lv_obj_set_hidden(s_daylight_overlay, !shade);
+        lv_obj_set_hidden(s_visitor, !clock.visitor);
+        if (clock.available && last_activity != clock.activity) {
+            last_activity = clock.activity;
+            if (clock.activity && g.state != SPIDER_SLEEP && !g.sick) {
+                ui_hud_bubble(life_activity_name(clock.activity), 0x76d6b1, 2000);
+                if (g.state == SPIDER_IDLE && g.mood >= 60) cspider_pet_react();
+            }
+        }
+    }
+    for (unsigned i = 0; i < 6; i++) {
+        bool visible = clock.available && g.life.weather;
+        lv_obj_set_hidden(s_weather[i], !visible);
+        if (visible) {
+            int y = 40 + (int)((now / (clock.season == 0 ? 120u : 75u) + i * 59u) % (ui.H - 80));
+            lv_obj_set_pos(s_weather[i], i & 1 ? ui.W - 14 : 10, y);
+        }
+    }
+    if (!next_expression) next_expression = now + 45000u;
+    if ((int32_t)(now - next_expression) >= 0) {
+        next_expression = now + 45000u + (uint32_t)g.temperament * 5000u;
+        if (g.state == SPIDER_IDLE && !g.sick && g.energy >= 30 && g.mood >= 60) {
+            cspider_pet_react();
+            ui_hud_bubble(g.bond >= 50 ? "Happy to See You" :
+                          g.temperament == 1 ? "A Shy Little Hello" : "Feeling Curious",
+                          0x76d6b1, 1600);
+        }
+    }
+}
+
 void game_tick_render(lv_timer_t *timer)
 {
     power_tick();
@@ -2804,6 +3688,14 @@ void game_tick_render(lv_timer_t *timer)
     (void)timer;
 
     uint32_t now = lv_tick_get();
+    int family_save = s_pet_change_waiting ? life_generation_save_status() : -1;
+    if (s_pet_change_waiting && family_save >= 0) {
+        s_pet_change_waiting = false;
+        ui_hud_bubble(family_save ? "Family Saved / Both Spiders Safe" :
+                      "Family Save Failed / Keep Power On / See Log",
+                      family_save ? 0x76d6b1 : 0xf5c86b, 3200);
+        if (s_open_menu == MENU_GENERATIONS) menu_open(MENU_GENERATIONS);
+    }
 
     /* Perform any UI action the serial console asked for. This runs on the LVGL
      * task, which is the only thread allowed to touch lv_*. */
@@ -2821,7 +3713,15 @@ void game_tick_render(lv_timer_t *timer)
     /* The menu can be closed from inside ui_menu.c (BACK, or a row that
      * dismisses it), so the tracker is resynced here rather than at every
      * close site. */
-    if (!ui_menu_visible()) s_open_menu = -1;
+    if (!ui_menu_visible()) {
+        s_open_menu = -1;
+        if (s_album_loaded.pixels) {
+            lv_image_cache_drop(&s_album_image);
+            lv_image_header_cache_drop(&s_album_image);
+            album_release_image(&s_album_loaded);
+            memset(&s_album_image, 0, sizeof s_album_image);
+        }
+    }
 
     static uint32_t seen_gen;
     uint32_t gen = net_generation();
@@ -2865,6 +3765,24 @@ void game_tick_render(lv_timer_t *timer)
             ui_menu_set_page(page);
         }
     }
+    static uint32_t seen_album_gen;
+    uint32_t album_gen = album_generation();
+    if (album_gen != seen_album_gen) {
+        seen_album_gen = album_gen;
+        album_image_t image = {0};
+        if (album_take_image(&image)) {
+            if (s_open_menu == MENU_PHOTO && image.slot == s_photo_slot) {
+                s_album_loaded = image;
+                s_album_image = (lv_image_dsc_t){
+                    .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RGB565,
+                        .w = image.width, .h = image.height, .stride = image.stride},
+                    .data_size = image.stride * image.height, .data = image.pixels
+                };
+            } else album_release_image(&image);
+        }
+        if (s_open_menu == MENU_ALBUM || s_open_menu == MENU_PHOTO_STORAGE ||
+            s_open_menu == MENU_PHOTO) menu_open(s_open_menu);
+    }
 
     if (s_paused || save_restore_pending() || power_sleep_pending() || power_sleeping() || net_busy() || ui_menu_visible() || ui_hud_chrome_visible() ||
         lv_screen_active() != ui.screen) {
@@ -2877,7 +3795,9 @@ void game_tick_render(lv_timer_t *timer)
      * terrarium_tick() made now - stamp negative, which wraps to a huge
      * unsigned value and expires the object on the very tick it was made. */
     now = lv_tick_get();
+    life_visual_tick(now);
     terrarium_tick(now);
+    terrarium_decor_depth();
     cspider_render(now);
     spider_render(now);   /* aim visuals only */
     prey_render(now);
@@ -2995,6 +3915,30 @@ void game_init(void)
     cspider_init(ui.creature_layer);
     spider_init(ui.creature_layer);
     terrarium_raise_canopy();
+
+    s_daylight_overlay = lv_obj_create(root);
+    lv_obj_remove_style_all(s_daylight_overlay);
+    lv_obj_set_size(s_daylight_overlay, ui.W, ui.H);
+    lv_obj_set_style_bg_color(s_daylight_overlay, lv_color_hex(0x101b35), 0);
+    lv_obj_set_clickable(s_daylight_overlay, false);
+    lv_obj_set_scrollable(s_daylight_overlay, false);
+    lv_obj_set_hidden(s_daylight_overlay, true);
+    for (int i = 0; i < 6; i++) {
+        s_weather[i] = lv_obj_create(root);
+        lv_obj_remove_style_all(s_weather[i]);
+        lv_obj_set_size(s_weather[i], 3, 3);
+        lv_obj_set_style_bg_color(s_weather[i], lv_color_hex(0xb1c8b7), 0);
+        lv_obj_set_style_bg_opa(s_weather[i], 40, 0);
+        lv_obj_set_clickable(s_weather[i], false);
+        lv_obj_set_hidden(s_weather[i], true);
+    }
+    s_visitor = lv_image_create(root);
+    const lv_image_dsc_t *visitor = assets_image(sprite_icon_index("visitor"));
+    if (visitor) lv_image_set_src(s_visitor, visitor);
+    else ESP_LOGE(TAG, "visitor artwork unavailable");
+    lv_obj_set_pos(s_visitor, ui.W - 64, ui.H - 64);
+    lv_obj_set_clickable(s_visitor, false);
+    lv_obj_set_hidden(s_visitor, true);
 
     s_light_overlay = lv_obj_create(root);
     lv_obj_remove_style_all(s_light_overlay);

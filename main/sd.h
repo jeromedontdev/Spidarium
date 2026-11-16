@@ -48,7 +48,10 @@ bool sd_restore_save(void);
 bool sd_backup_exists(void);
 
 /* Nonblocking UI requests; I/O runs on the serialized persistence worker. */
-enum { SD_JOB_MOUNT = 1, SD_JOB_BACKUP, SD_JOB_RESTORE, SD_JOB_SCREENSHOT };
+enum {
+    SD_JOB_MOUNT = 1, SD_JOB_BACKUP, SD_JOB_RESTORE, SD_JOB_SCREENSHOT,
+    SD_JOB_ALBUM_SCAN, SD_JOB_ALBUM_CAPTURE, SD_JOB_ALBUM_LOAD, SD_JOB_ALBUM_DELETE
+};
 typedef struct {
     uint8_t *pixels;
     uint32_t width, height, stride;

@@ -275,7 +275,14 @@ def _rgba(value):
 
 
 def detail(image, strokes, colors):
-    """Clip authored material strokes to existing opaque surfaces."""
+    """Clip authored material strokes to existing opaque surfaces.
+
+    Strokes are kept one pixel wide: at a 16x16 logical canvas a two-pixel
+    stroke is an eighth of the sprite and swallows the material planes it is
+    meant to describe. What keeps them from reading as scratches is that each
+    one follows the object's own anatomy (a bark furrow, a shell rib, a cloth
+    fold) rather than being scattered across it.
+    """
     layer = Image.new("RGBA", image.size)
     draw = ImageDraw.Draw(layer)
     for role, points in strokes:

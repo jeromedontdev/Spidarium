@@ -60,4 +60,9 @@ void cspider_set_emote(cspider_emote_t e);
  * on top of the current state, so it never interrupts a hunt or a sleep. */
 void cspider_pet_react(void);
 
+/* Play a trick's own pose. kind 0 = Wave, 1 = Spin, 2 = Bow. Spin is carried by
+ * the heading rotation in behaviour.c; Wave and Bow need a pose here or they
+ * look identical to standing still. */
+void cspider_trick_react(unsigned kind);
+
 bool cspider_gait_test(void);

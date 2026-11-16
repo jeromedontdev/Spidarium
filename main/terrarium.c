@@ -15,8 +15,10 @@
 
 static lv_obj_t *s_background, *s_decor_layer, *s_canopy_layer, *s_gift_layer, *s_poop_layer,
                 *s_preview_ring, *s_preview_image;
+static bool decor_canopy_now(const decor_item_t *item);
 static int s_preview_slot = -1;
 static bool s_preview_gift;
+static int32_t s_preview_y;
 static uint16_t *s_pixels;
 static uint8_t *s_gift_pixels;
 /* Grow only on explicit placement/restore; rendering reuses the high-water pool. */
@@ -147,11 +149,11 @@ bool terrarium_decor_test(void)
                      "decor slot %d kind=%u visible=%d placed=%d(%d,%d vs %d,%d) sourced=%d",
                      i, item->kind, visible, placed, (int)lv_obj_get_x(obj),
                      (int)lv_obj_get_y(obj), item->x - 32, item->y - 32, sourced);
-        bool canopy = item->blocking == DECOR_WALK_BEHIND;
+        bool canopy = decor_canopy_now(item);
         bool ordered = lv_obj_get_parent(obj) == (canopy ? s_canopy_layer : s_decor_layer);
         for (int j = i - 1; j >= 0; j--) {
             const decor_item_t *other = decor_at(j);
-            if (!other || (other->blocking == DECOR_WALK_BEHIND) != canopy) continue;
+            if (!other || decor_canopy_now(other) != canopy) continue;
             ordered = ordered && lv_obj_get_index(s_decor_obj[j]) < lv_obj_get_index(obj);
             break;
         }
@@ -256,8 +258,34 @@ void terrarium_refresh_decor(void)
         lv_image_set_scale(obj, scale);
         lv_obj_set_pos(obj, item->x - 32, item->y - 32);
         lv_obj_set_hidden(obj, false);
-        lv_obj_t *parent = item->blocking == DECOR_WALK_BEHIND ? s_canopy_layer : s_decor_layer;
+        lv_obj_t *parent = decor_canopy_now(item) ? s_canopy_layer : s_decor_layer;
         if (lv_obj_get_parent(obj) != parent) lv_obj_set_parent(obj, parent);
+        lv_obj_move_foreground(obj);
+    }
+}
+
+/* A walk-behind item may only cover the spider with its TOP half. The sprite is
+ * centred on the item, so its centre line is the halfway point: while the
+ * spider is above that line it is genuinely behind the item, and once it is
+ * level with or below it the spider is standing in front of the base and the
+ * item must drop behind it. Parenting the whole sprite to the canopy layer made
+ * the spider vanish over the item's footprint, which broke the perspective. */
+static bool decor_canopy_now(const decor_item_t *item)
+{
+    return item->blocking == DECOR_WALK_BEHIND && g.spider_y < item->y;
+}
+
+void terrarium_decor_depth(void)
+{
+    if (!s_canopy_layer) return;
+    for (int i = 0; i < s_decor_capacity; i++) {
+        const decor_item_t *item = decor_at(i);
+        lv_obj_t *obj = s_decor_obj[i];
+        if (!item || !obj || lv_obj_is_hidden(obj)) continue;
+        if (item->blocking != DECOR_WALK_BEHIND) continue;
+        lv_obj_t *want = decor_canopy_now(item) ? s_canopy_layer : s_decor_layer;
+        if (lv_obj_get_parent(obj) == want) continue;
+        lv_obj_set_parent(obj, want);
         lv_obj_move_foreground(obj);
     }
 }
@@ -270,14 +298,16 @@ void terrarium_raise_canopy(void)
 
 bool terrarium_preview_test(uint8_t path, int layer_index)
 {
-    lv_obj_t *parent = path == DECOR_WALK_BEHIND ? s_canopy_layer : s_decor_layer;
+    /* The preview follows the same rule as a placed item: a walk-behind item is
+     * only in the canopy layer while the spider is above its centre line. */
+    bool canopy = path == DECOR_WALK_BEHIND && g.spider_y < s_preview_y;
+    lv_obj_t *parent = canopy ? s_canopy_layer : s_decor_layer;
     if (lv_obj_is_hidden(s_preview_image) || lv_obj_get_parent(s_preview_image) != parent)
         return false;
     int before = 0;
     for (int i = 0; i < s_decor_capacity; i++) {
         const decor_item_t *item = decor_at(i);
-        if (!item || i == s_preview_slot ||
-            (item->blocking == DECOR_WALK_BEHIND) != (path == DECOR_WALK_BEHIND)) continue;
+        if (!item || i == s_preview_slot || decor_canopy_now(item) != canopy) continue;
         if (lv_obj_get_index(s_decor_obj[i]) < lv_obj_get_index(s_preview_image)) before++;
     }
     return before == layer_index &&
@@ -303,6 +333,7 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     }
     s_preview_slot = slot;
     s_preview_gift = gift;
+    s_preview_y = y;
     if (gift) lv_obj_set_hidden(s_gift_layer, true);
     else if (slot >= 0 && slot < s_decor_capacity) lv_obj_set_hidden(s_decor_obj[slot], true);
     lv_image_set_src(s_preview_image, image);
@@ -311,16 +342,16 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     lv_obj_set_pos(s_preview_image, x - image->header.w / 2, y - image->header.h / 2);
     lv_obj_set_hidden(s_preview_image, false);
     lv_obj_t *parent = gift ? lv_obj_get_parent(s_gift_layer) :
-        path == DECOR_WALK_BEHIND ? s_canopy_layer : s_decor_layer;
+        (path == DECOR_WALK_BEHIND && g.spider_y < y) ? s_canopy_layer : s_decor_layer;
     if (lv_obj_get_parent(s_preview_image) != parent) lv_obj_set_parent(s_preview_image, parent);
     if (gift) {
         lv_obj_move_to_index(s_preview_image, lv_obj_get_index(s_preview_ring));
     } else {
         int index = 0;
+        bool canopy = path == DECOR_WALK_BEHIND && g.spider_y < y;
         for (int i = 0; i < s_decor_capacity; i++) {
             const decor_item_t *item = decor_at(i);
-            if (!item || i == slot ||
-                (item->blocking == DECOR_WALK_BEHIND) != (path == DECOR_WALK_BEHIND)) continue;
+            if (!item || i == slot || decor_canopy_now(item) != canopy) continue;
             if (index++ == layer_index) lv_obj_move_foreground(s_preview_image);
             lv_obj_move_foreground(s_decor_obj[i]);
         }

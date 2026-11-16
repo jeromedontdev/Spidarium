@@ -34,6 +34,7 @@ typedef void (*ui_menu_pick_cb)(uint8_t id);
 
 /* Called when the player taps BACK. If NULL, BACK closes the menu. */
 typedef void (*ui_menu_back_cb)(void);
+typedef void (*ui_menu_close_page_cb)(int page);
 
 /* Open the menu. Copies nothing: the caller's array must stay valid while the
  * menu is open (use a static array). */
@@ -44,10 +45,13 @@ void ui_menu_open_grid(const char *title, const ui_menu_item_t *items, int count
 void ui_menu_open_detail(const char *title, const ui_menu_item_t *items, int count,
                          ui_menu_pick_cb cb);
 void ui_menu_open_text(const char *title, const char *text);
+void ui_menu_open_image(const char *title, const lv_image_dsc_t *image);
 
 /* Set the BACK handler for the currently open menu. Call after ui_menu_open.
  * Without this, BACK simply closes the menu. */
 void ui_menu_set_back(ui_menu_back_cb cb);
+/* Records the final page before pick, Back or rebuild destroys this menu. */
+void ui_menu_set_close_page_cb(ui_menu_close_page_cb cb);
 
 /* Close and destroy the menu. */
 void ui_menu_close(void);
@@ -64,6 +68,8 @@ void ui_menu_open_input(const char *title, const char *initial, bool password,
 /* LVGL-task diagnostic exercising paging and password editing without credentials. */
 bool ui_menu_test(void);
 bool ui_menu_test_pick(uint8_t id);
+bool ui_menu_test_back(void);
+bool ui_menu_test_distinct_icons(void);
 bool ui_menu_test_text_fits(void);
 void ui_menu_format_name(char *dst, size_t size, const char *name);
 void ui_menu_set_destructive(uint8_t id);
@@ -88,5 +94,5 @@ void ui_menu_refresh(void);
 int ui_menu_page(void);
 void ui_menu_set_page(int page);
 void ui_menu_capture_hide(bool hidden);
-typedef uint32_t (*ui_minigame_reward_cb)(uint8_t score);
+typedef uint32_t (*ui_minigame_reward_cb)(uint8_t score, uint8_t kind);
 void ui_menu_open_minigame(ui_minigame_reward_cb reward);

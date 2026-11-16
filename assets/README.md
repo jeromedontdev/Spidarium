@@ -5,17 +5,56 @@ The first sixteen core decor props now use hand-placed material geometry in
 [core_decor_art.py](../tools/core_decor_art.py). The remaining 52 props, all 36
 gifts and 12 treats use explicit per-item details from
 [furnishing_art.py](../tools/furnishing_art.py); prey, icons and badges use
-[small_art.py](../tools/small_art.py).
+[small_art.py](../tools/small_art.py). Dedicated companion, Today and audio
+control icons are authored in [companion_icon_art.py](../tools/companion_icon_art.py).
 The 46 newly authored procedural theme pairs use
 [terrain_art.py](../tools/terrain_art.py); the exact approved moss pair imports
 [floor](sources/moss_floor.png) and [border](sources/moss_border.png).
 Crystal imports its approved [floor](sources/crystal_floor.png) and selected
 [border source](sources/crystal_border.png); never call PixelLab during builds.
 The [style contract](../docs/ART_STYLE.md) and
-[SNES handoff](../docs/ART_HANDOFF_SNES.md) describe the current direction.
+[pixel-art handoff](../docs/ART_HANDOFF_SNES.md) describe the current direction.
 
-The deterministic set contains **337 RGBA PNGs**: 39 spider exports, 40 prey
-frames, 30 UI icons, 11 achievement badges, 36 gifts, 68 placeable decor,
+## Approved background imports
+
+A background may be imported unchanged from a reviewed source image instead of
+being drawn procedurally. Those imports are registered in
+[approved_sources.py](../tools/approved_sources.py) and pinned by the SHA256 of
+their decoded 240x240 RGBA pixels, so the published art can never drift from
+what was reviewed. `gen_sprites.py` imports through that registry and
+`asset_build.py` verifies against it.
+
+Approved imports are exempt from the center tone limits that bound procedural
+terrain, because procedural drawing cannot reproduce their texture and the
+hash already guarantees fidelity. The approved crystal floor is the reference
+for a richer import: 64 colors, 56 center tones, center luminance span 142/255
+and a mean of 65.
+
+To adopt a new source, build its prompt with
+[background_prompts.py](../tools/background_prompts.py), generate and convert it
+with [background_batch.py](../tools/background_batch.py) or
+[import_background.py](../tools/import_background.py), review the result at
+native scale with the border and spider composited, then re-run with
+`--install` and add the theme plus the printed hash to `APPROVED_FLOORS`.
+Never call PixelLab or any image service during a build.
+
+Contrast is fitted per image to the reference standard deviation, and brightness
+is taken per theme from `THEME_MEAN`, so a snowfield stays bright and a cave
+stays dark while both stay calm enough for the spider to read against.
+
+Enclosure borders follow the same pattern with their own tools. Build the frame
+prompt with [border_prompts.py](../tools/border_prompts.py), generate and
+convert with [border_batch.py](../tools/border_batch.py) or
+[import_border.py](../tools/import_border.py), then add the theme plus the
+printed hash to `APPROVED_BORDERS`. A frame is decorative, so
+`import_border.py` treats contrast as a ceiling rather than a target: it only
+reduces contrast until the rim comes in under `SD_CEILING`, keeping the shading
+that makes the band read as carved. The tool also crops the generator's black
+margin, finds the hollow middle, and nine-slices the band down to the contract's
+8 logical pixels before forcing the opening to alpha zero.
+
+The deterministic set contains **387 RGBA PNGs**: 39 spider exports, 40 prey
+frames, 80 UI icons, 11 achievement badges, 36 gifts, 68 placeable decor,
 five legacy decor, 48 backgrounds, 12 dedicated treat icons and 48 matching
 enclosure borders. All 47 non-Crystal background/border pairs are upgraded.
 The complete richer-material pass covers every non-spider category.
@@ -23,6 +62,19 @@ The final remaining-assets batch changes exactly 181 sprites, preserving
 the 96 approved terrain images, 16 approved core props, five derived legacy
 images and all 39 spider exports. Both live spider renderers remain unchanged.
 Existing IDs and dimensions are stable; new catalogue entries append only.
+
+**Do not reuse icons for different features or meanings.** Create dedicated,
+recognizable artwork, not recolored or renamed copies, and wire it into native,
+browser and website surfaces. Repeated instances of the same action may keep
+their consistent icon. See the [dedicated-icon rule](../docs/ART_STYLE.md#dedicated-icons-no-reuse-for-different-meanings).
+
+The companion/Today/Sound pass adds 28 dedicated icons without changing the
+previous 337 PNGs. The life pass adds 18 dedicated icons, followed by a
+separate clock-and-routine activity icon. Main destinations, bond/favorites,
+check-in/daily task,
+request kinds, diary memory categories, Pin/Unpin, dismissal and audio controls
+have independently authored silhouettes. Today combines check-in rewards,
+the original task and both optional requests; no separate Daily Check-In tile.
 
 ## Core decor overhaul: first batch
 
@@ -272,11 +324,11 @@ powershell -File build.ps1
 ```
 
 Validation checks the exact file set, dimensions, PNG/RGBA format, style,
-determinism across two generator passes and preservation of all 337 source
+determinism across two generator passes and preservation of all 387 source
 PNGs. For an approved redesign, generate first
 to establish its new source baseline. `--png-only` skips a stale pack, not
 preservation or runtime mapping checks.
-Add `--preview PATH.png` to write a review sheet of all 298 non-spider assets.
+Add `--preview PATH.png` to write a review sheet of all 348 non-spider assets.
 The publication workflow runs the art tests and source validation.
 
 The build wrapper packs QOI into the memory-mapped `storage` partition.

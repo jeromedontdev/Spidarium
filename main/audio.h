@@ -45,8 +45,9 @@ uint8_t audio_music_volume(void);
 void audio_set_muted(bool muted);
 bool audio_muted(void);
 
-/* Speaker volume 0..100, persisted in game_state_t. Applied on the audio
- * worker's next effect so no codec write happens on the LVGL task. */
+/* Speaker volume 0..100, persisted in game_state_t. The worker ramps the
+ * logarithmic master gain in PCM over 20 ms, checking at most every 50 ms.
+ * Hardware gain stays fixed after initialization; no LVGL codec writes. */
 void audio_set_volume(uint8_t volume);
 uint8_t audio_volume(void);
 void audio_tick(uint32_t now_ms);

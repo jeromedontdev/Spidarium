@@ -42,6 +42,20 @@ test('lights enforce time and distance boundaries, not triple-click streaks',t=>
   assert.equal(ui.state.lights_dimmed,1);
 });
 
+test('disabling the light gesture preserves taps and petting, and can be re-enabled',t=>{
+  const {ui,tap,advance}=tapFixture(t);
+  ui.state.life.light_gesture_disabled=1;
+  for(let i=0;i<4;i++)tap(420,420);
+  assert.equal(ui.state.lights_dimmed,0);
+  assert.equal(ui.saves,undefined);
+  ui.cancelTap();
+  tap(ui.state.spider_x,ui.state.spider_y);
+  t.mock.timers.tick(475);
+  assert.equal(ui.state.pets,1);
+  advance(500);ui.cancelTap();ui.state.life.light_gesture_disabled=0;
+  tap(420,420);tap(420,420);
+  assert.equal(ui.state.lights_dimmed,1);
+});
 test('tap jitter is accepted; out-and-back drags, holds and cancelled pointers cannot toggle lights',t=>{
   const {ui,tap,advance}=tapFixture(t);
   tap();

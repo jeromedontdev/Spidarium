@@ -1,11 +1,18 @@
-# SNES artwork and menu handoff
+# Pixel artwork and menu handoff
 
 ## Current request and reference
 
 The player supplied a nine-panel pixel-art reference and requested new
-SNES-era backgrounds and matching decor, **without touching the spider**.
+pixel-art backgrounds and matching decor, **without touching the spider**.
 They specifically want somewhat plain backgrounds so their own decor and
 the spider stand out.
+
+The working reference is now **modern hand-crafted pixel art** rather than a
+named console generation. The player's own words: the older backgrounds "all
+look like 8-bit NES era", and the target is work with "actual lighting, sharp
+pixels, and pixel shading". Naming commercial titles in a generation prompt is
+also counterproductive because image services reject prompts that reference
+copyrighted works.
 
 The reference uses wooded, ruined, sandy, autumn, snow, shore, cave and pond
 materials, shaded object volume and crisp clustered texture. It is an art
@@ -35,6 +42,28 @@ direction, with exact moss imports and46 named procedural material recipes.
 Generated centers allow16 tones/luma64, Minimal3/24; moss17/80 and Crystal are
 exact hash-pinned sources. Thin transparent frame geometry, spider and all
 non-terrain assets are unchanged. See [current style limits](ART_STYLE.md).
+
+### Backgrounds are ground texture, and organic ground must not repeat
+
+Borders already carry the edge decoration. Stones, roots, foliage banks and
+accent materials belong to the separate `border_*` layer, which is composited
+over the floor at runtime, so a background that draws its own chunky rim
+duplicates that work and fights the border. Backgrounds are pure material,
+edge to edge.
+
+Repetition is correct for manufactured surfaces — brick, floorboards, tiling,
+paving, panelling — and those themes may tile visibly. Organic ground must not:
+soil, moss, leaf litter, sand, gravel and ash must never show a repeating unit,
+a grid, a honeycomb, or an evenly spaced field of similar shapes. A regular
+cobblestone-like field is a defect on an organic theme even when its palette
+and shading are otherwise correct.
+
+Approved imports are exempt from the center tone limits and are verified by
+pixel hash instead. The approved crystal floor is the reference for a richer
+import: 64 colors, 56 center tones, center luminance span 142/255, mean 65,
+and a center luminance standard deviation near 8. Convert generated textures
+with `tools/import_background.py`, which pulls them into that band, and adopt
+them through `APPROVED_FLOORS` in `tools/approved_sources.py`.
 
 - Sixteen backgrounds now use discrete material ramps, low-contrast clustered
   substrate and stronger detail only at the margins. No bilinear value noise,

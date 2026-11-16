@@ -49,7 +49,9 @@ static QueueHandle_t s_queue;
 static atomic_bool s_playing;
 static atomic_bool s_muted;
 static atomic_int  s_volume = AUDIO_VOLUME;
-static atomic_int  s_volume_applied = -1;
+/* Q15 master gain, owned by the worker after initialization. */
+static int32_t s_master_gain, s_master_start, s_master_target;
+static uint32_t s_master_fade;
 static atomic_bool s_music;
 static atomic_int  s_music_volume = 100;
 static atomic_int  s_music_track;
@@ -66,17 +68,14 @@ static atomic_uint s_music_max_gap_us, s_music_late_chunks, s_music_chunks;
 static void play_sfx(sfx_t sfx);
 static bool write_pcm(int samples);
 
-static bool apply_volume(void)
+static int32_t master_target(void)
 {
     int volume = atomic_load(&s_volume);
-    if (volume == atomic_load(&s_volume_applied)) return true;
-    int err = esp_codec_dev_set_out_vol(s_spk, volume);
-    if (err != ESP_CODEC_DEV_OK) {
-        ESP_LOGE(TAG, "audio volume write failed (%d)", err);
-        return false;
-    }
-    atomic_store(&s_volume_applied, volume);
-    return true;
+    if (!volume || atomic_load(&s_muted)) return 0;
+    /* Match esp_codec_dev's default -50..0 dB curve, with exact digital
+     * silence at zero. Keep the hardware gain fixed: its register changes
+     * otherwise hit already queued, nonzero I2S samples without a ramp. */
+    return (int32_t)lroundf(32768.0f * powf(10.0f, (volume - 100) / 40.0f));
 }
 
 static bool music_wanted(void)
@@ -118,7 +117,7 @@ static void music_stop(const char *reason)
 {
     if (!s_music_on) return;
     music_render(AMBIENCE_FADE, true);
-    bool ok = apply_volume() && write_pcm(AMBIENCE_FADE);
+    bool ok = write_pcm(AMBIENCE_FADE);
     s_music_written += ok ? AMBIENCE_FADE : 0;
     s_music_on = false;
     s_music_write_end = 0;
@@ -147,7 +146,7 @@ static void music_chunk(void)
             ESP_LOGW(TAG, "music refill late: %lu us", (unsigned long)gap);
         }
     }
-    if (!apply_volume() || !write_pcm(MUSIC_CHUNK)) {
+    if (!write_pcm(MUSIC_CHUNK)) {
         s_music_on = false;
         s_music_fade = 0;
         ESP_LOGE(TAG, "music stopped: codec error samples=%lu; retry in 1 s",
@@ -193,9 +192,7 @@ static void audio_worker(void *arg)
             atomic_store(&s_playing, false);
             vTaskDelay(pdMS_TO_TICKS(20));
         }
-        /* Volume changes are codec writes, so they belong here and never on
-         * the LVGL task. */
-        if (apply_volume() && !atomic_load(&s_muted)) play_sfx(sfx);
+        if (!atomic_load(&s_muted)) play_sfx(sfx);
         atomic_store(&s_playing, false);
     }
 }
@@ -287,9 +284,33 @@ static int render_noise(uint32_t ms, float gain)
 
 static bool write_pcm(int samples)
 {
-    int err = esp_codec_dev_write(s_spk, s_buf, samples * (int)sizeof *s_buf);
-    if (err != ESP_CODEC_DEV_OK) ESP_LOGE(TAG, "audio write failed (%d)", err);
-    return err == ESP_CODEC_DEV_OK;
+    /* Bound control latency even for a fully synthesized 400 ms effect.
+     * Scale in place in the existing PSRAM buffer, never allocate staging. */
+    for (int offset = 0; offset < samples;) {
+        int count = samples - offset;
+        if (count > MUSIC_CHUNK) count = MUSIC_CHUNK;
+        int32_t target = master_target();
+        if (target != s_master_target) {
+            s_master_start = s_master_gain;
+            s_master_target = target;
+            s_master_fade = 0;
+        }
+        for (int i = 0; i < count; i++) {
+            if (s_master_fade < AMBIENCE_FADE) {
+                s_master_fade++;
+                s_master_gain = s_master_start +
+                    (s_master_target - s_master_start) * (int32_t)s_master_fade / AMBIENCE_FADE;
+            }
+            s_buf[offset + i] = (int16_t)((int32_t)s_buf[offset + i] * s_master_gain / 32768);
+        }
+        int err = esp_codec_dev_write(s_spk, s_buf + offset, count * (int)sizeof *s_buf);
+        if (err != ESP_CODEC_DEV_OK) {
+            ESP_LOGE(TAG, "audio write failed (%d)", err);
+            return false;
+        }
+        offset += count;
+    }
+    return true;
 }
 
 static void play_ambience(bool leafy)
@@ -308,7 +329,7 @@ static void play_ambience(bool leafy)
             int16_t value = ambience_sample(&sound);
             s_buf[i] = stopping ? (int16_t)((int32_t)value * (samples - 1 - i) / samples) : value;
         }
-        if (!apply_volume() || !write_pcm(samples)) {
+        if (!write_pcm(samples)) {
             reason = "codec error";
             break;
         }
@@ -354,10 +375,15 @@ bool audio_init(void)
     }
 
     atomic_store(&s_volume, g.volume <= 100 ? g.volume : AUDIO_VOLUME);
-    if (!apply_volume()) {
+    atomic_store(&s_muted, g.muted != 0);
+    int err = esp_codec_dev_set_out_vol(s_spk, 100);
+    if (err != ESP_CODEC_DEV_OK) {
+        ESP_LOGE(TAG, "audio volume initialization failed (%d)", err);
         esp_codec_dev_close(s_spk);
         return false;
     }
+    s_master_gain = s_master_start = s_master_target = master_target();
+    s_master_fade = AMBIENCE_FADE;
 
     s_buf = heap_caps_malloc(MAX_SAMPLES * sizeof *s_buf,
                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -641,6 +667,15 @@ static void play_sfx(sfx_t sfx)
 
     if (n <= 0) return;
 
+    if (s_buf[n - 1] != 0) {
+        ESP_LOGI(TAG, "effect %d tail smoothed: %d -> 0", (int)sfx, s_buf[n - 1]);
+        int fade = AUDIO_SAMPLE_RATE * 5 / 1000;
+        if (fade > n) fade = n;
+        for (int i = 0; i < fade; i++)
+            s_buf[n - fade + i] = (int16_t)((int32_t)s_buf[n - fade + i] *
+                                          (fade - 1 - i) / fade);
+    }
     if (write_pcm(n))
-        ESP_LOGI(TAG, "effect %d: written samples=%d", (int)sfx, n);
+        ESP_LOGI(TAG, "effect %d: written samples=%d endpoints=%d/%d",
+                 (int)sfx, n, s_buf[0], s_buf[n - 1]);
 }

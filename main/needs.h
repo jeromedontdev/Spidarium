@@ -12,6 +12,8 @@
 
 /* Advance needs one logic tick. */
 void needs_tick(uint32_t now_ms, float dt_s);
+/* Pet swaps must not inherit another pet's fractional decay or timer phase. */
+void needs_reset_runtime(uint32_t now_ms);
 
 /* Apply decay for a span of real time that passed while the device was off or
  * asleep. `seconds` is clamped internally so a long absence cannot zero every

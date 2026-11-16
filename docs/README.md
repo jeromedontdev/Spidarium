@@ -13,19 +13,23 @@ Captured pet values can differ because the existing pet continues normal play.
 
 | Care HUD | Main menu |
 |---|---|
-| ![Care HUD with translucent identity panel and corner battery gauge](screenshots/device-hud.png) | ![Main menu with Backgrounds, Achievements, Settings and Prey Species](screenshots/device-main-menu.png) |
+| ![Care HUD with translucent identity panel and corner battery gauge](screenshots/device-hud.png) | ![Gameplay-first menu: Your Spider, Today, Training and Calendar](screenshots/device-main-menu.png) |
 
 | Settings | Playfield |
 |---|---|
-| ![Settings rows: WiFi, SD Card, About, Battery, Display, Sound, Auto Feed, Save Screenshot, Wipe Spider](screenshots/device-settings.png) | ![Playfield with no menus or HUD](screenshots/device-playfield.png) |
+| ![Settings: WiFi, SD Card, About and Battery; Display, Sound, Auto Feed and Wipe Spider follow](screenshots/device-settings.png) | ![Playfield with no menus or HUD](screenshots/device-playfield.png) |
 
 | Battery | Display |
 |---|---|
-| ![Battery status, runtime estimate and automatic power saving](screenshots/device-battery.png) | ![Brightness slider and screen rotation](screenshots/device-display.png) |
+| ![Battery status, runtime estimate and automatic power saving](screenshots/device-battery.png) | ![Brightness, rotation, Double-Tap Lights and independent Dim Enclosure](screenshots/device-display.png) |
 
 | Sound | Menu cards |
 |---|---|
 | ![Volume slider and sound on/off](screenshots/device-sound.png) | ![Silk-bordered menu cards and disabled previous-page control](screenshots/device-menu.png) |
+
+| Photo Album | Photo Storage |
+|---|---|
+| ![Photo Album contains Take Photo, Storage Status and Photo Storage](screenshots/device-photo-album.png) | ![Photo Storage lists saved images only](screenshots/device-photo-storage.png) |
 
 ## Play and progression
 

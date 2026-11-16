@@ -73,6 +73,19 @@
 #define POOP_DIRT_SPIDER        12
 #define POOP_DIRT_BUG           6
 
+/* The spider drops one of its own every so often, so the tank gets dirty from
+ * living in it rather than only from a catch. The interval is measured from the
+ * last dropping and only counts while the spider is awake and has something in
+ * it to pass: a spider that has not eaten for a while stops producing, which
+ * keeps an unattended tank from filling up with droppings. */
+#define SPIDER_POOP_MS          420000u  /* 7 min */
+/* Hunger below which the spider has nothing left to pass. */
+#define SPIDER_POOP_MIN_HUNGER  20
+
+/* How often Auto Clean sweeps the tank. Slower than the manual button so the
+ * player still sees the mess appear and can choose to deal with it themselves. */
+#define AUTO_CLEAN_MS           180000u  /* 3 min */
+
 #define MOOD_PENALTY_LOW       1      /* per low stat, per decay tick */
 #define MOOD_LOW_THRESHOLD     25
 
@@ -121,6 +134,9 @@
  * rather than a startle, so it reads as affection. */
 #define PET_REACT_PX           9
 #define PET_REACT_MS           520u
+/* A trick's own pose. Longer than a pet reaction so the player can see it, and
+ * matched to the 1800 ms spin window in behaviour.c. */
+#define TRICK_REACT_MS         1800u
 
 /* ------------------------------------------------------------------ */
 /* Daily loop                                                          */
@@ -175,6 +191,20 @@
 /* Energy at which a player-initiated sleep ends. Full, so the button always
  * has a visible payoff: press it and the spider sleeps until it is rested. */
 #define SLEEP_WAKE_ENERGY      100
+/* Energy at which an EXHAUSTION sleep ends.
+ *
+ * This must sit well above the temperament sleep_threshold (15..30) that put
+ * the spider to sleep, or the two rules fight each other. The old wake rule was
+ * `energy >= 95 || hunger < 25`, and the hunger half fired on the very tick the
+ * spider fell asleep: IDLE saw energy below the threshold and slept, SLEEP saw
+ * hunger below 25 and woke, and the pair repeated at the 20 Hz logic rate. The
+ * eyes are drawn black while asleep, so the visible symptom was a spider whose
+ * eyes flickered. A hysteresis band fixes it: sleep at the threshold, wake only
+ * once meaningfully rested. */
+#define SLEEP_AUTO_WAKE_ENERGY 60
+/* A starving spider may cut a sleep short, but only once it is past the
+ * threshold that put it to sleep -- otherwise the same loop returns. */
+#define SLEEP_HUNGER_WAKE      25
 
 /* How long the auto-hiding HUD chrome stays up after being revealed. */
 #define CHROME_HOLD_MS         5000u
@@ -270,6 +300,13 @@
 /* Wild prey: drifts in on its own, leaner and warier than what the player
  * introduces. This keeps the tank alive without feeding the spider for free. */
 #define WILD_SPAWN_MS          1200000u  /* 20 min */
+/* Auto Feed aims to keep hunger around this value. A catch is worth
+ * WILD_HUNGER_GAIN, so the spawn interval is scaled by how far below the target
+ * the spider has fallen. */
+#define AUTO_FEED_TARGET       50
+/* Floor on the derived interval, so a very hungry spider is not fed every tick
+ * and the tank does not fill with bugs. */
+#define AUTO_FEED_MIN_MS       60000u   /* 1 min */
 #define WILD_HUNGER_GAIN       8
 #define WILD_MOOD_GAIN         4
 #define WILD_FLEE_RADIUS_MULT  1.25f
@@ -499,6 +536,6 @@
 #define SAVE_MAGIC             0x53504944u   /* "SPID" */
 /* v3 uses two former padding bytes for opt-in automation. v2 progress is
  * retained, with both flags cleared; unsupported v1 layouts remain rejected. */
-#define SAVE_VERSION    14
+#define SAVE_VERSION    18
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

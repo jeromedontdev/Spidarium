@@ -96,3 +96,5 @@ void behaviour_pos(float *x, float *y);
 void behaviour_sync_position(void);
 bool behaviour_gift_visiting(void);
 bool behaviour_gift_test(void);
+bool behaviour_trick(unsigned kind);
+bool behaviour_trick_active(void);

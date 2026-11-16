@@ -1,5 +1,7 @@
 """Verify the browser save contract on hardware without changing pet progress."""
 import json
+import hashlib
+import os
 from pathlib import Path
 import sys
 import time
@@ -32,26 +34,44 @@ def export(connection, stored=False):
                               if line.startswith("SAVE HEX ")))
 
 
-def main():
+_backup = None
+
+
+def _exercise():
+    global _backup
     root = Path(__file__).resolve().parents[1]
     with serial.Serial(sys.argv[1] if len(sys.argv) > 1 else "COM7", 115200, timeout=0.2) as connection:
         connection.dtr = connection.rts = False
         if not wait_ready(connection):
             raise RuntimeError("Console not ready")
+        time.sleep(3)
         command(connection, "open main")  # Pause tank before comparing snapshots.
         schema_lines = command(connection, "save schema")
         schema = json.loads(next(line.removeprefix("SAVE SCHEMA ") for line in schema_lines
                                  if line.startswith("SAVE SCHEMA ")))
-        if schema["payloadSizes"] != [120, 268] or schema["headerSize"] != 12:
+        if schema["payloadSizes"] != [120, 3096] or schema["headerSize"] != 12:
             raise RuntimeError("Unexpected compiled save layout")
         (root / "site" / "save-schema.json").write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
         original = export(connection)
         if len(original) != 12 + int.from_bytes(original[8:12], "little"):
             raise RuntimeError("Incorrect current raw save size")
+        backup_dir = root / "release" / "device-backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_path = backup_dir / f"save-v17-{time.time_ns()}.bin"
+        with backup_path.open("xb") as backup_file:
+            backup_file.write(original)
+            backup_file.flush()
+            os.fsync(backup_file.fileno())
+        if backup_path.read_bytes() != original:
+            raise RuntimeError("Fresh task backup verification failed")
+        _backup = original
+        print(f"FRESH BACKUP: {backup_path} sha256={hashlib.sha256(original).hexdigest()}")
+        base = schema["decorTail"]["offset"]
+        companion = 12 + schema["companion"]["offset"]
         flags = [field for field in schema["fields"]
                  if field["name"] in {"auto_feed", "auto_hunt"}]
-        if schema["version"] != 14 or len(schema["fields"]) != 52 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
-            raise RuntimeError("Fields missing from compiled version 14 schema")
+        if schema["version"] != 18 or len(schema["fields"]) != 55 or len(flags) != 2 or any(field.get("minVersion") != 3 for field in flags):
+            raise RuntimeError("Fields missing from compiled version 18 schema")
         for field in flags:
             command(connection, f"set {field['name']} 1")
         command(connection, "reboot")
@@ -66,7 +86,7 @@ def main():
             invalid = bytearray(enabled)
             invalid[12 + field["offset"]] = 2
             command(connection, "save restore " + invalid.hex(), "ERR")
-        for offset, value in ((236, 0), (240, 48), (241, 3), (242, 5), (243, 5), (244, 3), (252, 2), (253, 2), (254, 101), (255, 10), (266, 48)):
+        for offset, value in ((236, 0), (240, 48), (241, 3), (242, 5), (243, 5), (244, 3), (252, 2), (253, 2), (254, 101), (255, 10), (266, 48), (267, 2)):
             invalid = bytearray(enabled)
             invalid[12 + offset] = value
             command(connection, "save restore " + invalid.hex(), "ERR")
@@ -80,9 +100,21 @@ def main():
         preferences[12 + 260:12 + 264] = (0xffffffff).to_bytes(4, "little")
         preferences[12 + 264:12 + 266] = (65535).to_bytes(2, "little")
         preferences[12 + 266] = 47
+        preferences[12 + 267] = 0
         preferences[12 + 252:12 + 254] = bytes((0, 1))
         preferences[12 + 254:12 + 256] = bytes((35, 9))
-        preferences = preferences[:280]
+        preferences = preferences[:12 + base]
+        preferences[companion:companion + 592] = bytes(592)
+        preferences[companion:companion + 8] = (0xffffffff).to_bytes(4, "little") + (0xfffff).to_bytes(4, "little")
+        preferences[companion + 8:companion + 16] = bytes((1, 255, 2, 0, 4, 35, 1, 1))
+        preferences[companion + 16 + 11] = 9
+        preferences[companion + 28 + 35] = 8
+        preferences[companion + 64 + 2] = 7
+        preferences[companion + 67:companion + 76] = bytes((11, 35, 2, 1, 1, 1, 4, original[12 + 46], original[12 + 47]))
+        preferences[companion + 80:companion + 88] = (123).to_bytes(4, "little") + bytes((2, 35, 1, 1))
+        life = 12 + schema["life"]["offset"]
+        preferences[life + 8:life + 14] = bytes((2, 3, 5, 17, 0, 1))
+        preferences[life + 15] = 1
         extra_count = 260
         for i in range(12):
             offset = 12 + 164 + i * 6
@@ -93,13 +125,37 @@ def main():
                                (60 + (i % 50) * 7).to_bytes(2, "little") +
                                (80 + (i % 50) * 5).to_bytes(2, "little"))
         preferences[8:12] = (len(preferences) - 12).to_bytes(4, "little")
-        for offset in (12 + 165, 12 + 269):
+        for offset in (12 + 165, 12 + base + 1):
             invalid = bytearray(preferences)
             invalid[offset] = 3
             command(connection, "save restore " + invalid.hex(), "ERR")
+        for offset, value in ((8, 6), (11, 31), (12, 2), (13, 2), (14, 4), (15, 2)):
+            invalid = bytearray(preferences)
+            invalid[life + offset] = value
+            command(connection, "save restore " + invalid.hex(), "ERR")
+        legacy16 = bytearray(preferences)
+        legacy16[4:6] = (16).to_bytes(2, "little")
+        command(connection, "save restore " + legacy16.hex(), "ERR")
+        legacy16[life + 15] = 0
+        command(connection, "save restore " + legacy16.hex())
+        command(connection, "reboot")
+        time.sleep(3)
+        if not wait_ready(connection):
+            raise RuntimeError("Legacy v16 settings did not reboot")
+        command(connection, "open main")
+        if export(connection)[life + 15] != 0:
+            raise RuntimeError("Legacy v16 migration disabled the lighting gesture")
         legacy = bytearray(preferences)
+        legacy = legacy[:12 + 268] + legacy[12 + base:]
         legacy[4:6] = (12).to_bytes(2, "little")
+        legacy[8:12] = (len(legacy) - 12).to_bytes(4, "little")
         command(connection, "save restore " + legacy.hex(), "ERR")
+        for offset, value in ((8, 5), (9, 0), (10, 4), (13, 36), (70, 65), (71, 3),
+                              (72, 2), (73, 5), (74, 3), (75, 2),
+                              (84, 9), (85, 36), (86, 2), (87, 2)):
+            invalid = bytearray(preferences)
+            invalid[companion + offset] = value
+            command(connection, "save restore " + invalid.hex(), "ERR")
         command(connection, "save restore " + preferences.hex())
         command(connection, "reboot")
         time.sleep(2)
@@ -116,9 +172,9 @@ def main():
         command(connection, "decor block 271")
         command(connection, "decor place 67 200 200")
         edited = export(connection)
-        if int.from_bytes(edited[268:272], "little") != 261 or len(edited) != 280 + 261 * 6:
+        if int.from_bytes(edited[268:272], "little") != 261 or len(edited) != 12 + base + 261 * 6:
             raise RuntimeError("Runtime decoration growth did not persist every record")
-        last_old = 280 + 259 * 6
+        last_old = 12 + base + 259 * 6
         if edited[last_old + 2:last_old + 6] != (330).to_bytes(2, "little") + (350).to_bytes(2, "little"):
             raise RuntimeError("Moving a decoration beyond uint8 slots failed")
         command(connection, "reboot")
@@ -175,7 +231,29 @@ def main():
             if original[offset:offset + length] != restored[offset:offset + length]:
                 raise RuntimeError("Reboot changed restored field: " + field["name"])
         command(connection, "open close")
-    print("WEB DEVICE: PASS - v14/52-field schema, track9 and three decor paths across inline/tail reboot, legacy compatibility rejection, variable decor, high ownership and borders, music/lights, invalid fields, exact restore, overwrite guard, reboot")
+def main():
+    global _backup
+    _backup = None
+    try:
+        _exercise()
+    finally:
+        if _backup is not None:
+            port = sys.argv[1] if len(sys.argv) > 1 else "COM7"
+            with serial.Serial(port, 115200, timeout=0.2) as connection:
+                connection.dtr = connection.rts = False
+                if not wait_ready(connection):
+                    raise RuntimeError("Cannot restore fresh task backup; use printed backup path")
+                time.sleep(3)
+                command(connection, "open main")
+                command(connection, "save restore " + _backup.hex())
+                if export(connection, stored=True) != _backup:
+                    raise RuntimeError("Fresh task backup restore mismatch")
+                command(connection, "reboot")
+                time.sleep(2)
+                if not wait_ready(connection):
+                    raise RuntimeError("Fresh task backup reboot failed")
+                print("FRESH BACKUP: restored byte-for-byte; reboot complete")
+    print("WEB DEVICE: PASS - v17/53-field schema, life progress/cooldown/weather, saved lighting gesture, strict v16 migration, USB chime preference, companion preferences/requests/pins, track9, decor paths, legacy rejection, exact restore and reboot")
 
 
 if __name__ == "__main__":

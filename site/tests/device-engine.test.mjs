@@ -81,7 +81,7 @@ test('browser object-score callback is compatible and preserves setup/theme/colo
 });
 test('native automation has padding-stable ABI, v2 migration, and gated entries',async()=>{
   const [header,config,save,behaviour,prey]=await Promise.all(['game.h','game_config.h','save.c','behaviour.c','prey.c'].map(native));
-  assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 268/);
+  assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 3100/);
   assert.match(header,/offsetof\(game_state_t, auto_feed\) == 129/);
   assert.match(header,/offsetof\(game_state_t, auto_hunt\) == 130/);
   assert.match(header,/offsetof\(game_state_t, volume\) == 131/);
@@ -89,16 +89,18 @@ test('native automation has padding-stable ABI, v2 migration, and gated entries'
   assert.match(header,/offsetof\(game_state_t, daily_day\) == 136/);
   assert.match(header,/offsetof\(game_state_t, decor_owned\) == 160/);
   assert.match(header,/offsetof\(game_state_t, decor\) == 164/);
-  assert.match(config,/#define SAVE_VERSION\s+14/);
+  assert.match(config,/#define SAVE_VERSION\s+18/);
   assert.match(save,/version == 2\)[\s\S]*?state->auto_feed = 0;[\s\S]*?state->auto_hunt = 0;/);
-  assert.match(save,/migrate_automation\(&state, header\.version\)/);
-  assert.match(save,/state\.auto_feed = 0xA5;[\s\S]*?state\.auto_hunt = 0x5A;[\s\S]*?migrate_automation\(&state, header\.version\)/);
-  assert.match(save,/hdr\.version >= 3 && \(state\.auto_feed > 1 \|\| state\.auto_hunt > 1\)/);
+  assert.match(save,/migrate_automation\(state, header\.version\)/);
+  assert.match(save,/state->auto_feed = 0xA5;[\s\S]*?state->auto_hunt = 0x5A;[\s\S]*?migrate_automation\(state, header\.version\)/);
+  assert.match(save,/hdr\.version >= 3 && \(state->auto_feed > 1 \|\| state->auto_hunt > 1\)/);
   assert.match(behaviour,/if \(!g\.auto_hunt && \(g\.state == SPIDER_STALK \|\| g\.state == SPIDER_AIM\)\)/);
   assert.equal((behaviour.match(/if \(g\.auto_hunt && prey_count\(\) > 0/g)??[]).length,3);
   assert.match(behaviour,/else if \(g\.auto_hunt && prey_count\(\) > 0/);
   assert.match(prey,/if \(!g\.auto_feed\) \{[\s\S]*?wild_seeded = false;/);
-  assert.match(prey,/WILD_SPAWN_MS \/ \(1u \+ gift->wild_spawn_bonus\)/);
+  /* Auto Feed now derives its interval from the hunger deficit so the tank
+   * hovers near AUTO_FEED_TARGET instead of emptying on a fixed timer. */
+  assert.match(prey,/AUTO_FEED_TARGET - g\.hunger/);
   assert.match(prey,/auto feed=%u \(manual feed unchanged\)/);
   assert.match(behaviour,/auto hunt=%u \(manual aim unchanged\)/);
   assert.equal(CONFIG.LOGIC_HZ,20);
@@ -109,7 +111,7 @@ test('serial schema producer emits both automation offsets and minVersion3',asyn
   assert.match(console,/\{"auto_hunt", "u8", offsetof\(game_state_t, auto_hunt\), 0, 3\}/);
   assert.match(console,/\{"volume", "u8", offsetof\(game_state_t, volume\), 0, 4\}/);
   assert.match(console,/minVersion\\":%u/);
-  assert.match(console,/SCHEMA_CAP = 5120/);
+  assert.match(console,/SCHEMA_CAP = 7168/);
   assert.match(console,/\{"decor_owned", "u32", offsetof\(game_state_t, decor_owned\), 0, 8\}/);
   assert.match(console,/\{"decor", "decor\[12\]", offsetof\(game_state_t, decor\), sizeof g\.decor, 8\}/);
 });

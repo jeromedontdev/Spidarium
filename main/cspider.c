@@ -105,6 +105,13 @@ static cspider_emote_t s_emote;
 static bool     s_pet_reacting;
 static uint32_t s_pet_react_until;
 
+/* Trick overlay. Wave and Bow need a visible pose of their own; Spin is carried
+ * by the heading rotation in behaviour.c. Without this, Wave and Bow both fell
+ * through to the same idle crouch and the training menu looked broken. */
+static bool     s_trick_reacting;
+static uint32_t s_trick_react_until;
+static uint8_t  s_trick_react_kind;
+
 /* Gait, carried over from the widget renderer. */
 typedef struct {
     float phase, x, y;
@@ -497,6 +504,19 @@ void cspider_pet_react(void)
     s_pet_react_until = lv_tick_get() + PET_REACT_MS;
 }
 
+/* Trick overlay. kind 0 = Wave, 1 = Spin, 2 = Bow.
+ *
+ * Spin is already visible: behaviour.c rotates the heading through a full turn.
+ * Wave and Bow had no visual at all, so training them looked like nothing
+ * happened. Wave lifts the front pair and bounces; Bow dips the body forward. */
+void cspider_trick_react(unsigned kind)
+{
+    if (kind > 2) return;
+    s_trick_reacting = true;
+    s_trick_react_kind = (uint8_t)kind;
+    s_trick_react_until = lv_tick_get() + TRICK_REACT_MS;
+}
+
 bool cspider_hit(int32_t x, int32_t y)
 {
     /* The body is two overlapping circles. Test both, plus a little slack so a
@@ -589,6 +609,29 @@ void cspider_render(uint32_t now_ms)
             float t = (float)elapsed / (float)PET_REACT_MS;
             lift = -(int32_t)((float)PET_REACT_PX * sinf(t * PI_F));
             emote = CSP_EMOTE_HAPPY;
+        }
+    }
+
+    /* --- trick overlay ----------------------------------------------
+     * Wave lifts the front pair and bobs; Bow dips the body forward. Spin needs
+     * nothing here because behaviour.c turns the heading through a full circle,
+     * which the renderer already follows. */
+    if (s_trick_reacting) {
+        uint32_t elapsed = now_ms - (s_trick_react_until - TRICK_REACT_MS);
+        if (elapsed >= TRICK_REACT_MS) {
+            s_trick_reacting = false;
+        } else {
+            float t = (float)elapsed / (float)TRICK_REACT_MS;
+            if (s_trick_react_kind == 0) {
+                /* Wave: two bobs, front legs raised by the happy emote. */
+                lift -= (int32_t)((float)PET_REACT_PX * 0.6f * fabsf(sinf(t * 2.0f * PI_F)));
+                emote = CSP_EMOTE_HAPPY;
+            } else if (s_trick_react_kind == 2) {
+                /* Bow: a forward dip that eases in and out. */
+                sy *= 1.0f - 0.18f * sinf(t * PI_F);
+                sx *= 1.0f + 0.10f * sinf(t * PI_F);
+                emote = CSP_EMOTE_HAPPY;
+            }
         }
     }
 

@@ -1,3 +1,8 @@
+import { companionDefaults, companionValid, companionTick, companionEvent } from './companion.js?v=1.1.31';
+export * from './companion.js?v=1.1.31';
+import { lifeDefaults, lifeValid, lifeTick, lifeContext,
+  lifeRetire as retireLifePet, lifeResume as resumeLifePet } from './life.js?v=1.1.31';
+export * from './life.js?v=1.1.31';
 /**
  * Native flat persistent fields plus browser-only runtime `_engine`, `prey`,
  * `poop`, and `spider` rendering view. Coordinates are native 480x480 pixels.
@@ -242,6 +247,9 @@ export function needsAgeScale(s){
 }
 function speciesId(v){return Number.isInteger(v)&&SPECIES[v]?v:PREY.indexOf(v==='fruit fly'?'fruitfly':v);}
 function runtime(s){return s._engine;}
+const companionNow = s => services.get(s)?.now?.() ?? Date.now();
+const companionEnsure = s => companionTick(s,companionNow(s));
+const companionNote = (s,kind,value=255) => companionEvent(s,kind,value,companionNow(s));
 export function giftBonus(s) {
   const b=Object.fromEntries(bonusKeys.map(k=>[k,k==='wild_spawn_bonus'?0:1]));
   if(!s.gift.used)return b;
@@ -265,7 +273,7 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:14,hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+  const s={version:18,life:lifeDefaults(),companion:companionDefaults(),hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
     xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
@@ -276,7 +284,8 @@ export function freshState(options={}) {
     power_mode:0,screen_timeout:3,deep_sleep_after:0,rtc_wake:0,
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
     daily_override:0xFFFFFFFF,pet_xp_day:0xFFFFFFFF,pet_xp_today:0,
-    decor_owned:0,decor_owned_extra:0,music_enabled:1,lights_dimmed:0,music_volume:100,music_track:0,
+    decor_owned:0,decor_owned_extra:0,music_enabled:1,lights_dimmed:0,music_volume:100,music_track:0,usb_sounds:1,
+    decor_locked:0,auto_clean:0,
     decor:Array.from({length:DECOR_SLOTS},()=>({kind:DECOR_EMPTY,blocking:0,x:0,y:0})),
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
@@ -318,7 +327,22 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18].includes(raw.version))fail('unsupported version');
+  if(raw.version<17 && plain(raw.life)) {
+    const life={...raw.life};
+    if(!Object.hasOwn(life,'reserved') && !Object.hasOwn(life,'light_gesture_disabled'))
+      fail('life lighting byte is missing');
+    if(Object.hasOwn(life,'reserved') && life.reserved!==0)fail('life reserved byte is invalid');
+    if(life.light_gesture_disabled!==undefined && life.light_gesture_disabled!==0)
+      fail('legacy light gesture flag is invalid');
+    delete life.reserved;
+    life.light_gesture_disabled=0;
+    raw={...raw,life};
+  }
+  if(raw.version>=16&&!lifeValid(raw.life))fail('life is invalid');
+  if(raw.life!==undefined&&!lifeValid(raw.life))fail('life is invalid');
+  if(raw.version>=15&&!companionValid(raw.companion))fail('companion is invalid');
+  if(raw.companion!==undefined&&!companionValid(raw.companion))fail('companion is invalid');
   const legacy=raw.version<3;
   const required=legacy?['hunger','mood','energy','hygiene','xp','silk']:
     ['hunger','mood','energy','hygiene','xp','silk','name','level','stage','age_ticks','days_lived',
@@ -339,7 +363,7 @@ export function validateProgress(raw) {
   number('streak',0,65535);number('best_streak',0,65535);
   for(const key of ['colour','bodyColour'])number(key,0,5);
   for(const key of ['pupil_colour','leg_colour','fang_colour','eyeColour','legColour','fangColour'])number(key,0,8);
-  for(const key of ['auto_feed','auto_hunt','sick'])number(key,0,1);
+  for(const key of ['auto_feed','auto_hunt','sick','decor_locked','auto_clean'])number(key,0,1);
   for(const key of ['autoFeed','autoHunt','paused','setup_complete','sound','charging'])
     if(Object.hasOwn(raw,key)&&typeof raw[key]!=='boolean')fail(`${key} must be boolean`);
   if(Object.hasOwn(raw,'muted')&&![0,1,false,true].includes(raw.muted))fail('muted must be boolean or 0/1');
@@ -357,6 +381,10 @@ export function validateProgress(raw) {
   }
   number('music_enabled',0,1);number('lights_dimmed',0,1);
   number('music_volume',0,100);number('music_track',0,raw.version>=14?9:2);
+  if(raw.version>=15){
+    if(!Object.hasOwn(raw,'usb_sounds'))fail('missing usb_sounds');
+    number('usb_sounds',0,1);
+  }
   number('power_mode',0,2);number('screen_timeout',0,4);
   number('deep_sleep_after',0,4);number('rtc_wake',0,2);
   if(raw.version>=9&&(!Number.isInteger(raw.backgrounds_owned)||
@@ -423,7 +451,9 @@ export function validateProgress(raw) {
 export function restoreSim(raw,options={}) {
   const s=freshState(options);
   if(raw===null||raw===undefined)return s;
-  validateProgress(raw);
+  raw=validateProgress(raw);
+  if(raw.version>=16)s.life=JSON.parse(JSON.stringify(raw.life));
+  if(raw.version>=15)s.companion=JSON.parse(JSON.stringify(raw.companion));
   for(const k of ['hunger','mood','energy','hygiene','bond'])if(Number.isFinite(raw[k]))s[k]=Math.trunc(clamp(raw[k]));
   for(const k of ['age_ticks','meals','pets','cleans','plays','xp','seed','achievements','days_lived','last_molt_day','silk','gifts_owned','taps','visits'])
     s[k]=integer(raw[k],s[k]);
@@ -469,6 +499,7 @@ export function restoreSim(raw,options={}) {
     s.music_volume=raw.music_volume??100;
     s.music_track=raw.music_track??0;
   }
+  if(raw.version>=15)s.usb_sounds=raw.usb_sounds;
   if(raw.version>=8&&Array.isArray(raw.decor))
     s.decor=Array.from({length:raw.decor.length},(_,i)=>{
       const item=raw.decor[i];
@@ -488,6 +519,8 @@ export function restoreSim(raw,options={}) {
   if(Number.isFinite(raw.last_seen))s.last_seen=integer(raw.last_seen,0,U32);
   s.auto_feed=raw.version>=3&&(raw.auto_feed===1||raw.autoFeed===true)?1:0;
   s.auto_hunt=raw.version>=3&&(raw.auto_hunt===1||raw.autoHunt===true)?1:0;
+  s.decor_locked=raw.version>=18&&raw.decor_locked===1?1:0;
+  s.auto_clean=raw.version>=18&&raw.auto_clean===1?1:0;
   if(Array.isArray(raw.owned))for(const id of raw.owned)if(Number.isInteger(id)&&GIFTS[id])markGiftOwned(s,id);
   if(raw.gift&&typeof raw.gift==='object'&&raw.gift.used&&GIFTS[raw.gift.kind])
     s.gift={kind:raw.gift.kind,used:1,variant:integer(raw.gift.variant,0,255),
@@ -519,7 +552,8 @@ export function addXP(s,n){
 export function awardAchievement(s,id){
   const a=typeof id==='number'?ACHIEVEMENTS.find(a=>a.bit===id):ACHIEVEMENTS.find(a=>a.id===id);
   if(!a||s.achievements&a.bit)return false;
-  s.achievements|=a.bit;addXP(s,a.xp);addSilk(s,a.silk);return true;
+  companionEnsure(s);
+  s.achievements|=a.bit;addXP(s,a.xp);addSilk(s,a.silk);companionEnsure(s);return true;
 }
 export function checkAchievements(s){
   const conditions={ten_cleans:s.cleans>=10,ten_plays:s.plays>=10,twenty_five_meals:s.meals>=25,
@@ -547,7 +581,14 @@ export function spawnPrey(s,id=chooseSpecies(s),wild=false) {
   for(let n=0;n<12;n++){p.x=34+roll(s,412);p.y=34+roll(s,412);if(Math.hypot(p.x-s.spider_x,p.y-s.spider_y)>90)break;}
   s.prey[slot]=p;return true;
 }
-export function feed(s,id){return spawnPrey(s,id??chooseSpecies(s),false);}
+export function feed(s,id){
+  /* Feeding wakes a sleeping spider. Prey only becomes food when the spider
+   * catches it, so dropping a bug in for a spider that is asleep did nothing
+   * visible: the player paid a tap, the bug wandered, and the spider stayed
+   * curled up. That is the "stuck asleep so I cannot feed them" report. */
+  if(s.state===6){const r=runtime(s);r.sleep_forced=false;setState(s,0);}
+  return spawnPrey(s,id??chooseSpecies(s),false);
+}
 /** A bug left in the tank leaves a small pale speckle rather than a dropping:
  * frass, not a meal's worth of waste, so it is worth less dirt. Same slot pool
  * and lifetime as a dropping. */
@@ -555,6 +596,16 @@ export function addBugPoop(s,x,y) {
   const r=runtime(s);
   const poop={x:round(clamp(x,34,446)),y:round(clamp(y,34,446)),
     expires:r.now_ms+C.POOP_LIFETIME_MS,dirt:C.POOP_DIRT_BUG,bug:true};
+  if(s.poop.length>=C.MAX_POOP)s.poop.shift();
+  s.poop.push(poop);
+  return poop;
+}
+/** A spider dropping. Same slot pool and lifetime as a bug speckle, but worth a
+ * full meal's dirt. */
+export function addPoop(s,x,y) {
+  const r=runtime(s);
+  const poop={x:round(clamp(x,34,446)),y:round(clamp(y,34,446)),
+    expires:r.now_ms+C.POOP_LIFETIME_MS,dirt:C.POOP_DIRT_SPIDER,bug:false};
   if(s.poop.length>=C.MAX_POOP)s.poop.shift();
   s.poop.push(poop);
   return poop;
@@ -676,9 +727,12 @@ export function buyTreat(s,kind){
   const t=TREATS[kind];
   if(!t)return false;
   if(s.silk<t.cost)return event(s,'rejected',{reason:'not enough Silk'});
+  companionEnsure(s);
+  const positive=s[t.field]<100||(t.secondary&&s[t.secondary]<100);
   s.silk-=t.cost;
   s[t.field]=clamp(s[t.field]+t.gain);
   if(t.secondary)s[t.secondary]=clamp(s[t.secondary]+t.bonus);
+  if(positive)companionNote(s,5,kind);
   return true;
 }
 /** Placeable decor. Backgrounds are ground texture only; everything that sits
@@ -789,6 +843,8 @@ export function placeDecor(s,kind,x,y){
   const d=DECOR_KINDS[kind];
   if(!d)return -1;
   if(!decorOwned(s,kind))return -1;
+  if(s.decor_locked)return -1;
+  if(preyCount(s)>0)return -1;
   let slot=s.decor.findIndex(item=>item.kind===DECOR_EMPTY);
   if(slot<0)slot=s.decor.length;
   const r=d.radius;
@@ -800,6 +856,8 @@ export function placeDecor(s,kind,x,y){
  * position changes, clamped inside the playfield. */
 export function moveDecor(s,slot,x,y){
   if(slot<0||slot>=s.decor.length||s.decor[slot].kind===DECOR_EMPTY)return false;
+  if(s.decor_locked)return false;
+  if(preyCount(s)>0)return false;
   const d=DECOR_KINDS[s.decor[slot].kind];
   if(!d)return false;
   const r=d.radius;
@@ -870,7 +928,7 @@ export function decorNearestBlocking(s,x,y,maxDistance){
     const dx=item.x-x,dy=item.y-y,d2=dx*dx+dy*dy;
     if(d2<best){best=d2;found=item;}
   }
-  return found?{x:found.x,y:found.y,distance:Math.sqrt(best)}:null;
+  return found?{x:found.x,y:found.y,kind:found.kind,distance:Math.sqrt(best)}:null;
 }
 /** Petting: a tap that lands on the spider's body. Returns true when the tap was
  * consumed as a pet. The cooldown exists because a tap is a cheap gesture:
@@ -884,6 +942,7 @@ export function pet(s,x,y){
   // legitimately read 0 early in a session, and then the guard would never
   // engage and a held finger could farm mood.
   if(r.petted_once&&now-r.last_pet<C.PET_COOLDOWN_MS)return false;
+  companionEnsure(s);
   r.petted_once=true;
   r.last_pet=now;
   s.mood=clamp(s.mood+C.PET_MOOD_GAIN);
@@ -900,6 +959,7 @@ export function pet(s,x,y){
   setState(s,7);r.oneshot_until=now+180;
   r.pet_react_until=now+C.PET_REACT_MS;
   awardAchievement(s,'first_pet');
+  companionNote(s,1);
   syncView(s);
   return true;
 }
@@ -910,9 +970,11 @@ export function care(s,action) {
     // The guard is "is there anything to do", not "is there XP to pay": a tank
     // holding only bugs scores 0 XP but Clean still shoos them out.
     if(!cleanNeeded(s))return false;
+    companionEnsure(s);
     const xp=cleanReward(s);
     s.hygiene=C.CLEAN_HYGIENE_SET;s.cleans++;s.poop=[];s.prey=[];
     addXP(s,xp);awardAchievement(s,'first_clean');
+    companionNote(s,6);
   }else if(action==='play'){
     s.mood=clamp(s.mood+10);s.energy=clamp(s.energy-5);s.plays++;
     setState(s,7);r.oneshot_until=r.now_ms+180;
@@ -956,10 +1018,13 @@ export function visitGift(s){
 }
 export function minigameReward(s,kind,score) {
   // ui_menu callback takes score only; accept (state, score) too.
+  const completedKind=score!==undefined&&Number.isInteger(kind)&&kind>=0&&kind<3?kind:null;
   if(score===undefined)score=kind;
   if(score&&typeof score==='object')score=score.score;
   score=integer(score,0,8);
+  companionEnsure(s);
   const before=s.xp;care(s,'play');addXP(s,2+score*4);addSilk(s,score*3);
+  if(completedKind!==null)companionNote(s,2,completedKind);
   return {xp:s.xp-before,silk:score*3,score};
 }
 export function aimAvailable(s){return ![4,5,6,8].includes(s.state)&&!runtime(s).pounce&&preyCount(s)>0&&s.hunger<95;}
@@ -1017,6 +1082,7 @@ function launch(s,x,y,player) {
 export function seekTo(s,x,y){setState(s,1);runtime(s).target={x:clamp(x,34,446),y:clamp(y,34,446)};}
 export function noteTap(s,x,y){if(x!==s.spider_x||y!==s.spider_y)runtime(s).tap_heading=Math.atan2(y-s.spider_y,x-s.spider_x);}
 export function resolvePounce(s,player=runtime(s).pounce?.player??true) {
+  companionEnsure(s);
   const near=nearest(s);if(!near)return event(s,'miss',{reason:'no prey'});
   const {prey:p,d}=near,edge=Math.max(0,d-22),b=giftBonus(s),r=runtime(s);
   if(edge>CONFIG.CATCH_GOOD_PX){s.streak=0;addXP(s,1);return event(s,'miss',{reason:'out of reach',distance:d});}
@@ -1041,10 +1107,9 @@ export function resolvePounce(s,player=runtime(s).pounce?.player??true) {
   awardAchievement(s,'first_meal');awardAchievement(s,'first_hunt');
   if(s.meals>=10)awardAchievement(s,'ten_meals');
   s.bond=clamp(s.bond+(perfect?4:2));s.hygiene=clamp(s.hygiene-12);
-  const poop={x:s.spider_x+roll(s,17)-8,y:s.spider_y+roll(s,17)-8,expires:r.now_ms+600000,
-    dirt:C.POOP_DIRT_SPIDER,bug:false};
-  if(s.poop.length>=8)s.poop.shift();s.poop.push(poop);
+  addPoop(s,s.spider_x+roll(s,17)-8,s.spider_y+roll(s,17)-8);
   s.lastEvent={type:'catch',at:r.now_ms,quality:perfect?'perfect':'good',probability,distance:d,xp,silk:perfect?5:3,species:p.key};
+  if(player)companionNote(s,3,p.species);
   return true;
 }
 export function recomputeMood(s) {
@@ -1084,6 +1149,28 @@ function needsTick(s) {
     const n=Math.trunc(r[`${key}_acc`]);r[`${key}_acc`]=f32(r[`${key}_acc`]-n);s[key]=clamp(s[key]-n);
   }
   recomputeMood(s);
+  /* The spider's own droppings. A catch used to be the only source, so a spider
+   * that was fed and left alone never dirtied its tank. It now drops one every
+   * SPIDER_POOP_MS while awake and still holding something to pass. */
+  if(s.state!==6&&s.hunger>=20){
+    if(!r.poop_at)r.poop_at=now+420000;
+    else if(now>=r.poop_at){
+      r.poop_at=now+420000;
+      addPoop(s,s.spider_x+roll(s,17)-8,s.spider_y+roll(s,17)-8);
+    }
+  } else if(r.poop_at) r.poop_at=now+420000;
+  /* Auto Clean: opt-in, and deliberately not a second Clean button. It sweeps
+   * droppings but pays no XP and no achievement, so leaving it on is a
+   * convenience rather than a way to farm the manual action. It also leaves
+   * live prey alone: an automatic sweep that removed a bug the player had just
+   * fed would fight the Feed button. */
+  if(s.auto_clean&&((s.poop?.length??0)>0||s.hygiene<C.CLEAN_HYGIENE_SET)){
+    if(!r.auto_clean_at)r.auto_clean_at=now+180000;
+    else if(now>=r.auto_clean_at){
+      r.auto_clean_at=now+180000;
+      s.hygiene=C.CLEAN_HYGIENE_SET;s.poop.length=0;
+    }
+  } else r.auto_clean_at=0;
   if((s.hunger<10||s.mood<10)&&!s.sick){s.sick=1;setState(s,9);}
   else if(s.sick&&s.hunger>25&&s.mood>25){s.sick=0;setState(s,0);awardAchievement(s,'survived_sick');}
 }
@@ -1166,7 +1253,7 @@ function behaviourTick(s,dt){
         setState(s,1);const want=Math.atan2(s.gift.y-r.py,s.gift.x-r.px);
         s.spider_heading=wrap(s.spider_heading+wrap(want-s.spider_heading)*.15);advance(s,55*scale,dt);
       }else if(!r.gift_hold_until){setState(s,0);r.gift_hold_until=now+3000;}
-      else if(now>=r.gift_hold_until){s.mood=clamp(s.mood+4);s.energy=clamp(s.energy+4);s.visits++;r.gift_visiting=false;r.gift_visit_at=now+60000;}
+      else if(now>=r.gift_hold_until){s.mood=clamp(s.mood+4);s.energy=clamp(s.energy+4);s.visits++;companionNote(s,4,s.gift.kind);r.gift_visiting=false;r.gift_visit_at=now+(s.companion.favorite_gift===s.gift.kind?45000:60000);}
       if(now>=r.gift_visit_end){r.gift_visiting=false;r.gift_visit_at=now+60000;}
       return;
     }
@@ -1176,11 +1263,16 @@ function behaviourTick(s,dt){
       /* A player-initiated sleep holds until the spider is actually rested,
        * with a 6 s floor so the button always visibly works. Waking at a fixed
        * 95 meant a spider at 80 energy slept for six seconds and stood up
-       * again, which is why the button read as pointless. */
+       * again, which is why the button read as pointless.
+       *
+       * An exhaustion sleep wakes at 60, well above the temperament threshold
+       * that caused it. Waking at the same value the spider fell asleep at made
+       * the two rules oscillate every tick, and because the eyes are drawn
+       * black while asleep the symptom was a spider whose eyes flickered. */
       if(r.sleep_forced){
         if(now-r.sleep_start>=6000&&s.energy>=100){r.sleep_forced=false;setState(s,0);}
       }
-      else if(s.sick?s.energy>=30:s.energy>=95||s.hunger<25)setState(s,0);
+      else if(s.sick?s.energy>=30:s.energy>=60||(s.hunger<25&&s.energy>=t.sleep_threshold+5))setState(s,0);
       break;
     case 5:if(now>=s.eat_until_ms)setState(s,0);break;
     case 8:if(now>=r.oneshot_until)setState(s,0);break;
@@ -1190,7 +1282,22 @@ function behaviourTick(s,dt){
       const dx=p.x-s.spider_x,dy=p.y-s.spider_y,d=Math.hypot(dx,dy);
       if(d>2){s.spider_heading=Math.atan2(dy,dx);const step=Math.min(d,260*dt);
         s.spider_x=Math.trunc(s.spider_x+dx/d*step);s.spider_y=Math.trunc(s.spider_y+dy/d*step);r.px=s.spider_x;r.py=s.spider_y;}
-      if(now>=p.end){s.spider_x=p.x;s.spider_y=p.y;r.px=p.x;r.py=p.y;resolvePounce(s,p.player);r.pounce=null;if(s.state===4)setState(s,0);}
+      if(now>=p.end){
+        /* A pounce is ballistic, so it can land inside a solid item. The walk
+         * path refuses those steps, but the landing was written straight into
+         * the position, which is why the spider appeared to stand on top of
+         * blocking decor. Push the landing back out first. */
+        let lx=p.x,ly=p.y;
+        if(decorBlocksPoint(s,lx,ly)){
+          const near=decorNearestBlocking(s,lx,ly,200);
+          if(near){
+            const ax=lx-near.x,ay=ly-near.y,ad=Math.hypot(ax,ay)||1;
+            const rad=(DECOR_KINDS[near.kind]?.radius??16)+4;
+            lx=round(near.x+ax/ad*rad);ly=round(near.y+ay/ad*rad);
+          }
+        }
+        s.spider_x=lx;s.spider_y=ly;r.px=lx;r.py=ly;resolvePounce(s,p.player);r.pounce=null;if(s.state===4)setState(s,0);
+      }
       break;
     }
     case 2:{
@@ -1242,8 +1349,21 @@ function behaviourTick(s,dt){
 function automationTick(s){
   const r=runtime(s),now=r.now_ms;
   if(!s.auto_feed){r.wild_seeded=false;r.last_wild=now;r.last_visitor_day=s.days_lived;return;}
-  if(!r.wild_seeded){r.wild_seeded=true;r.last_wild=now;if(!preyCount(s))spawnPrey(s,chooseSpecies(s),true);}
-  else if(!preyCount(s)&&now-r.last_wild>=1200000/(1+giftBonus(s).wild_spawn_bonus)){r.last_wild=now;spawnPrey(s,chooseSpecies(s),true);}
+  /* Auto Feed holds hunger near 50 rather than topping the tank up on a fixed
+   * timer. The old rule spawned one wild bug every 20 min and only when the
+   * tank was empty; hunger decays at 3/min, so 20 minutes cost 60 points and
+   * the spider was permanently starving. The interval is now derived from the
+   * gap between the current hunger and the target. */
+  if(!r.wild_seeded){r.wild_seeded=true;r.last_wild=now;
+    /* Turning Auto Feed on puts a bug in straight away, so the switch has a
+     * visible effect even when the spider is not hungry yet. */
+    if(!preyCount(s))spawnPrey(s,chooseSpecies(s),true);}
+  else if(!preyCount(s)&&s.hunger<=50){
+    const deficit=50-s.hunger;
+    let wait=Math.trunc(1200000*8/(deficit+8)/(1+giftBonus(s).wild_spawn_bonus));
+    if(wait<60000)wait=60000;
+    if(now-r.last_wild>=wait){r.last_wild=now;spawnPrey(s,chooseSpecies(s),true);}
+  } else if(preyCount(s)) r.last_wild=now;
   if(s.days_lived!==r.last_visitor_day){
     r.last_visitor_day=s.days_lived;
     if(s.days_lived>0)spawnPrey(s,SPECIES.filter(p=>speciesUnlocked(s,p.id)).at(-1).id,true);
@@ -1298,12 +1418,29 @@ function syncView(s) {
     pounce:r.pounce?{...r.pounce,progress:clamp((r.now_ms-r.pounce.start)/r.pounce.duration,0,1)}:null,
     gift_visiting:r.gift_visiting,gift_interaction:r.gift_hold_until?GIFTS[s.gift.kind]?.interaction:null});
 }
+function resetLifeRuntime(s) {
+  const now=s._engine.now_ms;
+  s._engine=engineDefaults(now);s._engine.px=s.spider_x;s._engine.py=s.spider_y;
+  Object.assign(s.spider,{gait_phase:0,walking:false});
+  syncView(s);
+}
+export function lifeRetire(s, confirmed=false) {
+  const options=services.get(s)??{};
+  if(!retireLifePet(s,confirmed,freshState(options)))return false;
+  resetLifeRuntime(s);return true;
+}
+export function lifeResume(s, index, confirmed=false) {
+  if(!resumeLifePet(s,index,confirmed))return false;
+  resetLifeRuntime(s);return true;
+}
 export function tick(s,seconds=.05) {
   if(!Number.isFinite(seconds)||seconds<0)throw new Error('Invalid tick duration');
   if(s.paused)return s;
+  companionEnsure(s);
   const r=runtime(s);r.remainder+=seconds*1000;
   while(r.remainder+1e-8>=50){
     r.remainder-=50;r.now_ms+=50;
+    lifeTick(s,.05);
     mindTick(s);needsTick(s);behaviourTick(s,.05);automationTick(s);preyTick(s,.05);
     if(s.bond>=75&&!s.gift.used){
       if(!r.next_bond_gift)r.next_bond_gift=r.now_ms+120000+roll(s,120000);
@@ -1311,5 +1448,8 @@ export function tick(s,seconds=.05) {
     }else if(s.bond<75)r.next_bond_gift=0;
     s.poop=s.poop.filter(p=>p.expires>r.now_ms);syncView(s);
   }
+  companionEnsure(s);
+  const context=lifeContext(s,companionNow(s));
+  s.activity=context.activity;s.expression=context.expression;
   return s;
 }

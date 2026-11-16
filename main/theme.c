@@ -141,14 +141,20 @@ bool border_set(uint8_t id)
         ESP_LOGW("spidarium.theme", "border rejected: need %u Silk", cost);
         return false;
     }
-    game_state_t snapshot = g;
+    uint32_t silk = g.silk, owned = g.borders_owned;
+    uint16_t extra = g.borders_owned_extra;
+    uint8_t previous = g.border_id;
     g.silk -= cost;
     g.border_id = id;
     if (id != 255) {
         if (id < 32) g.borders_owned |= 1u << id;
         else g.borders_owned_extra |= 1u << (id - 32);
     }
-    if (!save_request(&g, sizeof g)) { g = snapshot; return false; }
+    if (!save_request(&g, sizeof g)) {
+        g.silk = silk; g.borders_owned = owned;
+        g.borders_owned_extra = extra; g.border_id = previous;
+        return false;
+    }
     return true;
 }
 
@@ -168,12 +174,18 @@ bool theme_set(uint8_t id)
         ESP_LOGW("spidarium.theme", "background rejected: need %u Silk", cost);
         return false;
     }
-    game_state_t snapshot = g;
+    uint32_t silk = g.silk, owned = g.backgrounds_owned;
+    uint16_t extra = g.backgrounds_owned_extra;
+    uint8_t previous = g.background_id;
     g.silk -= cost;
     if (id < 32) g.backgrounds_owned |= 1u << id;
     else g.backgrounds_owned_extra |= 1u << (id - 32);
     g.background_id = id;
-    if (!save_request(&g, sizeof g)) { g = snapshot; return false; }
+    if (!save_request(&g, sizeof g)) {
+        g.silk = silk; g.backgrounds_owned = owned;
+        g.backgrounds_owned_extra = extra; g.background_id = previous;
+        return false;
+    }
     s_current = id;
     return true;
 }
