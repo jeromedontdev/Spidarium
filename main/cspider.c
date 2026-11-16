@@ -550,23 +550,86 @@ static float s_tilt = 0.0f;
  * far up the ramp the spider actually is. */
 #define CLIMB_FULL_LIFT 66.0f
 
+/* Side-view blend, 0 = flat top-down, 1 = full profile.
+ *
+ * Rotating a top-down spider does not produce a side view: the abdomen stays
+ * behind the cephalothorax in the same plane and the legs stay splayed
+ * radially, so the silhouette is still a spider seen from above, just leaning.
+ * A real profile needs the body's DORSAL axis projected onto the screen, which
+ * is what lifts the body clear of the legs and turns the outline into a side
+ * view. That is what this factor drives.
+ *
+ * It is blended rather than switched so stepping onto a structure swings the
+ * camera down over a few frames instead of popping between two poses. */
+static float s_profile = 0.0f;
+
+/* How far the body's right axis collapses at full profile. Looking along the
+ * right axis is exactly what a side view does, so it compresses hard; keeping
+ * a little width stops the body reading as a flat cut-out. */
+#define CLIMB_PROFILE_RIGHT 0.55f
+
+/* Dorsal offsets, in canvas pixels, at full profile. The abdomen rides higher
+ * than the cephalothorax, which is the classic spider profile: a raised
+ * teardrop behind a lower head. The eyes sit on the front face, so they lift
+ * with the head rather than staying on the top of it. */
+#define ABD_DORSAL   7.0f
+#define CEPH_DORSAL  3.0f
+#define EYE_DORSAL   4.0f
+#define FANG_DORSAL  2.0f
+
+/* How far the legs hang below the body at full profile. A side view sees the
+ * legs as struts under the body rather than spokes around it, so they need to
+ * drop clear of the abdomen instead of radiating from the hips. Kept small
+ * enough that the hips stay inside the body silhouette: the body is drawn after
+ * the legs, so a slight overlap is hidden, but too large an offset leaves the
+ * legs floating as a detached cluster. */
+#define LEG_DORSAL   5.0f
+
+/* Extra drop for the near-side legs at full profile. The far side is drawn
+ * first and sits slightly higher, so the two sides separate instead of
+ * overlapping exactly once the right axis collapses. */
+#define LEG_DORSAL_NEAR 1.5f
+
 /* ------------------------------------------------------------------ */
 /* Rotate a body-local (forward, right) offset into canvas coordinates.
  *
  * This is the whole point of the rewrite: the old renderer had to register
- * every part and reposition 46 widgets each frame. Here it is one multiply. */
+ * every part and reposition 46 widgets each frame. Here it is one multiply.
+ *
+ * `dorsal` is the body's up axis, in canvas pixels. A flat top-down spider has
+ * no visible dorsal component -- the camera looks straight down the up axis --
+ * so it is 0 for every part on the floor. As the profile blend rises, the
+ * dorsal offset is added straight up the screen, which is what turns the
+ * top-down plan view into a side view. */
+static void to_canvas_dorsal(float fwd, float right, float dorsal,
+                             float heading, float scale_f, float scale_r,
+                             int32_t *out_x, int32_t *out_y);
+
 static void to_canvas(float fwd, float right, float heading,
                       float scale_f, float scale_r,
                       int32_t *out_x, int32_t *out_y)
+{
+    to_canvas_dorsal(fwd, right, 0.0f, heading, scale_f, scale_r, out_x, out_y);
+}
+
+static void to_canvas_dorsal(float fwd, float right, float dorsal,
+                             float heading, float scale_f, float scale_r,
+                             int32_t *out_x, int32_t *out_y)
 {
     float fx = cosf(heading), fy = sinf(heading);
     float rx = -fy,           ry = fx;
 
     float f = fwd   * scale_f * s_foreshorten;
-    float r = right * scale_r;
+    /* At full profile the camera looks along the right axis, so the body's
+     * width collapses. This is the single strongest side-view cue: a top-down
+     * spider is as wide as it is long, a profile is narrow. */
+    float r = right * scale_r * (1.0f - (1.0f - CLIMB_PROFILE_RIGHT) * s_profile);
 
     float ox = fx * f + rx * r;
     float oy = fy * f + ry * r;
+
+    /* Dorsal offset: straight up the screen, scaled by the profile blend. */
+    oy -= dorsal * s_profile;
 
     /* Tilt the whole body about its own centre. This is what makes the spider
      * lean with the ramp it is standing on instead of staying level while the
@@ -651,11 +714,11 @@ void cspider_shadow_report(void)
             }
         }
     }
-    printf("SHADOW lift=%ld slope=%.3f tilt=%.3f fs=%.3f canvas=(%ld,%ld) "
-           "partial=%d opaque=%d rows=%d..%d\n",
+    printf("SHADOW lift=%ld slope=%.3f tilt=%.3f fs=%.3f profile=%.3f "
+           "canvas=(%ld,%ld) partial=%d opaque=%d rows=%d..%d\n",
            (long)decor_climb_lift(g.spider_x, g.spider_y, game_now()),
            (double)decor_climb_slope(g.spider_x, g.spider_y, NULL),
-           (double)s_tilt, (double)s_foreshorten,
+           (double)s_tilt, (double)s_foreshorten, (double)s_profile,
            (long)lv_obj_get_x(s_canvas), (long)lv_obj_get_y(s_canvas),
            partial, opaque, min_y, max_y);
 }
@@ -801,6 +864,19 @@ void cspider_render(uint32_t now_ms)
         float k = 1.0f - expf(-dt * 6.0f);
         s_foreshorten += (want - s_foreshorten) * k;
         if (fabsf(s_foreshorten - want) < 0.004f) s_foreshorten = want;
+
+        /* Side-view blend. A spider climbing a branch is seen from the side,
+         * not from above, so the camera swings down as it rises. Driven by the
+         * same lift as the foreshortening so the two cues agree, and eased with
+         * the same time constant so stepping on and off is a swing rather than
+         * a pop between two poses. */
+        float want_profile = 0.0f;
+        if (climb > 0) {
+            want_profile = (float)climb / CLIMB_FULL_LIFT;
+            if (want_profile > 1.0f) want_profile = 1.0f;
+        }
+        s_profile += (want_profile - s_profile) * k;
+        if (fabsf(s_profile - want_profile) < 0.004f) s_profile = want_profile;
     }
 
     /* --- petting reaction -------------------------------------------
@@ -949,94 +1025,153 @@ void cspider_render(uint32_t now_ms)
     }
 
     /* --- legs -------------------------------------------------------
-     * Drawn first so the body covers the hips. */
-    for (int i = 0; i < NUM_LEGS; i++) {
-        int side = (i < 4) ? -1 : 1;
-        int k    = i & 3;
-
-        leg_pose_t pose = leg_pose(k, side, s_gait.phase, moving, emote,
-                                   now_ms);
-        int32_t hx, hy, kx, ky, fx, fy;
-        to_canvas(pose.hf, pose.hr, heading, 1, 1, &hx, &hy);
-        to_canvas(pose.kf, pose.kr, heading, 1, 1, &kx, &ky);
-        to_canvas(pose.ff, pose.fr, heading, 1, 1, &fx, &fy);
-        draw_line(hx, hy, kx, ky, LEG_WIDTH, col_leg);
-        draw_line(kx, ky, fx, fy, LEG_WIDTH, col_leg);
+     * Drawn first so the body covers the hips.
+     *
+     * In profile the legs hang BELOW the body instead of splaying radially: a
+     * side view sees the near-side legs against the structure and the far-side
+     * legs hidden behind the body. The negative dorsal offset drops them down
+     * the screen, and the far side is drawn first so the body paints over it. */
+    for (int pass = 0; pass < 2; pass++) {
+        int side = (pass == 0) ? -1 : 1;
+        for (int k = 0; k < 4; k++) {
+            leg_pose_t pose = leg_pose(k, side, s_gait.phase, moving, emote,
+                                       now_ms);
+            int32_t hx, hy, kx, ky, fx, fy;
+            /* Legs hang from the underside, so their dorsal offset is negative
+             * and grows with the profile blend. The offset increases from hip to
+             * foot, which angles each leg down and away from the body: with the
+             * right axis collapsed, a constant offset would stack all eight legs
+             * on one line and read as a detached cluster. The near side drops a
+             * little further so the two sides separate. */
+            float base = -(LEG_DORSAL + (pass == 1 ? LEG_DORSAL_NEAR : 0.0f))
+                         * s_profile;
+            float hip_d  = base;
+            float knee_d = base * 1.7f;
+            float foot_d = base * 2.4f;
+            to_canvas_dorsal(pose.hf, pose.hr, hip_d, heading, 1, 1, &hx, &hy);
+            to_canvas_dorsal(pose.kf, pose.kr, knee_d, heading, 1, 1, &kx, &ky);
+            to_canvas_dorsal(pose.ff, pose.fr, foot_d, heading, 1, 1, &fx, &fy);
+            draw_line(hx, hy, kx, ky, LEG_WIDTH, col_leg);
+            draw_line(kx, ky, fx, fy, LEG_WIDTH, col_leg);
+        }
     }
 
-    /* --- abdomen ---------------------------------------------------- */
-    to_canvas(ABD_FWD, 0.0f, heading, sx, sy, &x, &y);
+    /* --- abdomen ----------------------------------------------------
+     * The dorsal offsets are what make the profile read: at full side view the
+     * abdomen rides higher than the cephalothorax, which is the classic spider
+     * silhouette. On the floor s_profile is 0, so these collapse to the flat
+     * top-down pose the rest of the game uses. */
+    to_canvas_dorsal(ABD_FWD, 0.0f, ABD_DORSAL, heading, sx, sy, &x, &y);
     fill_circle(x, y, ABD_R, col_base);
 
-    to_canvas(ABD_FWD - 1.5f, -1.5f, heading, sx, sy, &x, &y);
+    to_canvas_dorsal(ABD_FWD - 1.5f, -1.5f, ABD_DORSAL, heading, sx, sy, &x, &y);
     fill_circle(x, y, ABD_R - 3, col_mid);
 
-    to_canvas(ABD_FWD - 3.0f, -3.0f, heading, sx, sy, &x, &y);
+    to_canvas_dorsal(ABD_FWD - 3.0f, -3.0f, ABD_DORSAL, heading, sx, sy, &x, &y);
     fill_circle(x, y, ABD_R - 7, col_hi);
 
     /* Fuzzy rim. */
     for (int i = 0; i < FUZZ_COUNT; i++) {
         float a = (float)i * 2.0f * PI_F / (float)FUZZ_COUNT;
         int32_t fr = FUZZ_R - (i % 2);
-        to_canvas(ABD_FWD + cosf(a) * (float)(ABD_R + FUZZ_OUT),
-                  sinf(a) * (float)(ABD_R + FUZZ_OUT),
-                  heading, sx, sy, &x, &y);
+        to_canvas_dorsal(ABD_FWD + cosf(a) * (float)(ABD_R + FUZZ_OUT),
+                         sinf(a) * (float)(ABD_R + FUZZ_OUT),
+                         ABD_DORSAL, heading, sx, sy, &x, &y);
         fill_circle(x, y, fr, col_fuzz);
     }
 
     /* --- cephalothorax ---------------------------------------------- */
-    to_canvas(CEPH_FWD, 0.0f, heading, sx, sy, &x, &y);
+    to_canvas_dorsal(CEPH_FWD, 0.0f, CEPH_DORSAL, heading, sx, sy, &x, &y);
     fill_circle(x, y, CEPH_R, col_base);
 
-    to_canvas(CEPH_FWD - 1.5f, -1.5f, heading, sx, sy, &x, &y);
+    to_canvas_dorsal(CEPH_FWD - 1.5f, -1.5f, CEPH_DORSAL, heading, sx, sy, &x, &y);
     fill_circle(x, y, CEPH_R - 3, col_mid);
 
-    to_canvas(CEPH_FWD - 3.0f, -3.0f, heading, sx, sy, &x, &y);
+    to_canvas_dorsal(CEPH_FWD - 3.0f, -3.0f, CEPH_DORSAL, heading, sx, sy, &x, &y);
     fill_circle(x, y, CEPH_R - 6, col_hi);
 
     for (int i = 0; i < FUZZ_COUNT; i++) {
         float a = (float)i * 2.0f * PI_F / (float)FUZZ_COUNT;
         int32_t fr = FUZZ_R - (i % 2);
-        to_canvas(CEPH_FWD + cosf(a) * (float)(CEPH_R + FUZZ_OUT),
-                  sinf(a) * (float)(CEPH_R + FUZZ_OUT),
-                  heading, sx, sy, &x, &y);
+        to_canvas_dorsal(CEPH_FWD + cosf(a) * (float)(CEPH_R + FUZZ_OUT),
+                         sinf(a) * (float)(CEPH_R + FUZZ_OUT),
+                         CEPH_DORSAL, heading, sx, sy, &x, &y);
         fill_circle(x, y, fr, col_fuzz);
     }
 
-    /* --- secondary eyes --------------------------------------------- */
+    /* --- secondary eyes ---------------------------------------------
+     * In profile the far-side eyes are hidden behind the head, so only the near
+     * column is drawn. Drawing both columns collapsed them onto each other and
+     * produced a smear of grey dots across the face. */
     const uint32_t col_sec = sick_aware(0x6b7280);
-    to_canvas(CEPH_FWD + EYE_MID_FWD, -EYE_MID_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_SMALL_R, col_sec);
-    to_canvas(CEPH_FWD + EYE_MID_FWD, +EYE_MID_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_SMALL_R, col_sec);
-    to_canvas(CEPH_FWD + EYE_REAR_FWD, -EYE_REAR_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_SMALL_R, col_sec);
-    to_canvas(CEPH_FWD + EYE_REAR_FWD, +EYE_REAR_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_SMALL_R, col_sec);
+    bool profile_eyes = s_profile > 0.5f;
+    if (profile_eyes) {
+        to_canvas_dorsal(CEPH_FWD + EYE_MID_FWD, -EYE_MID_DX, EYE_DORSAL,
+                         heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_SMALL_R, col_sec);
+        to_canvas_dorsal(CEPH_FWD + EYE_REAR_FWD, -EYE_REAR_DX, EYE_DORSAL,
+                         heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_SMALL_R, col_sec);
+    } else {
+        to_canvas_dorsal(CEPH_FWD + EYE_MID_FWD, -EYE_MID_DX, EYE_DORSAL,
+                         heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_SMALL_R, col_sec);
+        to_canvas_dorsal(CEPH_FWD + EYE_MID_FWD, +EYE_MID_DX, EYE_DORSAL,
+                         heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_SMALL_R, col_sec);
+        to_canvas_dorsal(CEPH_FWD + EYE_REAR_FWD, -EYE_REAR_DX, EYE_DORSAL,
+                         heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_SMALL_R, col_sec);
+        to_canvas_dorsal(CEPH_FWD + EYE_REAR_FWD, +EYE_REAR_DX, EYE_DORSAL,
+                         heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_SMALL_R, col_sec);
+    }
 
-    /* --- primary eyes ----------------------------------------------- */
-    /* Asleep: the eyes go black, so the spider reads as resting rather than
-     * staring. Same rule as the widget renderer. */
+    /* --- primary eyes -----------------------------------------------
+     * Asleep: the eyes go black, so the spider reads as resting rather than
+     * staring. Same rule as the widget renderer.
+     *
+     * In profile the two eyes collapse onto each other and their pupils merge
+     * into a figure-eight, which reads as a rendering fault rather than a face.
+     * A side view sees one eye, so the far eye is dropped once the profile is
+     * more than half way and a single centred eye is drawn instead. */
     uint32_t col_eye = asleep ? 0x000000 : sick_aware(0xf7f9ff);
+    bool single_eye = s_profile > 0.5f;
 
-    to_canvas(CEPH_FWD + EYE_FWD, -EYE_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_R, col_eye);
-    to_canvas(CEPH_FWD + EYE_FWD, +EYE_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_R, col_eye);
+    if (single_eye) {
+        to_canvas_dorsal(CEPH_FWD + EYE_FWD, 0.0f, EYE_DORSAL, heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_R, col_eye);
+    } else {
+        to_canvas_dorsal(CEPH_FWD + EYE_FWD, -EYE_DX, EYE_DORSAL, heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_R, col_eye);
+        to_canvas_dorsal(CEPH_FWD + EYE_FWD, +EYE_DX, EYE_DORSAL, heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_R, col_eye);
+    }
 
     /* --- pupils and glints ------------------------------------------ */
     if (!asleep) {
-        to_canvas(CEPH_FWD + EYE_FWD + 1.0f, -EYE_DX, heading, sx, sy, &x, &y);
-        fill_circle(x, y, PUPIL_R, col_pup);
-        to_canvas(CEPH_FWD + EYE_FWD + 1.0f, +EYE_DX, heading, sx, sy, &x, &y);
-        fill_circle(x, y, PUPIL_R, col_pup);
+        if (single_eye) {
+            to_canvas_dorsal(CEPH_FWD + EYE_FWD + 1.0f, 0.0f, EYE_DORSAL,
+                             heading, sx, sy, &x, &y);
+            fill_circle(x, y, PUPIL_R, col_pup);
+            to_canvas_dorsal(CEPH_FWD + EYE_FWD + 2.0f, -2.0f, EYE_DORSAL,
+                             heading, sx, sy, &x, &y);
+            fill_circle(x, y, 1, sick_aware(0xffffff));
+        } else {
+            to_canvas_dorsal(CEPH_FWD + EYE_FWD + 1.0f, -EYE_DX, EYE_DORSAL,
+                             heading, sx, sy, &x, &y);
+            fill_circle(x, y, PUPIL_R, col_pup);
+            to_canvas_dorsal(CEPH_FWD + EYE_FWD + 1.0f, +EYE_DX, EYE_DORSAL,
+                             heading, sx, sy, &x, &y);
+            fill_circle(x, y, PUPIL_R, col_pup);
 
-        to_canvas(CEPH_FWD + EYE_FWD + 2.0f, -EYE_DX - 2.0f,
-                  heading, sx, sy, &x, &y);
-        fill_circle(x, y, 1, sick_aware(0xffffff));
-        to_canvas(CEPH_FWD + EYE_FWD + 2.0f, +EYE_DX - 2.0f,
-                  heading, sx, sy, &x, &y);
-        fill_circle(x, y, 1, sick_aware(0xffffff));
+            to_canvas_dorsal(CEPH_FWD + EYE_FWD + 2.0f, -EYE_DX - 2.0f, EYE_DORSAL,
+                             heading, sx, sy, &x, &y);
+            fill_circle(x, y, 1, sick_aware(0xffffff));
+            to_canvas_dorsal(CEPH_FWD + EYE_FWD + 2.0f, +EYE_DX - 2.0f, EYE_DORSAL,
+                             heading, sx, sy, &x, &y);
+            fill_circle(x, y, 1, sick_aware(0xffffff));
+        }
     }
 
     /* --- fangs ------------------------------------------------------
@@ -1049,15 +1184,15 @@ void cspider_render(uint32_t now_ms)
             /* Base corners, then the apex ahead of them. */
             int32_t bx0, by0, bx1, by1, ax, ay;
 
-            to_canvas(CEPH_FWD + FANG_FWD - FANG_LEN * 0.5f,
-                      side * FANG_DX - FANG_HALF_W,
-                      heading, sx, sy, &bx0, &by0);
-            to_canvas(CEPH_FWD + FANG_FWD - FANG_LEN * 0.5f,
-                      side * FANG_DX + FANG_HALF_W,
-                      heading, sx, sy, &bx1, &by1);
-            to_canvas(CEPH_FWD + FANG_FWD + FANG_LEN * 0.5f,
-                      side * FANG_DX,
-                      heading, sx, sy, &ax, &ay);
+            to_canvas_dorsal(CEPH_FWD + FANG_FWD - FANG_LEN * 0.5f,
+                             side * FANG_DX - FANG_HALF_W, FANG_DORSAL,
+                             heading, sx, sy, &bx0, &by0);
+            to_canvas_dorsal(CEPH_FWD + FANG_FWD - FANG_LEN * 0.5f,
+                             side * FANG_DX + FANG_HALF_W, FANG_DORSAL,
+                             heading, sx, sy, &bx1, &by1);
+            to_canvas_dorsal(CEPH_FWD + FANG_FWD + FANG_LEN * 0.5f,
+                             side * FANG_DX, FANG_DORSAL,
+                             heading, sx, sy, &ax, &ay);
 
             fill_triangle(bx0, by0, bx1, by1, ax, ay, col_fang);
         }

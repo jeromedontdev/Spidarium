@@ -399,15 +399,18 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_care_label, true);
     lv_obj_set_hidden(s_place_done, !on);
     lv_obj_set_hidden(s_place_cancel, !on);
-    /* A gift gets the same path AND layer control as decor. It has no siblings
-     * of its own, but its layer orders it against the decor sharing its band,
-     * which is what the player is actually arranging. */
+    /* A gift gets the same path AND layer control as decor. Its layer orders it
+     * against the decor sharing its band, which is what the player is actually
+     * arranging. When the band holds nothing but the gift there is nothing to
+     * order against, so the whole layer row is hidden rather than showing a
+     * meaningless "1 / 1". */
     bool path_row = on && (g_decor_mode || g.gift_mode);
+    bool layer_row = path_row && game_placement_layers() > 1;
     lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
     lv_obj_set_hidden(s_place_path, !path_row);
-    lv_obj_set_hidden(s_place_back, !path_row);
-    lv_obj_set_hidden(s_place_front, !path_row);
-    lv_obj_set_hidden(s_place_layer_label, !path_row);
+    lv_obj_set_hidden(s_place_back, !layer_row);
+    lv_obj_set_hidden(s_place_front, !layer_row);
+    lv_obj_set_hidden(s_place_layer_label, !layer_row);
     if (path_row) {
         static const char *names[] = {"Walk Over", "Solid", "Walk Behind", "Climb"};
         uint8_t path = game_placement_blocking();

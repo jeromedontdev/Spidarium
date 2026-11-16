@@ -65,6 +65,16 @@ export const CLIMB_FULL_LIFT = 66;
 // allowed in radians. Mirrors CLIMB_TILT_FOLLOW and CLIMB_TILT_MAX.
 export const CLIMB_TILT_FOLLOW = 0.85;
 export const CLIMB_TILT_MAX = 0.52;
+// Side-view blend: 0 = flat top-down, 1 = full profile. Rotating a top-down
+// spider does not produce a side view, so the body's dorsal axis is projected
+// onto the screen as this rises. Mirrors CLIMB_PROFILE_RIGHT and the dorsal
+// offsets in main/cspider.c.
+export const CLIMB_PROFILE_RIGHT = 0.55;
+export const ABD_DORSAL = 7.0;
+export const CEPH_DORSAL = 3.0;
+export const EYE_DORSAL = 4.0;
+export const FANG_DORSAL = 2.0;
+export const LEG_DORSAL = 9.0;
 export const STAGES = ['Spiderling','Juvenile','Adult'];
 export const TEMPERAMENTS = [
   {name:'bold',aim_window_mult:.85,catch_mult:1.1,speed_mult:1.1,hunger_decay_mult:1,sleep_threshold:15},
@@ -987,6 +997,34 @@ export function decorClimbSlope(s,x,y){
     best=-def.climb/(2*def.radius);
   }
   return best;
+}
+
+// Side-view blend for a given climb lift: 0 on the floor, 1 at the top of the
+// tallest structure. Mirrors the s_profile easing in main/cspider.c.
+export function climbProfile(lift){
+  if(!(lift>0))return 0;
+  const t=lift/CLIMB_FULL_LIFT;
+  return t>1?1:t;
+}
+
+// Project a body-local (forward, right, dorsal) offset into canvas coordinates.
+// `dorsal` is the body's up axis: 0 for a flat top-down pose, positive to lift a
+// part up the screen as the profile blend rises. Mirrors to_canvas_dorsal().
+export function toCanvasDorsal(fwd,right,dorsal,heading,scaleF,scaleR,
+                               foreshorten,profile,tilt){
+  const fx=Math.cos(heading),fy=Math.sin(heading);
+  const rx=-fy,ry=fx;
+  const f=fwd*scaleF*foreshorten;
+  const r=right*scaleR*(1-(1-CLIMB_PROFILE_RIGHT)*profile);
+  let ox=fx*f+rx*r;
+  let oy=fy*f+ry*r;
+  oy-=dorsal*profile;
+  if(tilt!==0){
+    const c=Math.cos(tilt),s=Math.sin(tilt);
+    const tx=ox*c-oy*s,ty=ox*s+oy*c;
+    ox=tx;oy=ty;
+  }
+  return {x:ox,y:oy};
 }
 
 // Perching on a small prop. A prop is too short to read as a climb, so the

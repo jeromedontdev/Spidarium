@@ -10386,3 +10386,66 @@ layer only decides its position among the canopy decor, not whether it is in
 front of or behind the spider. Whether the regenerated 96x96 climb art reads as
 well as the 192x192 version on the physical panel still needs human eyes; the
 numeric checks prove the density and the palette, not the impression.
+
+## Round 116 - Gift layering that actually reorders, and a real side view
+
+### Decisions made
+
+- **The gift is now parented directly into the decor band, not into its own
+  layer.** `lv_obj_move_to_index()` only reorders siblings, so a gift living in
+  `s_gift_layer` could never be interleaved with the decor it was supposed to
+  sit behind. Round 115 computed the index and then silently discarded it,
+  which is exactly the "layer settings arent working on either item" report.
+  `s_gift_layer` is gone; `s_gift_obj` is a single sprite parented into
+  `s_decor_layer` or `s_canopy_layer` by the same Walk Behind rule decor uses.
+- **The target index must account for where the gift already is.** Moving the
+  gift shifts the decor's index, so moving to the decor's current index
+  oscillated every tick: the gift landed after the item, the item's index
+  dropped, and the next tick moved the gift back. Comparing the two indices
+  first makes the result a fixed point.
+- **The layer row is hidden when the band holds nothing but the gift.** A lone
+  gift showed "1 / 1", which is not a choice. `game_placement_layers() > 1` now
+  gates the arrows and the counter.
+- **A side view needs a dorsal projection, not a rotation.** Rotating a
+  top-down spider keeps the abdomen behind the cephalothorax in the same plane
+  and the legs splayed radially, so the silhouette is still a plan view, just
+  leaning. `s_profile` (0 on the floor, 1 at `CLIMB_FULL_LIFT`) drives
+  `to_canvas_dorsal()`, which projects the body's up axis onto the screen. The
+  right axis collapses toward `CLIMB_PROFILE_RIGHT`, the abdomen rides higher
+  than the head, the legs hang below with a hip-to-foot gradient, and the
+  far-side eyes are dropped so one eye sits on the front face.
+- **The profile is blended, not switched.** It shares the foreshortening's
+  eased time constant, so stepping on and off a structure is a camera swing
+  rather than a pop between two poses.
+
+### Evidence
+
+- `GIFTREPORT` with the driftwood at slot 0 and the gift at (240,300):
+  `layer=0 ... gift_index=11 decor_index=12` (gift behind), then
+  `giftlayer 1` -> `layer=1 ... gift_index=12 decor_index=11` (gift in front).
+  The indices swap, which is the proof the reorder reaches LVGL.
+- `decor clear` then `GIFTREPORT` -> `count=1`, so the layer row hides.
+- `climb 0` -> `SHADOW ... fs=1.000 profile=0.000 partial=849 opaque=2059`.
+  `climb 66` -> `fs=0.800 profile=1.000 partial=0 opaque=1191`. The opaque
+  count drops by 42% because the right axis collapses, and `partial=0` confirms
+  the contact shadow is still suppressed while climbing.
+- Screenshots: the floor pose is unchanged (flat top-down, both eyes, contact
+  shadow); at lift 66 the spider reads as a profile with a raised abdomen, a
+  lower head, one eye on the front face and legs angling down as struts.
+- `run_tests.py COM7` -> `passed=49 failed=3`, the documented baseline
+  (`hunttest`, `uitest`, `wifi connect`). `gifttest` passes on its own.
+- Browser suite 262/262, including two new tests for the profile projection and
+  the layer-row rule.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+`decortest` still fails, on the six climb structures reporting "not owned": the
+harness places every kind but only grants `catalogue_owned_high`, while climb
+ownership lives in `climb_owned`. That is a pre-existing harness gap, not a
+regression, and `decortest` is not part of `run_tests.py`. Whether the profile
+pose reads as a convincing side view on the physical panel still needs human
+eyes; the numeric checks prove the projection and the silhouette, not the
+impression.

@@ -421,6 +421,57 @@ test('the gift has the same layer control as decor',()=>{
   assert.equal(E.giftLayerIndex(state,0),2,'clamped to the band size');
 });
 
+test('climbing blends the spider into a side view',()=>{
+  /* Rotating a top-down spider does not produce a side view: the abdomen stays
+   * behind the cephalothorax in the same plane and the legs stay splayed
+   * radially. The profile blend is what projects the body's dorsal axis onto the
+   * screen, so the outline becomes a profile rather than a leaning plan view. */
+  assert.equal(E.climbProfile(0),0,'the floor is a flat top-down pose');
+  assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT),1,'the top is a full profile');
+  assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT*2),1,'the blend is clamped');
+  assert.ok(E.climbProfile(E.CLIMB_FULL_LIFT/2)>0.4&&
+            E.climbProfile(E.CLIMB_FULL_LIFT/2)<0.6,'the blend tracks the lift');
+
+  /* At full profile the body's right axis collapses, which is the strongest
+   * side-view cue: a top-down spider is as wide as it is long. */
+  const heading=0, fs=1, tilt=0;
+  const flat=E.toCanvasDorsal(0,10,0,heading,1,1,fs,0,tilt);
+  const prof=E.toCanvasDorsal(0,10,0,heading,1,1,fs,1,tilt);
+  const flatLen=Math.hypot(flat.x,flat.y);
+  const profLen=Math.hypot(prof.x,prof.y);
+  assert.ok(Math.abs(flatLen-10)<0.01,'flat: the right axis is full width');
+  assert.ok(Math.abs(profLen-10*E.CLIMB_PROFILE_RIGHT)<0.01,
+    'profile: the right axis collapses to CLIMB_PROFILE_RIGHT');
+
+  /* The dorsal axis only exists in profile: it lifts a part up the screen. */
+  const noDorsal=E.toCanvasDorsal(0,0,0,heading,1,1,fs,1,tilt);
+  const withDorsal=E.toCanvasDorsal(0,0,E.ABD_DORSAL,heading,1,1,fs,1,tilt);
+  assert.ok(withDorsal.y<noDorsal.y,'dorsal lifts the part up the screen');
+  assert.ok(Math.abs((noDorsal.y-withDorsal.y)-E.ABD_DORSAL)<0.01,
+    'the lift equals the dorsal offset at full profile');
+  const floorDorsal=E.toCanvasDorsal(0,0,E.ABD_DORSAL,heading,1,1,fs,0,tilt);
+  assert.ok(Math.abs(floorDorsal.y-noDorsal.y)<0.01,
+    'on the floor the dorsal axis is invisible');
+
+  /* The abdomen rides higher than the cephalothorax, which is the classic
+   * spider profile: a raised teardrop behind a lower head. */
+  assert.ok(E.ABD_DORSAL>E.CEPH_DORSAL,'the abdomen rides higher than the head');
+  assert.ok(E.LEG_DORSAL>0,'the legs hang below the body in profile');
+});
+
+test('the layer row is hidden when there is nothing to order against',()=>{
+  /* A gift alone in its band has no siblings, so a "1 / 1" layer control is
+   * meaningless. The row is shown only when the band holds more than the item
+   * being placed. */
+  const {state}=fixture();
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  state.gift_layer=0;
+  assert.equal(E.giftLayerCount(state,0),1,'a lone gift has one layer');
+  /* One floor prop gives the gift something to sit behind or in front of. */
+  state.decor[0]={kind:3,blocking:0,x:100,y:100};
+  assert.equal(E.giftLayerCount(state,0),2,'a prop plus the gift is two layers');
+});
+
 test('every sprite family shares one pixel density',()=>{
   /* The climb structures were authored at 192x192 and drawn 1:1 while the
    * gifts were drawn at 2x, so the climb art had half the pixel density of

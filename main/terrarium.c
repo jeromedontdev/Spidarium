@@ -14,8 +14,17 @@
  * the 480x480 canvas, so each source pixel covers a 2x2 block. */
 #define PIXEL_GRID 2
 
-static lv_obj_t *s_background, *s_decor_layer, *s_canopy_layer, *s_gift_layer, *s_poop_layer,
+static lv_obj_t *s_background, *s_decor_layer, *s_canopy_layer, *s_poop_layer,
                 *s_preview_ring, *s_preview_image;
+/* The gift is a single sprite, so it is parented DIRECTLY into the decor band it
+ * belongs to instead of into a container of its own.
+ *
+ * A separate gift layer made the layer control meaningless: lv_obj_move_to_index()
+ * only reorders siblings, so a gift in its own layer could never be interleaved
+ * with the decor it was supposed to sit behind or in front of. The index was
+ * computed and then silently ignored, which is exactly the "layer settings arent
+ * working on either item" report. */
+static lv_obj_t *s_gift_obj;
 static bool decor_canopy_now(const decor_item_t *item);
 static int s_preview_slot = -1;
 static bool s_preview_gift;
@@ -108,7 +117,8 @@ bool terrarium_test(void)
     }
     if (g.gift.used) {
         const lv_image_dsc_t *gift = assets_image(sprite_gift_index(g.gift.kind));
-        ok = ok && gift && s_gift_pixels && lv_obj_get_child_count(s_gift_layer) == 1;
+        ok = ok && gift && s_gift_pixels && s_gift_obj &&
+             !lv_obj_is_hidden(s_gift_obj);
         if (gift && s_gift_pixels) {
             const uint16_t *colors = (const uint16_t *)gift->data;
             const uint8_t *alpha = gift->data + 2048;
@@ -187,16 +197,33 @@ static lv_obj_t *dot(lv_obj_t *parent, int x, int y, int radius, uint32_t color)
     return obj;
 }
 
+/* The gift honours the same Walk Behind rule as decor: it may only cover the
+ * spider with its top half, so it moves to the canopy band while the spider is
+ * above its centre line and drops back to the floor band once the spider is
+ * level with or below the base. */
+static bool gift_canopy_now(void)
+{
+    return g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y;
+}
+
+static lv_obj_t *gift_band(void)
+{
+    return gift_canopy_now() ? s_canopy_layer : s_decor_layer;
+}
+
 void terrarium_refresh_gift(void)
 {
-    if (!s_gift_layer) return;
-    lv_obj_clean(s_gift_layer);
+    if (!s_decor_layer) return;
+    if (s_gift_obj) {
+        lv_obj_delete(s_gift_obj);
+        s_gift_obj = NULL;
+    }
     if (!g.gift.used) return;
     int index = sprite_gift_index(g.gift.kind);
     const lv_image_dsc_t *image = index >= 0 ? assets_image(index) : NULL;
     if (!image) {
         ESP_LOGW("spidarium.tank", "gift image unavailable");
-        dot(s_gift_layer, g.gift.x, g.gift.y, 10, gift_def(g.gift.kind)->colour);
+        dot(gift_band(), g.gift.x, g.gift.y, 10, gift_def(g.gift.kind)->colour);
         return;
     }
     ESP_ERROR_CHECK(image->header.w == 32 && image->header.h == 32 &&
@@ -210,63 +237,85 @@ void terrarium_refresh_gift(void)
             s_gift_pixels[64 * 64 * 2 + dst] = alpha[src];
         }
     }
-    lv_obj_t *obj = lv_canvas_create(s_gift_layer);
-    lv_canvas_set_buffer(obj, s_gift_pixels, 64, 64, LV_COLOR_FORMAT_RGB565A8);
-    lv_obj_set_pos(obj, g.gift.x - 32, g.gift.y - 32);
-    lv_obj_set_clickable(obj, false);
-    lv_obj_set_scrollable(obj, false);
+    s_gift_obj = lv_canvas_create(gift_band());
+    lv_canvas_set_buffer(s_gift_obj, s_gift_pixels, 64, 64, LV_COLOR_FORMAT_RGB565A8);
+    lv_obj_set_pos(s_gift_obj, g.gift.x - 32, g.gift.y - 32);
+    lv_obj_set_clickable(s_gift_obj, false);
+    lv_obj_set_scrollable(s_gift_obj, false);
     terrarium_gift_depth();
 }
 
-/* The gift honours the same Walk Behind rule as decor: it may only cover the
- * spider with its top half, so it moves to the canopy layer while the spider is
- * above its centre line and drops back to the floor layer once the spider is
- * level with or below the base. */
 /* Report the gift's rendered state. The duplicate-gift bug was a preview image
- * left visible while the gift layer was hidden, so the useful check is how many
- * gift-like objects are actually on screen: the gift layer must hold exactly one
- * child when a gift exists, and the preview image must be hidden. */
+ * left visible while the gift was hidden, so the useful check is how many
+ * gift-like objects are actually on screen: exactly one gift object must exist
+ * when a gift is placed, and the preview image must be hidden. */
 void terrarium_gift_report(void)
 {
-    int children = s_gift_layer ? lv_obj_get_child_count(s_gift_layer) : -1;
-    int canopy_children = s_canopy_layer ? lv_obj_get_child_count(s_canopy_layer) : -1;
     bool preview_hidden = s_preview_image ? lv_obj_is_hidden(s_preview_image) : true;
-    bool layer_hidden = s_gift_layer ? lv_obj_is_hidden(s_gift_layer) : true;
-    printf("GIFTREPORT used=%u kind=%u layer_children=%d canopy_children=%d "
-           "layer_hidden=%d preview_hidden=%d layer=%d count=%d\n",
-           g.gift.used, g.gift.kind, children, canopy_children,
-           layer_hidden ? 1 : 0, preview_hidden ? 1 : 0,
+    bool gift_hidden = s_gift_obj ? lv_obj_is_hidden(s_gift_obj) : true;
+    const char *band = "none";
+    int gift_index = -1, decor_index = -1;
+    if (s_gift_obj) {
+        band = lv_obj_get_parent(s_gift_obj) == s_canopy_layer ? "canopy" : "floor";
+        gift_index = (int)lv_obj_get_index(s_gift_obj);
+    }
+    /* The index of the first decor item in the same band, so the two numbers can
+     * be compared directly: the gift is behind that item when its index is
+     * lower. This is the check that the layer control actually reorders. */
+    bool canopy = gift_canopy_now();
+    for (int i = 0; i < s_decor_capacity; i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || !s_decor_obj[i]) continue;
+        if (decor_canopy_now(item) != canopy) continue;
+        decor_index = (int)lv_obj_get_index(s_decor_obj[i]);
+        break;
+    }
+    printf("GIFTREPORT used=%u kind=%u obj=%d gift_hidden=%d preview_hidden=%d "
+           "band=%s layer=%d count=%d gift_index=%d decor_index=%d\n",
+           g.gift.used, g.gift.kind, s_gift_obj ? 1 : 0,
+           gift_hidden ? 1 : 0, preview_hidden ? 1 : 0, band,
            decor_gift_layer_index(g.gift_path),
-           decor_gift_layer_count(g.gift_path));
+           decor_gift_layer_count(g.gift_path), gift_index, decor_index);
 }
 
 void terrarium_gift_depth(void)
 {
-    if (!s_gift_layer || !s_canopy_layer || !g.gift.used) return;
-    if (lv_obj_get_child_count(s_gift_layer) == 0) return;
-    lv_obj_t *obj = lv_obj_get_child(s_gift_layer, 0);
-    if (!obj) return;
-    bool canopy = g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y;
-    lv_obj_t *want = canopy ? s_canopy_layer : s_gift_layer;
-    if (lv_obj_get_parent(obj) != want) lv_obj_set_parent(obj, want);
+    if (!s_gift_obj || !s_canopy_layer || !g.gift.used) return;
 
-    /* Insert the gift at its chosen position among the decor sharing its band.
-     * The gift has no siblings of its own, so "layer" means "where among the
-     * decor in this band", which is what the player is actually arranging. */
+    /* The gift is parented into the decor band itself, so it is a SIBLING of the
+     * decor it must interleave with. That is the whole fix: a gift in its own
+     * container could never be ordered against decor, because
+     * lv_obj_move_to_index() only reorders siblings. */
+    lv_obj_t *want = gift_band();
+    if (lv_obj_get_parent(s_gift_obj) != want) lv_obj_set_parent(s_gift_obj, want);
+
+    /* "Layer" means "how far forward among the decor in this band": 0 is behind
+     * every item, count is in front of every item. Walk the band in slot order,
+     * which is also its z-order, and drop the gift immediately below the item at
+     * the chosen position.
+     *
+     * The target index must account for where the gift already is. Moving the
+     * gift shifts the decor's index, so naively moving to the decor's current
+     * index oscillates: the gift lands after the item, the item's index drops,
+     * and the next tick moves the gift back. Comparing the two indices first
+     * makes the result a fixed point. */
+    bool canopy = gift_canopy_now();
     int index = decor_gift_layer_index(g.gift_path);
     int seen = 0;
     for (int i = 0; i < s_decor_capacity; i++) {
         const decor_item_t *item = decor_at(i);
-        if (!item) continue;
+        lv_obj_t *obj = s_decor_obj[i];
+        if (!item || !obj) continue;
         if (decor_canopy_now(item) != canopy) continue;
         if (seen++ == index) {
-            /* The gift belongs in front of everything up to this point and
-             * behind this item, so move the gift just below it. */
-            lv_obj_move_to_index(obj, lv_obj_get_index(s_decor_obj[i]));
+            int gift_at = (int)lv_obj_get_index(s_gift_obj);
+            int decor_at_index = (int)lv_obj_get_index(obj);
+            int target = gift_at < decor_at_index ? decor_at_index - 1 : decor_at_index;
+            if (gift_at != target) lv_obj_move_to_index(s_gift_obj, target);
             return;
         }
     }
-    lv_obj_move_foreground(obj);
+    lv_obj_move_foreground(s_gift_obj);
 }
 
 void terrarium_refresh_decor(void)
@@ -418,8 +467,11 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     s_preview_slot = slot;
     s_preview_gift = gift;
     s_preview_y = y;
-    if (gift) lv_obj_set_hidden(s_gift_layer, true);
-    else if (slot >= 0 && slot < s_decor_capacity) lv_obj_set_hidden(s_decor_obj[slot], true);
+    if (gift) {
+        if (s_gift_obj) lv_obj_set_hidden(s_gift_obj, true);
+    } else if (slot >= 0 && slot < s_decor_capacity) {
+        lv_obj_set_hidden(s_decor_obj[slot], true);
+    }
     lv_image_set_src(s_preview_image, image);
     bool big = !gift && decor_is_climb_structure(kind);
     lv_image_set_scale(s_preview_image,
@@ -427,14 +479,11 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     lv_image_set_antialias(s_preview_image, false);
     lv_obj_set_pos(s_preview_image, x - image->header.w / 2, y - image->header.h / 2);
     lv_obj_set_hidden(s_preview_image, false);
-    lv_obj_t *parent = gift ? lv_obj_get_parent(s_gift_layer) :
-        (path == DECOR_WALK_BEHIND && g.spider_y < y) ? s_canopy_layer : s_decor_layer;
+    bool canopy = path == DECOR_WALK_BEHIND && g.spider_y < y;
+    lv_obj_t *parent = canopy ? s_canopy_layer : s_decor_layer;
     if (lv_obj_get_parent(s_preview_image) != parent) lv_obj_set_parent(s_preview_image, parent);
-    if (gift) {
-        lv_obj_move_to_index(s_preview_image, lv_obj_get_index(s_preview_ring));
-    } else {
+    {
         int index = 0;
-        bool canopy = path == DECOR_WALK_BEHIND && g.spider_y < y;
         for (int i = 0; i < s_decor_capacity; i++) {
             const decor_item_t *item = decor_at(i);
             if (!item || i == slot || decor_canopy_now(item) != canopy) continue;
@@ -451,13 +500,13 @@ void terrarium_preview_hide(void)
 {
     lv_obj_set_hidden(s_preview_ring, true);
     lv_obj_set_hidden(s_preview_image, true);
-    /* Unconditionally restore the gift layer. This used to be guarded by
-     * `s_preview_gift`, which left the layer hidden whenever the flag had
-     * already been cleared -- and a hidden layer plus a still-visible preview
+    /* Unconditionally restore the gift. This used to be guarded by
+     * `s_preview_gift`, which left the gift hidden whenever the flag had
+     * already been cleared -- and a hidden gift plus a still-visible preview
      * image is exactly the "two gifts, one stuck" report. The preview image is
-     * a SIBLING of the gift layer, not a child, so hiding the preview and
-     * showing the layer must always happen together. */
-    if (s_gift_layer) lv_obj_set_hidden(s_gift_layer, false);
+     * a SIBLING of the gift, not a child, so hiding the preview and showing the
+     * gift must always happen together. */
+    if (s_gift_obj) lv_obj_set_hidden(s_gift_obj, false);
     if (s_preview_slot >= 0 && s_preview_slot < s_decor_capacity)
         lv_obj_set_hidden(s_decor_obj[s_preview_slot], decor_at(s_preview_slot) == NULL);
     s_preview_gift = false;
@@ -580,12 +629,12 @@ void terrarium_init(lv_obj_t *parent)
     lv_obj_set_scrollable(s_background, false);
     ui.bg_canvas = s_background;
     terrarium_rebuild();
-    /* Decor is part of the floor, so its layer is created before the gift and
-     * the droppings and therefore draws beneath them. */
+    /* Decor is part of the floor, so its layer is created before the droppings
+     * and therefore draws beneath them. The gift is parented into the decor
+     * band itself (see s_gift_obj), so it needs no layer of its own. */
     s_decor_layer = layer(parent);
     s_canopy_layer = layer(parent);
     terrarium_refresh_decor();
-    s_gift_layer = layer(parent);
     s_gift_pixels = heap_caps_malloc(64 * 64 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     ESP_ERROR_CHECK(s_gift_pixels ? ESP_OK : ESP_ERR_NO_MEM);
     s_poop_layer = layer(parent);
