@@ -9629,3 +9629,22 @@ Physical appearance on the panel, and whether each redrawn floor, frame, prop
 and gift suits its theme in play, still need human eyes. No completed hosted
 OTA/reboot, signed firmware, encrypted NVS, functional rollback, physical
 touchscreen, SD media or RTC backup-battery claim is added.
+
+### Publication evidence
+
+- Release commit `0ed1b79` and annotated tag `v1.1.31` are pushed.
+  [Stable release](https://github.com/jeromedontdev/Spidarium/releases/tag/v1.1.31)
+  contains the ZIP, standalone app and OTA descriptor. The downloaded public ZIP
+  equals the verified local package; SHA-256
+  `d220b8d15dfc2ea0214f39bb9851a9a6b48123f8c612f3b3260c0a15efa25171`.
+- The first deploy attempt failed in 3 seconds with no steps run: the
+  `github-pages` environment's deployment branch policy listed tag policies only
+  through `v1.1.30`, so `v1.1.31` was rejected before any step started. Added the
+  `v1.1.31` tag policy and re-ran the failed job; both `build` and `deploy` then
+  report `success`.
+- Live site serves `v=1.1.31` and a firmware manifest of `1.1.31`/`ESP32-S3`/`16MB`.
+  All five hosted firmware images match the manifest SHA-256 exactly.
+- Hosted `save-schema.json` equals the local and compiled v18/55-field schema.
+- All 387 published PNGs were downloaded and hashed: 0 mismatches, 0 missing.
+- Root `/` redirects to `/site/`; artwork is served from `/assets/`, not
+  `/site/assets/`.
