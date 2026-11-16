@@ -10073,3 +10073,156 @@ indistinguishable from earned progress in the save and there is no way to tell
 afterwards that it was used. The 4 s cooldown is a judgement value chosen to be
 long enough to read as "it got up" and short enough not to feel like the spider
 is avoiding the prop.
+
+
+## Round 112 - Generated climb-structure art and an up-screen slope
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+Two corrections from the player: the large-item art needed updating, and the
+climb still read as walking over rather than up.
+
+### The honest answer on the art
+
+Round 108's six structures were drawn procedurally in `tools/climb_art.py`, not
+generated with nano banana. That was a deviation from the instruction to use
+nano banana 2.1 for the art passes, and it showed: the procedural sprites were
+flat top-down shapes with no near face, which is why they read as platforms.
+This round replaces them with generated art.
+
+### Decisions made
+
+- **Prompts live in `tools/climb_prompts.py`, mirroring the background and
+  border modules.** Same structure: a per-item recipe plus shared rules, a
+  `--list`/`--name`/`--all` CLI, and the style described as "modern hand-crafted
+  pixel art" rather than naming commercial titles, which makes the provider
+  refuse with a copyright block.
+- **Three prompt rules, each learned from a failed generation.** A low
+  three-quarter view (a visible near face and a receding top surface) is what
+  stops the object reading as a flat platform. "One continuous object" stops it
+  becoming a pile of pieces. An explicit framing rule is required because
+  without it the generator bleeds the object off all four edges and the ends are
+  lost.
+- **`tools/import_climb.py` is a new importer.** The generator returns JPEG, not
+  transparent PNG, so the background has to be keyed. It flood-fills from the
+  border rather than matching a colour globally, because a global match also
+  erases the pale highlights inside the branch and driftwood.
+- **Two generator quirks are handled explicitly.** It sometimes renders
+  "transparent background" as a literal grey checkerboard, which is detected and
+  keyed as two tones. And quantizing the whole RGBA image lets the transparent
+  black dominate the median cut, which collapsed the driftwood's pale silver
+  into brown mush; the quantizer now crops to the content box first.
+- **`gen_sprites.py` preserves the installed PNGs.** It previously called
+  `climb_art.draw()` unconditionally, so the validator's preserved-PNG check
+  failed the moment the art changed. It now loads the existing file and only
+  falls back to the procedural drawing when the PNG is missing.
+- **The lift is now a slope that runs up the screen.** This is the actual fix
+  for "a shadow as they walk over larger things". The old ramp was radial from
+  the centre, so the spider rose from whichever side it approached and the
+  effect read as being lifted onto a platform. Height is now a function of
+  vertical position only: the bottom edge of the footprint is ground level and
+  the top edge is the full climb height, so the spider enters at the bottom and
+  rises as it walks up.
+
+### Exact verification evidence
+
+- Build exit 0, zero `main` warnings. Flash exit 0, `Hash of data verified`.
+- `asset_build.py` -> `PACKED: 393 MMAP entries, QOI dimensions/opcodes/pixels
+  verified`, `DECOR: 74 placeable props with 8-12 material tones each`.
+- All six imported at `192x192 alpha=[0, 255] colors=12`, i.e. binary alpha and
+  inside the tone budget.
+- The up-screen slope on hardware, one session: `climbhere big` then sampling
+  `climb` gave lift tracking vertical position --
+  y=253 -> lift 26, y=244 -> 31, y=239 -> 33, y=225 -> 39, y=206 -> 48. The
+  lift rises as the spider walks up the screen, which is the fix.
+- The contact shadow is absent at ground level and present while climbing:
+  sampling lift and shadow together gave `(0, 0)` repeatedly at lift 0 and
+  `(32, 621)`, `(41, 407)`, `(57, 245)` while climbing.
+- Art fidelity checked numerically rather than by eye: the pale pixels of the
+  driftwood average (217,187,151) in the asset and (207,183,157) in the device
+  screenshot, so the packed QOI round-trips the palette. The earlier "dark"
+  appearance was the driftwood's own shadowed near face against a brown floor,
+  not a packing fault.
+- Browser suite 256/256 pass, including the rewritten "large climb structures
+  ramp up the screen, not out from the centre" test, which asserts bottom <
+  middle < top, that horizontal position does not change the height, and that a
+  prop still snaps to full height across its footprint.
+- Native suite 49 passed / 3 failed, identical to the stashed pre-change
+  baseline (`gifttest`, `uitest`, `wifi connect`).
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `RENDER ticks=500 largest_drift=0`. `scanloop 5` ->
+  `LOOP ok=5 failed=0 largest_drift=0`.
+- `mem` -> `internal=122875 largest=63488 dma=115143 psram=1065876`, so
+  `largest` is 63,488 against the 51,200 floor.
+
+### Honest boundaries
+
+Whether the six generated structures read as convincing climbable terrain on the
+physical panel still needs human eyes; the numeric checks prove the palette and
+the slope, not the impression. The slope is a straight vertical ramp, so a
+structure whose artwork runs diagonally (the branch and driftwood both do) will
+have the spider rise slightly faster or slower than the drawn surface suggests.
+Matching the ramp to each sprite's own axis would need a per-kind slope
+direction, which is not implemented.
+
+## Round 113 - Fixing the climb-art quantizer and re-importing all six
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+Round 112 shipped the generated climb art but the installed PNGs were not the
+keyed versions: four of the six still carried the generator's drawn
+transparency checkerboard as opaque pixels, and the root had collapsed to four
+visible tones. Both faults were in `tools/import_climb.py`, not in the art.
+
+### Decisions made
+
+- **Quantize only the opaque pixels.** Keying sets alpha but leaves each
+  transparent pixel's original RGB in place, so the background colour is still
+  in the data. Median-cutting the cropped image therefore spent palette entries
+  on colours nobody can see: the white-background root burned 8 of its 12
+  entries on near-white and shipped with 4 visible tones. The fix compacts the
+  opaque pixels into a one-row strip, builds the palette from that, then maps
+  every pixel to its nearest entry. All six now use the full 12 tones.
+- **Re-import from the original JPEGs rather than patching the PNGs.** The
+  `*_test.png` intermediates in `scratch/climb/` were already correct, but
+  regenerating from source keeps the pipeline reproducible and proves the
+  importer, not a hand edit, produced the shipped files.
+- **Prefer the second generation for root and boulder.** Both were generated
+  twice; the retries (`root2`, `boulder2`) have the better form and the first
+  attempts were kept only as a comparison.
+- **The stale-pack failure was not a code defect.** `asset_build.py` compares
+  the packed QOI against the source PNG, and the pack is produced by the build.
+  Editing an asset without rebuilding therefore always reports "packed QOI
+  pixels differ from source PNG". Rebuilding first makes the check pass.
+
+### Evidence
+
+- `asset_build.py` -> `PACKED: 393 MMAP entries, QOI dimensions/opcodes/pixels
+  verified`, `VALID: 393 PNGs`, `PIXEL ART: 354 non-spider PNGs, binary alpha`,
+  `DETERMINISTIC: two generation passes have identical SHA-256 hashes`,
+  `PRESERVED: all 393 source PNGs are byte-identical across generation`,
+  `DECOR: 74 placeable props with 8-12 material tones each`.
+- Every climb asset is 192x192 with binary alpha and exactly 12 visible tones.
+- Build exit 0 with zero `main` warnings; flash exit 0 with
+  `Hash of data verified`.
+- Device screenshot after `decor place 72 240 250` and `climbhere big` shows the
+  generated driftwood and boulder art on the panel with the spider on the
+  structure, so the packed art is the generated art and not the procedural
+  fallback.
+- Browser suite 256/256 pass.
+- Native suite 49 passed / 3 failed, the documented baseline (`gifttest`,
+  `uitest`, `wifi connect`). An intermediate run showed 48/4 because a climb
+  structure left placed from a manual check made `hunttest` fail; clearing the
+  enclosure restored 49/3.
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+The physical impression of the six structures still needs human eyes. The slope
+remains a straight vertical ramp, so the diagonal branch and driftwood rise
+slightly out of step with their drawn surface; a per-kind slope direction is
+still not implemented.

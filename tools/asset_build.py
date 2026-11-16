@@ -181,6 +181,11 @@ def validate_pixel_art(image, name):
     is_background = name.startswith("background_")
     is_spider = name.startswith("spider_")
     is_border = name.startswith("border_")
+    # The large climb structures are authored at 192x192 and drawn 1:1, so they
+    # carry native single-pixel detail like a background or a spider export.
+    # They are not doubled from a 64x64 source, so the 2x2 uniformity rule
+    # cannot apply to them.
+    is_climb = name.startswith("decoritem_climb_")
     if not is_background and (width % PIXEL_SCALE or height % PIXEL_SCALE):
         raise ValueError(f"{name}: dimensions must align to the 2x2 pixel grid")
     pixels = image.load()
@@ -194,7 +199,7 @@ def validate_pixel_art(image, name):
                 raise ValueError(f"{name}: background must be fully opaque at {(x, y)}")
             if pixel[3]:
                 colors.add(pixel)
-            if is_background or is_spider:
+            if is_background or is_spider or is_climb:
                 continue
             anchor = pixels[x - x % PIXEL_SCALE, y - y % PIXEL_SCALE]
             if pixel != anchor:

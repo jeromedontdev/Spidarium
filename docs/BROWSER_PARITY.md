@@ -147,9 +147,10 @@ anywhere inside the footprint, and the spider PERCHES on them: it holds the
 item's centre, turns to face out from it in 45-degree steps, and the renderer
 compresses the body's forward axis (`PERCH_FORESHORTEN` 0.72) so the pose reads
 as height rather than as a floating sprite. The six large structures (decor
-kinds68..73, authored 192x192 and drawn 1:1) ramp the lift from zero at the rim
-to full height at the centre, so the spider visibly climbs rather than hops.
-Their ownership is `climb_owned`, not `catalogue_owned_high`.
+kinds68..73, authored 192x192 and drawn 1:1) are a slope that runs up the
+screen: the spider enters at the bottom edge and rises as it walks toward the
+top edge, so height depends on vertical position only. Their ownership is
+`climb_owned`, not `catalogue_owned_high`.
 Back/Front arrows reorder within Floor (Solid/Walk Over/Climb) or Canopy (Walk Behind).
 Canopy draws above Floor and the entire creature layer, below lighting/HUD.
 Hit testing checks the frontmost canopy before gifts and Floor, then reverse

@@ -35,7 +35,7 @@ spider geometry, palettes or rendering.
 | Dedicated treat icons | 24x24 | 48x48 | 8-12 |
 | Gifts | 16x16 | 32x32; gifts displayed at 64x64 | 8-12 |
 | Placeable decor | 32x32 | 64x64; runtime uses footprint radius | 8-12 |
-| Large climb structures | 96x96 | 192x192; drawn 1:1 at LVGL scale 256 | 8-12 |
+| Large climb structures | 192x192 | 192x192; drawn 1:1 at LVGL scale 256 | 8-12 |
 | Legacy decor | Half its PNG dimensions | Existing dimensions unchanged | At most 12 |
 | Backgrounds | 240x240 | 240x240, enlarged to 480x480 | At most 64 |
 | Enclosure borders | 120x120 | 240x240, enlarged to 480x480 | At most 16 |
@@ -197,21 +197,45 @@ the newer core-prop drawings.
 ### Large climb structures
 
 The six climb structures (branch, vine, root, ivy, boulder, driftwood) are a
-separate family authored in [climb_art.py](../tools/climb_art.py) at a 96x96
-logical canvas, doubled to 192x192 and drawn 1:1 in game. They exist because a
+separate family authored at 192x192 and drawn 1:1 in game. They exist because a
 64x64 prop cannot sell a climb: at that size the spider appears to hop. Keep
 them large, keep them spanning most of the enclosure, and keep the same
 top-left light, ink rims and 8-12 tone budget as the props.
 
-Their silhouettes must read as one continuous structure with a walkable spine,
-not as a pile of small objects. `_taper()` gives the trunk a lit and shadowed
-side; `_highlight()` runs a short connected ridge along the top; `_leaf()` draws
-a curved outline with a lit half and a midrib; `_moss_patch()` clusters
-overlapping cushions. Do not add a generic speckle pass.
+**Their artwork is generated, not drawn procedurally.** The prompts live in
+[climb_prompts.py](../tools/climb_prompts.py) and are run through nano banana
+(`google/gemini-nano-banana-2.1`) via `tools/imagegen.py --provider openrouter`.
+[import_climb.py](../tools/import_climb.py) keys the background, centres the
+content, resizes to 192 with NEAREST and quantizes to 12 tones. `gen_sprites.py`
+preserves the installed PNGs rather than redrawing them; `climb_art.py` is only
+a fallback for a missing file. Do not hand-edit the PNGs.
 
-The lift ramps from zero at the footprint rim to full height at the centre, so
-the structure's own silhouette is what the player reads as the slope. Artwork
-that is flat across the middle will not climb convincingly.
+Three prompt rules matter and were each learned from a failed generation:
+
+- **Low three-quarter view.** The object needs a visible near face and a
+  receding top surface. A flat top-down view is what made the first attempt read
+  as a hop.
+- **One continuous object.** It must read as a single solid structure with a
+  walkable spine, not a pile of small pieces.
+- **Framing.** The whole object must fit inside the canvas with a transparent
+  margin. Without this the generator bleeds the object off all four edges and
+  the ends are lost.
+
+The importer also handles two generator quirks. It sometimes renders
+"transparent background" as a literal grey checkerboard, which is detected and
+keyed. And keying sets alpha without clearing the pixel's RGB, so the
+background colour is still in the data: quantizing the cropped image spends
+palette entries on colours nobody can see. A white-background source burned 8
+of its 12 entries on near-white and shipped with only 4 visible tones. The
+importer therefore builds the palette from the opaque pixels alone, then maps
+every pixel to its nearest entry. Every climb structure must end up with 12
+visible tones; `asset_build.py` rejects fewer than 8.
+
+The lift is a **slope that runs up the screen**: the spider enters at the bottom
+edge of the footprint and rises as it walks toward the top edge. Height is a
+function of vertical position only. Ramping radially from the centre made the
+spider rise from whichever side it approached, which read as being lifted onto
+a platform rather than climbing a branch.
 
 ### Organic props must read as their subject, not as speckle
 

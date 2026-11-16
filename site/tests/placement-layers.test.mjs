@@ -153,7 +153,7 @@ test('climb path lifts the spider and leaves a floor shadow',()=>{
   assert.equal(E.decorClimbAt(state,240,240),18,'the stone bridge is taller');
 });
 
-test('large climb structures ramp from the rim to the centre',()=>{
+  test('large climb structures ramp up the screen, not out from the centre',()=>{
   const {state}=fixture();
   for(const item of state.decor)item.kind=E.DECOR_EMPTY;
   /* Kind 74 is Driftwood Ramp: radius 66, climb height 62, drawn 1:1 at 192. */
@@ -163,15 +163,26 @@ test('large climb structures ramp from the rim to the centre',()=>{
   assert.equal(E.DECOR_CLIMB_SPRITE,192);
   state.decor[0]={kind,blocking:3,x:240,y:240};
   const def=E.DECOR_KINDS[kind];
-  assert.equal(E.decorClimbAt(state,240,240),def.climb,'full height at the centre');
-  const half=E.decorClimbAt(state,240+Math.round(def.radius/2),240);
-  assert.ok(half>0&&half<def.climb,`halfway out is a partial lift, got ${half}`);
+  /* The slope runs up the screen: the spider enters at the BOTTOM edge and rises
+   * as it walks toward the TOP edge. Ramping radially from the centre made it
+   * rise from whichever side it approached, which read as being lifted onto a
+   * platform rather than climbing a branch. */
+  const bottom=E.decorClimbAt(state,240,240+def.radius-1);
+  const middle=E.decorClimbAt(state,240,240);
+  const top=E.decorClimbAt(state,240,240-def.radius+1);
+  assert.ok(bottom<middle,`bottom ${bottom} must be lower than middle ${middle}`);
+  assert.ok(middle<top,`middle ${middle} must be lower than top ${top}`);
+  assert.ok(top>def.climb*0.9,`the top edge is near full height, got ${top}`);
+  assert.ok(bottom<def.climb*0.1,`the bottom edge is near ground, got ${bottom}`);
+  /* Horizontal position must not change the height: it is a slope, not a dome. */
+  assert.equal(E.decorClimbAt(state,240-30,240),E.decorClimbAt(state,240+30,240),
+    'height depends on vertical position only');
   assert.equal(E.decorClimbAt(state,240+def.radius+2,240),0,'nothing past the rim');
   /* A prop still snaps to full height across its whole footprint. */
   state.decor[0]={kind:3,blocking:3,x:240,y:240};
   assert.equal(E.decorClimbAt(state,240,240),16);
   assert.equal(E.decorClimbAt(state,240+21,240),16,'a prop is a flat disc');
-});
+  });
 
 test('a small prop is perched on, not walked across',()=>{
 const {state}=fixture();

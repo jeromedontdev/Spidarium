@@ -932,10 +932,13 @@ export function decorClimbAt(s,x,y){
     const d2=dx*dx+dy*dy;
     if(d2>def.radius*def.radius)continue;
     // A prop is a flat disc: inside the footprint you are at full height. A
-    // large climb structure is a ramp, so the lift grows from nothing at the
-    // rim to the full height at the centre.
+    // large climb structure is a SLOPE that runs UP THE SCREEN: the spider
+    // enters at the bottom edge and rises as it walks toward the top edge,
+    // which is what makes it read as climbing a branch rather than floating
+    // over one. Ramping radially from the centre made the spider rise from
+    // whichever side it approached, which read as being lifted onto a platform.
     const lift=decorIsClimbStructure(item.kind)
-      ? Math.round(def.climb*(1-Math.sqrt(d2)/def.radius))
+      ? Math.round(def.climb*Math.min(1,Math.max(0,1-(dy+def.radius)/(2*def.radius))))
       : def.climb;
     if(lift>best)best=lift;
   }

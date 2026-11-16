@@ -324,10 +324,18 @@ uint8_t decor_climb_height(int slot)
 /* The lift at a point on one item, or 0 when the point is off its surface.
  *
  * A prop is a flat disc: inside the footprint you are on it, outside you are
- * not. A large climb structure is a RAMP, so the lift grows from nothing at the
- * rim to the full height at the centre. Without that gradient the spider pops
- * to full height the instant it crosses the edge, which is exactly the hop the
- * small props already suffered from. */
+ * not.
+ *
+ * A large climb structure is a SLOPE, and the slope runs UP THE SCREEN. The
+ * spider enters at the bottom edge of the structure and rises as it walks
+ * toward the top edge, which is what makes it read as climbing a branch rather
+ * than floating over one. The first version ramped radially from the centre,
+ * so the spider rose from whichever side it approached and the effect read as
+ * being lifted onto a platform -- the "shadow as they walk over larger things"
+ * report. Height is a function of vertical position only.
+ *
+ * The ramp is measured across the footprint's vertical extent, so the bottom
+ * edge is ground level and the top edge is the full climb height. */
 static uint8_t climb_lift_on(const decor_item_t *item, const decor_def_t *def,
                              int16_t x, int16_t y)
 {
@@ -337,8 +345,12 @@ static uint8_t climb_lift_on(const decor_item_t *item, const decor_def_t *def,
     float d2 = dx * dx + dy * dy;
     if (d2 > r * r) return 0;
     if (!decor_is_climb_structure(item->kind)) return def->climb_height;
-    /* Normalised distance from the centre: 0 at the middle, 1 at the rim. */
-    float t = sqrtf(d2) / r;
+
+    /* 0 at the bottom edge of the footprint, 1 at the top edge. Screen y grows
+     * downward, so the bottom edge is item->y + r. */
+    float t = (dy + r) / (2.0f * r);
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
     float lift = (float)def->climb_height * (1.0f - t);
     return (uint8_t)(lift + 0.5f);
 }
