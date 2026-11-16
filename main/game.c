@@ -2469,7 +2469,8 @@ static bool test_gifts(void)
     gift_compute();
     bool economy = gift_economy_test();
     bool visits = behaviour_gift_test();
-    return tested == GIFT_KINDS && removed && economy && visits;
+    bool blocks = behaviour_gift_block_test();
+    return tested == GIFT_KINDS && removed && economy && visits && blocks;
 }
 
 bool game_ui_call(game_ui_action_t action)

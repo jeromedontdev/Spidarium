@@ -1168,7 +1168,8 @@ static void run_line(char *line)
     }
     else if (!strcmp(line, "gifttest")) {
         if (!game_ui_call(GAME_UI_TEST_GIFTS)) printf("ERR gift test UI request failed\n");
-        else printf("OK gifts tested=%d removed_neutral=1 economy=1 visits=1\n", GIFT_KINDS);
+        else printf("OK gifts tested=%d removed_neutral=1 economy=1 visits=1 blocks=1\n",
+                    GIFT_KINDS);
     }
     else if (!strcmp(line, "giftpath")) {
         /* Report or set the placed gift's path. The gift honours the same
@@ -1246,6 +1247,23 @@ static void run_line(char *line)
     else if (!strcmp(line, "decortest")) {
         if (!game_ui_call(GAME_UI_DECOR_TEST)) printf("ERR decor test request or assertion failed\n");
         else printf("OK decortest placed=%d slots=%d\n", DECOR_COUNT, DECOR_SLOTS);
+    }
+    else if (!strcmp(line, "spiderpos")) {
+        /* Teleport the spider and report where it actually ended up.
+         *
+         * The spider wanders faster than a script can issue commands, so a
+         * blocking rule cannot be checked by walking it into an obstacle: by the
+         * time the next command arrives it has moved on. Writing the position
+         * and reading it back after a tick shows whether the separation pass
+         * pushed it out, which is the only way to prove Walk Behind blocks. */
+        int px = 0, py = 0;
+        if (!arg || sscanf(arg, "%d %d", &px, &py) != 2) {
+            printf("ERR usage: spiderpos X Y\n");
+            return;
+        }
+        g.spider_x = (int16_t)px;
+        g.spider_y = (int16_t)py;
+        printf("OK spiderpos want=(%d,%d)\n", px, py);
     }
     else if (!strcmp(line, "climb")) {
         /* Report the live climb state at the spider's position. This is the only

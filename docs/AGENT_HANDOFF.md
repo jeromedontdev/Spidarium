@@ -201,6 +201,16 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   hip-to-foot gradient (`LEG_DORSAL`), and the far-side eyes are dropped so a
   single eye sits on the front face. All of it is blended by one eased factor,
   so stepping on and off is a camera swing rather than a pose pop.
+  Three details decide whether the pose reads at all. The SEPARATION between the
+  two body masses is the main one: 7 and 3 left a 4 px gap between circles of
+  radius 13 and 11, so they merged into one blob and the "side view" looked like
+  a lump. It is now 12 px, and the abdomen narrows to `ABD_PROFILE_SCALE` (0.86)
+  because a side view sees a teardrop rather than a circle. The far-side legs
+  also have to RETRACT, not just sit lower: the right axis is only
+  `CLIMB_PROFILE_RIGHT` wide at full profile, so drawing all eight legs merged
+  them into a thicket (the "legs on both sides show" report). The far side lerps
+  its knee and foot back toward the hip as the profile rises, which reads as the
+  legs passing behind the body.
   Two constants keep that swing readable. `CLIMB_PROFILE_START` (0.35) holds the
   top-down pose through the lower third of the ramp, because a profile at the
   very bottom looked wrong: the spider is still effectively on the floor there.
@@ -270,6 +280,14 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   oscillates every tick. The layer row is hidden when the band holds nothing but
   the gift, since "1 / 1" is not a choice. All exits stay in
   the enclosure, with no Back-to-Settings route.
+  Walk Behind BLOCKS movement as well as occluding (`gift_blocks_movement()` in
+  behaviour.c, `GIFT_BLOCK_RADIUS` 28 against the 64x64 artwork). It used to be
+  non-blocking, so the spider crossed the footprint and was drawn on top of the
+  gift's lower half before popping behind its upper half -- the "they walk over
+  the bottom and then behind above it" report. Blocking is what makes the canopy
+  switch read: the only way to be above the gift's centre line is to be
+  genuinely behind the artwork. `behaviour_gift_block_test()` guards it, and
+  `gifttest` reports `blocks=1`.
   Save v13 keeps the v12 layout, storing path0/1/2 in the existing byte and
   layer order in record order. Only path1 collides. Read old v2-v12 saves,
   reject path2 before v13/path3 always; do not downgrade a v13 save to old

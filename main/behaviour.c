@@ -259,20 +259,42 @@ static void advance(float speed, float dt_s)
 #define GIFT_AVOID_RADIUS   40.0f   /* start steering away this far out */
 #define GIFT_PUSH_RADIUS    18.0f   /* only shove if actually this close */
 
+/* The gift sprite is a 64x64 canvas centred on the gift, so its visible
+ * half-extent is 32 px. Walk Behind blocks against this rather than the small
+ * push radius, so the spider is kept clear of the whole artwork. */
+#define GIFT_BLOCK_RADIUS   28.0f
+
+/* True when the gift's path stops the spider walking through it.
+ *
+ * Walk Behind used to be non-blocking, which meant the spider crossed the
+ * footprint and was drawn ON TOP of the gift's lower half before popping behind
+ * its upper half. That is the "they walk over the bottom and then behind above
+ * it" report. A gift is a solid object standing on the floor, so the spider has
+ * to go around it; the canopy switch then only ever fires while the spider is
+ * genuinely above the artwork, which is what makes the occlusion read. */
+static bool gift_blocks_movement(void)
+{
+    return g.gift_path == DECOR_SOLID || g.gift_path == DECOR_WALK_BEHIND;
+}
+
 /* Returns a heading offset (radians) that steers away from the gift, or 0 if
  * the path ahead is clear. */
 static float gift_avoidance(float heading)
 {
     if (!g.gift.used) return 0.0f;
-    /* Only Solid steers the spider around. Walk Over, Walk Behind and Climb all
-     * let the spider cross the item, so pushing it away would contradict the
-     * path the player chose. */
-    if (g.gift_path != DECOR_SOLID) return 0.0f;
+    /* Walk Over and Climb are meant to be crossed, so pushing the spider away
+     * would contradict the path the player chose. Solid and Walk Behind are
+     * obstacles. */
+    if (!gift_blocks_movement()) return 0.0f;
 
     float dx = (float)(g.gift.x - g.spider_x);
     float dy = (float)(g.gift.y - g.spider_y);
     float d2 = dx * dx + dy * dy;
-    if (d2 < 0.01f || d2 > GIFT_AVOID_RADIUS * GIFT_AVOID_RADIUS) return 0.0f;
+    /* Walk Behind has to be steered around from further out, because it blocks
+     * against the whole artwork rather than the small push radius. */
+    float avoid = (g.gift_path == DECOR_WALK_BEHIND)
+        ? GIFT_BLOCK_RADIUS + GIFT_AVOID_RADIUS : GIFT_AVOID_RADIUS;
+    if (d2 < 0.01f || d2 > avoid * avoid) return 0.0f;
 
     float d = sqrtf(d2);
 
@@ -289,7 +311,7 @@ static float gift_avoidance(float heading)
     float turn = (side >= 0.0f) ? -1.0f : 1.0f;
 
     /* Weight by proximity: barely a nudge at the edge, a firm turn up close. */
-    float w = 1.0f - d / GIFT_AVOID_RADIUS;
+    float w = 1.0f - d / avoid;
     return turn * w * (PI_F * 0.5f);
 }
 
@@ -401,20 +423,31 @@ static float wall_avoidance(float want)
 static void separate_from_gift(void)
 {
     if (!g.gift.used) return;
-    /* Only a Solid gift is an obstacle. The other paths are meant to be crossed,
-     * so shoving the spider out of them would fight the player's choice. */
-    if (g.gift_path != DECOR_SOLID) return;
+    /* Walk Over and Climb are meant to be crossed, so shoving the spider out of
+     * them would fight the player's choice. Solid and Walk Behind are obstacles. */
+    if (!gift_blocks_movement()) return;
 
     float dx = (float)(g.spider_x - g.gift.x);
     float dy = (float)(g.spider_y - g.gift.y);
     float d2 = dx * dx + dy * dy;
 
-    if (d2 > 0.01f && d2 < GIFT_PUSH_RADIUS * GIFT_PUSH_RADIUS) {
-        float d = sqrtf(d2);
-        float push = GIFT_PUSH_RADIUS - d;
-        g.spider_x = (int16_t)((float)g.spider_x + dx / d * push);
-        g.spider_y = (int16_t)((float)g.spider_y + dy / d * push);
+    /* Walk Behind blocks against the artwork, not the small push radius: the
+     * spider must not be able to stand on the gift's lower half at all. */
+    float radius = (g.gift_path == DECOR_WALK_BEHIND) ? GIFT_BLOCK_RADIUS
+                                                      : GIFT_PUSH_RADIUS;
+    if (d2 >= radius * radius) return;
+
+    /* Exactly coincident has no direction to push along, so pick one. Without
+     * this the spider could sit dead centre on the gift forever, which is the
+     * one place the block is most visible. */
+    if (d2 < 0.01f) {
+        g.spider_y = (int16_t)((float)g.gift.y + radius);
+        return;
     }
+    float d = sqrtf(d2);
+    float push = radius - d;
+    g.spider_x = (int16_t)((float)g.spider_x + dx / d * push);
+    g.spider_y = (int16_t)((float)g.spider_y + dy / d * push);
 }
 
 static void clamp_to_playfield(void)
@@ -1362,5 +1395,56 @@ bool behaviour_gift_test(void)
     heap_caps_free(original);
     s_gift_visiting = visiting; s_gift_visit_at = visit_at; s_gift_hold_until = hold;
     s_gift_visit_end = end; s_idle_until = idle;
+    return ok;
+}
+
+/* Walk Behind must block movement, not just occlude.
+ *
+ * The bug this guards: Walk Behind was non-blocking, so the spider crossed the
+ * gift's footprint and was drawn ON TOP of its lower half before popping behind
+ * the upper half. The separation pass is the only thing that can prevent that,
+ * and it cannot be checked from the console because the spider wanders faster
+ * than a script can issue commands. */
+bool behaviour_gift_block_test(void)
+{
+    game_state_t *original = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!original) { ESP_LOGW("spidarium.behaviour", "gift block test rejected: PSRAM exhausted"); return false; }
+    *original = g;
+    float px = s_px, py = s_py;
+    bool pos_init = s_pos_init;
+
+    g.gift.used = 1; g.gift.kind = 0;
+    g.gift.x = 240; g.gift.y = 240;
+    bool ok = true;
+
+    /* Walk Behind: a spider standing on the gift's lower half is pushed clear of
+     * the whole artwork. */
+    g.gift_path = DECOR_WALK_BEHIND;
+    g.spider_x = 240; g.spider_y = 250;
+    separate_from_gift();
+    float dx = (float)(g.spider_x - 240), dy = (float)(g.spider_y - 240);
+    ok = ok && hypotf(dx, dy) >= GIFT_BLOCK_RADIUS - 0.5f;
+
+    /* Dead centre has no direction to push along, so it must still be ejected. */
+    g.spider_x = 240; g.spider_y = 240;
+    separate_from_gift();
+    dx = (float)(g.spider_x - 240); dy = (float)(g.spider_y - 240);
+    ok = ok && hypotf(dx, dy) >= GIFT_BLOCK_RADIUS - 0.5f;
+
+    /* Walk Over is meant to be crossed, so it must NOT push. */
+    g.gift_path = DECOR_WALK_OVER;
+    g.spider_x = 240; g.spider_y = 240;
+    separate_from_gift();
+    ok = ok && g.spider_x == 240 && g.spider_y == 240;
+
+    /* Solid still pushes, but only out of the small push radius. */
+    g.gift_path = DECOR_SOLID;
+    g.spider_x = 240; g.spider_y = 245;
+    separate_from_gift();
+    dx = (float)(g.spider_x - 240); dy = (float)(g.spider_y - 240);
+    ok = ok && hypotf(dx, dy) >= GIFT_PUSH_RADIUS - 0.5f;
+
+    g = *original; s_px = px; s_py = py; s_pos_init = pos_init;
+    heap_caps_free(original);
     return ok;
 }

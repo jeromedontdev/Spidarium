@@ -417,8 +417,11 @@ void ui_hud_set_place_mode(bool on, const char *hint)
         if (path >= DECOR_PATH_COUNT) path = DECOR_WALK_OVER;
         lv_label_set_text(s_place_path_label, names[path]);
         lv_obj_set_style_bg_color(s_place_path, lv_color_hex(0x2b6a5f), 0);
+        /* Walk Behind blocks movement as well as occluding, so the tip has to
+         * say both: the spider goes around the item and passes behind its top. */
         static const char *tips[] = {"Spider crosses above this item",
-            "Spider steers around this item", "Spider passes underneath this item",
+            "Spider steers around this item",
+            "Spider goes around, passes behind the top",
             "Spider climbs onto this item"};
         lv_label_set_text(s_hint, tips[path]);
     }

@@ -570,20 +570,27 @@ static float s_profile = 0.0f;
 
 /* Dorsal offsets, in canvas pixels, at full profile. The abdomen rides higher
  * than the cephalothorax, which is the classic spider profile: a raised
- * teardrop behind a lower head. The eyes sit on the front face, so they lift
- * with the head rather than staying on the top of it. */
-#define ABD_DORSAL   7.0f
-#define CEPH_DORSAL  3.0f
-#define EYE_DORSAL   4.0f
-#define FANG_DORSAL  2.0f
+ * teardrop behind a lower head.
+ *
+ * The SEPARATION is what makes the profile read. The first attempt used 7 and 3,
+ * a 4 px gap between two circles of radius 13 and 11, so the two masses simply
+ * overlapped into one blob and the "side view" looked like a lump. A profile
+ * needs the abdomen clearly above and behind the head, so the gap is now 12 px
+ * and the abdomen shrinks slightly (see ABD_PROFILE_SCALE) to read as a
+ * teardrop rather than a ball. */
+#define ABD_DORSAL   12.0f
+#define CEPH_DORSAL   0.0f
+#define EYE_DORSAL    3.0f
+#define FANG_DORSAL  -1.0f
+
+/* The abdomen is drawn slightly smaller in profile. Seen from above it is a
+ * circle; seen from the side it is a teardrop, which is narrower across. */
+#define ABD_PROFILE_SCALE 0.86f
 
 /* How far the legs hang below the body at full profile. A side view sees the
  * legs as struts under the body rather than spokes around it, so they need to
- * drop clear of the abdomen instead of radiating from the hips. Kept small
- * enough that the hips stay inside the body silhouette: the body is drawn after
- * the legs, so a slight overlap is hidden, but too large an offset leaves the
- * legs floating as a detached cluster. */
-#define LEG_DORSAL   5.0f
+ * drop clear of the abdomen instead of radiating from the hips. */
+#define LEG_DORSAL   7.0f
 
 /* Extra drop for the near-side legs at full profile. The far side is drawn
  * first and sits slightly higher, so the two sides separate instead of
@@ -1056,6 +1063,16 @@ void cspider_render(uint32_t now_ms)
      * the screen, and the far side is drawn first so the body paints over it. */
     for (int pass = 0; pass < 2; pass++) {
         int side = (pass == 0) ? -1 : 1;
+        /* The far side retracts behind the body as the profile rises.
+         *
+         * A side view sees four legs. Drawing all eight was the "legs on both
+         * sides show" report: the right axis is only CLIMB_PROFILE_RIGHT wide at
+         * full profile, so the two sides sit almost on top of each other and the
+         * eight legs merge into a thicket. Lerping the knee and foot back toward
+         * the hip shrinks the far legs into the body, which reads as them
+         * passing behind it rather than blinking out. */
+        float far = (pass == 0) ? (1.0f - s_profile) : 1.0f;
+        if (far < 0.02f) continue;
         for (int k = 0; k < 4; k++) {
             leg_pose_t pose = leg_pose(k, side, s_gait.phase, moving, emote,
                                        now_ms);
@@ -1067,13 +1084,19 @@ void cspider_render(uint32_t now_ms)
              * on one line and read as a detached cluster. The near side drops a
              * little further so the two sides separate. */
             float base = -(LEG_DORSAL + (pass == 1 ? LEG_DORSAL_NEAR : 0.0f))
-                         * s_profile;
+                         * s_profile * far;
             float hip_d  = base;
             float knee_d = base * 1.7f;
             float foot_d = base * 2.4f;
+            /* Retract the far legs toward the hip so they shrink into the body
+             * instead of hanging below it as stubs. */
+            float kf = pose.hf + (pose.kf - pose.hf) * far;
+            float kr = pose.hr + (pose.kr - pose.hr) * far;
+            float ff = pose.hf + (pose.ff - pose.hf) * far;
+            float fr = pose.hr + (pose.fr - pose.hr) * far;
             to_canvas_dorsal(pose.hf, pose.hr, hip_d, heading, 1, 1, &hx, &hy);
-            to_canvas_dorsal(pose.kf, pose.kr, knee_d, heading, 1, 1, &kx, &ky);
-            to_canvas_dorsal(pose.ff, pose.fr, foot_d, heading, 1, 1, &fx, &fy);
+            to_canvas_dorsal(kf, kr, knee_d, heading, 1, 1, &kx, &ky);
+            to_canvas_dorsal(ff, fr, foot_d, heading, 1, 1, &fx, &fy);
             draw_line(hx, hy, kx, ky, LEG_WIDTH, col_leg);
             draw_line(kx, ky, fx, fy, LEG_WIDTH, col_leg);
         }
@@ -1084,21 +1107,27 @@ void cspider_render(uint32_t now_ms)
      * abdomen rides higher than the cephalothorax, which is the classic spider
      * silhouette. On the floor s_profile is 0, so these collapse to the flat
      * top-down pose the rest of the game uses. */
+    /* Seen from the side the abdomen is a teardrop, not a circle, so it narrows
+     * as the profile rises. Without this the two body masses were the same
+     * width and the silhouette read as a lump rather than a spider. */
+    int32_t abd_r = (int32_t)lroundf((float)ABD_R *
+        (1.0f - (1.0f - ABD_PROFILE_SCALE) * s_profile));
+
     to_canvas_dorsal(ABD_FWD, 0.0f, ABD_DORSAL, heading, sx, sy, &x, &y);
-    fill_circle(x, y, ABD_R, col_base);
+    fill_circle(x, y, abd_r, col_base);
 
     to_canvas_dorsal(ABD_FWD - 1.5f, -1.5f, ABD_DORSAL, heading, sx, sy, &x, &y);
-    fill_circle(x, y, ABD_R - 3, col_mid);
+    fill_circle(x, y, abd_r - 3, col_mid);
 
     to_canvas_dorsal(ABD_FWD - 3.0f, -3.0f, ABD_DORSAL, heading, sx, sy, &x, &y);
-    fill_circle(x, y, ABD_R - 7, col_hi);
+    fill_circle(x, y, abd_r - 7, col_hi);
 
     /* Fuzzy rim. */
     for (int i = 0; i < FUZZ_COUNT; i++) {
         float a = (float)i * 2.0f * PI_F / (float)FUZZ_COUNT;
         int32_t fr = FUZZ_R - (i % 2);
-        to_canvas_dorsal(ABD_FWD + cosf(a) * (float)(ABD_R + FUZZ_OUT),
-                         sinf(a) * (float)(ABD_R + FUZZ_OUT),
+        to_canvas_dorsal(ABD_FWD + cosf(a) * (float)(abd_r + FUZZ_OUT),
+                         sinf(a) * (float)(abd_r + FUZZ_OUT),
                          ABD_DORSAL, heading, sx, sy, &x, &y);
         fill_circle(x, y, fr, col_fuzz);
     }

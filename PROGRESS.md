@@ -10519,3 +10519,61 @@ the time constants and by comparing canvas captures at four lift values, not by
 watching it animate. `decortest` still fails on the six climb structures
 reporting "not owned" -- a pre-existing harness gap (`climb_owned` is not
 granted), not a regression, and it is not part of `run_tests.py`.
+
+---
+
+## Round 118 - A profile that reads, and Walk Behind that blocks
+
+### Decisions made
+
+- **The two body masses have to be SEPARATED, not just offset.** Round 117 used
+  `ABD_DORSAL` 7 and `CEPH_DORSAL` 3, a 4 px gap between circles of radius 13
+  and 11. They simply overlapped into one blob, which is why the side view
+  "looked really bad". The gap is now 12 px, and the abdomen narrows to
+  `ABD_PROFILE_SCALE` (0.86) because a side view sees a teardrop rather than a
+  circle.
+- **The far-side legs must RETRACT, not just sit lower.** The right axis is only
+  `CLIMB_PROFILE_RIGHT` (0.55) wide at full profile, so drawing all eight legs
+  merged them into a thicket -- the "legs on both sides show" report. The far
+  side now lerps its knee and foot back toward the hip as the profile rises,
+  which reads as the legs passing behind the body instead of blinking out.
+- **Walk Behind blocks movement as well as occluding.** It was non-blocking, so
+  the spider crossed the gift's footprint and was drawn ON TOP of its lower half
+  before popping behind the upper half. A gift is a solid object standing on the
+  floor, so the spider has to go around it; the canopy switch then only ever
+  fires while the spider is genuinely above the artwork. `GIFT_BLOCK_RADIUS`
+  (28) covers the 64x64 artwork rather than the 18 px push radius, and the
+  avoidance berth widens to match so the spider turns away early enough to look
+  deliberate.
+- **Coincident positions need an explicit push direction.** `separate_from_gift`
+  skipped the push when the spider was exactly on the gift's centre, which is
+  the one place the block is most visible. It now ejects along +y.
+
+### Evidence
+
+- Spider-canvas captures at lift 0 / 30 / 62: the floor pose is unchanged (all
+  eight legs, both eyes, contact shadow); at 62 the abdomen is clearly above and
+  behind the head with four legs visible.
+- `gifttest` -> `OK gifts tested=36 removed_neutral=1 economy=1 visits=1
+  blocks=1`.
+- The block test is real, not decorative: reverting
+  `gift_blocks_movement()` to `path == DECOR_SOLID` makes `gifttest` fail with
+  `ERR gift test UI request failed`. Restored and re-verified.
+- `run_tests.py COM7` -> `passed=50 failed=2` (`uitest`, `wifi connect`), at or
+  better than the documented 49/3 baseline.
+- Browser suite 263/263, including new tests for the body separation, the
+  abdomen narrowing and the Walk Behind blocking rule.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+The captures prove the silhouette and the leg count; they do not prove the pose
+reads as a convincing side view on the physical panel, which still needs human
+eyes. The Walk Behind change alters gameplay: a gift on that path is now an
+obstacle the spider steers around, so it will visit the gift less often than it
+did when it could walk through it. That is the intended reading of "walk behind"
+but it is a behaviour change, not just a rendering one. `decortest` still fails
+on the six climb structures reporting "not owned" -- a pre-existing harness gap,
+not a regression, and it is not part of `run_tests.py`.

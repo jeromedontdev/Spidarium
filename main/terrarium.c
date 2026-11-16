@@ -200,7 +200,12 @@ static lv_obj_t *dot(lv_obj_t *parent, int x, int y, int radius, uint32_t color)
 /* The gift honours the same Walk Behind rule as decor: it may only cover the
  * spider with its top half, so it moves to the canopy band while the spider is
  * above its centre line and drops back to the floor band once the spider is
- * level with or below the base. */
+ * level with or below the base.
+ *
+ * Walk Behind also BLOCKS movement (see gift_blocks_movement() in behaviour.c),
+ * so the spider can never stand on the gift's lower half. That is what makes
+ * this rule read correctly: the only way to be above the centre line is to be
+ * genuinely behind the artwork, never on top of it. */
 static bool gift_canopy_now(void)
 {
     return g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y;

@@ -96,5 +96,8 @@ void behaviour_pos(float *x, float *y);
 void behaviour_sync_position(void);
 bool behaviour_gift_visiting(void);
 bool behaviour_gift_test(void);
+/* Walk Behind blocks movement as well as occluding; this proves the separation
+ * pass ejects the spider from the whole artwork. */
+bool behaviour_gift_block_test(void);
 bool behaviour_trick(unsigned kind);
 bool behaviour_trick_active(void);

@@ -482,6 +482,30 @@ test('climbing blends the spider into a side view',()=>{
    * spider profile: a raised teardrop behind a lower head. */
   assert.ok(E.ABD_DORSAL>E.CEPH_DORSAL,'the abdomen rides higher than the head');
   assert.ok(E.LEG_DORSAL>0,'the legs hang below the body in profile');
+
+  /* The SEPARATION is what makes the profile read. The first attempt used 7 and
+   * 3, a 4 px gap between circles of radius 13 and 11, so the two masses merged
+   * into one blob and the side view looked like a lump. */
+  const gap=E.ABD_DORSAL-E.CEPH_DORSAL;
+  assert.ok(gap>=10,`the body masses must be clearly separated, got ${gap}`);
+  /* Seen from the side the abdomen is a teardrop, not a circle, so it narrows. */
+  assert.ok(E.ABD_PROFILE_SCALE<1&&E.ABD_PROFILE_SCALE>0.7,
+    'the abdomen narrows in profile but stays readable');
+});
+
+test('walk behind blocks movement as well as occluding',()=>{
+  /* Walk Behind used to be non-blocking, so the spider crossed the gift's
+   * footprint and was drawn ON TOP of its lower half before popping behind the
+   * upper half. A gift is a solid object standing on the floor, so the spider
+   * has to go around it; the canopy switch then only ever fires while the
+   * spider is genuinely above the artwork. */
+  assert.equal(E.giftBlocksMovement(1),true,'Solid blocks');
+  assert.equal(E.giftBlocksMovement(2),true,'Walk Behind blocks');
+  assert.equal(E.giftBlocksMovement(0),false,'Walk Over is meant to be crossed');
+  assert.equal(E.giftBlocksMovement(3),false,'Climb is meant to be crossed');
+  /* The block radius covers the artwork, not just the small push radius. */
+  assert.ok(E.GIFT_BLOCK_RADIUS>18,
+    'Walk Behind blocks against the artwork, not the push radius');
 });
 
 test('the layer row is hidden when there is nothing to order against',()=>{

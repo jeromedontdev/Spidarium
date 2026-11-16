@@ -70,11 +70,16 @@ export const CLIMB_TILT_MAX = 0.52;
 // onto the screen as this rises. Mirrors CLIMB_PROFILE_RIGHT and the dorsal
 // offsets in main/cspider.c.
 export const CLIMB_PROFILE_RIGHT = 0.55;
-export const ABD_DORSAL = 7.0;
-export const CEPH_DORSAL = 3.0;
-export const EYE_DORSAL = 4.0;
-export const FANG_DORSAL = 2.0;
-export const LEG_DORSAL = 5.0;
+// The SEPARATION between the two body masses is what makes the profile read.
+// 7 and 3 left a 4 px gap between circles of radius 13 and 11, so they merged
+// into one blob. A profile needs the abdomen clearly above and behind the head.
+export const ABD_DORSAL = 12.0;
+export const CEPH_DORSAL = 0.0;
+export const EYE_DORSAL = 3.0;
+export const FANG_DORSAL = -1.0;
+// Seen from the side the abdomen is a teardrop, not a circle, so it narrows.
+export const ABD_PROFILE_SCALE = 0.86;
+export const LEG_DORSAL = 7.0;
 export const LEG_DORSAL_NEAR = 1.5;
 // Fraction of the climb at which the side view starts to blend in. Below this
 // the spider is still effectively on the floor, so it stays top-down.
@@ -1443,13 +1448,26 @@ function mindTick(s){
   s.mind_rule=best?.[0]??null;s.want=best?.[1]??'nothing';
   s.thought={food:'hungry',rest:'sleepy',play:'wants to play',clean:'feels grubby',explore:'exploring',watch:'watching you',nothing:''}[s.want];
 }
+// The gift sprite is a 64x64 canvas centred on the gift, so its visible
+// half-extent is 32 px. Walk Behind blocks against this rather than the small
+// push radius, so the spider is kept clear of the whole artwork.
+export const GIFT_BLOCK_RADIUS=28;
+// Walk Behind blocks movement as well as occluding. It used to be
+// non-blocking, so the spider crossed the footprint and was drawn ON TOP of the
+// gift's lower half before popping behind its upper half.
+export function giftBlocksMovement(path){
+  return path===1||path===2;
+}
 function steer(s,want,dt,avoid=false){
   if(avoid){
     let a=0;
-    if(s.gift.used&&s.gift_path===1){
+    if(s.gift.used&&giftBlocksMovement(s.gift_path)){
       const dx=s.gift.x-s.spider_x,dy=s.gift.y-s.spider_y,d=Math.hypot(dx,dy);
-      if(d>.1&&d<=40&&(dx*Math.cos(want)+dy*Math.sin(want))/d>=.15)
-        a=(wrap(Math.atan2(dy,dx)-want)>=0?-1:1)*(1-d/40)*PI*.5;
+      // Walk Behind has to be steered around from further out, because it
+      // blocks against the whole artwork rather than the small push radius.
+      const avoidR=s.gift_path===2?GIFT_BLOCK_RADIUS+40:40;
+      if(d>.1&&d<=avoidR&&(dx*Math.cos(want)+dy*Math.sin(want))/d>=.15)
+        a=(wrap(Math.atan2(dy,dx)-want)>=0?-1:1)*(1-d/avoidR)*PI*.5;
     }
     // Blocking decor: same steering principle, measured from the footprint
     // edge so a big log pushes the spider away further out than a small rock.
@@ -1655,9 +1673,16 @@ function behaviourTick(s,dt){
       else if(done)setState(s,1);
     }
   }
-  if(!r.pounce&&s.gift.used&&s.gift_path===1){
+  if(!r.pounce&&s.gift.used&&giftBlocksMovement(s.gift_path)){
     const dx=s.spider_x-s.gift.x,dy=s.spider_y-s.gift.y,d=Math.hypot(dx,dy);
-    if(d>.1&&d<18){s.spider_x=Math.trunc(s.spider_x+dx/d*(18-d));s.spider_y=Math.trunc(s.spider_y+dy/d*(18-d));}
+    // Walk Behind blocks against the artwork, not the small push radius: the
+    // spider must not be able to stand on the gift's lower half at all.
+    const radius=s.gift_path===2?GIFT_BLOCK_RADIUS:18;
+    if(d<radius){
+      // Exactly coincident has no direction to push along, so pick one.
+      if(d<.1){s.spider_y=Math.trunc(s.gift.y+radius);}
+      else{s.spider_x=Math.trunc(s.spider_x+dx/d*(radius-d));s.spider_y=Math.trunc(s.spider_y+dy/d*(radius-d));}
+    }
   }
   if(s.spider_x!==round(r.px))r.px=s.spider_x;if(s.spider_y!==round(r.py))r.py=s.spider_y;
   s.spider_x=clamp(s.spider_x,34,446);s.spider_y=clamp(s.spider_y,34,446);
