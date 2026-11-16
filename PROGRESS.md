@@ -9830,3 +9830,88 @@ panel, and whether each of the six ramp radii suits its artwork, still need
 human eyes. No hosted OTA, signed firmware, encrypted NVS or functional rollback
 claim is added. The structures do not change steering: like the props, a Climb
 item is neither blocking nor walk-over, it is walked onto and lifted.
+
+
+## Round 109 - Perching on small props (perspective skew)
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+Round 108 added the large climb structures. The user's follow-up was that both
+families should stay, but the small props needed a different treatment: "If they
+hop on a smaller item they should sit there and change orientation. That's how
+we will get the illusion by skewing perspective and rendering the spider in a
+different direction."
+
+### Decisions made
+
+- **Both families stay.** The user explicitly said "I dont mind some smaller
+  items they can hop on, its just not what I had intended so lets do both." The
+  53 small props keep their Climb path and their snap-to-full-height lift; the
+  six large structures keep their ramp. Round 108's open question is resolved.
+- **A small prop is perched on, not walked across.** A new `SPIDER_PERCH` state
+  holds the item's centre and turns the spider to face out from it. Walking
+  across a 64x64 prop is what produced the hop; stopping on it is what produces
+  a pose.
+- **The heading faces OUT from the item, not at its centre.** Facing the centre
+  points the spider at its own feet, which is the opposite of the illusion.
+  Facing outward is the pose a perched animal actually holds. The heading is
+  snapped to 45-degree steps so the leg fan lands on a stable angle instead of
+  sweeping through arbitrary angles.
+- **The perspective skew is a forward-axis compression, not a scale.** A flat
+  top-down spider sitting on a rock still reads as a flat top-down spider.
+  `PERCH_FORESHORTEN` (0.72) compresses the body's forward axis, which is what a
+  lower viewing angle does to a body pointing away from the viewer: the abdomen
+  crowds toward the cephalothorax and the silhouette shortens. Below about 0.6
+  the abdomen starts to overlap the cephalothorax and it stops reading as a
+  spider. It is eased in and out so entering and leaving the perch is not a pop.
+- **The perch centre is derived from the item every tick, never cached.** This
+  was a real bug found on hardware. The first version cached the centre in the
+  idle branch that starts the perch, so `state 10` (which forces the state
+  directly) and a save load that restores `SPIDER_PERCH` both left a stale
+  centre and the spider drifted to a point that was not on the prop at all.
+  `decor_perch_center()` now resolves it from the item each tick.
+- **Hunger, exhaustion and sickness all end the perch.** A cosmetic pose must
+  never compete with feeding. `PERCH_HUNGER_LEAVE` is 40, so a spider that is
+  getting hungry stands up and goes looking for food instead of admiring the
+  view.
+- **The gait stays still while perched.** `walk_state()` deliberately excludes
+  `SPIDER_PERCH`, so the legs do not cycle on a stationary spider.
+- **`SPIDER_PERCH` is appended, not inserted.** It is the last enumerator, so
+  every existing state value keeps its number and no save migration is needed.
+  The four places that bound the state range (`save.c`, `life.c`, `game.c`,
+  `test_console.c`) were updated from `SPIDER_SICK` to `SPIDER_PERCH`.
+
+### Exact verification evidence
+
+- Build exit 0, zero `main` warnings. Flash exit 0, `Hash of data verified`.
+- Perch geometry on hardware: `perch` ->
+  `PERCH slot=0 kind=3 pos=(245,190) perch=1 radius=22 heading=1.571`.
+  1.571 is pi/2, the down-screen default for a spider at the item's centre.
+- The forced-state fix, same session: after `state 10` the spider reported
+  `CLIMB pos=(245,190) height=16 slot=0 lift=16`, i.e. it held the placed item's
+  exact centre and the full 16px prop height. Before the fix the same sequence
+  left the spider off the prop.
+- `SHADOW lift=16 canvas=(197,78) partial=837 opaque=1868 rows=125..143`, so the
+  contact shadow reaches the alpha plane at the prop's lift.
+- Screenshots confirm the perched pose: the body is foreshortened, the eyes face
+  the viewer and the spider sits centred on the log rather than beside it.
+- Browser suite 252/252 pass, including two new tests: "a small prop is perched
+  on, not walked across" (perch detection, structure exclusion, 45-degree
+  heading snapping, dead-centre default) and "a forced perch state still
+  converges on the real prop" (the cached-centre bug).
+- Native suite 49 passed / 3 failed, identical to the stashed pre-change
+  baseline (`gifttest`, `uitest`, `wifi connect`).
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `RENDER ticks=500 largest_drift=0`. `scanloop 5` ->
+  `LOOP ok=5 failed=0 largest_drift=0`.
+- `mem` -> `internal=123907 largest=63488 dma=116175 psram=1140368`, so
+  `largest` is 63,488 against the 51,200 floor.
+
+### Honest boundaries
+
+Whether the foreshortened pose reads as convincing height on the physical panel
+still needs human eyes; 0.72 was chosen from the geometry, not from a visual
+sweep of alternatives. The perch does not change steering or hit-testing: the
+spider's logical position stays on the floor, so a perched spider is still
+catchable and still steers normally the moment it stands up.

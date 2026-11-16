@@ -559,6 +559,18 @@ Climb in one command, which exercises the real footprint-driven path.
 `climbhere big` places a Driftwood structure instead, which is the only way to
 exercise the ramped large-structure lift and the 96x160 canvas headroom.
 
+### `perch`
+
+Places a Hollow Log under the spider, sets it to Climb, refreshes the decor
+layer and reports the perch geometry: whether the point is a perch, the prop's
+radius and the outward heading in radians. Use it to exercise the small-prop
+perch path, which the spider's own wandering makes impossible to script.
+
+`SPIDER_PERCH` holds the item's centre and turns the spider to face out from it
+in 45-degree steps. The centre is derived from the item every tick, so
+`state 10` (which forces the state without running the idle branch that would
+cache it) still converges on the real prop.
+
 ### `setupdone`
 
 Finishes the naming screen without a tap, so the tank can be captured on a

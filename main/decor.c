@@ -15,6 +15,10 @@
 #include <math.h>
 #include <string.h>
 
+#ifndef PI_F
+#define PI_F 3.14159265f
+#endif
+
 static const char *TAG = "spidarium.decor";
 
 /* Shop order. Costs are tuned against the treat prices (12..80 Silk) so decor
@@ -355,6 +359,85 @@ uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot)
         }
     }
     return best;
+}
+
+/* --- perching on small props ------------------------------------------- */
+
+/* The climbable prop under a point, or NULL. Large structures are excluded:
+ * those are walked across, not perched on. */
+static const decor_item_t *perch_item_at(int16_t x, int16_t y)
+{
+    const decor_item_t *best = NULL;
+    uint8_t best_lift = 0;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || item->blocking != DECOR_CLIMB) continue;
+        if (decor_is_climb_structure(item->kind)) continue;
+        const decor_def_t *def = decor_def(item->kind);
+        if (!def || def->climb_height == 0) continue;
+        uint8_t lift = climb_lift_on(item, def, x, y);
+        if (lift > best_lift) {
+            best_lift = lift;
+            best = item;
+        }
+    }
+    return best;
+}
+
+bool decor_perch_at(int16_t x, int16_t y)
+{
+    return perch_item_at(x, y) != NULL;
+}
+
+int16_t decor_perch_radius(int16_t x, int16_t y)
+{
+    const decor_item_t *item = perch_item_at(x, y);
+    if (!item) return 0;
+    const decor_def_t *def = decor_def(item->kind);
+    return def ? (int16_t)def->radius : 0;
+}
+
+bool decor_perch_center(int16_t x, int16_t y, int16_t *out_x, int16_t *out_y)
+{
+    const decor_item_t *item = perch_item_at(x, y);
+    if (!item) return false;
+    if (out_x) *out_x = item->x;
+    if (out_y) *out_y = item->y;
+    return true;
+}
+
+/* The heading that reads as "sitting on top, looking out".
+ *
+ * Facing the item's centre would point the spider at its own feet, which is the
+ * opposite of the illusion. Facing straight out from the centre is the pose a
+ * perched animal actually holds, and it is what makes the raised body read as
+ * height rather than as a floating sprite. The heading is quantised to the
+ * eight compass directions the artwork is drawn for, so the legs land on a
+ * stable fan instead of sweeping through arbitrary angles. */
+bool decor_perch_heading(int16_t x, int16_t y, float *out_heading)
+{
+    const decor_item_t *item = perch_item_at(x, y);
+    if (!item) return false;
+
+    float dx = (float)(x - item->x);
+    float dy = (float)(y - item->y);
+    float d = sqrtf(dx * dx + dy * dy);
+
+    /* Dead centre has no outward direction. Face the viewer's "down the screen"
+     * axis, which is the most readable default for a top-down enclosure. */
+    float h;
+    if (d < 1.5f) {
+        h = PI_F * 0.5f;
+    } else {
+        h = atan2f(dy, dx);
+    }
+
+    /* Snap to 45-degree steps. */
+    const float step = PI_F / 4.0f;
+    h = roundf(h / step) * step;
+
+    if (out_heading) *out_heading = h;
+    return true;
 }
 
 /* The ramp is deliberately slow enough to read as a climb and fast enough that

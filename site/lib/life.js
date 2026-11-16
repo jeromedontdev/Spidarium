@@ -57,7 +57,7 @@ function validPet(pet) {
   const s = decodeLifePet(pet);
   return ['hunger','mood','energy','hygiene'].every(k=>s[k]<=100) && s.stage<=2 && s.sick<=1 &&
     (s.temperament<4 || s.temperament===255) && s.bond<=100 &&
-    s.state<=9 && pet.core.slice(100,116).includes(0) && (s.colour<6 || s.colour===255) &&
+    s.state<=10 && pet.core.slice(100,116).includes(0) && (s.colour<6 || s.colour===255) &&
     ['pupil_colour','leg_colour','fang_colour'].every(k=>s[k]<9 || s[k]===255) &&
     int(s.spider_x,0,480) && int(s.spider_y,0,480) && Number.isFinite(s.spider_heading) &&
     s.daily_streak<=7 && s.daily_task_done<=1 && s.pet_xp_today<=10;

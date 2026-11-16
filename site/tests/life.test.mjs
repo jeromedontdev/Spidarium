@@ -161,7 +161,7 @@ test('generation archive ABI swaps only pets, training and companion; cap is str
 test('archive validator rejects corrupt raw bytes, unterminated identity and invalid pet states',()=>{
   const s=fresh();s.stage=2;E.lifeRetire(s,true);
   for(const mutate of [
-    p=>{p.core.pop();},p=>{p.core[0]=101;},p=>{p.core[68]=10;},
+    p=>{p.core.pop();},p=>{p.core[0]=101;},p=>{p.core[68]=11;},
     p=>{p.core.fill(65,100,116);},p=>{p.core[116]=6;},
     p=>{p.daily[12]=8;},p=>{p.progress[0]=6;},p=>{p.companion=null;},
   ]){

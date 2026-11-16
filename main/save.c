@@ -705,7 +705,7 @@ static bool raw_valid_state(const void *src, size_t len, game_state_t *state)
         state->muted > 1 || state->gift.used > 1 ||
         (state->gift.used && state->gift.kind >= (hdr.version >= 12 ? GIFT_KINDS : 18)) ||
         state->bond > 100 || !memchr(state->name, 0, sizeof state->name) ||
-        !isfinite(state->spider_heading) || state->state > SPIDER_SICK ||
+        !isfinite(state->spider_heading) || state->state > SPIDER_PERCH ||
         (hdr.version >= 3 && (state->auto_feed > 1 || state->auto_hunt > 1)) ||
         (hdr.version >= 4 && state->volume > 100) ||
         (hdr.size >= SAVE_V5_PAYLOAD && (state->brightness < 10 || state->brightness > 100)) ||

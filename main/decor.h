@@ -214,6 +214,33 @@ uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot);
  * tick; `now_ms` drives the ramp. */
 int32_t decor_climb_lift(int16_t x, int16_t y, uint32_t now_ms);
 
+/* --- perching on small props -------------------------------------------
+ * A small prop is too short to read as a climb, so the spider does not walk
+ * across it: it stops on top and turns to face out from the item. The illusion
+ * comes from the pose, not the height. */
+
+/* True when the climbable item at a point is a small prop rather than one of
+ * the large structures. False when nothing climbable is there. */
+bool decor_perch_at(int16_t x, int16_t y);
+
+/* The point on the item's rim the spider should face, i.e. the direction that
+ * reads as "looking out over the edge". Writes the heading in radians and
+ * returns false when the spider is not on a small prop. */
+bool decor_perch_heading(int16_t x, int16_t y, float *out_heading);
+
+/* The centre of the small prop under a point, which is where a perched spider
+ * holds position. Returns false when the spider is not on a small prop.
+ *
+ * This is derived from the item rather than cached by the caller: a forced
+ * state change (console `state`, or a save load that restores SPIDER_PERCH)
+ * never runs the idle branch that would have cached it, and a stale centre
+ * makes the spider drift to a point that is not on the prop at all. */
+bool decor_perch_center(int16_t x, int16_t y, int16_t *out_x, int16_t *out_y);
+
+/* How far the spider may drift from the item's centre while perched, in
+ * pixels. Zero when not perched. */
+int16_t decor_perch_radius(int16_t x, int16_t y);
+
 /* Reset the ramp, e.g. after a save load or a teleport. */
 void decor_climb_reset(void);
 

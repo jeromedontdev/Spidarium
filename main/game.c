@@ -2448,7 +2448,7 @@ bool game_ui_call_value(game_ui_action_t action, int value)
         (action == GAME_UI_SET_MUSIC_TRACK && (value < 0 || value >= AUDIO_MUSIC_TRACK_COUNT)) ||
         (action == GAME_UI_BACKGROUND && (value < 0 || value >= THEME_COUNT)) ||
         (action == GAME_UI_BORDER && value != 255 && (value < 0 || value >= THEME_COUNT)) ||
-        (action == GAME_UI_STATE && (value < 0 || value > SPIDER_SICK)) ||
+        (action == GAME_UI_STATE && (value < 0 || value > SPIDER_PERCH)) ||
         (action == GAME_UI_SPAWN && (value < -1 || value >= PREY_SPECIES_COUNT))) {
         ESP_LOGW(TAG, "UI request rejected: invalid action or value");
         return false;

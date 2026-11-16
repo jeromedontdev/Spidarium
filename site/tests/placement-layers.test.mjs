@@ -173,8 +173,69 @@ test('large climb structures ramp from the rim to the centre',()=>{
   assert.equal(E.decorClimbAt(state,240+21,240),16,'a prop is a flat disc');
 });
 
-test('climb is only offered for kinds that have height',()=>{
-  const {state}=fixture();
+test('a small prop is perched on, not walked across',()=>{
+const {state}=fixture();
+for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+/* Log: a small prop, radius 22, climb height 16. */
+state.decor[0]={kind:3,blocking:3,x:240,y:240};
+assert.equal(E.decorPerchAt(state,240,240),true,'standing on the prop perches');
+assert.equal(E.decorPerchAt(state,240+30,240),false,'off the footprint is not a perch');
+/* A large structure is walked across, never perched on. */
+const big=E.DECOR_KINDS.length-1;
+assert.equal(E.decorIsClimbStructure(big),true);
+state.decor[0]={kind:big,blocking:3,x:240,y:240};
+assert.equal(E.decorPerchAt(state,240,240),false,'a structure is not a perch');
+/* The heading faces OUT from the item, snapped to 45-degree steps. Facing the
+ * centre would point the spider at its own feet. */
+state.decor[0]={kind:3,blocking:3,x:240,y:240};
+const east=E.decorPerchHeading(state,240+10,240);
+assert.equal(east,0,'east of centre faces east');
+const south=E.decorPerchHeading(state,240,240+10);
+assert.ok(Math.abs(south-Math.PI/2)<1e-9,'south of centre faces south');
+const diag=E.decorPerchHeading(state,240+10,240+10);
+assert.ok(Math.abs(diag-Math.PI/4)<1e-9,'diagonal snaps to 45 degrees');
+assert.equal(E.decorPerchHeading(state,240,240),Math.PI/2,'dead centre faces down-screen');
+assert.equal(E.decorPerchHeading(state,10,10),null,'no prop, no heading');
+});
+
+test('perching holds position, turns outward and yields to hunger',()=>{
+const {state}=fixture();
+for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+state.decor[0]={kind:3,blocking:3,x:240,y:240};
+state.spider_x=240;state.spider_y=240;state.energy=80;state.hunger=80;
+state.mood=80;state.sick=0;state.auto_hunt=0;
+E.tick(state,.05);
+assert.equal(state.state,E.STATES.PERCH,'an idle spider on a prop perches');
+/* It must not wander off the prop while perched. */
+for(let i=0;i<20;i++)E.tick(state,.05);
+assert.equal(state.state,E.STATES.PERCH);
+assert.ok(Math.hypot(state.spider_x-240,state.spider_y-240)<2,'holds the centre');
+/* The pose is what sells the height, so the state must be renderable. */
+assert.equal(E.STATE_NAMES[E.STATES.PERCH],'perch');
+assert.ok(E.PERCH_FORESHORTEN>0.5&&E.PERCH_FORESHORTEN<1,'foreshortens the body');
+/* Hunger outranks a pose: a starving spider leaves the perch. */
+state.hunger=10;state.energy=80;
+E.tick(state,.05);
+assert.notEqual(state.state,E.STATES.PERCH,'hunger ends the perch');
+});
+
+test('a forced perch state still converges on the real prop',()=>{
+const {state}=fixture();
+for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+state.decor[0]={kind:3,blocking:3,x:240,y:240};
+/* Forcing the state skips the idle branch that would cache the centre, which
+ * is exactly what the console `state` command and a save load do. The centre
+ * must come from the item, not from a stale cache. */
+state.spider_x=252;state.spider_y=240;state.energy=80;state.hunger=80;
+state.mood=80;state.sick=0;state.auto_hunt=0;
+state.state=E.STATES.PERCH;
+for(let i=0;i<40;i++)E.tick(state,.05);
+assert.equal(state.state,E.STATES.PERCH);
+assert.ok(Math.hypot(state.spider_x-240,state.spider_y-240)<2,
+  `converges on the prop centre, got (${state.spider_x},${state.spider_y})`);
+});
+
+test('climb is only offered for kinds that have height',()=>{  const {state}=fixture();
   state.decor[0]={kind:5,blocking:0,x:240,y:240};   /* Fern: flat */
   state.decor[1]={kind:3,blocking:0,x:200,y:200};   /* Log: climbable */
   for(let i=0;i<4;i++)E.toggleDecorBlocking(state,0);

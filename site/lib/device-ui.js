@@ -1265,6 +1265,18 @@ export class DeviceGame {
       if(trickPerformance.trick===1)ctx.rotate(t*Math.PI*2);
       ctx.drawImage(this.spiderCanvas,-half,-half,half*2,half*2);
       ctx.restore();
+    }else if (s.state === E.STATES.PERCH) {
+      // Perched on a small prop: drawn from a lower angle, so the body's
+      // forward axis compresses. The lift alone reads as a floating sprite;
+      // the foreshortening plus the outward heading is what sells the height.
+      const fs = E.PERCH_FORESHORTEN;
+      ctx.save();
+      ctx.translate(s.spider_x, s.spider_y + lift + climbLift);
+      ctx.rotate(s.spider_heading);
+      ctx.scale(fs, 1);
+      ctx.rotate(-s.spider_heading);
+      ctx.drawImage(this.spiderCanvas, -half, -half, half * 2, half * 2);
+      ctx.restore();
     }else ctx.drawImage(this.spiderCanvas, s.spider_x - half, s.spider_y - half + lift + climbLift, half * 2, half * 2);
     if (s.state === E.STATES.AIM) {
       ctx.strokeStyle = '#f5c86b'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath();

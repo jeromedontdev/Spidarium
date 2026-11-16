@@ -50,8 +50,11 @@ export const CONFIG = Object.freeze({
   TREAT_COUNT:12, TREAT_HUNGER_COST:6, TREAT_MOOD_COST:8, TREAT_ENERGY_COST:10,
   TREAT_HUNGER_GAIN:25, TREAT_MOOD_GAIN:30, TREAT_ENERGY_GAIN:35,
 });const C = CONFIG, PI = Math.PI, TAU = PI*2, U32 = 0xffffffff;
-export const STATES = Object.freeze({IDLE:0,WANDER:1,STALK:2,AIM:3,POUNCE:4,EAT:5,SLEEP:6,PLAY:7,MOLT:8,SICK:9});
-export const STATE_NAMES = ['idle','wander','stalk','aim','pounce','eat','sleep','play','molt','sick'];
+export const STATES = Object.freeze({IDLE:0,WANDER:1,STALK:2,AIM:3,POUNCE:4,EAT:5,SLEEP:6,PLAY:7,MOLT:8,SICK:9,PERCH:10});
+export const STATE_NAMES = ['idle','wander','stalk','aim','pounce','eat','sleep','play','molt','sick','perch'];
+// Forward-axis compression while perched on a small prop. Mirrors
+// PERCH_FORESHORTEN in main/cspider.c.
+export const PERCH_FORESHORTEN = 0.72;
 export const STAGES = ['Spiderling','Juvenile','Adult'];
 export const TEMPERAMENTS = [
   {name:'bold',aim_window_mult:.85,catch_mult:1.1,speed_mult:1.1,hunger_decay_mult:1,sleep_threshold:15},
@@ -269,6 +272,7 @@ function engineDefaults(now=0) {
     sleep_forced:false,sleep_start:0,oneshot_until:0,gift_visit_at:0,gift_hold_until:0,
     gift_visit_end:0,gift_visiting:false,wild_seeded:false,last_wild:now,last_visitor_day:U32,
     next_bond_gift:0,last_pet:0,petted_once:false,pet_react_until:0,stuck_x:0,stuck_y:0,stuck_at:0,gait_x:240,gait_y:240,gait_valid:false,gait_moved_at:0,
+ perch_x:240,perch_y:240,perch_until:0,perch_heading:null,
     tap_heading:null};
 }
 export function freshState(options={}) {
@@ -423,7 +427,7 @@ export function validateProgress(raw) {
       !Number.isFinite(g.x)||!Number.isFinite(g.y)||
       (g.used&&(g.x<34||g.x>446||g.y<34||g.y>446)))fail('gift is invalid');
   }
-  if(Object.hasOwn(raw,'state')&&!(legacy?typeof raw.state==='string'&&STATE_NAMES.includes(raw.state):Number.isInteger(raw.state)&&raw.state>=0&&raw.state<=9))fail('state is invalid');
+  if(Object.hasOwn(raw,'state')&&!(legacy?typeof raw.state==='string'&&STATE_NAMES.includes(raw.state):Number.isInteger(raw.state)&&raw.state>=0&&raw.state<=10))fail('state is invalid');
   for(const key of ['prey','poop','splatters'])if(Object.hasOwn(raw,key)&&!Array.isArray(raw[key]))fail(`${key} must be an array`);
   if(Object.hasOwn(raw,'_engine')){
     if(!plain(raw._engine))fail('_engine metadata must be an object');
@@ -618,6 +622,7 @@ function setState(s,state) {
   const r=runtime(s);r.target=null;r.pounce=null;r.aim_active=false;r.drag=null;
   if(state===0)r.idle_until=r.now_ms+1200+roll(s,1800);
   if(state===8)r.oneshot_until=r.now_ms+800;
+  if(state!==10)r.perch_heading=null;
 }
 /** Total dirt points in the tank. Clean pays in proportion to this, so the
  * reward tracks the mess actually removed rather than the tap. */
@@ -930,8 +935,43 @@ export function decorClimbAt(s,x,y){
   }
   return best;
 }
-export function decorLayerSlots(s,path,exclude=-1){
-  return s.decor.flatMap((item,slot)=>slot!==exclude&&item.kind!==DECOR_EMPTY&&
+
+// Perching on a small prop. A prop is too short to read as a climb, so the
+// spider stops on top and turns to face out from the item; the pose sells the
+// height, not the lift. Large structures are walked across instead.
+export function decorPerchItem(s,x,y){
+  let best=null,bestLift=0;
+  for(const item of s.decor){
+    if(item.kind===DECOR_EMPTY||item.blocking!==3)continue;
+    if(decorIsClimbStructure(item.kind))continue;
+    const def=DECOR_KINDS[item.kind];
+    if(!def||!def.climb)continue;
+    const dx=x-item.x,dy=y-item.y;
+    if(dx*dx+dy*dy>def.radius*def.radius)continue;
+    if(def.climb>bestLift){bestLift=def.climb;best=item;}
+  }
+  return best;
+}
+export const decorPerchAt=(s,x,y)=>decorPerchItem(s,x,y)!==null;
+// The heading that reads as "sitting on top, looking out": straight out from
+// the item's centre, snapped to the eight compass directions the artwork is
+// drawn for so the leg fan lands on a stable angle.
+export function decorPerchHeading(s,x,y){
+  const item=decorPerchItem(s,x,y);
+  if(!item)return null;
+  const dx=x-item.x,dy=y-item.y;
+  const h=Math.hypot(dx,dy)<1.5?Math.PI/2:Math.atan2(dy,dx);
+  const step=Math.PI/4;
+  return Math.round(h/step)*step;
+}
+// The centre of the small prop under a point, which is where a perched spider
+// holds position. Derived from the item rather than cached, so a forced state
+// change or a save load that restores PERCH still converges on the real prop.
+export function decorPerchCenter(s,x,y){
+  const item=decorPerchItem(s,x,y);
+  return item?{x:item.x,y:item.y}:null;
+}
+export function decorLayerSlots(s,path,exclude=-1){  return s.decor.flatMap((item,slot)=>slot!==exclude&&item.kind!==DECOR_EMPTY&&
     decorCanopy(item.blocking)===decorCanopy(path)?[slot]:[]);
 }
 export function decorLayerIndex(s,slot){
@@ -1382,11 +1422,36 @@ function behaviourTick(s,dt){
         if(now-r.stuck_at>1500){r.wander_dir=inward(s);r.target=null;r.stuck_at=now;r.stuck_x=r.px;r.stuck_y=r.py;}
       }else {r.stuck_at=now;r.stuck_x=r.px;r.stuck_y=r.py;}
       break;
+    case 10:{
+      /* Perched on a small climbable prop. The spider holds the item's centre
+       * and faces out from it; the pose sells the height, not the lift. */
+      const want=decorPerchHeading(s,s.spider_x,s.spider_y);
+      if(want===null){r.perch_heading=null;setState(s,0);break;}
+      const centre=decorPerchCenter(s,s.spider_x,s.spider_y);
+      if(centre){r.perch_x=centre.x;r.perch_y=centre.y;}
+      const dx=r.perch_x-s.spider_x,dy=r.perch_y-s.spider_y,d=Math.hypot(dx,dy);
+      if(d>1){const step=Math.min(d,40*dt);
+        s.spider_x=Math.trunc(s.spider_x+dx/d*step);s.spider_y=Math.trunc(s.spider_y+dy/d*step);
+        r.px=s.spider_x;r.py=s.spider_y;}
+      if(r.perch_heading===null)r.perch_heading=want;
+      const delta=wrap(r.perch_heading-s.spider_heading);
+      s.spider_heading=Math.abs(delta)>.02?wrap(s.spider_heading+delta*.18):r.perch_heading;
+      const urgent=s.sick||s.energy<t.sleep_threshold||s.hunger<40||(s.auto_hunt&&preyCount(s)&&s.hunger<95);
+      if(urgent||now>=r.perch_until){r.perch_heading=null;setState(s,0);}
+      break;
+    }
     default:{
       const done=now>=r.idle_until;if(done)r.idle_until=now+1200+roll(s,1800);
       if(s.bond>=25&&r.tap_heading!==null)s.spider_heading=wrap(s.spider_heading+wrap(r.tap_heading-s.spider_heading)*.12);
       if(s.sick)setState(s,9);
       else if(s.energy<t.sleep_threshold)setState(s,6);
+      else if(decorPerchAt(s,s.spider_x,s.spider_y)){
+        /* Standing on a small climbable prop: sit on it and turn to face out.
+         * Checked before the wander branch so the spider does not immediately
+         * walk off the thing it just climbed. */
+        r.perch_x=s.spider_x;r.perch_y=s.spider_y;r.perch_heading=null;
+        r.perch_until=now+2500+roll(s,2500);setState(s,10);
+      }
       else if(s.mood<20&&s.hunger>40){if(done)setState(s,1);}
       else if(s.auto_hunt&&preyCount(s)&&s.hunger<95)setState(s,2);
       else if(done)setState(s,1);

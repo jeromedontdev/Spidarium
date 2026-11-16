@@ -43,7 +43,7 @@ bool life_valid(const life_state_t *s)
         unsigned temperament = p->core[offsetof(game_state_t, temperament)];
         if (p->core[offsetof(game_state_t, stage)] > 2 ||
             p->core[offsetof(game_state_t, sick)] > 1 || bond > 100 ||
-            p->core[offsetof(game_state_t, state)] > SPIDER_SICK || !isfinite(heading) ||
+            p->core[offsetof(game_state_t, state)] > SPIDER_PERCH || !isfinite(heading) ||
             (temperament != 255 && temperament >= TEMPERAMENT_COUNT) ||
             x < 0 || x > 480 || y < 0 || y > 480 ||
             (p->core[116] != 255 && p->core[116] >= 6) ||

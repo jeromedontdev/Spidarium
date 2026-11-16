@@ -615,6 +615,7 @@ void ui_hud_tick(uint32_t now_ms)
     else if (g.state == SPIDER_SLEEP) emote = CSP_EMOTE_SLEEPY;
     else if (g.state == SPIDER_SICK || g.mood < MOOD_REFUSE_HUNT) emote = CSP_EMOTE_SAD;
     else if (g.state == SPIDER_AIM || g.state == SPIDER_STALK) emote = CSP_EMOTE_ALERT;
+    else if (g.state == SPIDER_PERCH) emote = CSP_EMOTE_ALERT;
     else if (g.state == SPIDER_EAT || g.state == SPIDER_PLAY || (g.mood > 70 && g.bond > 40))
         emote = CSP_EMOTE_HAPPY;
     cspider_set_emote(emote);

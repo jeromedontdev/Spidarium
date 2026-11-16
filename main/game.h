@@ -40,6 +40,7 @@ typedef enum {
     SPIDER_PLAY,       /* hopping after a pet / play         */
     SPIDER_MOLT,       /* shedding the exoskeleton           */
     SPIDER_SICK,       /* neglected: sluggish, dull, refuses prey */
+    SPIDER_PERCH,      /* sitting on top of a small climbable prop */
 } spider_state_t;
 
 /* Life stage, derived from age. */

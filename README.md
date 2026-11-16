@@ -174,8 +174,10 @@ Choose **Solid** to steer around an item, **Walk Over** to cross above it, or
 **Walk Behind** to pass underneath its artwork without a collision.
 **Climb** raises the spider's drawn position while its logical position stays
 on the floor, leaving a contact shadow at the ground point. The 53 small props
-snap to their full climb height; the six large climb structures (branch, vine,
-root, ivy, boulder, driftwood) are authored 192x192, drawn 1:1, and ramp the
+snap to their full climb height and the spider **perches** on them: it sits on
+top, turns to face out from the item, and is drawn foreshortened so the pose
+reads as height. The six large climb structures (branch, vine, root, ivy,
+boulder, driftwood) are authored 192x192, drawn 1:1, and ramp the
 lift from zero at the rim to full height at the centre so the spider visibly
 climbs instead of hopping.
 **Back / Front arrows** reorder overlapping decor within its displayed band:

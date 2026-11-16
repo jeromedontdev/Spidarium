@@ -124,6 +124,7 @@ static void cmd_help(void)
     printf("  decortest            place every decor kind, verify the layer\n");
     printf("  climb [N]            report the live climb lift; N pins it for testing\n");
     printf("  climbhere [big]      place a climbable item under the spider and climb it\n");
+    printf("  perch                place a small prop under the spider and report the perch\n");
     printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
     printf("  decorreport [SLOT]   report a placed decor object's live geometry\n");
     printf("  setupdone            finish the naming screen without tapping\n");
@@ -961,9 +962,9 @@ static void cmd_spawn(int species)
 /* Force the spider into a state, so a state's rendering can be inspected. */
 static void cmd_state(int state)
 {
-    /* SPIDER_SICK is the last enumerator; there is no COUNT constant. */
-    if (state < 0 || state > SPIDER_SICK) {
-        printf("ERR state must be 0..%d\n", (int)SPIDER_SICK);
+    /* SPIDER_PERCH is the last enumerator; there is no COUNT constant. */
+    if (state < 0 || state > SPIDER_PERCH) {
+        printf("ERR state must be 0..%d\n", (int)SPIDER_PERCH);
         return;
     }
     printf("%s state=%d\n", game_ui_call_value(GAME_UI_STATE, state) ? "OK" : "ERR", state);
@@ -1224,6 +1225,27 @@ static void run_line(char *line)
         terrarium_refresh_decor();
         printf("OK climbhere slot=%d kind=%u pos=(%d,%d)\n", slot, kind,
                g.spider_x, g.spider_y);
+    }
+    else if (!strcmp(line, "perch")) {
+        /* Place a small climbable prop under the spider and report the perch
+         * state. The spider wanders faster than a script can issue separate
+         * place/block commands, so the footprint-driven perch could not
+         * otherwise be exercised from the console. */
+        decor_climb_force(-1);
+        int slot = decor_place(DECOR_LOG, g.spider_x, g.spider_y);
+        if (slot < 0) { printf("ERR perch: place failed\n"); return; }
+        if (!decor_set_path(slot, DECOR_CLIMB)) {
+            printf("ERR perch: set_path refused\n"); return;
+        }
+        terrarium_refresh_decor();
+        float want = 0.0f;
+        bool has = decor_perch_heading(g.spider_x, g.spider_y, &want);
+        printf("PERCH slot=%d kind=%u pos=(%d,%d) perch=%d radius=%d heading=%.3f\n",
+               slot, (unsigned)DECOR_LOG, g.spider_x, g.spider_y,
+               (int)decor_perch_at(g.spider_x, g.spider_y),
+               (int)decor_perch_radius(g.spider_x, g.spider_y),
+               has ? (double)want : 0.0);
+        printf("OK perch\n");
     }
     else if (!strcmp(line, "decor")) cmd_decor(arg);
     else if (!strcmp(line, "decorreport")) {

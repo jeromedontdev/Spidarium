@@ -40,6 +40,13 @@ static uint32_t s_gift_visit_at, s_gift_hold_until, s_gift_visit_end;
 static bool s_gift_visiting;
 bool behaviour_gift_visiting(void) { return s_gift_visiting; }
 
+/* Perching on a small climbable prop. The spider stops on top and turns to face
+ * out from the item; the pose is what sells the height, not the lift. */
+static uint32_t s_perch_until;
+static int16_t  s_perch_x, s_perch_y;   /* the item's centre */
+static float    s_perch_heading;
+static bool     s_perch_heading_valid;
+
 /* Aim window: the spider crouches and holds while the player decides. */
 static bool     s_aim_active;
 static uint32_t s_aim_start;
@@ -481,6 +488,7 @@ void behaviour_set_state(spider_state_t state)
     if (state == SPIDER_IDLE) {
         s_idle_until = lv_tick_get() + 1200u + (uint32_t)(rand() % 1800);
     }
+    if (state != SPIDER_PERCH) s_perch_heading_valid = false;
 }
 
 void behaviour_seek_to(int32_t x, int32_t y)
@@ -1143,6 +1151,75 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
         break;
     }
 
+    case SPIDER_PERCH: {
+        /* Sitting on top of a small climbable prop.
+         *
+         * The spider holds the item's centre and faces out from it. Facing the
+         * centre would point it at its own feet; facing outward is the pose a
+         * perched animal actually holds, and it is what makes the raised body
+         * read as height rather than as a floating sprite.
+         *
+         * The heading is snapped to 45-degree steps by decor_perch_heading()
+         * so the leg fan lands on a stable angle instead of sweeping. */
+        float want;
+        if (!decor_perch_heading(g.spider_x, g.spider_y, &want)) {
+            /* The item was moved, put away or unlocked underneath us. */
+            s_perch_heading_valid = false;
+            behaviour_set_state(SPIDER_IDLE);
+            break;
+        }
+
+        /* Hold the item's centre. Derived from the item every tick rather than
+         * from a cached value, so a forced state change or a save load that
+         * restores SPIDER_PERCH still converges on the real prop. */
+        int16_t cx, cy;
+        if (decor_perch_center(g.spider_x, g.spider_y, &cx, &cy)) {
+            s_perch_x = cx;
+            s_perch_y = cy;
+        }
+
+        /* Drift back toward the centre so the spider does not creep off the
+         * edge while it sits. This is a positional nudge, not a walk: the
+         * state has no advance() call, so the gait stays still. */
+        float dx = (float)(s_perch_x - g.spider_x);
+        float dy = (float)(s_perch_y - g.spider_y);
+        float d = sqrtf(dx * dx + dy * dy);
+        if (d > 1.0f) {
+            float step = 40.0f * dt_s;
+            if (step > d) step = d;
+            g.spider_x = (int16_t)((float)g.spider_x + dx / d * step);
+            g.spider_y = (int16_t)((float)g.spider_y + dy / d * step);
+            s_px = g.spider_x;
+            s_py = g.spider_y;
+            s_pos_init = true;
+        }
+
+        /* Turn to the perch heading, then hold it. */
+        if (!s_perch_heading_valid) {
+            s_perch_heading = want;
+            s_perch_heading_valid = true;
+        }
+        float delta = wrap_pi(s_perch_heading - g.spider_heading);
+        if (fabsf(delta) > 0.02f) {
+            g.spider_heading = wrap_pi(g.spider_heading + delta * 0.18f);
+        } else {
+            g.spider_heading = s_perch_heading;
+        }
+
+        /* Leave when the sit is over, or immediately if something more urgent
+         * is happening. Hunger, exhaustion and sickness all outrank a pose: a
+         * spider that sits admiring the view while starving is a bug. */
+        bool urgent = g.sick ||
+                      g.energy < game_temperament()->sleep_threshold ||
+                      g.hunger < PERCH_HUNGER_LEAVE ||
+                      (g.auto_hunt && prey_count() > 0 && g.hunger < HUNGER_FULL);
+        if (urgent || (int32_t)(now_ms - s_perch_until) >= 0) {
+            s_perch_heading_valid = false;
+            behaviour_set_state(SPIDER_IDLE);
+        }
+        break;
+    }
+
     case SPIDER_IDLE:
     default: {
 
@@ -1176,6 +1253,16 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
             behaviour_set_state(SPIDER_SICK);
         } else if (g.energy < game_temperament()->sleep_threshold) {
             behaviour_set_state(SPIDER_SLEEP);
+        } else if (decor_perch_at(g.spider_x, g.spider_y)) {
+            /* Standing on a small climbable prop. Sit on it and turn to face
+             * out, which is the pose that sells the height. Checked before the
+             * wander branch so the spider does not immediately walk off the
+             * thing it just climbed. */
+            s_perch_x = g.spider_x;
+            s_perch_y = g.spider_y;
+            s_perch_heading_valid = false;
+            s_perch_until = now_ms + 2500u + (uint32_t)(rand() % 2500);
+            behaviour_set_state(SPIDER_PERCH);
         } else if (g.mood < MOOD_REFUSE_HUNT && g.hunger > MOOD_HUNGER_OVERRIDE) {
             /* Bored spiders will not hunt. This chains the verbs:
              * play -> hunt -> sleep -> clean.

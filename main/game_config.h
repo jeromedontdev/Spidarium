@@ -206,6 +206,11 @@
  * threshold that put it to sleep -- otherwise the same loop returns. */
 #define SLEEP_HUNGER_WAKE      25
 
+/* A perched spider leaves the pose once hunger drops below this. Perching is
+ * cosmetic, so it must never compete with feeding: a spider that sits admiring
+ * the view while starving is a bug, not a personality. */
+#define PERCH_HUNGER_LEAVE     40
+
 /* How long the auto-hiding HUD chrome stays up after being revealed. */
 #define CHROME_HOLD_MS         5000u
 

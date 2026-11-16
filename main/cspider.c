@@ -77,6 +77,12 @@ static const char *TAG = "spidarium.cspider";
 #define BODY_R       16
 #define LEG_WIDTH    3
 
+/* Forward-axis compression while perched on a small prop. 0.72 shortens the
+ * body by roughly a quarter, which is what a lower viewing angle does to a
+ * body pointing away from the viewer. Below about 0.6 the abdomen starts to
+ * overlap the cephalothorax and the silhouette stops reading as a spider. */
+#define PERCH_FORESHORTEN 0.72f
+
 /* ------------------------------------------------------------------ */
 /* State                                                               */
 /* ------------------------------------------------------------------ */
@@ -498,6 +504,16 @@ static void fill_triangle(int32_t x0, int32_t y0,
  * from it inside the buffer. */
 static int32_t s_draw_dy;
 
+/* Foreshortening of the body's forward axis, 1.0 = flat top-down.
+ *
+ * Perching on a small prop needs a different pose, not just a taller one: a
+ * flat top-down spider sitting on a rock still reads as a flat top-down spider.
+ * Compressing the forward axis is what a lower viewing angle does to a body
+ * pointing away from the viewer, so the abdomen crowds toward the
+ * cephalothorax and the silhouette shortens. Combined with the lift and the
+ * outward heading, that is the 2.5D read. */
+static float s_foreshorten = 1.0f;
+
 /* ------------------------------------------------------------------ */
 /* Rotate a body-local (forward, right) offset into canvas coordinates.
  *
@@ -510,7 +526,7 @@ static void to_canvas(float fwd, float right, float heading,
     float fx = cosf(heading), fy = sinf(heading);
     float rx = -fy,           ry = fx;
 
-    float f = fwd   * scale_f;
+    float f = fwd   * scale_f * s_foreshorten;
     float r = right * scale_r;
 
     *out_x = CANVAS_CX + (int32_t)(fx * f + rx * r);
@@ -690,6 +706,24 @@ void cspider_render(uint32_t now_ms)
     if (g.state == SPIDER_POUNCE)      { sx = 1.17f; sy = 0.82f; }
     else if (g.state == SPIDER_AIM)    { sx = 1.11f; sy = 0.84f; }
     else if (g.state == SPIDER_SLEEP)  { sx = 1.05f; sy = 0.95f; }
+
+    /* --- perch foreshortening ---------------------------------------
+     * Sitting on a small prop is drawn from a lower angle, so the body's
+     * forward axis compresses. This is the perspective skew that makes the
+     * pose read as height; the lift alone just looks like a floating sprite.
+     * Eased in and out so entering and leaving the perch is not a pop. */
+    {
+        static uint32_t s_fs_last_ms;
+        float dt = (s_fs_last_ms && now_ms > s_fs_last_ms)
+                 ? (float)(now_ms - s_fs_last_ms) / 1000.0f : 0.0f;
+        s_fs_last_ms = now_ms;
+        if (dt > 0.25f) dt = 0.25f;
+
+        float want = (g.state == SPIDER_PERCH) ? PERCH_FORESHORTEN : 1.0f;
+        float k = 1.0f - expf(-dt * 6.0f);
+        s_foreshorten += (want - s_foreshorten) * k;
+        if (fabsf(s_foreshorten - want) < 0.004f) s_foreshorten = want;
+    }
 
     /* --- petting reaction -------------------------------------------
      * A gentle bounce with a happy wave, drawn on top of whatever the spider

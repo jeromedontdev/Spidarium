@@ -171,6 +171,16 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   256) ramp the lift from zero at the rim to full height at the centre, which
   is what makes the climb read as a climb instead of a hop. Their ownership
   lives in `climb_owned`, not `catalogue_owned_high`.
+  A small prop is PERCHED on, not walked across: `SPIDER_PERCH` holds the
+  item's centre and turns the spider to face out from it, snapped to 45-degree
+  steps. The pose is what sells the height, so the renderer also compresses the
+  body's forward axis (`PERCH_FORESHORTEN` 0.72) while perched. The centre is
+  derived from the item every tick via `decor_perch_center()`, never cached by
+  the caller: a forced state change or a save load that restores SPIDER_PERCH
+  never runs the idle branch that would have cached it, and a stale centre
+  makes the spider drift to a point that is not on the prop. Hunger below
+  `PERCH_HUNGER_LEAVE` (40), exhaustion and sickness all end the perch, because
+  a cosmetic pose must never compete with feeding.
   The spider canvas is 96x160, not 96x96: `s_draw_dy` raises the body inside
   the buffer, so a 62px lift on a 96px canvas clipped the body off the top.
   `CANVAS_CX`/`CANVAS_CY` keep the floor point and contact shadow at the
