@@ -209,6 +209,22 @@ uint8_t decor_climb_height(int slot);
  * Returns 0 and leaves *out_slot at -1 when nothing climbable is there. */
 uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot);
 
+/* How steeply the surface under a point rises, as a signed slope in the range
+ * -1..1, and the slot providing it.
+ *
+ * This is the surface NORMAL the renderer needs to pose the spider. A spider
+ * standing on a slope does not stay level: its body tilts with the surface and
+ * its legs on the uphill side are shorter than the ones on the downhill side.
+ * Without that the creature reads as a flat sprite sliding up the screen.
+ *
+ * The sign follows screen y: positive means the surface rises toward the
+ * bottom of the screen (the spider is walking downhill), negative means it
+ * rises toward the top (walking uphill). Returns 0 for a flat prop, for a
+ * point off any climbable item, and for the flat top of a small prop.
+ *
+ * `out_slot` may be NULL. */
+float decor_climb_slope(int16_t x, int16_t y, int *out_slot);
+
 /* The lift the spider should be drawn at right now, ramped so stepping on and
  * off an item is a short climb rather than a teleport. Call once per render
  * tick; `now_ms` drives the ramp. */

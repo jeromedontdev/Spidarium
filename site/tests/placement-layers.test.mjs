@@ -184,6 +184,60 @@ test('climb path lifts the spider and leaves a floor shadow',()=>{
   assert.equal(E.decorClimbAt(state,240+21,240),16,'a prop is a flat disc');
   });
 
+test('the climb surface reports a slope the body can lean with',()=>{
+  const {state}=fixture();
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  const kind=E.DECOR_KINDS.length-1;
+  const def=E.DECOR_KINDS[kind];
+  state.decor[0]={kind,blocking:3,x:240,y:240};
+  /* A large structure ramps linearly, so its gradient is constant across the
+   * whole footprint: climb height spread over the vertical extent. */
+  const expected=-def.climb/(2*def.radius);
+  /* Sampled inside the footprint: at the very bottom edge the lift rounds to
+   * zero, so there is no surface there to report a slope for. */
+  const bottom=E.decorClimbSlope(state,240,240+def.radius-8);
+  const middle=E.decorClimbSlope(state,240,240);
+  const top=E.decorClimbSlope(state,240,240-def.radius+8);
+  assert.ok(Math.abs(middle-expected)<1e-9,`middle ${middle} vs ${expected}`);
+  assert.equal(bottom,middle,'a linear ramp has one gradient');
+  assert.equal(top,middle,'a linear ramp has one gradient');
+  /* The sign is in screen space, where y grows downward: a surface rising
+   * toward the TOP of the screen is negative. */
+  assert.ok(middle<0,`rising toward the top is negative, got ${middle}`);
+  /* Off the footprint there is no surface, so no slope. */
+  assert.equal(E.decorClimbSlope(state,240+def.radius+2,240),0);
+  /* A small prop is a flat disc, so its top is level. */
+  state.decor[0]={kind:3,blocking:3,x:240,y:240};
+  assert.equal(E.decorClimbSlope(state,240,240),0,'a prop top is level');
+  });
+
+test('climbing compresses the body and tilts it with the ramp',()=>{
+  /* The 2.5D read needs two things beyond the lift: the viewing angle changes
+   * as the spider gets higher, and the body leans with the surface. Without
+   * them the creature keeps its flat top-down silhouette and slides up the
+   * screen, which is the "no perspective shift" report. */
+  assert.ok(E.CLIMB_FORESHORTEN<E.PERCH_FORESHORTEN||E.CLIMB_FORESHORTEN<1,
+    'climbing must compress the forward axis');
+  assert.ok(E.CLIMB_FORESHORTEN>0.6,
+    'below about 0.6 the abdomen overlaps the cephalothorax');
+  assert.ok(E.CLIMB_FULL_LIFT>0,'the compression needs a reference height');
+  assert.ok(E.CLIMB_TILT_FOLLOW>0&&E.CLIMB_TILT_FOLLOW<=1,
+    'the body follows most, not all, of the surface gradient');
+  assert.ok(E.CLIMB_TILT_MAX>0&&E.CLIMB_TILT_MAX<Math.PI/4,
+    'beyond about 30 degrees the legs fold through the body');
+  /* The tilt derived from a real structure must stay inside the clamp. */
+  const {state}=fixture();
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  const kind=E.DECOR_KINDS.length-1;
+  const def=E.DECOR_KINDS[kind];
+  state.decor[0]={kind,blocking:3,x:240,y:240};
+  const slope=E.decorClimbSlope(state,240,240);
+  const tilt=Math.min(E.CLIMB_TILT_MAX,
+    Math.max(-E.CLIMB_TILT_MAX,-Math.atan(slope)*E.CLIMB_TILT_FOLLOW));
+  assert.ok(Math.abs(tilt)<=E.CLIMB_TILT_MAX,'the tilt is clamped');
+  assert.ok(tilt>0,'a surface rising toward the top tilts the front down-screen');
+  });
+
 test('a small prop is perched on, not walked across',()=>{
 const {state}=fixture();
 for(const item of state.decor)item.kind=E.DECOR_EMPTY;

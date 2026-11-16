@@ -10226,3 +10226,78 @@ The physical impression of the six structures still needs human eyes. The slope
 remains a straight vertical ramp, so the diagonal branch and driftwood rise
 slightly out of step with their drawn surface; a per-kind slope direction is
 still not implemented.
+
+## Round 114 - Stylised climb art, surface tilt and no shadow on the structure
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+The player liked the new large decor but reported three faults: some pieces were
+"almost too realistic" (driftwood named specifically), the spider cast a shadow
+on the item it was climbing, and there was "no perspective shift".
+
+### Decisions made
+
+- **The shadow was drawn only while climbing, which was backwards.** The
+  surface under a climbing spider is the structure itself, so a shadow at the
+  floor point landed on the very thing being climbed. It is now drawn only when
+  the spider is on the floor. The structure's own artwork supplies the shading
+  that grounds the spider, and the new tilt and foreshortening do the work the
+  shadow was meant to do.
+- **The body now tilts with the surface.** `decor_climb_slope()` reports the
+  ramp gradient as a signed -1..1 value and the renderer rotates the whole body
+  by `atan(slope) * CLIMB_TILT_FOLLOW`, clamped to `CLIMB_TILT_MAX`. A level
+  spider on a ramp reads as a sprite sliding up the screen, which is exactly the
+  "no perspective shift" report.
+- **The viewing angle now changes with height.** The forward axis compresses
+  toward `CLIMB_FORESHORTEN` as the lift approaches `CLIMB_FULL_LIFT`, so the
+  higher the spider climbs the more it is seen from the side. Kept milder than
+  `PERCH_FORESHORTEN` because the spider is still moving and a heavily
+  compressed body reads as a different creature.
+- **The art was regenerated with simplification rules, not just a style
+  reminder.** The first set failed because the prompts described materials in
+  photographic terms ("deep parallel grain lines", "sun-bleached silvery
+  patches"). `SIMPLIFY_RULE` and `SURFACE_RULE` now cap each material at three
+  or four flat tones, forbid texture noise and fine hatching, and require the
+  walkable top to be a calm band of flat colour. The per-structure material
+  descriptions were rewritten to match.
+- **The slope sign is kept explicit rather than silently cancelled.**
+  `decor_climb_slope()` is signed in screen space, where y grows downward, so a
+  surface rising toward the top of the screen is negative. The renderer negates
+  it again to get a body tilt where a positive angle drops the front of the
+  spider down the screen. Both conventions are documented at both sites.
+
+### Evidence
+
+- `SHADOW` report on the floor: `lift=0 slope=0.000 tilt=0.000 fs=1.000
+  partial=869`. While climbing: `lift=31 slope=-0.470 tilt=0.248 fs=0.938
+  partial=0`. The shadow is present on the floor and absent on the structure,
+  which is the exact inversion of the reported fault.
+- The tilt is real and clamped: a 62 px climb over a 66 px radius gives a slope
+  of -0.470, an angle of about 25 degrees, and a drawn tilt of 0.248-0.373 rad
+  depending on how far up the ramp the spider is.
+- Device screenshot shows the regenerated stylised driftwood on the panel with
+  the spider visibly rotated to match the ramp.
+- `asset_build.py` passes every check; all six climb assets are 192x192 with
+  binary alpha and 12 visible tones.
+- Build exit 0 with zero `main` warnings; flash exit 0 with
+  `Hash of data verified`.
+- Browser suite 258/258, including two new tests: "the climb surface reports a
+  slope the body can lean with" and "climbing compresses the body and tilts it
+  with the ramp".
+- Native suite 49 passed / 3 failed, the documented baseline (`gifttest`,
+  `uitest`, `wifi connect`).
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+The tilt follows the ramp's gradient, which is a straight vertical ramp, so the
+diagonal branch and driftwood still rise slightly out of step with their drawn
+surface; a per-kind slope direction is still not implemented. Whether the
+stylised art and the tilt read as convincing on the physical panel still needs
+human eyes. Screenshot capture is unreliable while the spider is logging
+"inside solid decor" warnings, because the log lines interleave with the
+`SCREEN PART` stream and the parser rejects the frame; clearing the enclosure
+first makes capture reliable.

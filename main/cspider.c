@@ -514,6 +514,42 @@ static int32_t s_draw_dy;
  * outward heading, that is the 2.5D read. */
 static float s_foreshorten = 1.0f;
 
+/* Body tilt in radians, applied about the body's own centre.
+ *
+ * A spider standing on a slope does not stay level: the whole body rotates to
+ * match the surface, which is the single strongest cue that it is on a ramp
+ * rather than sliding up the screen. The tilt is derived from the surface
+ * gradient reported by decor_climb_slope() and eased, so stepping onto a
+ * structure leans the spider over a few frames instead of snapping.
+ *
+ * Positive tilts the front of the body DOWN the screen. */
+static float s_tilt = 0.0f;
+
+/* How much of the surface gradient the body actually follows. A real animal
+ * keeps its body closer to level than the ground it stands on, and a full
+ * match looks like the sprite is glued to the ramp. */
+#define CLIMB_TILT_FOLLOW 0.85f
+
+/* The steepest tilt allowed, in radians. Beyond about 30 degrees the legs
+ * start to overlap the body and the silhouette stops reading as a spider. */
+#define CLIMB_TILT_MAX 0.52f
+
+/* Forward-axis compression at the TOP of a large climb structure.
+ *
+ * Climbing changes the viewing angle: the higher the spider gets, the more the
+ * camera looks at it from the side rather than from above, so the body's
+ * forward axis compresses. Without this the spider keeps its flat top-down
+ * silhouette all the way up the ramp, which is what made the climb read as a
+ * sprite sliding up the screen rather than a creature on a slope. Kept milder
+ * than PERCH_FORESHORTEN because the spider is still moving and a heavily
+ * compressed body reads as a different creature. */
+#define CLIMB_FORESHORTEN 0.80f
+
+/* The lift at which CLIMB_FORESHORTEN is fully applied. The tallest structure
+ * climbs 66 px, so normalising against that means the compression tracks how
+ * far up the ramp the spider actually is. */
+#define CLIMB_FULL_LIFT 66.0f
+
 /* ------------------------------------------------------------------ */
 /* Rotate a body-local (forward, right) offset into canvas coordinates.
  *
@@ -529,8 +565,22 @@ static void to_canvas(float fwd, float right, float heading,
     float f = fwd   * scale_f * s_foreshorten;
     float r = right * scale_r;
 
-    *out_x = CANVAS_CX + (int32_t)(fx * f + rx * r);
-    *out_y = CANVAS_CY + (int32_t)(fy * f + ry * r) + s_draw_dy;
+    float ox = fx * f + rx * r;
+    float oy = fy * f + ry * r;
+
+    /* Tilt the whole body about its own centre. This is what makes the spider
+     * lean with the ramp it is standing on instead of staying level while the
+     * ground slides past underneath it. */
+    if (s_tilt != 0.0f) {
+        float c = cosf(s_tilt), s = sinf(s_tilt);
+        float tx = ox * c - oy * s;
+        float ty = ox * s + oy * c;
+        ox = tx;
+        oy = ty;
+    }
+
+    *out_x = CANVAS_CX + (int32_t)ox;
+    *out_y = CANVAS_CY + (int32_t)oy + s_draw_dy;
 }
 
 /* ------------------------------------------------------------------ */
@@ -580,7 +630,11 @@ void cspider_shadow_report(void)
     /* The shadow is the ONLY thing that writes partial alpha: the body and legs
      * write 0xFF and the cleared background is 0. Counting pixels with alpha in
      * 1..254 therefore proves whether the shadow actually reached the buffer,
-     * independently of whether it is visible on screen. */
+     * independently of whether it is visible on screen.
+     *
+     * The shadow is drawn only on the floor, so `partial` must be non-zero at
+     * lift 0 and exactly 0 while climbing. That is the check that the shadow is
+     * no longer cast onto the structure being climbed. */
     int partial = 0, opaque = 0;
     int min_y = CANVAS_H, max_y = -1;
     if (s_buf) {
@@ -597,8 +651,11 @@ void cspider_shadow_report(void)
             }
         }
     }
-    printf("SHADOW lift=%ld canvas=(%ld,%ld) partial=%d opaque=%d rows=%d..%d\n",
+    printf("SHADOW lift=%ld slope=%.3f tilt=%.3f fs=%.3f canvas=(%ld,%ld) "
+           "partial=%d opaque=%d rows=%d..%d\n",
            (long)decor_climb_lift(g.spider_x, g.spider_y, game_now()),
+           (double)decor_climb_slope(g.spider_x, g.spider_y, NULL),
+           (double)s_tilt, (double)s_foreshorten,
            (long)lv_obj_get_x(s_canvas), (long)lv_obj_get_y(s_canvas),
            partial, opaque, min_y, max_y);
 }
@@ -707,6 +764,11 @@ void cspider_render(uint32_t now_ms)
     else if (g.state == SPIDER_AIM)    { sx = 1.11f; sy = 0.84f; }
     else if (g.state == SPIDER_SLEEP)  { sx = 1.05f; sy = 0.95f; }
 
+    /* --- climb lift ---------------------------------------------------
+     * Resolved before the pose blocks because the foreshortening, the tilt and
+     * the contact shadow all depend on it. */
+    int32_t climb = decor_climb_lift(g.spider_x, g.spider_y, now_ms);
+
     /* --- perch foreshortening ---------------------------------------
      * Sitting on a small prop is drawn from a lower angle, so the body's
      * forward axis compresses. This is the perspective skew that makes the
@@ -720,6 +782,22 @@ void cspider_render(uint32_t now_ms)
         if (dt > 0.25f) dt = 0.25f;
 
         float want = (g.state == SPIDER_PERCH) ? PERCH_FORESHORTEN : 1.0f;
+
+        /* Climbing a large structure also changes the viewing angle. The
+         * higher the spider gets, the more the camera is looking at it from
+         * the side rather than from above, so the body's forward axis
+         * compresses. Without this the spider keeps its flat top-down
+         * silhouette all the way up the ramp, which is the "no perspective
+         * shift" the ramp was reported to have. The compression is scaled by
+         * how far up the structure the spider is, so the bottom of the ramp
+         * still looks like the floor. */
+        if (climb > 0) {
+            float t = (float)climb / CLIMB_FULL_LIFT;
+            if (t > 1.0f) t = 1.0f;
+            float climb_fs = 1.0f - (1.0f - CLIMB_FORESHORTEN) * t;
+            if (climb_fs < want) want = climb_fs;
+        }
+
         float k = 1.0f - expf(-dt * 6.0f);
         s_foreshorten += (want - s_foreshorten) * k;
         if (fabsf(s_foreshorten - want) < 0.004f) s_foreshorten = want;
@@ -816,9 +894,33 @@ void cspider_render(uint32_t now_ms)
      * nothing reads it where alpha is zero. */
     memset(px_alpha(), 0, CANVAS_W * CANVAS_H);
 
-    /* The climb lift is resolved here because both the contact shadow and the
-     * body offset need it. */
-    int32_t climb = decor_climb_lift(g.spider_x, g.spider_y, now_ms);
+    /* --- surface tilt ------------------------------------------------
+     * A spider on a ramp leans with it. The slope comes from the decor layer
+     * as a signed gradient; the body follows most of it, clamped so the legs
+     * never fold through the abdomen. Eased with the same time constant as the
+     * perch foreshortening so stepping on and off is a lean, not a snap. */
+    {
+        static uint32_t s_tilt_last_ms;
+        float dt = (s_tilt_last_ms && now_ms > s_tilt_last_ms)
+                 ? (float)(now_ms - s_tilt_last_ms) / 1000.0f : 0.0f;
+        s_tilt_last_ms = now_ms;
+        if (dt > 0.25f) dt = 0.25f;
+
+        float want = 0.0f;
+        if (climb > 0) {
+            /* decor_climb_slope() is signed in screen space, where y grows
+             * downward, so a surface rising toward the top of the screen is
+             * negative. Negating here turns it into a body tilt where a
+             * positive angle drops the front of the spider down the screen. */
+            float slope = decor_climb_slope(g.spider_x, g.spider_y, NULL);
+            want = -atanf(slope) * CLIMB_TILT_FOLLOW;
+            if (want >  CLIMB_TILT_MAX) want =  CLIMB_TILT_MAX;
+            if (want < -CLIMB_TILT_MAX) want = -CLIMB_TILT_MAX;
+        }
+        float k = 1.0f - expf(-dt * 6.0f);
+        s_tilt += (want - s_tilt) * k;
+        if (fabsf(s_tilt - want) < 0.002f) s_tilt = want;
+    }
 
     /* Raise every body part inside the canvas. The canvas itself stays anchored
      * at the spider's floor position, so the shadow below can be drawn at the
@@ -829,28 +931,21 @@ void cspider_render(uint32_t now_ms)
 
     /* --- contact shadow ---------------------------------------------
      * Drawn FIRST, at the ground point, so the legs and body paint over its
-     * middle and only the feathered rim shows. The gap between that rim and the
-     * raised feet is what reads as height.
+     * middle and only the feathered rim shows. That rim is what grounds the
+     * spider against the floor.
      *
-     * The canvas is anchored at the spider's floor position, so the ground is
-     * exactly CANVAS_CY + LEG_LEN in canvas coordinates regardless of the lift.
-     * The body is offset upward by `climb` instead, which is what opens the gap.
+     * The shadow is drawn ONLY when the spider is standing on the floor. It
+     * used to be drawn only while climbing, which was backwards: the surface
+     * under a climbing spider is the structure itself, so a shadow at the floor
+     * point was cast onto the very thing being climbed. That is physically
+     * wrong and it was the main reason the 2.5D read failed. The structure's
+     * own artwork already carries the shading that grounds the spider, and the
+     * body tilt and foreshortening now do the work the shadow was meant to do.
      *
-     * The ellipse must be WIDER than the leg span or the feet cover it
-     * completely and the climb reads as nothing. It shrinks and fades as the
-     * spider climbs, which is the usual cue for distance from the ground. */
-    if (climb > 0) {
-        /* The ellipse shrinks and fades with height, which is the usual cue for
-         * distance from the ground. The divisors are tuned so a small prop
-         * (<=18 px) barely changes and a large structure (up to 62 px) reads as
-         * genuinely high off the floor. */
-        int32_t rx = 34 - climb / 3;
-        int32_t ry = 12 - climb / 8;
-        if (rx < 18) rx = 18;
-        if (ry < 5)  ry = 5;
-        int32_t alpha = 170 - climb * 2;
-        if (alpha < 60) alpha = 60;
-        fill_shadow(CANVAS_CX, CANVAS_CY + (int32_t)LEG_LEN, rx, ry, (uint8_t)alpha);
+     * The ellipse is WIDER than the leg span so the feet do not cover it
+     * completely. */
+    if (climb == 0) {
+        fill_shadow(CANVAS_CX, CANVAS_CY + (int32_t)LEG_LEN, 34, 12, 150);
     }
 
     /* --- legs -------------------------------------------------------

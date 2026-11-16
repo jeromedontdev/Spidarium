@@ -55,6 +55,16 @@ export const STATE_NAMES = ['idle','wander','stalk','aim','pounce','eat','sleep'
 // Forward-axis compression while perched on a small prop. Mirrors
 // PERCH_FORESHORTEN in main/cspider.c.
 export const PERCH_FORESHORTEN = 0.72;
+// Forward-axis compression at the TOP of a large climb structure. Climbing
+// changes the viewing angle, so the body's forward axis compresses as the
+// spider gets higher. Mirrors CLIMB_FORESHORTEN in main/cspider.c.
+export const CLIMB_FORESHORTEN = 0.80;
+// The lift at which CLIMB_FORESHORTEN is fully applied. Mirrors CLIMB_FULL_LIFT.
+export const CLIMB_FULL_LIFT = 66;
+// How much of the surface gradient the body follows, and the steepest tilt
+// allowed in radians. Mirrors CLIMB_TILT_FOLLOW and CLIMB_TILT_MAX.
+export const CLIMB_TILT_FOLLOW = 0.85;
+export const CLIMB_TILT_MAX = 0.52;
 export const STAGES = ['Spiderling','Juvenile','Adult'];
 export const TEMPERAMENTS = [
   {name:'bold',aim_window_mult:.85,catch_mult:1.1,speed_mult:1.1,hunger_decay_mult:1,sleep_threshold:15},
@@ -941,6 +951,37 @@ export function decorClimbAt(s,x,y){
       ? Math.round(def.climb*Math.min(1,Math.max(0,1-(dy+def.radius)/(2*def.radius))))
       : def.climb;
     if(lift>best)best=lift;
+  }
+  return best;
+}
+
+// The surface slope under a point, as a signed -1..1 gradient. Mirrors
+// decor_climb_slope() in main/decor.c.
+//
+// A large climb structure ramps linearly from ground level at its bottom edge
+// to full height at its top edge, so its surface has a constant gradient of
+// climb_height / (2 * radius). The renderer uses this to tilt the spider with
+// the ramp; without it the creature stays level while the ground slides past,
+// which is what made the climb read as a sprite moving up the screen.
+//
+// The sign follows screen y, where y grows downward: a surface rising toward
+// the top of the screen is NEGATIVE. A small prop is a flat disc, so its top
+// is level and the slope is 0.
+export function decorClimbSlope(s,x,y){
+  let best=0,bestLift=0;
+  for(const item of s.decor){
+    if(item.kind===DECOR_EMPTY||item.blocking!==3)continue;
+    const def=DECOR_KINDS[item.kind];
+    if(!def||!def.climb)continue;
+    const dx=x-item.x,dy=y-item.y;
+    if(dx*dx+dy*dy>def.radius*def.radius)continue;
+    const lift=decorIsClimbStructure(item.kind)
+      ? Math.round(def.climb*Math.min(1,Math.max(0,1-(dy+def.radius)/(2*def.radius))))
+      : def.climb;
+    if(lift===0||lift<=bestLift)continue;
+    bestLift=lift;
+    if(!decorIsClimbStructure(item.kind)||def.radius<=0){best=0;continue;}
+    best=-def.climb/(2*def.radius);
   }
   return best;
 }

@@ -373,6 +373,46 @@ uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot)
     return best;
 }
 
+/* The surface slope under a point, as a signed -1..1 value.
+ *
+ * A large climb structure ramps linearly from ground level at its bottom edge
+ * to full height at its top edge, so its surface has a constant gradient. The
+ * gradient is the climb height spread over the footprint's vertical extent:
+ *
+ *     rise / run = climb_height / (2 * radius)
+ *
+ * A 62 px climb over a 66 px radius is therefore a slope of about 0.47, or
+ * roughly 25 degrees. That is gentle enough to look like a ramp and steep
+ * enough that a level spider would visibly float, which is exactly why the
+ * renderer needs it.
+ *
+ * The sign is expressed in screen coordinates, where y grows downward: a
+ * surface that rises toward the top of the screen has a NEGATIVE slope. The
+ * renderer negates it again when it tilts the body, so the two conventions are
+ * kept explicit rather than silently cancelling. */
+float decor_climb_slope(int16_t x, int16_t y, int *out_slot)
+{
+    if (out_slot) *out_slot = -1;
+    float best = 0.0f;
+    uint8_t best_lift = 0;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || item->blocking != DECOR_CLIMB) continue;
+        const decor_def_t *def = decor_def(item->kind);
+        if (!def || def->climb_height == 0) continue;
+        uint8_t lift = climb_lift_on(item, def, x, y);
+        if (lift == 0 || lift <= best_lift) continue;
+        best_lift = lift;
+        if (out_slot) *out_slot = i;
+        /* A small prop is a flat disc, so its top is level. */
+        if (!decor_is_climb_structure(item->kind)) { best = 0.0f; continue; }
+        float r = (float)def->radius;
+        if (r <= 0.0f) { best = 0.0f; continue; }
+        best = -(float)def->climb_height / (2.0f * r);
+    }
+    return best;
+}
+
 /* --- perching on small props ------------------------------------------- */
 
 /* Minimum perch footprint, in pixels.

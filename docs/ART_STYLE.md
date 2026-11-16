@@ -237,6 +237,34 @@ function of vertical position only. Ramping radially from the centre made the
 spider rise from whichever side it approached, which read as being lifted onto
 a platform rather than climbing a branch.
 
+The lift alone is not enough to sell the climb. Three further cues are required,
+and each was added in response to a specific report:
+
+- **The body tilts with the surface.** `decor_climb_slope()` reports the
+  gradient as a signed value and the renderer rotates the whole body by
+  `atan(slope) * CLIMB_TILT_FOLLOW`, clamped to `CLIMB_TILT_MAX` (about 30
+  degrees). A level spider on a ramp reads as a sprite sliding up the screen.
+- **The viewing angle changes with height.** The forward axis compresses toward
+  `CLIMB_FORESHORTEN` as the lift approaches `CLIMB_FULL_LIFT`, so the higher
+  the spider climbs the more it is seen from the side rather than from above.
+  Without this it keeps its flat top-down silhouette all the way up.
+- **No shadow is cast onto the structure.** The contact shadow is drawn only
+  when the spider is on the floor. A shadow at the floor point while climbing
+  lands on the very thing being climbed, which is physically wrong and was the
+  main reason the first 2.5D attempt failed. The structure's own artwork
+  supplies the shading that grounds the spider.
+
+### Climb structures are stylised props, not photographs
+
+The first generated set was rejected as "almost too realistic", with the
+driftwood singled out. The failure mode was photographic material rendering:
+fine parallel grain, weathering speckle and per-fibre detail. The prompts now
+carry `SIMPLIFY_RULE` and `SURFACE_RULE`, which cap each material at three or
+four flat tones, forbid texture noise and fine hatching, and require the
+walkable top to be a calm band of flat colour. Any detail smaller than about
+four pixels is dropped. The target is the same flat-shaded language as the
+64x64 props, not a rendering of real timber.
+
 ### Organic props must read as their subject, not as speckle
 
 At a 32x32 logical canvas a one-pixel stroke is a sixteenth of the sprite, so a
