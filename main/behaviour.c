@@ -256,6 +256,10 @@ static void advance(float speed, float dt_s)
 static float gift_avoidance(float heading)
 {
     if (!g.gift.used) return 0.0f;
+    /* Only Solid steers the spider around. Walk Over, Walk Behind and Climb all
+     * let the spider cross the item, so pushing it away would contradict the
+     * path the player chose. */
+    if (g.gift_path != DECOR_SOLID) return 0.0f;
 
     float dx = (float)(g.gift.x - g.spider_x);
     float dy = (float)(g.gift.y - g.spider_y);
@@ -389,6 +393,9 @@ static float wall_avoidance(float want)
 static void separate_from_gift(void)
 {
     if (!g.gift.used) return;
+    /* Only a Solid gift is an obstacle. The other paths are meant to be crossed,
+     * so shoving the spider out of them would fight the player's choice. */
+    if (g.gift_path != DECOR_SOLID) return;
 
     float dx = (float)(g.spider_x - g.gift.x);
     float dy = (float)(g.spider_y - g.gift.y);

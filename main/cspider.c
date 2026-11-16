@@ -32,9 +32,18 @@ static const char *TAG = "spidarium.cspider";
 /* ------------------------------------------------------------------ */
 /* Geometry                                                            */
 /* ------------------------------------------------------------------ */
-/* Bounded leg tips fit inside the 48px half-width at every heading. */
-#define CANVAS_SIZE   96
-#define CANVAS_C      (CANVAS_SIZE / 2)
+/* Bounded leg tips fit inside the 48px half-width at every heading.
+ *
+ * The canvas is TALLER than it is wide because the climb lift raises the body
+ * inside the buffer while the canvas stays anchored at the floor. A 96x96
+ * buffer clipped the body off the top once the lift passed ~30 px, which is
+ * exactly the range the large climb structures use (up to 62 px). The extra
+ * rows are transparent headroom; the body still sits at CANVAS_CY so the floor
+ * point and the contact shadow stay at the bottom of the buffer. */
+#define CANVAS_W      96
+#define CANVAS_H      160
+#define CANVAS_CX     (CANVAS_W / 2)
+#define CANVAS_CY     (CANVAS_H - CANVAS_W / 2)
 
 /* Body masses, in body-local pixels. Same numbers as the widget renderer so the
  * creature looks identical. */
@@ -102,7 +111,7 @@ static lv_obj_t   *s_canvas;
  * Allocated once at init and never freed, so there is no fragmentation cost. */
 /* RGB565 colour plane (2 bytes/px) + A8 alpha plane (1 byte/px). */
 #define CANVAS_BPP   3
-#define CANVAS_BYTES (CANVAS_SIZE * CANVAS_SIZE * CANVAS_BPP)
+#define CANVAS_BYTES (CANVAS_W * CANVAS_H * CANVAS_BPP)
 
 static uint8_t *s_buf;
 
@@ -301,14 +310,14 @@ static inline uint16_t *px_color(void)
 
 static inline uint8_t *px_alpha(void)
 {
-    return s_buf + (CANVAS_SIZE * CANVAS_SIZE * 2);
+    return s_buf + (CANVAS_W * CANVAS_H * 2);
 }
 
 /* Set one pixel, clipped. */
 static inline void put_px(int32_t x, int32_t y, uint16_t c)
 {
-    if (x < 0 || y < 0 || x >= CANVAS_SIZE || y >= CANVAS_SIZE) return;
-    int32_t i = y * CANVAS_SIZE + x;
+    if (x < 0 || y < 0 || x >= CANVAS_W || y >= CANVAS_H) return;
+    int32_t i = y * CANVAS_W + x;
     px_color()[i] = c;
     px_alpha()[i] = 0xFF;
 }
@@ -323,7 +332,7 @@ static void fill_circle(int32_t cx, int32_t cy, int32_t r, uint32_t rgb)
 
     for (int32_t dy = -r; dy <= r; dy++) {
         int32_t y = cy + dy;
-        if (y < 0 || y >= CANVAS_SIZE) continue;
+        if (y < 0 || y >= CANVAS_H) continue;
 
         /* Half-width of the circle at this row. */
         int32_t w = (int32_t)sqrtf((float)(r2 - dy * dy));
@@ -331,10 +340,10 @@ static void fill_circle(int32_t cx, int32_t cy, int32_t r, uint32_t rgb)
         int32_t x1 = cx + w;
 
         if (x0 < 0) x0 = 0;
-        if (x1 >= CANVAS_SIZE) x1 = CANVAS_SIZE - 1;
+        if (x1 >= CANVAS_W) x1 = CANVAS_W - 1;
 
-        uint16_t *row = px_color() + y * CANVAS_SIZE;
-        uint8_t  *alp = px_alpha() + y * CANVAS_SIZE;
+        uint16_t *row = px_color() + y * CANVAS_W;
+        uint8_t  *alp = px_alpha() + y * CANVAS_W;
         for (int32_t x = x0; x <= x1; x++) {
             row[x] = c;
             alp[x] = 0xFF;
@@ -359,7 +368,7 @@ static void fill_shadow(int32_t cx, int32_t cy, int32_t rx, int32_t ry,
 
     for (int32_t dy = -ry; dy <= ry; dy++) {
         int32_t y = cy + dy;
-        if (y < 0 || y >= CANVAS_SIZE) continue;
+        if (y < 0 || y >= CANVAS_H) continue;
 
         float ny = (float)dy / (float)ry;
         float span = 1.0f - ny * ny;
@@ -371,10 +380,10 @@ static void fill_shadow(int32_t cx, int32_t cy, int32_t rx, int32_t ry,
         int32_t x0 = cx - w;
         int32_t x1 = cx + w;
         if (x0 < 0) x0 = 0;
-        if (x1 >= CANVAS_SIZE) x1 = CANVAS_SIZE - 1;
+        if (x1 >= CANVAS_W) x1 = CANVAS_W - 1;
 
-        uint16_t *row = px_color() + y * CANVAS_SIZE;
-        uint8_t  *alp = px_alpha() + y * CANVAS_SIZE;
+        uint16_t *row = px_color() + y * CANVAS_W;
+        uint8_t  *alp = px_alpha() + y * CANVAS_W;
 
         for (int32_t x = x0; x <= x1; x++) {
             float nx = (float)(x - cx) / (float)rx;
@@ -436,11 +445,11 @@ static void fill_triangle(int32_t x0, int32_t y0,
     if (y2 > maxy) maxy = y2;
 
     if (miny < 0) miny = 0;
-    if (maxy >= CANVAS_SIZE) maxy = CANVAS_SIZE - 1;
+    if (maxy >= CANVAS_H) maxy = CANVAS_H - 1;
 
     for (int32_t y = miny; y <= maxy; y++) {
         /* Find the span of the triangle on this row by testing each edge. */
-        int32_t lo = CANVAS_SIZE, hi = -1;
+        int32_t lo = CANVAS_H, hi = -1;
 
         int32_t ex[3] = { x0, x1, x2 };
         int32_t ey[3] = { y0, y1, y2 };
@@ -469,10 +478,10 @@ static void fill_triangle(int32_t x0, int32_t y0,
 
         if (hi < lo) continue;
         if (lo < 0) lo = 0;
-        if (hi >= CANVAS_SIZE) hi = CANVAS_SIZE - 1;
+        if (hi >= CANVAS_H) hi = CANVAS_H - 1;
 
-        uint16_t *row = px_color() + y * CANVAS_SIZE;
-        uint8_t  *alp = px_alpha() + y * CANVAS_SIZE;
+        uint16_t *row = px_color() + y * CANVAS_W;
+        uint8_t  *alp = px_alpha() + y * CANVAS_W;
         for (int32_t x = lo; x <= hi; x++) {
             row[x] = c;
             alp[x] = 0xFF;
@@ -504,8 +513,8 @@ static void to_canvas(float fwd, float right, float heading,
     float f = fwd   * scale_f;
     float r = right * scale_r;
 
-    *out_x = CANVAS_C + (int32_t)(fx * f + rx * r);
-    *out_y = CANVAS_C + (int32_t)(fy * f + ry * r) + s_draw_dy;
+    *out_x = CANVAS_CX + (int32_t)(fx * f + rx * r);
+    *out_y = CANVAS_CY + (int32_t)(fy * f + ry * r) + s_draw_dy;
 }
 
 /* ------------------------------------------------------------------ */
@@ -528,13 +537,13 @@ void cspider_init(lv_obj_t *parent)
 
     s_canvas = lv_canvas_create(parent);
     lv_obj_remove_style_all(s_canvas);
-    lv_obj_set_size(s_canvas, CANVAS_SIZE, CANVAS_SIZE);
+    lv_obj_set_size(s_canvas, CANVAS_W, CANVAS_H);
     lv_obj_set_style_bg_opa(s_canvas, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_canvas, 0, 0);
     lv_obj_set_scrollable(s_canvas, false);
     lv_obj_set_clickable(s_canvas, false);
 
-    lv_canvas_set_buffer(s_canvas, s_buf, CANVAS_SIZE, CANVAS_SIZE,
+    lv_canvas_set_buffer(s_canvas, s_buf, CANVAS_W, CANVAS_H,
                          LV_COLOR_FORMAT_RGB565A8);
 
     /* Start fully transparent so the tank shows through. Zero alpha is
@@ -543,7 +552,7 @@ void cspider_init(lv_obj_t *parent)
 
     memset(&s_gait, 0, sizeof s_gait);
 
-    ESP_LOGI(TAG, "canvas spider ready (%dx%d)", CANVAS_SIZE, CANVAS_SIZE);
+    ESP_LOGI(TAG, "canvas spider ready (%dx%d)", CANVAS_W, CANVAS_H);
 }
 
 lv_obj_t *cspider_obj(void){
@@ -557,12 +566,12 @@ void cspider_shadow_report(void)
      * 1..254 therefore proves whether the shadow actually reached the buffer,
      * independently of whether it is visible on screen. */
     int partial = 0, opaque = 0;
-    int min_y = CANVAS_SIZE, max_y = -1;
+    int min_y = CANVAS_H, max_y = -1;
     if (s_buf) {
         const uint8_t *alp = px_alpha();
-        for (int32_t y = 0; y < CANVAS_SIZE; y++) {
-            for (int32_t x = 0; x < CANVAS_SIZE; x++) {
-                uint8_t a = alp[y * CANVAS_SIZE + x];
+        for (int32_t y = 0; y < CANVAS_H; y++) {
+            for (int32_t x = 0; x < CANVAS_W; x++) {
+                uint8_t a = alp[y * CANVAS_W + x];
                 if (a == 0xFF) { opaque++; }
                 else if (a != 0) {
                     partial++;
@@ -771,7 +780,7 @@ void cspider_render(uint32_t now_ms)
      * Zero alpha is transparent, so the tank shows through everywhere the
      * spider is not drawn. The colour plane does not need clearing because
      * nothing reads it where alpha is zero. */
-    memset(px_alpha(), 0, CANVAS_SIZE * CANVAS_SIZE);
+    memset(px_alpha(), 0, CANVAS_W * CANVAS_H);
 
     /* The climb lift is resolved here because both the contact shadow and the
      * body offset need it. */
@@ -790,20 +799,24 @@ void cspider_render(uint32_t now_ms)
      * raised feet is what reads as height.
      *
      * The canvas is anchored at the spider's floor position, so the ground is
-     * exactly CANVAS_C + LEG_LEN in canvas coordinates regardless of the lift.
+     * exactly CANVAS_CY + LEG_LEN in canvas coordinates regardless of the lift.
      * The body is offset upward by `climb` instead, which is what opens the gap.
      *
      * The ellipse must be WIDER than the leg span or the feet cover it
      * completely and the climb reads as nothing. It shrinks and fades as the
      * spider climbs, which is the usual cue for distance from the ground. */
     if (climb > 0) {
+        /* The ellipse shrinks and fades with height, which is the usual cue for
+         * distance from the ground. The divisors are tuned so a small prop
+         * (<=18 px) barely changes and a large structure (up to 62 px) reads as
+         * genuinely high off the floor. */
         int32_t rx = 34 - climb / 3;
         int32_t ry = 12 - climb / 8;
-        if (rx < 22) rx = 22;
-        if (ry < 7)  ry = 7;
-        uint8_t alpha = (uint8_t)(170 - climb * 5);
-        if (alpha < 70) alpha = 70;
-        fill_shadow(CANVAS_C, CANVAS_C + (int32_t)LEG_LEN, rx, ry, alpha);
+        if (rx < 18) rx = 18;
+        if (ry < 5)  ry = 5;
+        int32_t alpha = 170 - climb * 2;
+        if (alpha < 60) alpha = 60;
+        fill_shadow(CANVAS_CX, CANVAS_CY + (int32_t)LEG_LEN, rx, ry, (uint8_t)alpha);
     }
 
     /* --- legs -------------------------------------------------------
@@ -937,9 +950,9 @@ void cspider_render(uint32_t now_ms)
      * spiderling reads as small and an adult as full size. The canvas is a
      * fixed 96x96 buffer; scaling the widget keeps the pixel art crisp and
      * costs nothing per frame. */
-    lv_obj_set_pos(s_canvas, g.spider_x - CANVAS_C, g.spider_y - CANVAS_C + lift);
-    lv_obj_set_style_transform_pivot_x(s_canvas, CANVAS_C, 0);
-    lv_obj_set_style_transform_pivot_y(s_canvas, CANVAS_C, 0);
+    lv_obj_set_pos(s_canvas, g.spider_x - CANVAS_CX, g.spider_y - CANVAS_CY + lift);
+    lv_obj_set_style_transform_pivot_x(s_canvas, CANVAS_CX, 0);
+    lv_obj_set_style_transform_pivot_y(s_canvas, CANVAS_CY, 0);
     lv_obj_set_style_transform_scale_x(s_canvas, stage_scale_256(), 0);
     lv_obj_set_style_transform_scale_y(s_canvas, stage_scale_256(), 0);
 

@@ -207,28 +207,33 @@ export class DeviceGame {
   }
   refreshHUD() {
     this.hudLayer.hidden = !this.hud;
-    this.ear.hidden = Boolean(this.modal || this.game || !this.started);
+    this.ear.hidden = Boolean(this.modal || this.game || !this.started || this.placement);
     const placing = this.giftKind !== null || this.decorKind !== null || this.decorMoveSlot !== null;
     this.placementControls.hidden = !this.placement;
     const editing=this.placement&&(this.placement.slot!==null||this.giftMoving);
     this.placementAway.hidden=!editing;
     const decor=!!this.placement&&!this.placement.gift,p=this.placement;
+    /* A gift gets the same path control as decor. It has no siblings, so the
+     * Back/Front layer arrows and the layer counter stay decor-only. */
+    const pathRow=!!this.placement;
     this.placementPaths.forEach((button,path)=>{
-      button.hidden=!decor;
-      button.setAttribute('aria-pressed',String(decor&&p.blocking===path));
-      button.style.background=decor&&p.blocking===path?'#2b6a5f':'';
+      button.hidden=!pathRow;
+      button.setAttribute('aria-pressed',String(pathRow&&p.blocking===path));
+      button.style.background=pathRow&&p.blocking===path?'#2b6a5f':'';
     });
     for(const control of [this.placementBack,this.placementFront,this.placementLayer])control.hidden=!decor;
+    if(pathRow){
+      this.placementHint.textContent=['Spider crosses above this item','Spider steers around this item','Spider passes underneath this item','Spider climbs onto this item'][p.blocking];
+    }
+    else this.placementHint.textContent='Slide to position; Done saves';
     if(decor){
       const count=E.decorLayerSlots(this.state,p.blocking,p.slot??-1).length+1;
       this.placementBack.disabled=p.layer===0;this.placementFront.disabled=p.layer===count-1;
       this.placementLayer.textContent=`${E.decorCanopy(p.blocking)?'Canopy':'Floor'} Layer\n${p.layer+1} / ${count}`;
-      this.placementHint.textContent=['Spider crosses above this item','Spider steers around this item','Spider passes underneath this item'][p.blocking];
     }
-    else this.placementHint.textContent='Slide to position; Done saves';
-    this.placementHint.style.top=decor?'196px':'272px';
-    this.earMark.textContent = placing ? '×' : '';
-    this.ear.setAttribute('aria-label', placing ? 'Cancel Placement' : 'Show or Hide Care HUD');
+    this.placementHint.style.top=pathRow?'196px':'272px';
+    this.earMark.textContent = '';
+    this.ear.setAttribute('aria-label', 'Show or Hide Care HUD');
     this.ear.setAttribute('aria-expanded', String(this.hud));
     this.stats.forEach(({ key, bar, value }, i) => {
       const number = Math.round(this.state[key]); value.textContent = number;
@@ -921,6 +926,11 @@ export class DeviceGame {
       this.placement.blocking=slot!==null?this.state.decor[slot].blocking:E.DECOR_KINDS[kind].blocking;
       this.placement.layer=slot!==null?E.decorLayerIndex(this.state,slot):
         E.decorLayerSlots(this.state,this.placement.blocking).length;
+    } else {
+      /* A gift gets the same path control as decor. Seed it from the placed gift
+       * when moving, so re-opening the editor does not reset the choice. */
+      this.placement.blocking=this.giftMoving?(this.state.gift_path??0):0;
+      this.placement.layer=0;
     }
     this.refreshHUD();this.report('Slide to position. Done saves; Cancel leaves placement unchanged.');
     if(this.notice)this.notice.hidden=true;
@@ -948,7 +958,11 @@ export class DeviceGame {
     const ok=p.gift?(this.giftMoving?E.moveGift(this.state,p.x,p.y):E.placeGift(this.state,p.kind,p.x,p.y)):
       slot!==null?E.moveDecor(this.state,slot,p.x,p.y):(slot=E.placeDecor(this.state,p.kind,p.x,p.y))>=0;
     if(!ok){this.report('Placement could not be saved. Check ownership and available space.',true);return;}
-    if(!p.gift){
+    if(p.gift){
+      /* The gift honours the same path control as decor. There is only one gift,
+       * so no layer ordering is stored. */
+      this.state.gift_path=p.blocking;
+    } else {
       this.state.decor[slot].blocking=p.blocking;
       if(!E.setDecorLayer(this.state,slot,p.layer)){this.report('Layer could not be saved.',true);return;}
     }
@@ -956,15 +970,15 @@ export class DeviceGame {
   }
   togglePlacementBlocking(){
     const p=this.placement;
-    if(!p||p.gift)return;
+    if(!p)return;
     this.setPlacementPath((p.blocking+1)%3);
   }
   setPlacementPath(path){
     const p=this.placement;
-    if(!p||p.gift)return;
+    if(!p)return;
     if(!Number.isInteger(path)||path<0||path>2){this.report('Invalid path mode.',true);return;}
     if(path===p.blocking)return;
-    if(E.decorCanopy(p.blocking)!==E.decorCanopy(path))
+    if(!p.gift&&E.decorCanopy(p.blocking)!==E.decorCanopy(path))
       p.layer=E.decorLayerSlots(this.state,path,p.slot??-1).length;
     p.blocking=path;this.refreshHUD();
   }
@@ -1049,7 +1063,8 @@ export class DeviceGame {
       if(this.placementPointer!==null)return;
       this.pointerConsumed=true;this.placementPointer=event.pointerId;
       this.cancelTap();
-      const preview=this.placement,reach=preview.gift?40:E.DECOR_KINDS[preview.kind].radius*2+12;
+      const preview=this.placement,reach=preview.gift?40:E.decorIsClimbStructure(preview.kind)
+      ?E.DECOR_KINDS[preview.kind].radius:E.DECOR_KINDS[preview.kind].radius*2+12;
       const grabbed=Math.abs(p.x-preview.x)<=reach&&Math.abs(p.y-preview.y)<=reach;
       this.placementOffset={x:grabbed?preview.x-p.x:0,y:grabbed?preview.y-p.y:0};
       this.positionPlacement(p.x+this.placementOffset.x,p.y+this.placementOffset.y);
@@ -1192,12 +1207,16 @@ export class DeviceGame {
       if(border.complete&&border.naturalWidth)ctx.drawImage(border,0,0,480,480);
     }
     this.drawDecor(false);
-    if (s.gift?.used && !this.placement?.gift) {
+    /* A Walk Behind gift is drawn in the canopy pass instead, so it only covers
+     * the spider with its top half. */
+    const giftCanopy = s.gift?.used && s.gift_path === 2 && s.spider_y < s.gift.y;
+    if (s.gift?.used && !this.placement?.gift && !giftCanopy) {
       const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
       if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
     }
     if(this.placement?.gift){
-      const p=this.placement,size=p.gift?64:E.DECOR_KINDS[p.kind].radius*4;
+      const p=this.placement,size=p.gift?64:E.decorIsClimbStructure(p.kind)?E.DECOR_CLIMB_SPRITE
+        :E.DECOR_KINDS[p.kind].radius*4;
       const image=this.image(p.gift?E.GIFTS[p.kind].asset:E.decorSprite(p.kind));
       if(image.complete&&image.naturalWidth)ctx.drawImage(image,p.x-size/2,p.y-size/2,size,size);
       ctx.strokeStyle='#f5c86b';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2-2,p.y-size/2-2,size+4,size+4);
@@ -1284,6 +1303,12 @@ export class DeviceGame {
       }
     }
     this.drawDecor(true);
+    /* The canopy pass draws a Walk Behind gift above the creature layer, so it
+     * covers the spider only while the spider is above the gift's centre line. */
+    if (s.gift?.used && !this.placement?.gift && s.gift_path === 2 && s.spider_y < s.gift.y) {
+      const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
+      if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
+    }
     if(s.lights_dimmed){
       ctx.fillStyle='rgba(7,12,32,0.43)';ctx.fillRect(0,0,480,480);
     }
@@ -1317,7 +1342,11 @@ export class DeviceGame {
     const slots=E.decorLayerSlots(this.state,canopy?2:0,p?.slot??-1)
       .filter(slot=>!canopy||this.state.decor[slot].y>spiderY);
     const draw=item=>{
-      const image=this.image(E.decorSprite(item.kind)),size=E.DECOR_KINDS[item.kind].radius*4;
+      const image=this.image(E.decorSprite(item.kind));
+      // Large climb structures are authored at 192x192 and drawn 1:1; props are
+      // 64x64 and drawn at their footprint size.
+      const size=E.decorIsClimbStructure(item.kind)?E.DECOR_CLIMB_SPRITE
+        :E.DECOR_KINDS[item.kind].radius*4;
       if(image.complete&&image.naturalWidth)ctx.drawImage(image,item.x-size/2,item.y-size/2,size,size);
     };
     for(let i=0;i<=slots.length;i++){
@@ -1325,7 +1354,8 @@ export class DeviceGame {
       if(i<slots.length)draw(this.state.decor[slots[i]]);
     }
     if(p&&canopy){
-      const size=E.DECOR_KINDS[p.kind].radius*4;
+      const size=E.decorIsClimbStructure(p.kind)?E.DECOR_CLIMB_SPRITE
+        :E.DECOR_KINDS[p.kind].radius*4;
       ctx.strokeStyle='#f5c86b';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2-2,p.y-size/2-2,size+4,size+4);
     }
   }

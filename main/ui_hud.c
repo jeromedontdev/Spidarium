@@ -392,30 +392,41 @@ void ui_hud_set_place_mode(bool on, const char *hint)
 {
     if (on && hint) lv_label_set_text(s_hint, hint);
     lv_obj_set_hidden(s_hint, !on);
-    lv_obj_set_hidden(s_care_label, !on);
+    /* The corner control is the care-HUD toggle. Placement has its own Cancel
+     * button, so the whole corner button stays hidden while editing decor or a
+     * gift; leaving it visible would let a tap cancel the edit by accident. */
+    if (s_care_button) lv_obj_set_hidden(s_care_button, on);
+    lv_obj_set_hidden(s_care_label, true);
     lv_obj_set_hidden(s_place_done, !on);
     lv_obj_set_hidden(s_place_cancel, !on);
     bool decor = on && g_decor_mode;
+    /* A gift gets the same path control as decor. It has no siblings, so the
+     * Back/Front layer arrows and the layer counter stay decor-only. */
+    bool path_row = on && (g_decor_mode || g.gift_mode);
     lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
-    lv_obj_set_hidden(s_place_path, !decor);
+    lv_obj_set_hidden(s_place_path, !path_row);
     lv_obj_set_hidden(s_place_back, !decor);
     lv_obj_set_hidden(s_place_front, !decor);
     lv_obj_set_hidden(s_place_layer_label, !decor);
-    if (decor) {
+    if (path_row) {
         static const char *names[] = {"Walk Over", "Solid", "Walk Behind", "Climb"};
         uint8_t path = game_placement_blocking();
+        if (path >= DECOR_PATH_COUNT) path = DECOR_WALK_OVER;
         lv_label_set_text(s_place_path_label, names[path]);
         lv_obj_set_style_bg_color(s_place_path, lv_color_hex(0x2b6a5f), 0);
+        static const char *tips[] = {"Spider crosses above this item",
+            "Spider steers around this item", "Spider passes underneath this item",
+            "Spider climbs onto this item"};
+        lv_label_set_text(s_hint, tips[path]);
+    }
+    if (decor) {
+        uint8_t path = game_placement_blocking();
         lv_obj_set_state(s_place_back, LV_STATE_DISABLED, game_placement_layer() == 0);
         lv_obj_set_state(s_place_front, LV_STATE_DISABLED,
             game_placement_layer() >= game_placement_layers() - 1);
         lv_label_set_text_fmt(s_place_layer_label, "%s\n%d / %d",
             path == DECOR_WALK_BEHIND ? "Canopy" : "Floor",
             game_placement_layer() + 1, game_placement_layers());
-        static const char *tips[] = {"Spider crosses above this item",
-            "Spider steers around this item", "Spider passes underneath this item",
-            "Spider climbs onto this item"};
-        lv_label_set_text(s_hint, tips[path]);
     }
     /* Keep the hint just above the control rows, which are pinned to the bottom
      * of the screen so the tank above them stays clear. */
@@ -451,9 +462,13 @@ void ui_hud_set_chrome(bool on)
     }
     ui_hud_set_top(on);
     ui_hud_set_bot(on);
-    if (s_care_label) {
-        lv_obj_set_hidden(s_care_label, !g.gift_mode && !g_decor_mode);
-    }
+    /* The corner control is the care-HUD toggle, not a placement control.
+     * Placement has its own Cancel button, so leaving the corner button visible
+     * during decor or gift editing put a second, ambiguous dismiss control in
+     * the corner. Hide the whole button, not just its X label, or tapping the
+     * folded corner would still cancel the edit. */
+    if (s_care_button) lv_obj_set_hidden(s_care_button, g.gift_mode || g_decor_mode);
+    if (s_care_label) lv_obj_set_hidden(s_care_label, true);
 }
 void ui_hud_reveal_top(void) { ui_hud_set_top(true); }
 void ui_hud_reveal_bot(void) { ui_hud_set_bot(true); }

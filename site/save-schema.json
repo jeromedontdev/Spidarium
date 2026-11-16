@@ -1,6 +1,6 @@
 {
   "magic": 1397770564,
-  "version": 19,
+  "version": 21,
   "headerSize": 12,
   "payloadSizes": [
     120,
@@ -497,6 +497,20 @@
       "type": "u8",
       "length": 0,
       "minVersion": 18
+    },
+    {
+      "name": "gift_path",
+      "offset": 3098,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 20
+    },
+    {
+      "name": "climb_owned",
+      "offset": 3099,
+      "type": "u8",
+      "length": 0,
+      "minVersion": 21
     }
   ]
 }

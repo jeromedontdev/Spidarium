@@ -26,6 +26,7 @@ from asset_build import APPROVED_CRYSTAL_BORDER_SOURCE_SHA256
 import approved_sources
 import terrain_art
 import core_decor_art
+import climb_art
 import furnishing_art
 import small_art
 import companion_icon_art
@@ -119,6 +120,8 @@ DECOR_ITEM_NAMES = [
     "solar_array", "oxygen_pod", "wizard_tower", "dragon_statue",
     "treasure_chest", "sun_obelisk", "glyph_tablet", "broken_column",
     "stone_lantern", "bamboo_fountain", "bonsai", "fairy_bridge",
+    "climb_branch", "climb_vine", "climb_root", "climb_ivy", "climb_boulder",
+    "climb_driftwood",
 ]
 BACKGROUND_NAMES = [
     "cork", "moss", "leaf_litter", "sand", "fern", "orchid", "woodland", "minimal",
@@ -1298,7 +1301,13 @@ def _frond(d, base, tip, curve, body, light, dark, ink=INK):
 
 
 def draw_decor_item(name):
-    """One placeable decor item at 32x32, doubled to 64x64."""
+    """One placeable decor item at 32x32, doubled to 64x64.
+
+    The large climb structures are a separate family authored at 192x192, so
+    they bypass the 64x64 prop path entirely.
+    """
+    if name in climb_art.NAMES:
+        return climb_art.draw(name)
     if name in core_decor_art.NAMES:
         return core_decor_art.draw(name)
     if name in DECOR_ITEM_NAMES[34:]:

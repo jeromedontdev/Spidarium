@@ -175,7 +175,7 @@ test('browser archives round-trip the exact native v19 raw life ABI',async()=>{
   E.companionTick(s,START);s.companion.treat_counts[1]=2;
   assert.equal(E.lifeRetire(s,true),true);
   const bytes=encodeSave(s,schema), decoded=decodeSave(bytes,schema);
-  assert.equal(decoded.header.version,19);assert.equal(decoded.header.size,3100);
+  assert.equal(decoded.header.version,21);assert.equal(decoded.header.size,3100);
   assert.deepEqual(decoded.fields.life,s.life);
   const offset=12+860+16;
   assert.deepEqual(Array.from(bytes.slice(offset,offset+120)),s.life.retired[0].core);

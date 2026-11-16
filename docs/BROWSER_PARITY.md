@@ -61,12 +61,17 @@ Save v15 appended592 bytes after the existing268-byte v14 fields. Save v16
 adds2236 life bytes after that860-byte prefix, before the six-byte decor tail
 (new tail offset3096). Save v18 appends `decor_locked` and `auto_clean` at
 bytes3096/3097 plus two reserved bytes, moving the decor tail to3100 and the
-maximum payload to23308. Old v2-v17 raw saves and historical
+maximum payload to23308. Save v19 reuses the blocking byte for the Climb path
+(value3). Save v20 reuses the first v18 reserved byte for `gift_path` at3098.
+Save v21 reuses the second for `climb_owned` at3099, the ownership bitmap for
+the six large climb structures (decor kinds68..73). None of v18-v21 moves the
+prefix, so the tail offset and payload bound are unchanged and the schema has
+57 fields. Old v2-v20 raw saves and historical
 browser saves migrate. Old firmware cannot read new saves.
 The former padding byte267 now stores `usb_sounds` (0/1). Sound > USB Chimes toggles
 both physical plug sounds independently, defaulting on for new/old pets.
 Master mute and volume-zero remain authoritative. Browser saves the checkbox
-without simulating board USB edges. Schema has 53 fields; JSON/raw roundtrips
+without simulating board USB edges. Schema has 57 fields; JSON/raw roundtrips
 preserve the flag, while pre-v15 padding is ignored and migrates to enabled.
 
 ## Current working changes: help, progression and interaction
@@ -137,6 +142,11 @@ Editing placed furniture adds inline Put Away. New and moved decor offer
 Solid (steer around), Walk Over (spider above), Walk Behind (spider beneath),
 and Climb (spider walks onto it and is drawn raised, with a contact shadow left
 on the floor). Climb is offered only for kinds with a climb height.
+Two climb families exist. The 53 small props snap to their full climb height
+anywhere inside the footprint. The six large structures (decor kinds68..73,
+authored 192x192 and drawn 1:1) ramp the lift from zero at the rim to full
+height at the centre, so the spider visibly climbs rather than hops. Their
+ownership is `climb_owned`, not `catalogue_owned_high`.
 Back/Front arrows reorder within Floor (Solid/Walk Over/Climb) or Canopy (Walk Behind).
 Canopy draws above Floor and the entire creature layer, below lighting/HUD.
 Hit testing checks the frontmost canopy before gifts and Floor, then reverse

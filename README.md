@@ -52,7 +52,7 @@ forced replacement, eviction or death. See [the life-system guide](docs/COMPANIO
 
 **An atmospheric, customizable habitat.** Gentle original background music has
 its own Sound switch, ten scores and independent music volume; master mute
-silences everything. Twelve treats, 48 backgrounds, 68 decor styles and 36 gifts
+silences everything. Twelve treats, 48 backgrounds, 74 decor styles and 36 gifts
 share the retro artwork. Buy 48 matching enclosure borders separately with Silk,
 mix them with any background, or remove the frame for free. Themes include
 woodland fairy, gothic, academia, household, witchy, prehistoric, cyberpunk,
@@ -116,7 +116,8 @@ consumers. Non-spider art follows a deterministic pixel-art generator and
 [style contract](docs/ART_STYLE.md); existing spider art is preserved.
 The complete catalogue now shares crisp material planes, chipped stone/wood,
 layered foliage and readable small-scale highlights. All 48 floors, 48 borders,
-68 decor props and 36 gifts were redrawn as modern hand-crafted pixel art with
+68 decor props, 6 large climb structures and 36 gifts were redrawn as modern
+hand-crafted pixel art with
 real lighting and pixel shading; the spider is unchanged. The lighting double
 tap accepts repeatable tap pairs with finger
 jitter, while holds, drags and furniture editing cannot toggle the lights.
@@ -171,12 +172,18 @@ does not commit or save. Storage grows beyond twelve items, subject to
 available PSRAM/NVS space rather than an arbitrary twelve-item cap.
 Choose **Solid** to steer around an item, **Walk Over** to cross above it, or
 **Walk Behind** to pass underneath its artwork without a collision.
+**Climb** raises the spider's drawn position while its logical position stays
+on the floor, leaving a contact shadow at the ground point. The 53 small props
+snap to their full climb height; the six large climb structures (branch, vine,
+root, ivy, boulder, driftwood) are authored 192x192, drawn 1:1, and ramp the
+lift from zero at the rim to full height at the centre so the spider visibly
+climbs instead of hopping.
 **Back / Front arrows** reorder overlapping decor within its displayed band:
 Floor contains Solid/Walk Over; Canopy contains Walk Behind and always draws
 above the spider and Floor. Higher layer numbers draw in front. Changes preview
 immediately but save only with Done. These controls also appear for new decor.
-Solid is a steering input, not a positional shove. Gifts retain their existing
-movement/Put Away controls without decor physics or layer choices.
+Solid is a steering input, not a positional shove. Gifts carry the same
+path and layer controls as decor.
 The catalogue order is shared with the
 browser port and checked by a test that parses the C table.
 
@@ -499,7 +506,7 @@ Working: the spider, the hunt, needs and decay, gifts, achievements, themes,
 first-run setup, save/restore, SD backup, WiFi scan, the serial console.
 
 Current controls use paged grids, not scrolling lists. There are 36 gifts,
-68 decor kinds, 48 backgrounds and 48 borders. The website/device Help Guide
+74 decor kinds, 48 backgrounds and 48 borders. The website/device Help Guide
 explains care, progression and hardware tools. Remaining physical verification
 boundaries include a complete hosted OTA reboot, authorized network/SNTP,
 SD media, RTC battery retention and subjective touchscreen/speaker acceptance.

@@ -99,8 +99,24 @@ typedef enum {
     DECOR_BAMBOO_FOUNTAIN,
     DECOR_BONSAI,
     DECOR_FAIRY_BRIDGE,
+    /* --- large climb structures -------------------------------------
+     * These are a separate family from the props above, not a path applied to
+     * them. A 64x64 prop can only lift the spider a few pixels, which reads as
+     * a hop rather than a climb. These are authored at 192x192 and span a
+     * large part of the tank, so the spider genuinely walks up something. */
+    DECOR_CLIMB_BRANCH,
+    DECOR_CLIMB_VINE,
+    DECOR_CLIMB_ROOT,
+    DECOR_CLIMB_IVY,
+    DECOR_CLIMB_BOULDER,
+    DECOR_CLIMB_DRIFTWOOD,
     DECOR_COUNT,
 } decor_kind_t;
+
+/* First kind that belongs to the large climb-structure family. */
+#define DECOR_CLIMB_FIRST DECOR_CLIMB_BRANCH
+/* Sprite edge length for the climb family; the props above are 64x64. */
+#define DECOR_CLIMB_SPRITE 192
 
 /* Legacy inline slots retained for old save compatibility, not a placement cap. */
 #define DECOR_SLOTS 12
@@ -129,6 +145,10 @@ typedef struct {
     const char *sprite;      /* asset name, e.g. "decor_rock_small" */
     uint8_t     climb_height;/* pixels of lift when the spider stands on it */
 } decor_def_t;
+
+/* True for the large climb-structure family, which is authored at
+ * DECOR_CLIMB_SPRITE and drawn at 1:1 rather than scaled from 64x64. */
+bool decor_is_climb_structure(uint8_t kind);
 
 /* The definition for a kind. Never NULL for a valid kind. */
 const decor_def_t *decor_def(uint8_t kind);

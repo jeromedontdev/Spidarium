@@ -8,6 +8,7 @@
 #include "theme.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include <stdio.h>
 
 /* Backgrounds are authored at the panel's native 240x240 and enlarged 2x into
  * the 480x480 canvas, so each source pixel covers a 2x2 block. */
@@ -214,6 +215,24 @@ void terrarium_refresh_gift(void)
     lv_obj_set_pos(obj, g.gift.x - 32, g.gift.y - 32);
     lv_obj_set_clickable(obj, false);
     lv_obj_set_scrollable(obj, false);
+    terrarium_gift_depth();
+}
+
+/* The gift honours the same Walk Behind rule as decor: it may only cover the
+ * spider with its top half, so it moves to the canopy layer while the spider is
+ * above its centre line and drops back to the floor layer once the spider is
+ * level with or below the base. */
+void terrarium_gift_depth(void)
+{
+    if (!s_gift_layer || !s_canopy_layer || !g.gift.used) return;
+    if (lv_obj_get_child_count(s_gift_layer) == 0) return;
+    lv_obj_t *obj = lv_obj_get_child(s_gift_layer, 0);
+    if (!obj) return;
+    bool canopy = g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y;
+    lv_obj_t *want = canopy ? s_canopy_layer : s_gift_layer;
+    if (lv_obj_get_parent(obj) == want) return;
+    lv_obj_set_parent(obj, want);
+    lv_obj_move_foreground(obj);
 }
 
 void terrarium_refresh_decor(void)
@@ -251,12 +270,18 @@ void terrarium_refresh_decor(void)
         /* The source is 64x64 and LVGL's 1:1 scale is 256, so radius*16 draws
          * a footprint-sized prop: a 9 px pebble cluster lands at 36 px, a 22 px
          * log at 88 px. Scaling keeps the centre, so the position is the
-         * unscaled top-left. */
-        int32_t scale = def ? (int32_t)def->radius * 16 : 256;
+         * unscaled top-left.
+         *
+         * The large climb structures are authored at 192x192 and drawn 1:1:
+         * scaling them by radius would shrink a 66 px-radius structure to a
+         * prop again, which is exactly what they exist to avoid. */
+        bool big = decor_is_climb_structure(item->kind);
+        int32_t scale = big ? 256 : (def ? (int32_t)def->radius * 16 : 256);
         if (scale < 64) scale = 64;
+        int32_t half = big ? DECOR_CLIMB_SPRITE / 2 : 32;
         lv_image_set_src(obj, image);
         lv_image_set_scale(obj, scale);
-        lv_obj_set_pos(obj, item->x - 32, item->y - 32);
+        lv_obj_set_pos(obj, item->x - half, item->y - half);
         lv_obj_set_hidden(obj, false);
         lv_obj_t *parent = decor_canopy_now(item) ? s_canopy_layer : s_decor_layer;
         if (lv_obj_get_parent(obj) != parent) lv_obj_set_parent(obj, parent);
@@ -264,8 +289,31 @@ void terrarium_refresh_decor(void)
     }
 }
 
-/* A walk-behind item may only cover the spider with its TOP half. The sprite is
- * centred on the item, so its centre line is the halfway point: while the
+void terrarium_decor_report(int slot)
+{
+    if (slot < 0 || slot >= s_decor_capacity) {
+        printf("DECORREPORT slot=%d out of range (capacity=%d)\n", slot, s_decor_capacity);
+        return;
+    }
+    const decor_item_t *item = decor_at(slot);
+    lv_obj_t *obj = s_decor_obj[slot];
+    if (!item || !obj) {
+        printf("DECORREPORT slot=%d empty\n", slot);
+        return;
+    }
+    int index = sprite_decor_item_index(item->kind);
+    const lv_image_dsc_t *image = index >= 0 ? assets_image(index) : NULL;
+    printf("DECORREPORT slot=%d kind=%u big=%d index=%d image=%p w=%u h=%u "
+           "scale=%d pos=(%d,%d) hidden=%d parent=%s\n",
+           slot, item->kind, decor_is_climb_structure(item->kind), index,
+           (const void *)image, image ? (unsigned)image->header.w : 0u,
+           image ? (unsigned)image->header.h : 0u,
+           (int)lv_image_get_scale(obj), (int)lv_obj_get_x(obj), (int)lv_obj_get_y(obj),
+           (int)lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN),
+           lv_obj_get_parent(obj) == s_canopy_layer ? "canopy" : "floor");
+}
+
+/* A walk-behind item may only cover the spider with its TOP half. The sprite is * centred on the item, so its centre line is the halfway point: while the
  * spider is above that line it is genuinely behind the item, and once it is
  * level with or below it the spider is standing in front of the base and the
  * item must drop behind it. Parenting the whole sprite to the canopy layer made
@@ -337,7 +385,9 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     if (gift) lv_obj_set_hidden(s_gift_layer, true);
     else if (slot >= 0 && slot < s_decor_capacity) lv_obj_set_hidden(s_decor_obj[slot], true);
     lv_image_set_src(s_preview_image, image);
-    lv_image_set_scale(s_preview_image, gift ? 512 : decor_def(kind)->radius * 16);
+    bool big = !gift && decor_is_climb_structure(kind);
+    lv_image_set_scale(s_preview_image,
+                       gift ? 512 : big ? 256 : decor_def(kind)->radius * 16);
     lv_image_set_antialias(s_preview_image, false);
     lv_obj_set_pos(s_preview_image, x - image->header.w / 2, y - image->header.h / 2);
     lv_obj_set_hidden(s_preview_image, false);
@@ -357,7 +407,8 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
         }
         if (layer_index >= index) lv_obj_move_foreground(s_preview_image);
     }
-    terrarium_preview_show(x, y, gift ? 34 : decor_def(kind)->radius * 2 + 2);
+    terrarium_preview_show(x, y, gift ? 34 : big ? decor_def(kind)->radius
+                           : decor_def(kind)->radius * 2 + 2);
 }
 
 void terrarium_preview_hide(void)

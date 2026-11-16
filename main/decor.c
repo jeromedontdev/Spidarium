@@ -88,6 +88,16 @@ static const decor_def_t k_decor_kinds[DECOR_COUNT] = {
     { "Bamboo Fountain", "Japanese zen / walk around", 84, 9, 16, 1, "decor_bamboo_fountain", 14 },
     { "Bonsai", "Japanese zen / walk around", 94, 11, 16, 1, "decor_bonsai", 0 },
     { "Fairy Bridge", "woodland fairy / walk around", 102, 12, 20, 1, "decor_fairy_bridge", 16 },
+    /* Large climb structures. The radius is the footprint the spider must be
+     * inside to be lifted, and the height is the lift at the centre. These are
+     * authored at 192x192 and drawn 1:1, so a radius of 60 is a structure that
+     * spans a quarter of the tank rather than a prop the spider hops onto. */
+    { "Fallen Branch", "spider climbs the whole length", 140, 15, 60, 1, "decor_climb_branch", 46 },
+    { "Vine Arch", "spider climbs the whole length", 160, 17, 64, 1, "decor_climb_vine", 54 },
+    { "Root Bridge", "spider climbs the whole length", 150, 16, 62, 1, "decor_climb_root", 50 },
+    { "Ivy Column", "spider climbs the whole length", 132, 14, 52, 1, "decor_climb_ivy", 58 },
+    { "Mossy Boulder", "spider climbs the whole length", 124, 13, 56, 1, "decor_climb_boulder", 40 },
+    { "Driftwood Ramp", "spider climbs the whole length", 170, 18, 66, 1, "decor_climb_driftwood", 62 },
 };
 
 const decor_def_t *decor_def(uint8_t kind)
@@ -106,7 +116,9 @@ bool decor_owned(uint8_t kind)
     if (kind >= DECOR_COUNT) return false;
     if (kind < 32) return (g.decor_owned & (1u << kind)) != 0;
     if (kind < 64) return (g.decor_owned_extra & (1u << (kind - 32))) != 0;
-    return (g.catalogue_owned_high & (1u << (kind - 64 + 4))) != 0;
+    if (kind < DECOR_CLIMB_FIRST)
+        return (g.catalogue_owned_high & (1u << (kind - 64 + 4))) != 0;
+    return (g.climb_owned & (1u << (kind - DECOR_CLIMB_FIRST))) != 0;
 }
 
 bool decor_can_buy(uint8_t kind)
@@ -137,7 +149,8 @@ bool decor_buy(uint8_t kind)
     g.silk -= def->cost;
     if (kind < 32) g.decor_owned |= 1u << kind;
     else if (kind < 64) g.decor_owned_extra |= 1u << (kind - 32);
-    else g.catalogue_owned_high |= 1u << (kind - 64 + 4);
+    else if (kind < DECOR_CLIMB_FIRST) g.catalogue_owned_high |= 1u << (kind - 64 + 4);
+    else g.climb_owned |= 1u << (kind - DECOR_CLIMB_FIRST);
     ESP_LOGI(TAG, "bought %s for %u Silk (%lu left)", def->name, def->cost,
              (unsigned long)g.silk);
     return true;
@@ -285,6 +298,11 @@ bool decor_set_path(int slot, uint8_t path)
 
 /* --- climbing (2.5D) --------------------------------------------------- */
 
+bool decor_is_climb_structure(uint8_t kind)
+{
+    return kind >= DECOR_CLIMB_FIRST && kind < DECOR_COUNT;
+}
+
 bool decor_climbable(uint8_t kind)
 {
     const decor_def_t *def = decor_def(kind);
@@ -299,6 +317,28 @@ uint8_t decor_climb_height(int slot)
     return def ? def->climb_height : 0;
 }
 
+/* The lift at a point on one item, or 0 when the point is off its surface.
+ *
+ * A prop is a flat disc: inside the footprint you are on it, outside you are
+ * not. A large climb structure is a RAMP, so the lift grows from nothing at the
+ * rim to the full height at the centre. Without that gradient the spider pops
+ * to full height the instant it crosses the edge, which is exactly the hop the
+ * small props already suffered from. */
+static uint8_t climb_lift_on(const decor_item_t *item, const decor_def_t *def,
+                             int16_t x, int16_t y)
+{
+    float dx = (float)(x - item->x);
+    float dy = (float)(y - item->y);
+    float r = (float)def->radius;
+    float d2 = dx * dx + dy * dy;
+    if (d2 > r * r) return 0;
+    if (!decor_is_climb_structure(item->kind)) return def->climb_height;
+    /* Normalised distance from the centre: 0 at the middle, 1 at the rim. */
+    float t = sqrtf(d2) / r;
+    float lift = (float)def->climb_height * (1.0f - t);
+    return (uint8_t)(lift + 0.5f);
+}
+
 uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot)
 {
     if (out_slot) *out_slot = -1;
@@ -308,13 +348,9 @@ uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot)
         if (!item || item->blocking != DECOR_CLIMB) continue;
         const decor_def_t *def = decor_def(item->kind);
         if (!def || def->climb_height == 0) continue;
-        float dx = (float)(x - item->x);
-        float dy = (float)(y - item->y);
-        /* The climbable surface is the footprint, not the hit-test radius: the
-         * spider should only be lifted while it is genuinely over the item. */
-        if (dx * dx + dy * dy > (float)def->radius * def->radius) continue;
-        if (def->climb_height > best) {
-            best = def->climb_height;
+        uint8_t lift = climb_lift_on(item, def, x, y);
+        if (lift > best) {
+            best = lift;
             if (out_slot) *out_slot = i;
         }
     }
@@ -322,9 +358,13 @@ uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot)
 }
 
 /* The ramp is deliberately slow enough to read as a climb and fast enough that
- * the spider is never visibly floating: 90 px/s covers the tallest item (18 px)
- * in a fifth of a second. */
+ * the spider is never visibly floating. 90 px/s covers a small prop (<=18 px)
+ * in a fifth of a second, but a large climb structure is 40-62 px, which would
+ * take two thirds of a second and read as a slow float. The rate therefore
+ * scales with the target so every climb takes a similar, readable time. */
 #define CLIMB_RAMP_PX_PER_S 90.0f
+#define CLIMB_RAMP_MIN_PX_PER_S 90.0f
+#define CLIMB_RAMP_MAX_PX_PER_S 260.0f
 
 static float s_climb_lift;      /* current drawn lift, pixels */
 static uint32_t s_climb_last_ms;
@@ -371,7 +411,13 @@ int32_t decor_climb_lift(int16_t x, int16_t y, uint32_t now_ms)
         return (int32_t)(s_climb_lift + 0.5f);
     }
 
-    float step = CLIMB_RAMP_PX_PER_S * (float)elapsed / 1000.0f;
+    /* Scale the rate with the distance still to travel so a 60 px structure
+     * does not take three times as long as a 20 px prop. */
+    float remaining = fabsf((float)target - s_climb_lift);
+    float rate = CLIMB_RAMP_PX_PER_S + remaining * 3.0f;
+    if (rate < CLIMB_RAMP_MIN_PX_PER_S) rate = CLIMB_RAMP_MIN_PX_PER_S;
+    if (rate > CLIMB_RAMP_MAX_PX_PER_S) rate = CLIMB_RAMP_MAX_PX_PER_S;
+    float step = rate * (float)elapsed / 1000.0f;
     float delta = (float)target - s_climb_lift;
     if (fabsf(delta) <= step) s_climb_lift = (float)target;
     else s_climb_lift += (delta > 0.0f) ? step : -step;
@@ -507,6 +553,7 @@ bool decor_test(void)
     uint32_t silk = g.silk, owned = g.decor_owned, level = g.level;
     uint32_t owned_extra = g.decor_owned_extra;
     uint8_t high_owned = g.catalogue_owned_high;
+    uint8_t climb_owned = g.climb_owned;
     decor_item_t saved[DECOR_SLOTS];
     memcpy(saved, g.decor, sizeof saved);
     bool ok = true;
@@ -515,6 +562,7 @@ bool decor_test(void)
     g.decor_owned = 0;
     g.decor_owned_extra = 0;
     g.catalogue_owned_high &= 0x0F;
+    g.climb_owned = 0;
     g.level = 1;
     g.silk = 0;
 
@@ -649,11 +697,38 @@ bool decor_test(void)
     ok = ok && decor_climb_lift(20, 20, 3000) == 0;
     decor_clear();
 
+    /* --- large climb structures -----------------------------------------
+     * These are a separate family: authored at 192x192, drawn 1:1, and their
+     * lift RAMPS from nothing at the rim to full height at the centre. A prop
+     * is a flat disc, so it must still snap to its full height. */
+    ok = ok && decor_is_climb_structure(DECOR_CLIMB_BRANCH);
+    ok = ok && decor_is_climb_structure(DECOR_CLIMB_DRIFTWOOD);
+    ok = ok && !decor_is_climb_structure(DECOR_LOG);
+    ok = ok && !decor_is_climb_structure(DECOR_FAIRY_BRIDGE);
+    int big = decor_place(DECOR_CLIMB_DRIFTWOOD, 240, 240);
+    ok = ok && big >= 0 && decor_set_path(big, DECOR_CLIMB);
+    uint8_t full = k_decor_kinds[DECOR_CLIMB_DRIFTWOOD].climb_height;
+    uint8_t radius = k_decor_kinds[DECOR_CLIMB_DRIFTWOOD].radius;
+    ok = ok && full >= 40;                     /* genuinely tall, not a hop */
+    ok = ok && decor_climb_at(240, 240, NULL) == full;
+    /* Halfway out the lift is roughly half, and it falls to zero at the rim. */
+    uint8_t half = decor_climb_at(240 + radius / 2, 240, NULL);
+    ok = ok && half > 0 && half < full;
+    ok = ok && decor_climb_at(240 + radius + 2, 240, NULL) == 0;
+    /* A prop still snaps: no gradient across its footprint. */
+    int flat = decor_place(DECOR_LOG, 120, 120);
+    ok = ok && flat >= 0 && decor_set_path(flat, DECOR_CLIMB);
+    uint8_t log_h = k_decor_kinds[DECOR_LOG].climb_height;
+    ok = ok && decor_climb_at(120, 120, NULL) == log_h;
+    ok = ok && decor_climb_at(120 + k_decor_kinds[DECOR_LOG].radius - 1, 120, NULL) == log_h;
+    decor_clear();
+
     g.level = 40;
     g.silk = 100000;
     for (int i = 32; i < DECOR_COUNT; i++)
         ok = decor_buy(i) && decor_owned(i) && ok;
     g.catalogue_owned_high = high_owned;
+    g.climb_owned = climb_owned;
     g.silk = silk; g.decor_owned = owned; g.level = level;
     g.decor_owned_extra = owned_extra; g.level = level;
     memcpy(g.decor, saved, sizeof saved);

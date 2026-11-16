@@ -273,8 +273,11 @@ test('on-screen editing stages blocking until Done and Put Away stays in the enc
   ui.beginDecorMove(0);ui.putAwayPlacement();
   assert.equal(state.decor[0].kind,E.DECOR_EMPTY);
   assert.equal(ui.modal,null);assert.equal(ui.placement,null);assert.ok(E.decorOwned(state,0));
-  ui.beginGiftMove();ui.togglePlacementBlocking();assert.equal(ui.placement.blocking,undefined);
-  ui.putAwayPlacement();assert.equal(state.gift.used,0);assert.equal(state.gift.variant,2);
+  ui.beginGiftMove();ui.togglePlacementBlocking();assert.equal(ui.placement.blocking,1);
+  ui.commitPlacement();assert.equal(state.gift_path,1);
+  ui.beginGiftMove();ui.togglePlacementBlocking();assert.equal(ui.placement.blocking,2);
+  ui.cancelPlacement();assert.equal(state.gift_path,1);
+  ui.beginGiftMove();ui.putAwayPlacement();assert.equal(state.gift.used,0);assert.equal(state.gift.variant,2);
   assert.equal(state.gifts_owned,1);assert.equal(state.silk,silk);assert.equal(ui.modal,null);
 });
 

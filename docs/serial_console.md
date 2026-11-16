@@ -515,7 +515,7 @@ image object at its recorded position sourced from the right asset. It then
 restores the player's enclosure, Silk, level and owned mask, so it is safe to
 run on a live pet.
 
-`decor` with no argument lists all 68 kinds with cost, unlock level,
+`decor` with no argument lists all 74 kinds with cost, unlock level,
 footprint radius, blocking flag and whether the kind is owned, then reports the
 Silk balance and placed slots (placement can grow beyond twelve). `decor place KIND X Y`
 grants the Silk and level needed for the kind (test-only), buys it if it is not
@@ -529,7 +529,21 @@ decor within Floor or Canopy (Walk Behind). `decor clear` empties the enclosure.
 Mutating console commands persist and refresh the layer; opening controls does
 not save. The UI offers Put Away while preserving ownership.
 
-### `climb [N]`, `climbhere`
+Kinds 68..73 are the large climb structures (branch, vine, root, ivy, boulder,
+driftwood). They are authored 192x192 and drawn 1:1, and their lift ramps from
+zero at the footprint rim to full height at the centre. Their ownership is
+`climb_owned`, not `catalogue_owned_high`.
+
+### `decorreport [SLOT]`
+
+Prints one placed decor slot's kind, whether it is a large structure, its
+index, image source, width/height, LVGL scale, position, hidden flag and parent
+object. Use it when a placed item does not appear: `hidden=1` means the model
+layer has the item but the renderer was never refreshed. `decor place` and
+`decor move` refresh the layer themselves; a direct `decor_place()` call from a
+new console command must call `terrarium_refresh_decor()` too.
+
+### `climb [N]`, `climbhere [big]`
 
 `climb` reports the live 2.5D state at the spider's position: the climb height
 of the item under it, the slot, the ramped lift in pixels, and the contact
@@ -542,6 +556,8 @@ test hook: the spider wanders faster than a script can issue separate
 place/block/climb commands, so the footprint path could not otherwise be
 inspected. `climbhere` places a Stone Bridge under the spider and sets it to
 Climb in one command, which exercises the real footprint-driven path.
+`climbhere big` places a Driftwood structure instead, which is the only way to
+exercise the ramped large-structure lift and the 96x160 canvas headroom.
 
 ### `setupdone`
 
@@ -955,14 +971,14 @@ using Web Serial. Browser credentials go only to the selected USB device.
 
 The schema is generated from compiled `offsetof(game_state_t, ...)` values,
 not guessed browser offsets. It includes the header magic/version, 12-byte
-header size, legacy 120/current 3,096-byte fixed payload sizes and 53 named fields with
+header size, legacy 120/current 3,100-byte fixed payload sizes and 57 named fields with
 little-endian types/offsets. The website bundles a captured schema so saved
 files can also be inspected offline.
 
 Export snapshots on LVGL, waits for the existing internal-stack persistence
-worker on the console task, then reads the raw NVS blob. A new v17 backup is
-3,108 bytes plus six bytes per extra decor slot; supported v2-v16 payloads remain
-readable. `decorTail` identifies offset 3,096, stride 6 and the count field;
+worker on the console task, then reads the raw NVS blob. A new v21 backup is
+3,112 bytes plus six bytes per extra decor slot; supported v2-v20 payloads remain
+readable. `decorTail` identifies offset 3,100, stride 6 and the count field;
 v10/v11 tails retain their historical offset 260 when read.
 v13 reuses each six-byte record's blocking byte for path0/1/2; only path1
 collides. Record order encodes layer order within Floor and Canopy, so reordering
@@ -982,6 +998,14 @@ double-tap lighting gesture,1 disables it. Its descriptor has `minVersion:17`;
 the fixed prefix, archives and decor tail do not move. v2-v16 migrate to0.
 Malformed v16 backups with a nonzero former reserved byte remain rejected.
 Old firmware cannot read v17 backups: export before updating.
+v18 appends `decor_locked` and `auto_clean` at3096/3097 plus two reserved bytes,
+moving the decor tail to3100. v19 reuses the blocking byte for the Climb path
+(value3). v20 reuses the first v18 reserved byte for `gift_path` at3098, giving
+gifts the same path control as decor. v21 reuses the second for `climb_owned` at
+3099, the ownership bitmap for the six large climb structures (decor kinds
+68..73). None of v18-v21 changes the 3,100-byte prefix, so the payload bound and
+decor tail offset are unchanged. v21 accepts decor kinds0..73; v12-v20 accept
+0..67 and reject a large structure rather than reinterpreting it.
 `set usb_sounds 0` disables automatic plug-in/unplug chimes; `1` enables them.
 Other values are rejected. Sound > USB Chimes uses the same saved flag at
 former padding byte267; old backups default on. Master mute/zero volume still

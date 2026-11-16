@@ -203,6 +203,12 @@ static const icon_entry_t k_decor_items[] = {
     { "bamboo_fountain", MMAP_STORAGE_DECORITEM_BAMBOO_FOUNTAIN_QOI },
     { "bonsai", MMAP_STORAGE_DECORITEM_BONSAI_QOI },
     { "fairy_bridge", MMAP_STORAGE_DECORITEM_FAIRY_BRIDGE_QOI },
+    { "climb_branch", MMAP_STORAGE_DECORITEM_CLIMB_BRANCH_QOI },
+    { "climb_vine", MMAP_STORAGE_DECORITEM_CLIMB_VINE_QOI },
+    { "climb_root", MMAP_STORAGE_DECORITEM_CLIMB_ROOT_QOI },
+    { "climb_ivy", MMAP_STORAGE_DECORITEM_CLIMB_IVY_QOI },
+    { "climb_boulder", MMAP_STORAGE_DECORITEM_CLIMB_BOULDER_QOI },
+    { "climb_driftwood", MMAP_STORAGE_DECORITEM_CLIMB_DRIFTWOOD_QOI },
 };
 
 static const icon_entry_t k_icons[] = {

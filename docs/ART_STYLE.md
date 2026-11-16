@@ -35,6 +35,7 @@ spider geometry, palettes or rendering.
 | Dedicated treat icons | 24x24 | 48x48 | 8-12 |
 | Gifts | 16x16 | 32x32; gifts displayed at 64x64 | 8-12 |
 | Placeable decor | 32x32 | 64x64; runtime uses footprint radius | 8-12 |
+| Large climb structures | 96x96 | 192x192; drawn 1:1 at LVGL scale 256 | 8-12 |
 | Legacy decor | Half its PNG dimensions | Existing dimensions unchanged | At most 12 |
 | Backgrounds | 240x240 | 240x240, enlarged to 480x480 | At most 64 |
 | Enclosure borders | 120x120 | 240x240, enlarged to 480x480 | At most 16 |
@@ -173,7 +174,8 @@ generic scattered highlight filter as a substitute for material anatomy.
 Structural materials may use five finite tones; secondary materials retain
 three each, with ink keeping the full sprite within 12 visible colors.
 
-All sixty-eight placeable sprites have 8-12 visible tones. Distinct material
+All sixty-eight placeable props have 8-12 visible tones, and the six large
+climb structures share that budget at their larger canvas. Distinct material
 surfaces matter more than simply adding colors:
 
 - Rocks have lit upper faces, cool shadow planes, small chips and broken rims.
@@ -191,6 +193,25 @@ highlight/shadow ellipses outside an ink rim. `_leaf_shape()` draws lit and
 shadowed halves and a midrib. Top-left lighting is shared throughout.
 Legacy `decor_*.png` derive from the same redesigned placeable art, including
 the newer core-prop drawings.
+
+### Large climb structures
+
+The six climb structures (branch, vine, root, ivy, boulder, driftwood) are a
+separate family authored in [climb_art.py](../tools/climb_art.py) at a 96x96
+logical canvas, doubled to 192x192 and drawn 1:1 in game. They exist because a
+64x64 prop cannot sell a climb: at that size the spider appears to hop. Keep
+them large, keep them spanning most of the enclosure, and keep the same
+top-left light, ink rims and 8-12 tone budget as the props.
+
+Their silhouettes must read as one continuous structure with a walkable spine,
+not as a pile of small objects. `_taper()` gives the trunk a lit and shadowed
+side; `_highlight()` runs a short connected ridge along the top; `_leaf()` draws
+a curved outline with a lit half and a midrib; `_moss_patch()` clusters
+overlapping cushions. Do not add a generic speckle pass.
+
+The lift ramps from zero at the footprint rim to full height at the centre, so
+the structure's own silhouette is what the player reads as the slope. Artwork
+that is flat across the middle will not climb convincingly.
 
 ### Organic props must read as their subject, not as speckle
 
@@ -215,10 +236,10 @@ drawn per element. Per-element outlines are covered by the next element, which
 leaves a dotted ring instead of a continuous edge.
 
 **Decor includes all thirty-six gift furnishings**, not only the sixty-eight
-`decoritem_*.png` props. Gifts use the same top-left light, ink rims, shaded
+`decoritem_*.png` props and the six large climb structures. Gifts use the same
+top-left light, ink rims, shaded
 wood/stone/foliage and 8-12 visible tones within their smaller 16x16 logical
-canvas. Their stable filenames denote gameplay IDs, not literal jewels:
-Crystal/Sapphire Lookouts and Royal Perch are furniture; Leaf Shelter,
+canvas. Their stable filenames denote gameplay IDs, not literal jewels:Crystal/Sapphire Lookouts and Royal Perch are furniture; Leaf Shelter,
 Acorn Hide, Bone Tunnel and Diamond Retreat are usable-looking shelters.
 Shared cut-wood platforms have grain and lit edges; gemstone accents have
 facets, foliage has separate leaf planes, and silk has woven folds.
@@ -410,9 +431,9 @@ powershell -File build.ps1
 ```
 
 For a complete review sheet, add `--preview PATH.png` to the validator.
-It lays out all348 non-spider assets with nearest-neighbor sampling.
+It lays out all354 non-spider assets with nearest-neighbor sampling.
 
-The validator checks387 RGBA PNGs, dimensions/names, binary alpha, sprite grid,
+The validator checks393 RGBA PNGs, dimensions/names, binary alpha, sprite grid,
 palette limits, quiet centers, deterministic hashes across two passes, runtime
 mappings, and every decoded QOI pixel in the existing pack. Every source PNG,
 including backgrounds, badges and spider exports, must remain byte-identical

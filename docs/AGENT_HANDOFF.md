@@ -38,6 +38,16 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   occurs before ui_menu_close resets its page; browser list clamps deleted pages.
   Older short effects taper their last5ms to zero; music/pet/USB hashes stay intact.
 
+- Save v21 adds `climb_owned` at byte3099, the last v18 reserved byte, so the
+  payload prefix stays 3,100 bytes and the schema stays 57 fields. It is the
+  ownership bitmap for the six large climb structures (decor kinds 68..73);
+  `catalogue_owned_high` is full because its high nibble already holds decor
+  64..67. v21 accepts decor kinds 0..73, v12..v20 accept 0..67. A large
+  structure in an older save is rejected rather than silently reinterpreted.
+- Save v20 adds `gift_path` at byte3098, reusing a v18 reserved byte, so the
+  payload prefix stays 3,100 bytes. Gifts gain the same Solid/Walk Over/Walk
+  Behind/Climb/Back/Front control as decor. v20 accepts gift paths 0..3,
+  v13..v19 accept 0..2, older 0..1.
 - Save v19 adds the Climb decor path (value 3 in the existing blocking byte).
   No new fields: the payload prefix stays 3,100 bytes, bound 23,308, 55 schema
   fields. v19 accepts paths 0..3, v13..v18 accept 0..2, older 0..1. A Climb
@@ -155,9 +165,20 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   logical position on the floor so steering/hunting/hit-testing are untouched;
   a contact shadow stays at the ground point. Offered only for kinds with a
   climb height.
+  Two climb families exist. The 53 small props (64x64, drawn at radius*16)
+  snap to their full climb height anywhere inside the footprint. The six large
+  structures (decor kinds 68..73, authored 192x192, drawn 1:1 at LVGL scale
+  256) ramp the lift from zero at the rim to full height at the centre, which
+  is what makes the climb read as a climb instead of a hop. Their ownership
+  lives in `climb_owned`, not `catalogue_owned_high`.
+  The spider canvas is 96x160, not 96x96: `s_draw_dy` raises the body inside
+  the buffer, so a 62px lift on a 96px canvas clipped the body off the top.
+  `CANVAS_CX`/`CANVAS_CY` keep the floor point and contact shadow at the
+  bottom with 62px of transparent headroom. Do not shrink it back.
   Stage position/path/layer until Done; Cancel discards all. Floor is beneath
   the spider; Canopy (Walk Behind) is above the creature layer. Arrows reorder
-  within a band. Gifts omit decor physics/layer controls. All exits stay in
+  within a band. Gifts carry the same path/layer controls as decor (save v20
+  `gift_path`). All exits stay in
   the enclosure, with no Back-to-Settings route.
   Save v13 keeps the v12 layout, storing path0/1/2 in the existing byte and
   layer order in record order. Only path1 collides. Read old v2-v12 saves,

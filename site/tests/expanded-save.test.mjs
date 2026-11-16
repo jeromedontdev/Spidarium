@@ -19,7 +19,7 @@ test('v17 life, all three full archives and extra decor roundtrip without clonin
   assert.deepEqual(decoded.fields.life,life);
   assert.equal(decoded.fields.silk,12345);
   assert.deepEqual(encodeSave(decoded.fields,schema,bytes),bytes);
-  assert.equal(decoded.header.version,19);
+  assert.equal(decoded.header.version,21);
   for(const [offset,value] of [[8,6],[11,31],[12,2],[13,2],[14,4],[15,2],[16,101],
     [16+46,3],[16+96,4],[16+736,6],[16+739,1]]){
     const invalid=bytes.slice();invalid[872+offset]=value;
@@ -29,7 +29,7 @@ test('v17 life, all three full archives and extra decor roundtrip without clonin
   assert.throws(()=>validateSchema(bad),/life layout/);
 });
 
-test('v15 full prefix and maximum tail migrate to v19 with fresh optional life state',()=>{
+test('v15 full prefix and maximum tail migrate to v20 with fresh optional life state',()=>{
   const currentBytes=encodeSave(current(),schema),old=new Uint8Array(12+860+6);
   old.set(currentBytes.subarray(0,872));old.set(currentBytes.subarray(3112),872);
   const v=new DataView(old.buffer);v.setUint16(4,15,true);v.setUint32(8,old.length-12,true);
@@ -60,7 +60,7 @@ test('v16 maximum payload migrates with gesture enabled and rejects nonzero lega
   delete legacySchema.life.light_gesture_disabled;legacySchema.life.reserved=15;
   assert.deepEqual(decodeSave(old,legacySchema).fields.life,decoded.fields.life);
   const migrated=encodeSave(decoded.fields,schema,old);
-  assert.equal(new DataView(migrated.buffer).getUint16(4,true),19);
+  assert.equal(new DataView(migrated.buffer).getUint16(4,true),21);
   assert.deepEqual(migrated.subarray(12+3100),old.subarray(12+3096));
   for(const value of [1,2,255]){
     old[887]=value;
@@ -92,7 +92,7 @@ test('v14 preserves all ten music IDs while old headers reject new scores',()=>{
 });
 
 test('compiled v12 schema still reads v10 variable save with eighty extra placements',()=>{
-  assert.equal(schema.version,19);
+  assert.equal(schema.version,21);
   assert.deepEqual(schema.payloadSizes,[120,3100]);
   const count=80,bytes=new Uint8Array(272+count*6),view=new DataView(bytes.buffer);
   view.setUint32(0,schema.magic,true);view.setUint16(4,10,true);view.setUint32(8,bytes.length-12,true);
@@ -146,7 +146,7 @@ test('v15 companion preferences requests pins and v15 decor tail roundtrip exact
 });
 
 test('USB chime preference roundtrips both values and old v14 padding always migrates enabled',()=>{
-  assert.equal(schema.fields.length,55);
+  assert.equal(schema.fields.length,57);
   for(const enabled of [0,1]) {
     const bytes=encodeSave({...current(),usb_sounds:enabled},schema);
     assert.equal(bytes[279],enabled);

@@ -273,8 +273,8 @@ function engineDefaults(now=0) {
 }
 export function freshState(options={}) {
   const now=options.now?.()??0;
-  const s={version:19,life:lifeDefaults(),companion:companionDefaults(),hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
-    xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},
+  const s={version:21,life:lifeDefaults(),companion:companionDefaults(),hunger:65,mood:60,energy:80,hygiene:80,age_ticks:0,meals:0,pets:0,cleans:0,plays:0,
+    xp:0,seed:0xc0ffee,spider_x:240,spider_y:240,heading_deg:0,gift:{kind:0,variant:0,used:0,x:0,y:0},gift_path:0,
     stage:0,sick:0,muted:0,gift_mode:0,gift_selected:0,level:1,achievements:0,days_lived:0,last_molt_day:0,
     state:0,taps:0,eat_until_ms:0,blink_window:0,blink_until:0,spider_heading:0,streak:0,best_streak:0,
     temperament:0,bond:0,name:'',colour:0,pupil_colour:0,leg_colour:2,fang_colour:1,
@@ -285,7 +285,7 @@ export function freshState(options={}) {
     daily_day:0xFFFFFFFF,daily_base_day:0xFFFFFFFF,daily_task_base:0,daily_streak:0,daily_task_done:0,
     daily_override:0xFFFFFFFF,pet_xp_day:0xFFFFFFFF,pet_xp_today:0,
     decor_owned:0,decor_owned_extra:0,music_enabled:1,lights_dimmed:0,music_volume:100,music_track:0,usb_sounds:1,
-    decor_locked:0,auto_clean:0,
+    decor_locked:0,auto_clean:0,climb_owned:0,
     decor:Array.from({length:DECOR_SLOTS},()=>({kind:DECOR_EMPTY,blocking:0,x:0,y:0})),
     prey:[],poop:[],paused:false,setup_complete:false,thought:'',mind_rule:null,lastEvent:null,visits:0,
     spider:{x:240,y:240,heading:0,angle:0,state:0,gait_phase:0,walking:false},_engine:engineDefaults(now)};
@@ -327,7 +327,7 @@ export function validateProgress(raw) {
     seen.delete(v);
   };
   inspect(raw,'save');
-  if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19].includes(raw.version))fail('unsupported version');
+  if(![1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21].includes(raw.version))fail('unsupported version');
   if(raw.version<17 && plain(raw.life)) {
     const life={...raw.life};
     if(!Object.hasOwn(life,'reserved') && !Object.hasOwn(life,'light_gesture_disabled'))
@@ -526,6 +526,8 @@ export function restoreSim(raw,options={}) {
     s.gift={kind:raw.gift.kind,used:1,variant:integer(raw.gift.variant,0,255),
       x:clamp(raw.gift.x??315,34,446),y:clamp(raw.gift.y??330,34,446)};
   else if(Number.isInteger(raw.gift)&&GIFTS[raw.gift])s.gift={kind:raw.gift,used:1,variant:0,x:315,y:330};
+  s.gift_path=integer(raw.gift_path,0,3);
+  s.climb_owned=raw.version>=21?integer(raw.climb_owned,0,63):0;
   if(s.gift.used)markGiftOwned(s,s.gift.kind);
   // Restore the tank's mess. Older saves carry no dirt/bug tags, so a dropping
   // defaults to a spider dropping's worth.
@@ -808,7 +810,20 @@ export const DECOR_KINDS=Object.freeze([
   {key:'bamboo_fountain',name:'Bamboo Fountain',cost:84,level:9,radius:16,blocking:1,climb:14},
   {key:'bonsai',name:'Bonsai',cost:94,level:11,radius:16,blocking:1,climb:0},
   {key:'fairy_bridge',name:'Fairy Bridge',cost:102,level:12,radius:20,blocking:1,climb:16},
+  {key:'climb_branch',name:'Fallen Branch',cost:140,level:15,radius:60,blocking:1,climb:46,big:1},
+  {key:'climb_vine',name:'Vine Arch',cost:160,level:17,radius:64,blocking:1,climb:54,big:1},
+  {key:'climb_root',name:'Root Bridge',cost:150,level:16,radius:62,blocking:1,climb:50,big:1},
+  {key:'climb_ivy',name:'Ivy Column',cost:132,level:14,radius:52,blocking:1,climb:58,big:1},
+  {key:'climb_boulder',name:'Mossy Boulder',cost:124,level:13,radius:56,blocking:1,climb:40,big:1},
+  {key:'climb_driftwood',name:'Driftwood Ramp',cost:170,level:18,radius:66,blocking:1,climb:62,big:1},
 ]);
+/* First kind in the large climb-structure family. These are authored at
+ * 192x192 and drawn 1:1, and their lift ramps from the rim to the centre. */
+export const DECOR_CLIMB_FIRST=68;
+export const DECOR_CLIMB_SPRITE=192;
+export function decorIsClimbStructure(kind){
+  return kind>=DECOR_CLIMB_FIRST&&kind<DECOR_KINDS.length;
+}
 export const DECOR_SLOTS=12;
 export const DECOR_EMPTY=0xFF;
 export function decorSprite(kind){
@@ -820,9 +835,10 @@ export function decorUnlocked(s,kind){
   return !!d&&s.level>=d.level;
 }
 export function decorOwned(s,kind){
-  return kind>=0&&kind<DECOR_KINDS.length&&
-    (kind<64?((kind<32?s.decor_owned:s.decor_owned_extra)&(1<<(kind%32)))!==0:
-      (s.catalogue_owned_high&(1<<(kind-64+4)))!==0);
+  if(!(kind>=0&&kind<DECOR_KINDS.length))return false;
+  if(kind<64)return ((kind<32?s.decor_owned:s.decor_owned_extra)&(1<<(kind%32)))!==0;
+  if(kind<DECOR_CLIMB_FIRST)return (s.catalogue_owned_high&(1<<(kind-64+4)))!==0;
+  return ((s.climb_owned??0)&(1<<(kind-DECOR_CLIMB_FIRST)))!==0;
 }
 /** Buy one decor kind. Returns false and records a rejection when refused. */
 export function buyDecor(s,kind){
@@ -831,8 +847,14 @@ export function buyDecor(s,kind){
   if(!decorUnlocked(s,kind))return event(s,'rejected',{reason:'decor locked'});
   if(s.silk<d.cost)return event(s,'rejected',{reason:'not enough Silk'});
   s.silk-=d.cost;
-  const field=kind<32?'decor_owned':kind<64?'decor_owned_extra':'catalogue_owned_high';
-  s[field]=(s[field]|(1<<(kind<64?kind%32:kind-64+4)))>>>0;
+  if(kind<64){
+    const field=kind<32?'decor_owned':'decor_owned_extra';
+    s[field]=(s[field]|(1<<(kind%32)))>>>0;
+  }else if(kind<DECOR_CLIMB_FIRST){
+    s.catalogue_owned_high=(s.catalogue_owned_high|(1<<(kind-64+4)))>>>0;
+  }else{
+    s.climb_owned=((s.climb_owned??0)|(1<<(kind-DECOR_CLIMB_FIRST)))>>>0;
+  }
   return true;
 }
 export function decorPlacedCount(s){
@@ -896,8 +918,15 @@ export function decorClimbAt(s,x,y){
     const def=DECOR_KINDS[item.kind];
     if(!def||!def.climb)continue;
     const dx=x-item.x,dy=y-item.y;
-    if(dx*dx+dy*dy>def.radius*def.radius)continue;
-    if(def.climb>best)best=def.climb;
+    const d2=dx*dx+dy*dy;
+    if(d2>def.radius*def.radius)continue;
+    // A prop is a flat disc: inside the footprint you are at full height. A
+    // large climb structure is a ramp, so the lift grows from nothing at the
+    // rim to the full height at the centre.
+    const lift=decorIsClimbStructure(item.kind)
+      ? Math.round(def.climb*(1-Math.sqrt(d2)/def.radius))
+      : def.climb;
+    if(lift>best)best=lift;
   }
   return best;
 }
@@ -1212,7 +1241,7 @@ function mindTick(s){
 function steer(s,want,dt,avoid=false){
   if(avoid){
     let a=0;
-    if(s.gift.used){
+    if(s.gift.used&&s.gift_path===1){
       const dx=s.gift.x-s.spider_x,dy=s.gift.y-s.spider_y,d=Math.hypot(dx,dy);
       if(d>.1&&d<=40&&(dx*Math.cos(want)+dy*Math.sin(want))/d>=.15)
         a=(wrap(Math.atan2(dy,dx)-want)>=0?-1:1)*(1-d/40)*PI*.5;
@@ -1363,7 +1392,7 @@ function behaviourTick(s,dt){
       else if(done)setState(s,1);
     }
   }
-  if(!r.pounce&&s.gift.used){
+  if(!r.pounce&&s.gift.used&&s.gift_path===1){
     const dx=s.spider_x-s.gift.x,dy=s.spider_y-s.gift.y,d=Math.hypot(dx,dy);
     if(d>.1&&d<18){s.spider_x=Math.trunc(s.spider_x+dx/d*(18-d));s.spider_y=Math.trunc(s.spider_y+dy/d*(18-d));}
   }

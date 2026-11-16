@@ -153,6 +153,26 @@ test('climb path lifts the spider and leaves a floor shadow',()=>{
   assert.equal(E.decorClimbAt(state,240,240),18,'the stone bridge is taller');
 });
 
+test('large climb structures ramp from the rim to the centre',()=>{
+  const {state}=fixture();
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  /* Kind 74 is Driftwood Ramp: radius 66, climb height 62, drawn 1:1 at 192. */
+  const kind=E.DECOR_KINDS.length-1;
+  assert.equal(E.decorIsClimbStructure(kind),true);
+  assert.equal(E.decorIsClimbStructure(3),false,'the log is a prop, not a structure');
+  assert.equal(E.DECOR_CLIMB_SPRITE,192);
+  state.decor[0]={kind,blocking:3,x:240,y:240};
+  const def=E.DECOR_KINDS[kind];
+  assert.equal(E.decorClimbAt(state,240,240),def.climb,'full height at the centre');
+  const half=E.decorClimbAt(state,240+Math.round(def.radius/2),240);
+  assert.ok(half>0&&half<def.climb,`halfway out is a partial lift, got ${half}`);
+  assert.equal(E.decorClimbAt(state,240+def.radius+2,240),0,'nothing past the rim');
+  /* A prop still snaps to full height across its whole footprint. */
+  state.decor[0]={kind:3,blocking:3,x:240,y:240};
+  assert.equal(E.decorClimbAt(state,240,240),16);
+  assert.equal(E.decorClimbAt(state,240+21,240),16,'a prop is a flat disc');
+});
+
 test('climb is only offered for kinds that have height',()=>{
   const {state}=fixture();
   state.decor[0]={kind:5,blocking:0,x:240,y:240};   /* Fern: flat */

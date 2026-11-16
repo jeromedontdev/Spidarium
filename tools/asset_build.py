@@ -19,8 +19,8 @@ except ImportError:
 
 SPIDER_COUNT = 39
 PREY_SPECIES = ("fly", "cricket", "moth", "beetle", "roach", "mealworm", "fruitfly", "waxworm")
-ASSET_COUNT = 387
-NON_SPIDER_COUNT = 348
+ASSET_COUNT = 393
+NON_SPIDER_COUNT = 354
 APPROVED_CRYSTAL_PIXEL_SHA256 = "89d076f4219d5839d72f9b137a0f893647177223f745ee95887a5886f76f8c6b"
 APPROVED_CRYSTAL_BORDER_SOURCE_SHA256 = "7ea7c587861a0844e9296a01b01a22859f631f5ac1d7602af157081bdeac9c09"
 APPROVED_CRYSTAL_BORDER_PIXEL_SHA256 = "e6160c76ed9bc30aea45595ba507e4a5155e55f9687c49382702e23d314c6e1a"
@@ -93,7 +93,17 @@ DECOR_ITEMS = (
     "solar_array", "oxygen_pod", "wizard_tower", "dragon_statue",
     "treasure_chest", "sun_obelisk", "glyph_tablet", "broken_column",
     "stone_lantern", "bamboo_fountain", "bonsai", "fairy_bridge",
+    "climb_branch", "climb_vine", "climb_root", "climb_ivy", "climb_boulder",
+    "climb_driftwood",
 )
+# The large climb structures are authored at 192x192 rather than 64x64. They are
+# a separate family: a 64x64 prop can only lift the spider a few pixels, which
+# reads as a hop, so these span a large part of the tank instead.
+CLIMB_ITEMS = (
+    "climb_branch", "climb_vine", "climb_root", "climb_ivy", "climb_boulder",
+    "climb_driftwood",
+)
+CLIMB_SPRITE = 192
 TREATS = ("hunger", "mood", "energy", "dew", "pollen", "silk",
           "moon", "amber", "neon", "star", "lotus", "rune")
 PIXEL_SCALE = 2
@@ -130,7 +140,8 @@ def expected_dimensions():
         "decor_wood_log.png": (96, 36),
     })
     dimensions.update({
-        f"decoritem_{name}.png": (64, 64) for name in DECOR_ITEMS
+        f"decoritem_{name}.png": (CLIMB_SPRITE, CLIMB_SPRITE) if name in CLIMB_ITEMS
+        else (64, 64) for name in DECOR_ITEMS
     })
     dimensions.update({
         f"background_{name}_0.png": (240, 240) for name in BACKGROUNDS
@@ -617,11 +628,11 @@ def validate_runtime_mappings(root):
     )
     decor_rows = re.findall(
         r'\{\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*(\d+)\s*,\s*(\d+)\s*,'
-        r'\s*(\d+)\s*,\s*(\d+)\s*,\s*"decor_([^"]+)"\s*\}',
+        r'\s*(\d+)\s*,\s*(\d+)\s*,\s*"decor_([^"]+)"\s*,\s*(\d+)\s*\}',
         decor_table.group(1),
     ) if decor_table else []
     if len(decor_rows) != len(DECOR_ITEMS) or [
-        row[-1] for row in decor_rows
+        row[-2] for row in decor_rows
     ] != list(DECOR_ITEMS):
         raise ValueError("Decor prices/definitions do not match decor enum and sprite order")
 

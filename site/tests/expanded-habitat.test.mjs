@@ -5,10 +5,10 @@ import { DeviceGame } from '../lib/device-ui.js';
 
 test('expanded catalogue doubles treats, decor, gifts and backgrounds',()=>{
   assert.equal(E.TREATS.length,12);
-  assert.equal(E.DECOR_KINDS.length,68);
+  assert.equal(E.DECOR_KINDS.length,74);
   assert.equal(E.GIFTS.length,36);
   assert.equal(E.BACKGROUNDS.length,48);
-  assert.equal(new Set(E.DECOR_KINDS.map(item=>item.key)).size,68);
+  assert.equal(new Set(E.DECOR_KINDS.map(item=>item.key)).size,74);
   assert.equal(new Set(E.BACKGROUNDS).size,48);
 });
 
@@ -18,7 +18,7 @@ test('decor grows past twelve, preserves high ownership bits, moves and restores
     assert.equal(E.buyDecor(state,kind),true);
     assert.equal(E.decorOwned(state,kind),true,`owned ${kind}`);
   }
-  for(let i=0;i<80;i++)assert.equal(E.placeDecor(state,i%68,100+i,150+i),i);
+  for(let i=0;i<80;i++)assert.equal(E.placeDecor(state,i%74,100+i,150+i),i);
   assert.equal(E.decorPlacedCount(state),80);
   assert.equal(state.decor_owned,0xffffffff);
   assert.equal(state.decor_owned_extra,0xffffffff);

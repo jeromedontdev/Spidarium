@@ -7,10 +7,10 @@ import {decodeSave} from '../lib/save.js';
 
 const source=name=>readFile(new URL(`../../main/${name}`,import.meta.url),'utf8');
 
-test('all 68 native/browser decor entries keep names, prices, levels and footprints in sync',async()=>{
+test('all 74 native/browser decor entries keep names, prices, levels and footprints in sync',async()=>{
   const text=(await source('decor.c')).split('static const decor_def_t k_decor_kinds')[1].split('};')[0];
   const rows=[...text.matchAll(/\{\s*"([^"]+)",\s*"[^"]+",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"decor_([^"]+)",\s*(\d+)\s*\}/g)];
-  assert.equal(rows.length,68);
+  assert.equal(rows.length,74);
   rows.forEach((row,id)=>{
     const item=E.DECOR_KINDS[id];
     assert.deepEqual([item.name,item.cost,item.level,item.radius,item.blocking,item.key],
@@ -34,9 +34,9 @@ test('all high ownership IDs are independent, persist and never alias low IDs',(
     for(let n=0;n<36;n++)assert.equal(E.giftOwned(s,n),n<=id,`${id} gift ${n}`);
   }
   assert.equal(s.gifts_owned,0xffffffff);assert.equal(s.catalogue_owned_high,15);
-  for(let id=0;id<68;id++){
+  for(let id=0;id<74;id++){
     assert.equal(E.buyDecor(s,id),true);
-    for(let n=0;n<68;n++)assert.equal(E.decorOwned(s,n),n<=id,`${id} decor ${n}`);
+    for(let n=0;n<74;n++)assert.equal(E.decorOwned(s,n),n<=id,`${id} decor ${n}`);
   }
   assert.equal(s.catalogue_owned_high,255);
   for(let id=1;id<48;id++){
@@ -48,7 +48,7 @@ test('all high ownership IDs are independent, persist and never alias low IDs',(
   const restored=E.restoreSim(JSON.parse(JSON.stringify(s)));
   assert.equal(restored.gift.kind,35);assert.equal(restored.decor[0].kind,67);
   for(let id=0;id<36;id++)assert.equal(E.giftOwned(restored,id),true);
-  for(let id=0;id<68;id++)assert.equal(E.decorOwned(restored,id),true);
+  for(let id=0;id<74;id++)assert.equal(E.decorOwned(restored,id),true);
   assert.equal(E.backgroundOwned(restored,47),true);
   const old=E.freshState();old.version=11;old.catalogue_owned_high=255;old.backgrounds_owned_extra=65535;
   const migrated=E.restoreSim(JSON.parse(JSON.stringify(old)));
@@ -124,7 +124,7 @@ test('pre-expansion progress cannot unlock new IDs through historical padding or
 
 test('raw v12 ownership/border fields and shifted tail decode; v11 tail stays at 260',async()=>{
   const schema=JSON.parse(await readFile(new URL('../save-schema.json',import.meta.url)));
-  assert.equal(schema.version,19);assert.equal(schema.fields.length,55);
+  assert.equal(schema.version,21);assert.equal(schema.fields.length,57);
   for(const version of [10,11,12]){
     const prefix=version===12?268:260,bytes=new Uint8Array(12+prefix+6),v=new DataView(bytes.buffer);
     v.setUint32(0,schema.magic,true);v.setUint16(4,version,true);v.setUint32(8,prefix+6,true);

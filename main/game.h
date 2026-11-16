@@ -231,7 +231,14 @@ typedef struct {
     /* Appended in v18. */
     uint8_t decor_locked;     /* 1 = placed decor cannot be moved or put away */
     uint8_t auto_clean;       /* 1 = the tank is swept automatically */
-    uint8_t reserved_v18[2];  /* keeps the payload 4-byte aligned */
+    /* Appended in v19: the gift's path, matching decor. This was one of the v18
+     * reserved bytes, so the payload size is unchanged. There is only ever one
+     * gift, so Back/Front ordering is moot and only the path is stored. */
+    uint8_t gift_path;        /* decor_path_t for the placed gift */
+    /* Appended in v21: ownership of the large climb structures (kinds 68..73).
+     * catalogue_owned_high is full (its high nibble holds decor 64..67), so
+     * this reuses the last v18 reserved byte and the payload stays 3100. */
+    uint8_t climb_owned;      /* bitmask of decor kinds DECOR_CLIMB_FIRST.. */
 } game_state_t;
 
 _Static_assert(sizeof(game_state_t) == 3100, "save payload ABI changed");
@@ -264,6 +271,8 @@ _Static_assert(offsetof(game_state_t, decor_owned) == 160, "decor_owned ABI chan
 _Static_assert(offsetof(game_state_t, decor) == 164, "decor ABI changed");
 _Static_assert(offsetof(game_state_t, decor_locked) == 3096, "decor lock ABI changed");
 _Static_assert(offsetof(game_state_t, auto_clean) == 3097, "auto clean ABI changed");
+_Static_assert(offsetof(game_state_t, gift_path) == 3098, "gift path ABI changed");
+_Static_assert(offsetof(game_state_t, climb_owned) == 3099, "climb ownership ABI changed");
 
 /* Live LVGL object handles. */
 typedef struct {

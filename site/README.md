@@ -172,10 +172,10 @@ aim/release are otherwise required. Gifts cost Silk and unlock by level.
 Hold decor/a gift to move it; redundant movement menu entries are removed.
 Gift movement is free and preserves variant/bonus/ownership. Backgrounds cost
 Silk once; cork and reapplying owned themes are free. There are 48 backgrounds,
-68 decor styles, 36 gifts and twelve treats. Borders offers 48 corresponding
+74 decor styles, 36 gifts and twelve treats. Borders offers 48 corresponding
 frames, bought independently with Silk, mixable with any floor, with free
 reapplication/removal. All eleven requested theme families are included.
-Placement grows past twelve and save v12 keeps
+Placement grows past twelve and save v21 keeps
 all extra records, music and lights. Double tap dims just the enclosure.
 Gentle ambient music has an independent Sound switch; master mute still
 silences everything. Ground prey gait follows travel and plants feet at

@@ -9734,3 +9734,99 @@ each of the 68 assigned climb heights suits its artwork, still need human eyes.
 No hosted OTA, signed firmware, encrypted NVS or functional rollback claim is
 added. The climb does not change steering: a Climb item is neither blocking nor
 walk-over, it is simply walked onto and lifted.
+
+## Round 108 - Large climb structures (save v21)
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+Round 107 made every existing prop climbable. The user's verdict was that the
+effect does not work at that size: "the climbable items now but they are very
+small and the spider just kind of hops on them. Its not a convincing effect at
+that size. I was thinking the climbable decor would be separate from what we
+already had and be like large twigs or vines that went across the screen."
+
+This round adds that separate family.
+
+### Decisions made
+
+- **A new family, not a rescale.** Six kinds at enum 68..73 - branch, vine,
+  root, ivy, boulder, driftwood - authored at a 96x96 logical canvas, doubled to
+  192x192, and drawn 1:1 at LVGL scale 256. The 64x64 props keep their existing
+  `radius*16` scale. A prop cannot sell a climb because the spider is nearly as
+  tall as the prop; a structure spanning most of the enclosure can.
+- **The lift ramps instead of snapping.** This is the actual fix for the hop.
+  `climb_lift_on()` returns `climb * (1 - d/radius)` for structures, so the
+  spider rises gradually from the rim to the centre. A prop still snaps to full
+  height anywhere inside its footprint, which is correct for an 18px prop and
+  wrong for a 62px structure. Without the gradient the spider pops to full
+  height the instant it crosses the rim, which is exactly the hop the user saw.
+- **The ramp rate scales with remaining distance.** A fixed px/s rate made a
+  62px structure take three times as long as an 18px prop. `CLIMB_RAMP_MIN/MAX`
+  are 90/260 px/s and the rate is `90 + remaining*3`, clamped.
+- **Ownership needed a new byte.** `catalogue_owned_high` is full: its high
+  nibble already holds decor 64..67. The new family's bitmap lives in
+  `g.climb_owned` at offset 3099, which was the last v18 reserved byte, so the
+  payload prefix stays 3,100 bytes and no new save field or size change is
+  needed. `SAVE_VERSION` 20 -> 21.
+- **The spider canvas had to grow to 96x160.** This was a latent bug, not a
+  tuning choice. `s_draw_dy` raises the body *inside* the buffer, so on a 96x96
+  canvas any lift above ~30px pushed the body off the top and it vanished. The
+  canvas is now 96x160 with `CANVAS_CX`/`CANVAS_CY` keeping the floor point and
+  contact shadow at the bottom and 62px of transparent headroom. The buffer grew
+  from 27,648 to 46,080 bytes, still in PSRAM; `largest` is unchanged.
+- **The shadow floors were relaxed.** At a 62px lift the old `rx>=24, ry>=8`
+  and `alpha = 170 - climb*2` floors would have made the shadow vanish entirely.
+  They are now `rx>=18, ry>=5` and `alpha` floored at 60, so a tall climb still
+  shows a small soft contact patch.
+- **Placement reach uses `radius`, not `radius*2+12`, for structures.** A
+  192px structure with the prop formula would have an unusable drag target.
+- **The Climb path stays available on the 53 small props.** The user said
+  "separate from what we already had", which could mean replacing it. Both were
+  kept because removing a working path is a destructive change the user did not
+  explicitly ask for, and the props' climb heights are already tuned. If the
+  small-prop climb should go, that is a one-line change to `decor_climb_at()`.
+
+### Two bugs found while verifying
+
+- **`climbhere` bypassed the renderer.** It called `decor_place()` directly,
+  which is the model layer; the renderer only picks an item up when
+  `terrarium_refresh_decor()` runs, which the UI normally does. The structure
+  was placed and saved but never drawn. `decorreport` was added to diagnose it
+  and printed `hidden=1`, which was the tell. The console command now refreshes.
+- **`asset_build.py` had three stale assumptions.** `ASSET_COUNT`/
+  `NON_SPIDER_COUNT` are hardcoded and had to be bumped 387->393 and 348->354;
+  the decor-row regex predated the `climb_height` column; and the name
+  comparison used `row[-1]`, which is now the height rather than the sprite
+  name. It uses `row[-2]`.
+
+### Exact verification evidence
+
+- Build exit 0, zero `main` warnings. Flash exit 0, `Hash of data verified`.
+- `asset_build.py` -> `PACKED: 393 MMAP entries, QOI dimensions/opcodes/pixels
+  verified`, `DECOR: 74 placeable props`.
+- Real ramped lift on hardware, one session: `climbhere big` ->
+  `CLIMB pos=(323,176) height=52 slot=0 lift=42`. 62 * (1 - 10.2/66) = 52, so
+  the reported lift is the ramp value, not the full height. The same session
+  reported `SHADOW lift=42 partial=411 opaque=1308 rows=64..76`, proving the
+  contact shadow reached the alpha plane at a lift the old 96x96 canvas could
+  not have contained.
+- Screenshots confirm the 192x192 structure renders at full size and the spider
+  is lifted with a visible contact shadow and no clipping.
+- Browser suite 249/249 pass, including the new "large climb structures ramp
+  from the rim to the centre" test in `placement-layers.test.mjs`.
+- Native suite 49 passed / 3 failed, identical to the stashed pre-change
+  baseline (`gifttest`, `uitest`, `wifi connect`).
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `RENDER ticks=500 largest_drift=0`. `scanloop 5` ->
+  `LOOP ok=5 failed=0 largest_drift=0`.
+- `mem` -> `internal=123923 largest=63488 dma=116191 psram=1140888`, so
+  `largest` is 63,488 against the 51,200 floor.
+
+### Honest boundaries
+
+Whether the six structures read as convincing climbable terrain on the physical
+panel, and whether each of the six ramp radii suits its artwork, still need
+human eyes. No hosted OTA, signed firmware, encrypted NVS or functional rollback
+claim is added. The structures do not change steering: like the props, a Climb
+item is neither blocking nor walk-over, it is walked onto and lifted.

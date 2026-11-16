@@ -51,8 +51,8 @@ test('WiFi validation enforces byte lengths, open networks and protocol injectio
 });
 test('bundled hardware-compiled schema decodes both actual ABI payload sizes', async () => {
   const actual = validateSchema(JSON.parse(await readFile(new URL('../save-schema.json', import.meta.url), 'utf8')));
-  assert.equal(actual.version, 19);
-  assert.equal(actual.fields.length, 55);
+  assert.equal(actual.version, 21);
+  assert.equal(actual.fields.length, 57);
   for (const size of actual.payloadSizes) {
     const bytes = new Uint8Array(12 + size), view = new DataView(bytes.buffer);
     view.setUint32(0, actual.magic, true); view.setUint16(4, size === 120 ? 2 : actual.version, true); view.setUint32(8, size, true);

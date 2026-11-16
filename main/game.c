@@ -389,7 +389,13 @@ static void placement_position(int32_t x, int32_t y);
 
 uint8_t game_placement_blocking(void) { return s_place_blocking; }
 int game_placement_layer(void) { return s_place_layer; }
-int game_placement_layers(void) { return decor_layer_count(s_place_blocking, g_decor_move_slot) + 1; }
+int game_placement_layers(void)
+{
+    /* A gift is a single item, so it has no siblings to order against and the
+     * layer row is meaningless. Report one layer so the arrows stay disabled. */
+    if (g.gift_mode) return 1;
+    return decor_layer_count(s_place_blocking, g_decor_move_slot) + 1;
+}
 bool game_placement_existing(void)
 {
     return (g_decor_mode && g_decor_move_slot >= 0) || (g.gift_mode && s_gift_moving);
@@ -398,12 +404,13 @@ bool game_placement_existing(void)
 void game_on_placement_blocking(lv_event_t *e)
 {
     (void)e;
-    if (!g_decor_mode) return;
+    if (!g_decor_mode && !g.gift_mode) return;
     uint8_t previous = s_place_blocking;
     /* Cycle only through the paths this kind supports, so a flat prop never
-     * lands on Climb and a climbable one always reaches it. */
-    uint8_t kind = g_decor_selected;
-    if (g_decor_move_slot >= 0) {
+     * lands on Climb and a climbable one always reaches it. A gift has no
+     * climb height, so it cycles the three flat paths. */
+    uint8_t kind = g.gift_mode ? g.gift_selected : g_decor_selected;
+    if (g_decor_mode && g_decor_move_slot >= 0) {
         const decor_item_t *item = decor_at(g_decor_move_slot);
         if (item) kind = item->kind;
     }
@@ -502,6 +509,7 @@ void game_on_placement_done(lv_event_t *e)
         g.gift.used = 1;
         g.gift.x = s_place_x;
         g.gift.y = s_place_y;
+        g.gift_path = s_place_blocking;
         terrarium_refresh_gift();
     }
     game_on_placement_cancel(NULL);
@@ -525,6 +533,14 @@ void game_on_gift(lv_event_t *e)
 
     if (ui_hud_gift_menu_visible()) {
         ui_hud_gift_menu_hide();
+        return;
+    }
+
+    /* Food out means the spider is hunting; placing or moving a gift would
+     * compete with the aim gesture and shove the spider's cover around. */
+    if (prey_count() > 0) {
+        ESP_LOGW(TAG, "gift placement rejected: %d live prey in the tank", prey_count());
+        ui_hud_bubble("Catch the Bugs First", 0xf5c86b, 2000);
         return;
     }
 
@@ -559,6 +575,11 @@ void game_gift_chosen(uint8_t kind)
     g.gift_mode = 1;
     behaviour_aim_cancel();
     s_place_dragging = false;
+    /* Seed the path from the gift already in the tank when moving it, so
+     * re-opening the editor does not silently reset the player's choice. */
+    s_place_blocking = s_gift_moving ? g.gift_path : DECOR_WALK_OVER;
+    if (s_place_blocking >= DECOR_PATH_COUNT) s_place_blocking = DECOR_WALK_OVER;
+    s_place_layer = 0;
     placement_position(ui.W / 2, ui.H / 2);
     ui_hud_set_gift_mode(true);
 
@@ -1185,9 +1206,19 @@ static void on_gift_item_pick(uint8_t id)
 {
     if (!g.gift.used) { menu_open(MENU_MAIN); return; }
     if (id == 0) {
+        /* Same rule as decor: while prey is out the spider is hunting, and a
+         * drag gesture would compete with the aim gesture. */
+        if (prey_count() > 0) {
+            ESP_LOGW(TAG, "gift move rejected: %d live prey in the tank", prey_count());
+            ui_hud_bubble("Catch the Bugs First", 0xf5c86b, 2000);
+            menu_open(MENU_MAIN);
+            return;
+        }
         s_gift_moving = true;
         g.gift_mode = 1;
         g.gift_selected = g.gift.kind;
+        s_place_blocking = g.gift_path < DECOR_PATH_COUNT ? g.gift_path : DECOR_WALK_OVER;
+        s_place_layer = 0;
         ui_menu_close();
         ui_hud_set_chrome(false);
         behaviour_aim_cancel();
@@ -3345,7 +3376,10 @@ void game_on_terrarium_press(lv_event_t *e)
         if (!indev) return;
         lv_point_t p;
         lv_indev_get_point(indev, &p);
-        int reach = g.gift_mode ? 40 : decor_def(g_decor_selected)->radius * 2 + 12;
+        int reach = g.gift_mode ? 40
+                  : decor_is_climb_structure(g_decor_selected)
+                    ? decor_def(g_decor_selected)->radius
+                    : decor_def(g_decor_selected)->radius * 2 + 12;
         bool grabbed = abs(p.x - s_place_x) <= reach && abs(p.y - s_place_y) <= reach;
         s_place_dx = grabbed ? s_place_x - p.x : 0;
         s_place_dy = grabbed ? s_place_y - p.y : 0;
@@ -3808,6 +3842,7 @@ void game_tick_render(lv_timer_t *timer)
     life_visual_tick(now);
     terrarium_tick(now);
     terrarium_decor_depth();
+    terrarium_gift_depth();
     cspider_render(now);
     spider_render(now);   /* aim visuals only */
     prey_render(now);

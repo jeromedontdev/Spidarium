@@ -116,14 +116,16 @@ static void cmd_help(void)
     printf("  buttons [lock|unlock|toggle]  report or drive the side buttons\n");
     printf("  rtcset EPOCH          set RTC to UTC epoch (manual recovery)\n");
     printf("  gifttest             verify 36 effective bonuses and removal\n");
+    printf("  giftpath [0-3]       report or set the placed gift's path\n");
     printf("  uitest               test paging, keyboard, password, HUD, backgrounds\n");
     printf("  hunttest             inject touch, jump/catch, restore pet/prey\n");
     printf("  gaittest             cadence and bounded leg geometry checks\n");
     printf("  preytest             eight level gates, restore pet level\n");
     printf("  decortest            place every decor kind, verify the layer\n");
     printf("  climb [N]            report the live climb lift; N pins it for testing\n");
-    printf("  climbhere            place a climbable item under the spider and climb it\n");
+    printf("  climbhere [big]      place a climbable item under the spider and climb it\n");
     printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
+    printf("  decorreport [SLOT]   report a placed decor object's live geometry\n");
     printf("  setupdone            finish the naming screen without tapping\n");
     printf("  background [0-%d]    show/set persistent pixel-art background\n", THEME_COUNT - 1);
     printf("  border [0-%d|none]   show/buy/apply a matching enclosure frame\n", THEME_COUNT - 1);
@@ -1143,6 +1145,26 @@ static void run_line(char *line)
         if (!game_ui_call(GAME_UI_TEST_GIFTS)) printf("ERR gift test UI request failed\n");
         else printf("OK gifts tested=%d removed_neutral=1 economy=1 visits=1\n", GIFT_KINDS);
     }
+    else if (!strcmp(line, "giftpath")) {
+        /* Report or set the placed gift's path. The gift honours the same
+         * Walk Over / Solid / Walk Behind control as decor, so this is the only
+         * way to confirm the stored byte and the canopy re-parenting. */
+        if (arg) {
+            int path = atoi(arg);
+            if (path < 0 || path >= DECOR_PATH_COUNT) {
+                printf("ERR giftpath requires 0..%d\n", DECOR_PATH_COUNT - 1);
+                return;
+            }
+            g.gift_path = (uint8_t)path;
+            terrarium_refresh_gift();
+            game_save_now();
+        }
+        printf("GIFTPATH used=%u kind=%u path=%u canopy=%d mode=%u existing=%d\n",
+               g.gift.used, g.gift.kind, g.gift_path,
+               (g.gift.used && g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y) ? 1 : 0,
+               g.gift_mode, game_placement_existing() ? 1 : 0);
+        printf("OK giftpath\n");
+    }
     else if (!strcmp(line, "uitest")) {
         if (!game_ui_call(GAME_UI_TEST_UI)) printf("ERR UI test request failed\n");
     }
@@ -1185,16 +1207,30 @@ static void run_line(char *line)
         /* Place a climbable item under the spider and set it to Climb in one
          * command. The spider wanders faster than a script can issue separate
          * place/block/climb commands, so the footprint path could never be
-         * exercised from the console without this. */
+         * exercised from the console without this.
+         *
+         * "climbhere big" uses the tallest large climb structure instead of the
+         * Stone Bridge, so the ramp and the much larger lift can be inspected. */
         decor_climb_force(-1);
-        int slot = decor_place(DECOR_STONE_BRIDGE, g.spider_x, g.spider_y);
+        uint8_t kind = (arg && !strcmp(arg, "big")) ? DECOR_CLIMB_DRIFTWOOD
+                                                   : DECOR_STONE_BRIDGE;
+        int slot = decor_place(kind, g.spider_x, g.spider_y);
         if (slot < 0) { printf("ERR climbhere: place failed\n"); return; }
         if (!decor_set_path(slot, DECOR_CLIMB)) {
             printf("ERR climbhere: set_path refused\n"); return;
         }
-        printf("OK climbhere slot=%d pos=(%d,%d)\n", slot, g.spider_x, g.spider_y);
+        /* decor_place() is the model layer; the renderer only picks the item up
+         * when the decor layer is refreshed, which the UI normally does. */
+        terrarium_refresh_decor();
+        printf("OK climbhere slot=%d kind=%u pos=(%d,%d)\n", slot, kind,
+               g.spider_x, g.spider_y);
     }
     else if (!strcmp(line, "decor")) cmd_decor(arg);
+    else if (!strcmp(line, "decorreport")) {
+        int slot = arg ? atoi(arg) : 0;
+        terrarium_decor_report(slot);
+        printf("OK decorreport\n");
+    }
     else if (!strcmp(line, "setupdone")) {
         if (!game_ui_call(GAME_UI_SETUP_DONE)) printf("ERR setup request failed\n");
     }
