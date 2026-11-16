@@ -43,6 +43,7 @@ bool behaviour_gift_visiting(void) { return s_gift_visiting; }
 /* Perching on a small climbable prop. The spider stops on top and turns to face
  * out from the item; the pose is what sells the height, not the lift. */
 static uint32_t s_perch_until;
+static uint32_t s_perch_cooldown_until;
 static int16_t  s_perch_x, s_perch_y;   /* the item's centre */
 static float    s_perch_heading;
 static bool     s_perch_heading_valid;
@@ -788,6 +789,27 @@ void behaviour_sync_position(void)
 /* ------------------------------------------------------------------ */
 /* Tick                                                                */
 /* ------------------------------------------------------------------ */
+/* True when the spider is standing on a small prop AND nothing more urgent is
+ * happening.
+ *
+ * Both the IDLE and WANDER triggers must use this. The IDLE trigger was
+ * originally unguarded, so the moment PERCH left because hunger dropped below
+ * PERCH_HUNGER_LEAVE, IDLE re-perched it on the same tick, PERCH left again,
+ * and the two states alternated at the 20 Hz logic rate. The visible symptom
+ * was a spider sitting on the prop and vibrating, because the foreshortening
+ * eased in and out on every flip. */
+static bool perch_wanted(void)
+{
+    if (g.sick) return false;
+    if (g.energy < game_temperament()->sleep_threshold) return false;
+    if (g.hunger < PERCH_HUNGER_LEAVE) return false;
+    /* A cooldown after leaving. Without it the spider re-perched on the very
+     * next tick, so the state flickered PERCH -> IDLE -> PERCH and the
+     * foreshortening pulsed. Leaving has to mean leaving for a moment. */
+    if ((int32_t)(lv_tick_get() - s_perch_cooldown_until) < 0) return false;
+    return decor_perch_at(g.spider_x, g.spider_y);
+}
+
 void behaviour_tick(uint32_t now_ms, float dt_s)
 {
     static int reported_auto_hunt = -1;
@@ -1115,9 +1137,7 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
          * an IDLE-only check meant it walked straight over the books and the
          * player never saw a perch. This is the "it just jumped over it"
          * report. */
-        if (!g.sick && g.energy >= game_temperament()->sleep_threshold &&
-            g.hunger >= PERCH_HUNGER_LEAVE &&
-            decor_perch_at(g.spider_x, g.spider_y)) {
+        if (perch_wanted()) {
             s_perch_heading_valid = false;
             s_perch_until = now_ms + 2500u + (uint32_t)(rand() % 2500);
             behaviour_set_state(SPIDER_PERCH);
@@ -1220,6 +1240,13 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
             g.spider_heading = s_perch_heading;
         }
 
+        /* A forced state change (console `state`, or a save load that restores
+         * SPIDER_PERCH) never runs the trigger that sets the timer, so the
+         * perch would expire on the first tick. Start a fresh window instead. */
+        if (s_perch_until == 0) {
+            s_perch_until = now_ms + 2500u + (uint32_t)(rand() % 2500);
+        }
+
         /* Leave when the sit is over, or immediately if something more urgent
          * is happening. Hunger, exhaustion and sickness all outrank a pose: a
          * spider that sits admiring the view while starving is a bug. */
@@ -1229,6 +1256,9 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
                       (g.auto_hunt && prey_count() > 0 && g.hunger < HUNGER_FULL);
         if (urgent || (int32_t)(now_ms - s_perch_until) >= 0) {
             s_perch_heading_valid = false;
+            /* Hold off re-perching for a moment so the state does not flicker
+             * PERCH -> IDLE -> PERCH on consecutive ticks. */
+            s_perch_cooldown_until = now_ms + PERCH_COOLDOWN_MS;
             behaviour_set_state(SPIDER_IDLE);
         }
         break;
@@ -1267,13 +1297,11 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
             behaviour_set_state(SPIDER_SICK);
         } else if (g.energy < game_temperament()->sleep_threshold) {
             behaviour_set_state(SPIDER_SLEEP);
-        } else if (decor_perch_at(g.spider_x, g.spider_y)) {
+        } else if (perch_wanted()) {
             /* Standing on a small climbable prop. Sit on it and turn to face
              * out, which is the pose that sells the height. Checked before the
              * wander branch so the spider does not immediately walk off the
              * thing it just climbed. */
-            s_perch_x = g.spider_x;
-            s_perch_y = g.spider_y;
             s_perch_heading_valid = false;
             s_perch_until = now_ms + 2500u + (uint32_t)(rand() % 2500);
             behaviour_set_state(SPIDER_PERCH);

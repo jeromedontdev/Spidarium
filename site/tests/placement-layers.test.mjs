@@ -278,6 +278,42 @@ for(let i=0;i<200;i++){
 assert.equal(perched,true,'a wandering spider stops on the prop');
 });
 
+test('a perched spider does not oscillate when hunger drops',()=>{
+const {state}=fixture();
+for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+state.decor[0]={kind:3,blocking:3,x:240,y:240};
+state.spider_x=240;state.spider_y=240;state.energy=80;state.mood=80;
+state.sick=0;state.auto_hunt=0;
+/* Hunger just under the leave threshold. The IDLE trigger used to be
+ * unguarded, so PERCH left and IDLE re-perched it on the same tick, and the
+ * two states alternated at the 20 Hz logic rate. The visible symptom was a
+ * spider sitting on the prop and vibrating, because the foreshortening eased
+ * in and out on every flip. */
+state.hunger=39;
+state.state=E.STATES.PERCH;
+const seen=[];
+for(let i=0;i<60;i++){E.tick(state,.05);seen.push(state.state);}
+const flips=seen.filter((v,i)=>i>0&&v!==seen[i-1]).length;
+assert.ok(flips<=2,`state must settle, saw ${flips} flips: ${seen.join(',')}`);
+assert.notEqual(state.state,E.STATES.PERCH,'a hungry spider leaves the perch');
+});
+
+test('leaving a perch holds off re-perching so the pose does not pulse',()=>{
+const {state}=fixture();
+for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+state.decor[0]={kind:3,blocking:3,x:240,y:240};
+state.spider_x=240;state.spider_y=240;state.energy=80;state.hunger=80;
+state.mood=80;state.sick=0;state.auto_hunt=0;
+state.state=E.STATES.PERCH;
+/* Run past the perch timer. Without a cooldown the spider re-perched on the
+ * very next tick, so the state flickered PERCH -> IDLE -> PERCH and the
+ * foreshortening pulsed, which read as vibrating. */
+const seen=[];
+for(let i=0;i<200;i++){E.tick(state,.05);seen.push(state.state);}
+const flips=seen.filter((v,i)=>i>0&&v!==seen[i-1]).length;
+assert.ok(flips<=4,`state must not flicker, saw ${flips} flips`);
+});
+
 test('climb is only offered for kinds that have height',()=>{  const {state}=fixture();
   state.decor[0]={kind:5,blocking:0,x:240,y:240};   /* Fern: flat */
   state.decor[1]={kind:3,blocking:0,x:200,y:200};   /* Log: climbable */

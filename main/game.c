@@ -2450,6 +2450,7 @@ bool game_ui_call_value(game_ui_action_t action, int value)
     if (power_sleep_pending() || action <= GAME_UI_NONE || action > GAME_UI_MENU_PICK ||
         (action == GAME_UI_MENU_PICK && (value < 0 || value > 255)) ||
         (action == GAME_UI_ADD_SILK && value <= 0) ||
+        (action == GAME_UI_SET_LEVEL && (value < 1 || value > 99)) ||
         (action == GAME_UI_DEEP_SLEEP && (value < 5 || value > 86400)) ||
         (action == GAME_UI_SCREEN_CAPTURE && (value < 0 || value > 2)) ||
         (action >= GAME_UI_SET_HUNGER && action <= GAME_UI_SET_SICK && (value < 0 || value > 100)) ||
@@ -2951,6 +2952,27 @@ static void ui_service_request(void)
             ui_menu_set_page(page);
         }
         break;
+    case GAME_UI_SET_LEVEL: {
+        /* Test hook: jump straight to a level so every decor kind can be
+         * inspected without grinding XP. Level is derived from XP
+         * (xp / XP_PER_LEVEL + 1), so this sets XP to the floor of the
+         * requested level rather than writing g.level directly -- otherwise
+         * the next game_add_xp() would immediately recompute it back down. */
+        if (s_ui_value < 1 || s_ui_value > 99) {
+            ESP_LOGW(TAG, "level request rejected: %d", s_ui_value);
+            atomic_store(&s_ui_ok, false);
+            break;
+        }
+        uint32_t before_xp = g.xp, before_level = g.level;
+        g.xp = (uint32_t)(s_ui_value - 1) * XP_PER_LEVEL;
+        g.level = (uint32_t)s_ui_value;
+        bool queued = game_save_now();
+        if (!queued) { g.xp = before_xp; g.level = before_level; }
+        ESP_LOGI(TAG, "level set to %d (xp=%lu)", s_ui_value,
+                 (unsigned long)g.xp);
+        atomic_store(&s_ui_ok, queued);
+        break;
+    }
     case GAME_UI_ADD_SILK: {
         uint32_t before = g.silk;
         if ((uint32_t)s_ui_value > UINT32_MAX - before) {

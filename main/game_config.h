@@ -222,6 +222,11 @@
  * the view while starving is a bug, not a personality. */
 #define PERCH_HUNGER_LEAVE     40
 
+/* How long the spider stays off a prop after leaving it. Without this it
+ * re-perched on the very next tick, so the state flickered PERCH -> IDLE ->
+ * PERCH and the foreshortening pulsed, which read as the spider vibrating. */
+#define PERCH_COOLDOWN_MS      4000u
+
 /* How long the auto-hiding HUD chrome stays up after being revealed. */
 #define CHROME_HOLD_MS         5000u
 

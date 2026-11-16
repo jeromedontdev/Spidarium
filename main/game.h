@@ -406,6 +406,7 @@ typedef enum {
     GAME_UI_DEEP_SLEEP,
     GAME_UI_BORDER,
     GAME_UI_ADD_SILK,
+    GAME_UI_SET_LEVEL,
     GAME_UI_MENU_PICK,
 } game_ui_action_t;
 typedef enum {

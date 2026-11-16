@@ -10003,3 +10003,73 @@ The 99,999 cap is a judgement call, not a measured requirement: it is roughly
 twenty times the total cost of the entire decor catalogue. If a future feature
 adds a sink larger than that, the cap needs revisiting. Whether the perch reads
 as convincing on the physical panel still needs human eyes.
+
+
+## Round 111 - Perch flicker and a level test hook
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+The player reported the spider "on the books and shaking/vibrating", and asked
+to be put at top level so different decor could be tested.
+
+### Decisions made
+
+- **The shake was a state oscillation, not a rendering fault.** Position and
+  heading were rock stable across 60 samples, so the jitter had to be the state
+  machine. The IDLE perch trigger was unguarded: the moment PERCH left because
+  hunger dropped below `PERCH_HUNGER_LEAVE`, IDLE re-perched it on the same
+  tick, PERCH left again, and the two states alternated at the 20 Hz logic
+  rate. The foreshortening eases in and out, so every flip pulsed the body --
+  which is exactly what "vibrating" looks like.
+- **Both triggers now go through one `perch_wanted()` predicate.** The guards
+  (sick, exhausted, hungry, cooldown) live in exactly one place, so the two
+  call sites cannot drift apart again. This is the actual fix: the WANDER
+  trigger added in round 110 had the guards and the IDLE trigger did not.
+- **`PERCH_COOLDOWN_MS` (4000) after leaving.** Even with matching guards there
+  was a one-tick IDLE blip when the perch timer expired, because IDLE
+  immediately re-perched. Leaving now means leaving for a moment.
+- **A forced perch starts a fresh timer.** `state 10` and a save load that
+  restores `SPIDER_PERCH` never run the trigger that sets `s_perch_until`, so
+  the perch expired on the first tick. The handler now initialises the window
+  when it is zero.
+- **`set level N` sets XP, not `level`.** Level is derived from XP
+  (`xp / XP_PER_LEVEL + 1`), so writing `level` directly would be recomputed
+  back down by the next XP award. The command sets XP to the floor of the
+  requested level and saves. Level 20 unlocks the whole catalogue (highest
+  unlock is 18), so that is the useful test value.
+
+### Exact verification evidence
+
+- Build exit 0, zero `main` warnings. Flash exit 0, `Hash of data verified`.
+- Level hook: `set level 20` -> `level set to 20 (xp=950)`, then `stat` reported
+  `level=20 xp=950`. Scanning the catalogue for kinds above level 20 returned
+  **0**, so the entire decor set is now purchasable.
+- Shake, before the cooldown: 50 samples at full hunger gave
+  `10,10,...,10,0,10,10,...` -- a single IDLE blip, 2 flips, position fixed at
+  (338,253). After the cooldown the same test gave 1 flip and the spider stayed
+  out once it left.
+- Forced perch holds steady: `state 10` then 50 samples gave 15 consecutive
+  `10` samples at a fixed (217,221) heading 1.57, then a clean exit to IDLE and
+  WANDER. 2 flips total, no flicker.
+- Hunger-drop case: with hunger 39 the state settled after 1 flip instead of
+  alternating, which is the original bug.
+- Browser suite 256/256 pass, including two new tests: "a perched spider does
+  not oscillate when hunger drops" (asserts at most 2 flips) and "leaving a
+  perch holds off re-perching so the pose does not pulse" (asserts at most 4
+  flips over 200 ticks).
+- Native suite 49 passed / 3 failed, identical to the stashed pre-change
+  baseline (`gifttest`, `uitest`, `wifi connect`).
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `RENDER ticks=500 largest_drift=0`. `scanloop 5` ->
+  `LOOP ok=5 failed=0 largest_drift=0`.
+- `mem` -> `internal=123899 largest=63488 dma=116167 psram=1140112`, so
+  `largest` is 63,488 against the 51,200 floor.
+
+### Honest boundaries
+
+`set level` is a test hook, not a progression shortcut: it writes XP, so it is
+indistinguishable from earned progress in the save and there is no way to tell
+afterwards that it was used. The 4 s cooldown is a judgement value chosen to be
+long enough to read as "it got up" and short enough not to feel like the spider
+is avoiding the prop.

@@ -573,7 +573,16 @@ radius 12 against a ~26px body.
 `SPIDER_PERCH` holds the item's centre and turns the spider to face out from it
 in 45-degree steps. The centre is derived from the item every tick, so
 `state 10` (which forces the state without running the idle branch that would
-cache it) still converges on the real prop.
+cache it) still converges on the real prop, and a forced perch starts a fresh
+timer window.
+
+### `set level N`
+
+Jumps straight to level N (1..99) so every decor kind can be inspected without
+grinding XP. Level is derived from XP (`xp / XP_PER_LEVEL + 1`), so this sets XP
+to the floor of the requested level rather than writing `level` directly;
+otherwise the next XP award would immediately recompute it back down. Level 20
+unlocks the entire decor catalogue (the highest unlock is 18).
 
 ### `setupdone`
 

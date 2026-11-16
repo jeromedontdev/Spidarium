@@ -197,6 +197,16 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   which for small items is smaller than the spider's own body (the Book Stack
   is radius 12 against a ~26px body), so the raw radius gave a window the
   spider crossed in a fraction of a tick.
+  Both triggers go through `perch_wanted()`, which is the only place the
+  guards live. The IDLE trigger was originally unguarded, so the moment PERCH
+  left because hunger dropped below `PERCH_HUNGER_LEAVE`, IDLE re-perched it on
+  the same tick and the two states alternated at the 20 Hz logic rate; the
+  visible symptom was a spider sitting on the prop and vibrating, because the
+  foreshortening eased in and out on every flip. `PERCH_COOLDOWN_MS` (4000)
+  additionally holds the spider off a prop after it leaves, so leaving means
+  leaving for a moment instead of re-perching on the next tick. A forced
+  `SPIDER_PERCH` (console `state 10`, or a save load) starts a fresh
+  `s_perch_until` window, because it never runs the trigger that sets it.
   The spider canvas is 96x160, not 96x96: `s_draw_dy` raises the body inside
   the buffer, so a 62px lift on a 96px canvas clipped the body off the top.
   `CANVAS_CX`/`CANVAS_CY` keep the floor point and contact shadow at the

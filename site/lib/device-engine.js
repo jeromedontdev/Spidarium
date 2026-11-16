@@ -272,7 +272,7 @@ function engineDefaults(now=0) {
     sleep_forced:false,sleep_start:0,oneshot_until:0,gift_visit_at:0,gift_hold_until:0,
     gift_visit_end:0,gift_visiting:false,wild_seeded:false,last_wild:now,last_visitor_day:U32,
     next_bond_gift:0,last_pet:0,petted_once:false,pet_react_until:0,stuck_x:0,stuck_y:0,stuck_at:0,gait_x:240,gait_y:240,gait_valid:false,gait_moved_at:0,
- perch_x:240,perch_y:240,perch_until:0,perch_heading:null,
+ perch_x:240,perch_y:240,perch_until:0,perch_heading:null,perch_cooldown_until:0,
     tap_heading:null};
 }
 export function freshState(options={}) {
@@ -628,6 +628,7 @@ function setState(s,state) {
   if(state===0)r.idle_until=r.now_ms+1200+roll(s,1800);
   if(state===8)r.oneshot_until=r.now_ms+800;
   if(state!==10)r.perch_heading=null;
+  if(state!==10)r.perch_until=0;
 }
 /** Total dirt points in the tank. Clean pays in proportion to this, so the
  * reward tracks the mess actually removed rather than the tap. */
@@ -1345,6 +1346,23 @@ function inward(s) {
   return Math.atan2(ty-s.spider_y,tx-s.spider_x);
 }
 function canVisit(s){return s.gift.used&&!s.sick&&s.energy>=20&&s.hunger>=60&&[0,1].includes(s.state);}
+// True when the spider is standing on a small prop AND nothing more urgent is
+// happening. Both the IDLE and WANDER triggers must use this: the IDLE trigger
+// was originally unguarded, so the moment PERCH left because hunger dropped,
+// IDLE re-perched it on the same tick and the two states alternated at the
+// 20 Hz logic rate. The visible symptom was a spider sitting on the prop and
+// vibrating, because the foreshortening eased in and out on every flip.
+function perchWanted(s,t){
+  if(s.sick)return false;
+  if(s.energy<t.sleep_threshold)return false;
+  if(s.hunger<40)return false;
+  // A cooldown after leaving. Without it the spider re-perched on the very next
+  // tick, so the state flickered PERCH -> IDLE -> PERCH and the foreshortening
+  // pulsed. Leaving has to mean leaving for a moment.
+  const r=runtime(s);
+  if(r.now_ms<r.perch_cooldown_until)return false;
+  return decorPerchAt(s,s.spider_x,s.spider_y);
+}
 function behaviourTick(s,dt){
   const r=runtime(s),now=r.now_ms,b=giftBonus(s),t=temperament(s);
   if(r.drag&&aimAvailable(s))return;
@@ -1431,7 +1449,7 @@ function behaviourTick(s,dt){
        * crosses a small prop in well under a second, so an IDLE-only check
        * meant it walked straight over the books and the player never saw a
        * perch. */
-      if(!s.sick&&s.energy>=t.sleep_threshold&&s.hunger>=40&&decorPerchAt(s,s.spider_x,s.spider_y)){
+      if(perchWanted(s,t)){
         r.perch_heading=null;r.perch_until=now+2500+roll(s,2500);setState(s,10);break;
       }
       if(r.target){
@@ -1457,8 +1475,17 @@ function behaviourTick(s,dt){
       if(r.perch_heading===null)r.perch_heading=want;
       const delta=wrap(r.perch_heading-s.spider_heading);
       s.spider_heading=Math.abs(delta)>.02?wrap(s.spider_heading+delta*.18):r.perch_heading;
+      // A forced state change (console `state`, or a save load that restores
+      // PERCH) never runs the trigger that sets the timer, so the perch would
+      // expire on the first tick. Start a fresh window instead.
+      if(!r.perch_until)r.perch_until=now+2500+roll(s,2500);
       const urgent=s.sick||s.energy<t.sleep_threshold||s.hunger<40||(s.auto_hunt&&preyCount(s)&&s.hunger<95);
-      if(urgent||now>=r.perch_until){r.perch_heading=null;setState(s,0);}
+      if(urgent||now>=r.perch_until){
+        r.perch_heading=null;
+        // Hold off re-perching so the state does not flicker on consecutive ticks.
+        r.perch_cooldown_until=now+4000;
+        setState(s,0);
+      }
       break;
     }
     default:{
@@ -1466,11 +1493,11 @@ function behaviourTick(s,dt){
       if(s.bond>=25&&r.tap_heading!==null)s.spider_heading=wrap(s.spider_heading+wrap(r.tap_heading-s.spider_heading)*.12);
       if(s.sick)setState(s,9);
       else if(s.energy<t.sleep_threshold)setState(s,6);
-      else if(decorPerchAt(s,s.spider_x,s.spider_y)){
+      else if(perchWanted(s,t)){
         /* Standing on a small climbable prop: sit on it and turn to face out.
          * Checked before the wander branch so the spider does not immediately
          * walk off the thing it just climbed. */
-        r.perch_x=s.spider_x;r.perch_y=s.spider_y;r.perch_heading=null;
+        r.perch_heading=null;
         r.perch_until=now+2500+roll(s,2500);setState(s,10);
       }
       else if(s.mood<20&&s.hunger>40){if(done)setState(s,1);}

@@ -148,6 +148,7 @@ static void cmd_help(void)
     printf("  spawn [SPECIES]      spawn unlocked bug (0..7, or random)\n");
     printf("  state N              force spider state\n");
     printf("  set FIELD VALUE      needs; auto_feed/auto_hunt/usb_sounds accept 0 or 1, volume 0..100\n");
+    printf("                       level 1..99 jumps straight to a level for testing\n");
     printf("  silk add N           add 1..2147483647 testing Silk and save\n");
     printf("  refresh              rebuild the visual layers\n");
     printf("  save                 save now\n");
@@ -993,6 +994,19 @@ static void cmd_set(const char *field, int value)
     if (value < 0) value = 0;
     if (value > 100) value = 100;
 
+    /* Level is not a 0..100 stat: it is derived from XP and the highest decor
+     * unlock is 18, so the clamp above would silently cap it at 100 anyway.
+     * Handle it before the stat clamp so the range is explicit. */
+    if (!strcmp(field, "level")) {
+        if (value < 1 || value > 99) {
+            printf("ERR level requires 1..99\n");
+            return;
+        }
+        printf("%s set level=%d\n",
+               game_ui_call_value(GAME_UI_SET_LEVEL, value) ? "OK" : "ERR", value);
+        return;
+    }
+
     game_ui_action_t action;
     if      (!strcmp(field, "hunger"))  action = GAME_UI_SET_HUNGER;
     else if (!strcmp(field, "mood"))    action = GAME_UI_SET_MOOD;
@@ -1011,7 +1025,7 @@ static void cmd_set(const char *field, int value)
     else if (!strcmp(field, "decor_locked")) action = GAME_UI_SET_DECOR_LOCKED;
     else if (!strcmp(field, "auto_clean")) action = GAME_UI_SET_AUTO_CLEAN;
     else {
-        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick auto_feed auto_hunt volume music_enabled music_volume music_track usb_sounds muted decor_locked auto_clean)\n",
+        printf("ERR unknown field \"%s\" (hunger mood energy hygiene bond sick level auto_feed auto_hunt volume music_enabled music_volume music_track usb_sounds muted decor_locked auto_clean)\n",
                field);
         return;
     }
