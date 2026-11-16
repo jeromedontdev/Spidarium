@@ -444,6 +444,8 @@ void game_gift_chosen(uint8_t kind);
 /* Leave decor placement mode without placing anything. */
 void game_cancel_decor_placement(void);
 void game_on_placement_done(lv_event_t *e);
+/* Place a gift through the real commit path, for the serial console. */
+bool game_place_gift_for_test(uint8_t kind, int16_t x, int16_t y);
 void game_on_placement_cancel(lv_event_t *e);
 void game_on_placement_put_away(lv_event_t *e);
 void game_on_placement_blocking(lv_event_t *e);

@@ -119,6 +119,7 @@ static void cmd_help(void)
     printf("  giftpath [0-3]       report or set the placed gift's path\n");
     printf("  giftlayer [N]        report or set the gift's layer within its band\n");
     printf("  giftreport           report the gift's rendered objects and preview state\n");
+    printf("  giftplace K X Y      place a gift through the real commit path\n");
     printf("  uitest               test paging, keyboard, password, HUD, backgrounds\n");
     printf("  hunttest             inject touch, jump/catch, restore pet/prey\n");
     printf("  gaittest             cadence and bounded leg geometry checks\n");
@@ -1192,6 +1193,24 @@ static void run_line(char *line)
     else if (!strcmp(line, "giftreport")) {
         terrarium_gift_report();
         printf("OK giftreport\n");
+    }
+    else if (!strncmp(line, "giftplace", 9)) {
+        /* Place a gift of KIND at X Y through the same commit path the UI uses,
+         * so the layer and the preview teardown are exercised for real. */
+        int kind = 0, x = 240, y = 240;
+        if (arg && sscanf(arg, "%d %d %d", &kind, &x, &y) != 3) {
+            printf("ERR usage: giftplace KIND X Y\n");
+            return;
+        }
+        if (kind < 0 || kind >= GIFT_KINDS) {
+            printf("ERR giftplace kind 0..%d\n", GIFT_KINDS - 1);
+            return;
+        }
+        if (!game_place_gift_for_test((uint8_t)kind, (int16_t)x, (int16_t)y)) {
+            printf("ERR giftplace failed\n");
+            return;
+        }
+        printf("OK giftplace kind=%d\n", kind);
     }
     else if (!strcmp(line, "giftlayer")) {
         /* Report or set the gift's layer within its band. The gift is a single

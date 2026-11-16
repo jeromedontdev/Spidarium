@@ -1,0 +1,15 @@
+Add giftplace and giftreport console hooks for the gift layer
+
+The gift layer and the duplicate-gift fix both needed a way to be checked on
+hardware. giftreport counts the objects actually on screen and whether the
+placement preview is hidden, which is the direct proof that the duplicate is
+gone. giftplace drives the real commit path so the layer commit and the preview
+teardown are exercised rather than simulated.
+
+Verified: giftplace 34 240 240 then giftreport gives used=1 kind=34
+layer_children=1 preview_hidden=1, giftlayer 0 -> 3 of 4 accepted and 99
+rejected, build exit 0 with zero main warnings, flash exit 0 with Hash of data
+verified, native suite 49/3 (documented baseline), soak PASS with 0 faults,
+render 500 and scanloop 5 both largest_drift=0, largest=63488.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

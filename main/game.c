@@ -485,6 +485,23 @@ void game_on_placement_cancel(lv_event_t *e)
     ui_hud_set_place_mode(false, NULL);
 }
 
+/* Place a gift through the real commit path, for the serial console. The UI
+ * reaches this via game_on_placement_done(); the console needs the same path so
+ * the layer commit and the preview teardown are exercised for real rather than
+ * simulated. */
+bool game_place_gift_for_test(uint8_t kind, int16_t x, int16_t y)
+{
+    if (kind >= GIFT_KINDS) return false;
+    g.gift_selected = kind;
+    g.gift_mode = 1;
+    s_gift_moving = false;
+    s_place_blocking = DECOR_WALK_OVER;
+    s_place_layer = 0;
+    placement_position(x, y);
+    game_on_placement_done(NULL);
+    return g.gift.used && g.gift.kind == kind;
+}
+
 void game_on_placement_done(lv_event_t *e)
 {
     (void)e;

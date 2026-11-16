@@ -10350,7 +10350,11 @@ smaller pixels than the props and gifts.
   placement and cancel): `used=1 kind=34 layer_children=1 canopy_children=0
   layer_hidden=0 preview_hidden=1 layer=2 count=4`. Exactly one gift object on
   screen, preview hidden.
-- `giftlayer` on hardware: index 0 -> 2 accepted, count 4 (three decor plus the
+- `giftplace 34 240 240` then `giftreport` with three floor props placed:
+  `used=1 kind=34 layer_children=1 preview_hidden=1 layer=0 count=4`. The gift
+  is restored through the real commit path and there is still exactly one
+  object.
+- `giftlayer` on hardware: index 0 -> 3 accepted, count 4 (three decor plus the
   gift), `giftlayer 99` rejected with `ERR giftlayer requires 0..3`.
 - The v21 save migrated to v22 with the gift intact (`used=1 kind=34`), so the
   new field defaults to 0 without losing the pet.
@@ -10367,7 +10371,8 @@ smaller pixels than the props and gifts.
   (verified by stashing, rebuilding and flashing the baseline: `HUNT press=0
   held=0 ... subpixel=0`), so it is pre-existing, not a regression. The current
   build actually improves it to `press=1 held=1 released=1 landed=1` and only
-  `subpixel` still fails.
+  `subpixel` still fails. One run reported 48/4 because `uitest` is flaky; an
+  immediate re-run gave 49/3.
 - Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
   `FAULTS/ERRORS: 0`.
 - `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
