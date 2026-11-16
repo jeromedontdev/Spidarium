@@ -549,7 +549,12 @@ export function restoreSim(raw,options={}) {
   syncView(s);
   return s;
 }
-export function addSilk(s,n){s.silk=Math.min(U32,s.silk+integer(n));}
+// Hard ceiling on the Silk balance, mirroring SILK_MAX in main/game_config.h.
+// Saturating at U32 let the balance reach hundreds of thousands, at which point
+// every price is meaningless and a greyed shop row is indistinguishable from a
+// Silk problem.
+export const SILK_MAX = 99999;
+export function addSilk(s,n){s.silk=Math.min(SILK_MAX,s.silk+integer(n));}
 export function addXP(s,n){
   s.xp=(s.xp+integer(n))>>>0;
   const level=Math.floor(s.xp/50)+1;
@@ -705,14 +710,14 @@ export function dailyClaim(s){
   const xp=C.DAILY_XP_BASE+step*C.DAILY_XP_PER_DAY;
   const silk=C.DAILY_SILK_BASE+step*C.DAILY_SILK_PER_DAY;
   s.daily_day=today;
-  addXP(s,xp);s.silk+=silk;
+  addXP(s,xp);addSilk(s,silk);
   return xp;
 }
 /** Pay today's task if complete. Returns the XP paid, or 0 if not ready. */
 export function dailyTaskClaim(s){
   if(!dailyTaskReady(s))return 0;
   s.daily_task_done=1;
-  addXP(s,C.DAILY_TASK_XP);s.silk+=C.DAILY_TASK_SILK;
+  addXP(s,C.DAILY_TASK_XP);addSilk(s,C.DAILY_TASK_SILK);
   return C.DAILY_TASK_XP;
 }
 export const TREATS=Object.freeze([
@@ -939,6 +944,14 @@ export function decorClimbAt(s,x,y){
 // Perching on a small prop. A prop is too short to read as a climb, so the
 // spider stops on top and turns to face out from the item; the pose sells the
 // height, not the lift. Large structures are walked across instead.
+// Minimum perch footprint, in pixels. A prop's `radius` is its collision
+// footprint, which for small items is SMALLER than the spider's own body: the
+// Book Stack is radius 12 while the body spans about 26 px. Using the raw
+// radius meant the spider's centre had to land within 12 px of the item's
+// centre to perch, a window it crossed in a fraction of a tick while
+// wandering, so it appeared to jump straight over the books. Mirrors
+// PERCH_MIN_RADIUS in main/decor.c.
+export const PERCH_MIN_RADIUS = 20;
 export function decorPerchItem(s,x,y){
   let best=null,bestLift=0;
   for(const item of s.decor){
@@ -946,8 +959,9 @@ export function decorPerchItem(s,x,y){
     if(decorIsClimbStructure(item.kind))continue;
     const def=DECOR_KINDS[item.kind];
     if(!def||!def.climb)continue;
+    const r=Math.max(def.radius,PERCH_MIN_RADIUS);
     const dx=x-item.x,dy=y-item.y;
-    if(dx*dx+dy*dy>def.radius*def.radius)continue;
+    if(dx*dx+dy*dy>r*r)continue;
     if(def.climb>bestLift){bestLift=def.climb;best=item;}
   }
   return best;
@@ -1413,6 +1427,13 @@ function behaviourTick(s,dt){
       steer(s,r.wander_dir,dt,true);advance(s,55*.35,dt);break;
     case 1:
       if(s.auto_hunt&&preyCount(s)&&s.hunger<95&&!s.sick){setState(s,2);break;}
+      /* Perching has to be checked here as well as in IDLE. A wandering spider
+       * crosses a small prop in well under a second, so an IDLE-only check
+       * meant it walked straight over the books and the player never saw a
+       * perch. */
+      if(!s.sick&&s.energy>=t.sleep_threshold&&s.hunger>=40&&decorPerchAt(s,s.spider_x,s.spider_y)){
+        r.perch_heading=null;r.perch_until=now+2500+roll(s,2500);setState(s,10);break;
+      }
       if(r.target){
         if(Math.hypot(r.target.x-s.spider_x,r.target.y-s.spider_y)<12){setState(s,0);break;}
         steer(s,Math.atan2(r.target.y-s.spider_y,r.target.x-s.spider_x),dt,true);

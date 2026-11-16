@@ -445,7 +445,10 @@ export class DeviceGame {
         rows = E.DECOR_KINDS.map((item, id) => {
           const owned = E.decorOwned(this.state, id);
           const unlocked = E.decorUnlocked(this.state, id);
-          const detail = !unlocked ? `Level ${item.level} / ${item.cost} Silk`
+          /* Level-locked. Showing the Silk cost here read as "you need 52
+           * Silk", so a player with plenty of Silk could not tell why the row
+           * was grey. Name the actual blocker. */
+          const detail = !unlocked ? `Level ${item.level} Needed`
             : owned ? `Owned / ${item.climb ? 'Climbable' : item.blocking ? 'Blocks' : 'Walk Over'}`
             : `${item.cost} Silk / ${item.climb ? 'Climbable' : item.blocking ? 'Blocks' : 'Walk Over'}`;
           /* `selected` is deliberately NOT "owned": the panel jumps to the page

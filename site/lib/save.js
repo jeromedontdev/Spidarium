@@ -108,9 +108,16 @@ export function decodeSave(bytes, schema) {
     if (field.name in powerLimits && fields[field.name] > powerLimits[field.name])
       throw new Error(`Invalid ${field.name} in save`);
   }
+  /* Repair an over-cap Silk balance rather than rejecting the save. Older
+   * firmware saturated at U32, so a legitimate save can carry a balance in the
+   * hundreds of thousands. Refusing it would destroy the player's pet to fix a
+   * cosmetic problem; clamping keeps everything and restores a readable
+   * economy. Mirrors SILK_MAX in main/game_config.h and the clamp in
+   * main/save.c. Defined locally because device-engine.js imports this module. */
+  const SILK_MAX = 99999;
+  if(typeof fields.silk==='number'&&fields.silk>SILK_MAX)fields.silk=SILK_MAX;
   if(header.version>=8){
-    const kinds=header.version>=12?68:header.version>=10?34:16;
-    for(const item of fields.decor){
+    const kinds=header.version>=12?68:header.version>=10?34:16;    for(const item of fields.decor){
       if((item.kind!==255&&item.kind>=kinds)||item.blocking>(header.version>=13?2:1)||
           item.x<0||item.x>480||item.y<0||item.y>480)
         throw new Error('Invalid inline decor record');

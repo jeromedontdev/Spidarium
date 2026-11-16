@@ -559,12 +559,16 @@ Climb in one command, which exercises the real footprint-driven path.
 `climbhere big` places a Driftwood structure instead, which is the only way to
 exercise the ramped large-structure lift and the 96x160 canvas headroom.
 
-### `perch`
+### `perch [KIND]`
 
 Places a Hollow Log under the spider, sets it to Climb, refreshes the decor
 layer and reports the perch geometry: whether the point is a perch, the prop's
 radius and the outward heading in radians. Use it to exercise the small-prop
 perch path, which the spider's own wandering makes impossible to script.
+
+`perch KIND` uses a specific decor kind. This is how the props whose collision
+radius is under `PERCH_MIN_RADIUS` get exercised: `perch 40` is the Book Stack,
+radius 12 against a ~26px body.
 
 `SPIDER_PERCH` holds the item's centre and turns the spider to face out from it
 in 45-degree steps. The centre is derived from the item every tick, so

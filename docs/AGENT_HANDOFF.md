@@ -38,8 +38,17 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   occurs before ui_menu_close resets its page; browser list clamps deleted pages.
   Older short effects taper their last5ms to zero; music/pet/USB hashes stay intact.
 
-- Save v21 adds `climb_owned` at byte3099, the last v18 reserved byte, so the
-  payload prefix stays 3,100 bytes and the schema stays 57 fields. It is the
+- Silk is capped at `SILK_MAX` (99,999), not `UINT32_MAX`. Saturating at the
+  type limit let a legitimate balance reach 305,213, at which point every price
+  is meaningless and a greyed shop row is indistinguishable from a Silk
+  problem. `game_add_silk()` clamps, and `save_load()` clamps an over-cap
+  balance on load rather than rejecting the save, so an existing bloated save
+  is repaired instead of destroyed. The cap is far above the total cost of
+  everything purchasable, so it never blocks legitimate play.
+- A level-locked shop row says "Level N Needed", not "Level N / M Silk". The
+  old subtext named the Silk cost, so a player with plenty of Silk could not
+  tell why the row was grey.
+- Save v21 adds `climb_owned` at byte3099, the last v18 reserved byte, so the  payload prefix stays 3,100 bytes and the schema stays 57 fields. It is the
   ownership bitmap for the six large climb structures (decor kinds 68..73);
   `catalogue_owned_high` is full because its high nibble already holds decor
   64..67. v21 accepts decor kinds 0..73, v12..v20 accept 0..67. A large
@@ -181,6 +190,13 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   makes the spider drift to a point that is not on the prop. Hunger below
   `PERCH_HUNGER_LEAVE` (40), exhaustion and sickness all end the perch, because
   a cosmetic pose must never compete with feeding.
+  The perch trigger runs in BOTH `SPIDER_IDLE` and `SPIDER_WANDER`. An
+  IDLE-only check meant a wandering spider crossed a prop in well under a
+  second and the player never saw a perch. The footprint also has a floor:
+  `PERCH_MIN_RADIUS` (20) because a prop's `radius` is its collision disc,
+  which for small items is smaller than the spider's own body (the Book Stack
+  is radius 12 against a ~26px body), so the raw radius gave a window the
+  spider crossed in a fraction of a tick.
   The spider canvas is 96x160, not 96x96: `s_draw_dy` raises the body inside
   the buffer, so a 62px lift on a 96px canvas clipped the body off the top.
   `CANVAS_CX`/`CANVAS_CY` keep the floor point and contact shadow at the

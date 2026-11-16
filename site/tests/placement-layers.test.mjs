@@ -180,6 +180,15 @@ for(const item of state.decor)item.kind=E.DECOR_EMPTY;
 state.decor[0]={kind:3,blocking:3,x:240,y:240};
 assert.equal(E.decorPerchAt(state,240,240),true,'standing on the prop perches');
 assert.equal(E.decorPerchAt(state,240+30,240),false,'off the footprint is not a perch');
+/* A prop whose collision radius is smaller than the spider's body still has a
+ * usable perch window. The Book Stack is radius 12; using the raw radius meant
+ * the spider crossed it in a fraction of a tick and appeared to jump over. */
+const book=E.DECOR_KINDS.findIndex(item=>item.name==='Book Stack');
+assert.ok(book>=0,'the Book Stack exists');
+assert.ok(E.DECOR_KINDS[book].radius<E.PERCH_MIN_RADIUS,'its radius is under the floor');
+state.decor[0]={kind:book,blocking:3,x:240,y:240};
+assert.equal(E.decorPerchAt(state,240+15,240),true,'the perch window is widened to the body');
+assert.equal(E.decorPerchAt(state,240+E.PERCH_MIN_RADIUS+2,240),false,'but it is still bounded');
 /* A large structure is walked across, never perched on. */
 const big=E.DECOR_KINDS.length-1;
 assert.equal(E.decorIsClimbStructure(big),true);
@@ -233,6 +242,40 @@ for(let i=0;i<40;i++)E.tick(state,.05);
 assert.equal(state.state,E.STATES.PERCH);
 assert.ok(Math.hypot(state.spider_x-240,state.spider_y-240)<2,
   `converges on the prop centre, got (${state.spider_x},${state.spider_y})`);
+});
+
+test('silk is capped so the economy stays readable',()=>{
+const {state}=fixture();
+/* Saturating at U32 let the balance reach hundreds of thousands, at which
+ * point every price is meaningless and a greyed shop row is indistinguishable
+ * from a Silk problem. */
+state.silk=0;
+E.addSilk(state,1e9);
+assert.equal(state.silk,E.SILK_MAX,'a huge grant clamps to the cap');
+E.addSilk(state,1);
+assert.equal(state.silk,E.SILK_MAX,'further grants do not exceed the cap');
+assert.ok(E.SILK_MAX<1e6,'the cap is a readable currency, not a type limit');
+/* The cap must be far above the total cost of everything purchasable, or it
+ * would block legitimate play. */
+const total=E.DECOR_KINDS.reduce((sum,item)=>sum+item.cost,0);
+assert.ok(E.SILK_MAX>total,`cap ${E.SILK_MAX} must exceed the decor catalogue total ${total}`);
+});
+
+test('a wandering spider perches instead of walking over the prop',()=>{
+const {state}=fixture();
+for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+state.decor[0]={kind:3,blocking:3,x:240,y:240};
+state.energy=80;state.hunger=80;state.mood=80;state.sick=0;state.auto_hunt=0;
+/* Start off the prop and already wandering, which is the case the IDLE-only
+ * check missed: the spider crossed the prop in under a second and the player
+ * never saw a perch. */
+state.spider_x=200;state.spider_y=240;state.state=E.STATES.WANDER;
+let perched=false;
+for(let i=0;i<200;i++){
+  E.tick(state,.05);
+  if(state.state===E.STATES.PERCH){perched=true;break;}
+}
+assert.equal(perched,true,'a wandering spider stops on the prop');
 });
 
 test('climb is only offered for kinds that have height',()=>{  const {state}=fixture();

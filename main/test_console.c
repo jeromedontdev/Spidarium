@@ -124,7 +124,7 @@ static void cmd_help(void)
     printf("  decortest            place every decor kind, verify the layer\n");
     printf("  climb [N]            report the live climb lift; N pins it for testing\n");
     printf("  climbhere [big]      place a climbable item under the spider and climb it\n");
-    printf("  perch                place a small prop under the spider and report the perch\n");
+    printf("  perch [KIND]         place a small prop under the spider and report the perch\n");
     printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
     printf("  decorreport [SLOT]   report a placed decor object's live geometry\n");
     printf("  setupdone            finish the naming screen without tapping\n");
@@ -480,6 +480,10 @@ static void cmd_silk(const char *arg)
         return;
     }
     printf("OK silk added=%ld total=%lu saved=1\n", amount, (unsigned long)g.silk);
+    if (g.silk >= SILK_MAX) {
+        printf("NOTE silk is at the %u cap; further grants have no effect\n",
+               (unsigned)SILK_MAX);
+    }
 }
 
 static bool console_data(const char *text)
@@ -1230,9 +1234,22 @@ static void run_line(char *line)
         /* Place a small climbable prop under the spider and report the perch
          * state. The spider wanders faster than a script can issue separate
          * place/block commands, so the footprint-driven perch could not
-         * otherwise be exercised from the console. */
+         * otherwise be exercised from the console.
+         *
+         * "perch KIND" uses a specific decor kind, which is how the small
+         * props whose collision radius is under PERCH_MIN_RADIUS (the Book
+         * Stack is radius 12) get exercised. */
         decor_climb_force(-1);
-        int slot = decor_place(DECOR_LOG, g.spider_x, g.spider_y);
+        uint8_t kind = DECOR_LOG;
+        if (arg) {
+            int want = atoi(arg);
+            if (want < 0 || want >= DECOR_COUNT) {
+                printf("ERR perch: kind must be 0..%d\n", DECOR_COUNT - 1);
+                return;
+            }
+            kind = (uint8_t)want;
+        }
+        int slot = decor_place(kind, g.spider_x, g.spider_y);
         if (slot < 0) { printf("ERR perch: place failed\n"); return; }
         if (!decor_set_path(slot, DECOR_CLIMB)) {
             printf("ERR perch: set_path refused\n"); return;
@@ -1241,7 +1258,7 @@ static void run_line(char *line)
         float want = 0.0f;
         bool has = decor_perch_heading(g.spider_x, g.spider_y, &want);
         printf("PERCH slot=%d kind=%u pos=(%d,%d) perch=%d radius=%d heading=%.3f\n",
-               slot, (unsigned)DECOR_LOG, g.spider_x, g.spider_y,
+               slot, (unsigned)kind, g.spider_x, g.spider_y,
                (int)decor_perch_at(g.spider_x, g.spider_y),
                (int)decor_perch_radius(g.spider_x, g.spider_y),
                has ? (double)want : 0.0);

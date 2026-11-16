@@ -109,7 +109,16 @@ uint32_t game_now(void)
 
 void game_add_silk(uint32_t amount)
 {
-    g.silk = amount > UINT32_MAX - g.silk ? UINT32_MAX : g.silk + amount;
+    /* Clamp to SILK_MAX, not UINT32_MAX. Saturating at the type limit let the
+     * balance reach 305,213 in normal play, at which point every price is
+     * meaningless and a greyed shop row is indistinguishable from a Silk
+     * problem. The cap is far above the total cost of everything purchasable,
+     * so it never blocks legitimate play. */
+    if (amount > SILK_MAX - (g.silk > SILK_MAX ? SILK_MAX : g.silk)) {
+        g.silk = SILK_MAX;
+    } else {
+        g.silk += amount;
+    }
 }
 void game_add_xp(uint32_t amount)
 {
@@ -2121,8 +2130,11 @@ static void menu_open(int which)
             const decor_def_t *def = decor_def((uint8_t)i);
             ui_menu_format_name(decor_name[i], sizeof decor_name[i], def->name);
             if (!decor_unlocked((uint8_t)i)) {
-                snprintf(decor_sub[i], sizeof decor_sub[i], "Level %u / %u Silk",
-                         def->unlock_level, def->cost);
+                /* Level-locked. Showing the Silk cost here read as "you need
+                 * 52 Silk", so a player with plenty of Silk could not tell why
+                 * the row was grey. Name the actual blocker. */
+                snprintf(decor_sub[i], sizeof decor_sub[i], "Level %u Needed",
+                         def->unlock_level);
             } else if (decor_owned((uint8_t)i)) {
                 snprintf(decor_sub[i], sizeof decor_sub[i], "Owned / %s",
                          def->climb_height ? "Climbable" : def->blocking ? "Blocks" : "Walk Over");

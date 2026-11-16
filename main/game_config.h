@@ -150,6 +150,17 @@
 #define DAILY_SILK_BASE        4
 #define DAILY_SILK_PER_DAY     2
 
+/* Hard ceiling on the Silk balance.
+ *
+ * The balance is a uint32_t, so it can hold 4.29 billion, but nothing in the
+ * game costs more than a few hundred. A balance in the hundreds of thousands
+ * is not a reward, it is a broken economy: every price becomes meaningless and
+ * the player cannot tell whether a greyed row is a Silk problem or a level
+ * problem. The cap is set well above the total cost of everything purchasable
+ * so it never blocks legitimate play, and it is low enough that the number
+ * still reads as a currency. */
+#define SILK_MAX               99999u
+
 /* "Never claimed". 0 is a real in-game day, so it cannot double as the
  * sentinel or a fresh pet could never claim its first check-in. */
 #define DAILY_NEVER            0xFFFFFFFFu

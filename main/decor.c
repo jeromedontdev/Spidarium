@@ -363,6 +363,18 @@ uint8_t decor_climb_at(int16_t x, int16_t y, int *out_slot)
 
 /* --- perching on small props ------------------------------------------- */
 
+/* Minimum perch footprint, in pixels.
+ *
+ * A prop's `radius` is its collision footprint, which for small items is
+ * SMALLER than the spider's own body: the Book Stack is radius 12 while the
+ * body spans about 26 px. Using the raw radius meant the spider's centre had to
+ * land within 12 px of the item's centre to perch, a window it crossed in a
+ * fraction of a tick while wandering, so it appeared to jump straight over the
+ * books. The perch test is about "is the spider standing on this thing", not
+ * "is its centre inside the collision disc", so it gets a floor that matches
+ * the body it is standing on. */
+#define PERCH_MIN_RADIUS 20
+
 /* The climbable prop under a point, or NULL. Large structures are excluded:
  * those are walked across, not perched on. */
 static const decor_item_t *perch_item_at(int16_t x, int16_t y)
@@ -375,9 +387,12 @@ static const decor_item_t *perch_item_at(int16_t x, int16_t y)
         if (decor_is_climb_structure(item->kind)) continue;
         const decor_def_t *def = decor_def(item->kind);
         if (!def || def->climb_height == 0) continue;
-        uint8_t lift = climb_lift_on(item, def, x, y);
-        if (lift > best_lift) {
-            best_lift = lift;
+        int32_t r = def->radius > PERCH_MIN_RADIUS ? def->radius : PERCH_MIN_RADIUS;
+        float dx = (float)(x - item->x);
+        float dy = (float)(y - item->y);
+        if (dx * dx + dy * dy > (float)(r * r)) continue;
+        if (def->climb_height > best_lift) {
+            best_lift = def->climb_height;
             best = item;
         }
     }
@@ -394,7 +409,9 @@ int16_t decor_perch_radius(int16_t x, int16_t y)
     const decor_item_t *item = perch_item_at(x, y);
     if (!item) return 0;
     const decor_def_t *def = decor_def(item->kind);
-    return def ? (int16_t)def->radius : 0;
+    if (!def) return 0;
+    return def->radius > PERCH_MIN_RADIUS ? (int16_t)def->radius
+                                          : (int16_t)PERCH_MIN_RADIUS;
 }
 
 bool decor_perch_center(int16_t x, int16_t y, int16_t *out_x, int16_t *out_y)

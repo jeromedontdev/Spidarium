@@ -501,6 +501,19 @@ bool save_load(void *dst, size_t size)
     decor_item_t *extra = NULL;
     if (!save_load_snapshot(dst, size, &extra)) return false;
     decor_restore_extra(extra);
+    /* Repair an over-cap Silk balance on load rather than rejecting the save.
+     * Older firmware saturated at UINT32_MAX, so a legitimate save can carry a
+     * balance in the hundreds of thousands. Refusing it would destroy the
+     * player's pet to fix a cosmetic problem; clamping keeps everything and
+     * restores a readable economy. */
+    if (dst && size >= offsetof(game_state_t, silk) + sizeof(uint32_t)) {
+        game_state_t *state = dst;
+        if (state->silk > SILK_MAX) {
+            ESP_LOGW(TAG, "silk %lu over cap, clamped to %u",
+                     (unsigned long)state->silk, (unsigned)SILK_MAX);
+            state->silk = SILK_MAX;
+        }
+    }
     return true;
 }
 

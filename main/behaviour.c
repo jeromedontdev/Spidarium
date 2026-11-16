@@ -1110,6 +1110,20 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
             break;
         }
 
+        /* Perching has to be checked here as well as in IDLE. A wandering
+         * spider crosses a small prop in well under a second at MOVE_SPEED, so
+         * an IDLE-only check meant it walked straight over the books and the
+         * player never saw a perch. This is the "it just jumped over it"
+         * report. */
+        if (!g.sick && g.energy >= game_temperament()->sleep_threshold &&
+            g.hunger >= PERCH_HUNGER_LEAVE &&
+            decor_perch_at(g.spider_x, g.spider_y)) {
+            s_perch_heading_valid = false;
+            s_perch_until = now_ms + 2500u + (uint32_t)(rand() % 2500);
+            behaviour_set_state(SPIDER_PERCH);
+            break;
+        }
+
         if (s_has_target) {
             float d = dist_to(s_target_x, s_target_y);
             if (d < ARRIVE_RADIUS) {

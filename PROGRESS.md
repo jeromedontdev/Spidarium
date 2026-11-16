@@ -9915,3 +9915,91 @@ still needs human eyes; 0.72 was chosen from the geometry, not from a visual
 sweep of alternatives. The perch does not change steering or hit-testing: the
 spider's logical position stays on the floor, so a perched spider is still
 catchable and still steers normally the moment it stands up.
+
+
+## Round 110 - Silk cap and the perch trigger
+
+**Status:** COMPLETE - build, flash, hardware checks and both suites verified.
+
+Two player-reported bugs after round 109.
+
+### Bug 1: "so much silk it is now broken"
+
+The report was that items were greyed out and the player could not tell whether
+Silk was the cause. Two separate problems were behind it.
+
+- **The balance had reached 305,213.** `game_add_silk()` saturated at
+  `UINT32_MAX`, so nothing ever stopped it. At that level every price in the
+  game is meaningless: the player cannot tell a Silk problem from a level
+  problem because Silk is never the problem.
+- **The greyed rows were level-locked, but the subtext said Silk.** A locked
+  decor row read "Level 12 / 82 Silk", which names the Silk cost as if that
+  were the blocker. The player had 305,213 Silk and level 6, so the actual
+  blocker was the level and the UI never said so.
+
+### Bug 2: "I put down books but it didnt perch on them it just jumped over it"
+
+The perch trigger only ran in `SPIDER_IDLE`. A wandering spider crosses a prop
+in well under a second at `MOVE_SPEED` 55, so it walked straight over the books
+and the player never saw a perch. There was a second, independent cause: a
+prop's `radius` is its collision footprint, and for small items that is smaller
+than the spider's own body. The Book Stack is radius 12 against a ~26px body,
+so the spider's centre had to land within 12px of the item's centre to perch.
+
+### Decisions made
+
+- **Cap Silk at `SILK_MAX` (99,999), not `UINT32_MAX`.** The cap is far above
+  the total cost of everything purchasable, so it never blocks legitimate play,
+  and low enough that the number still reads as a currency.
+- **Clamp an over-cap balance on load rather than rejecting the save.** Older
+  firmware produced these saves legitimately. Refusing one would destroy the
+  player's pet to fix a cosmetic problem; clamping keeps everything. The
+  player's own save went from 305,213 to 99,999 on the first boot after the
+  fix, with no data loss.
+- **Name the real blocker in the shop.** A level-locked row now reads
+  "Level N Needed". The Silk cost is only shown once the level requirement is
+  met, which is the point at which it actually matters.
+- **Check the perch in `SPIDER_WANDER` as well as `SPIDER_IDLE`.** The wander
+  branch is where the spider actually spends its time, so an IDLE-only check
+  could only ever fire if the spider happened to stop on a prop.
+- **Give the perch footprint a floor (`PERCH_MIN_RADIUS` 20).** The perch test
+  asks "is the spider standing on this thing", not "is its centre inside the
+  collision disc", so it should use a footprint that matches the body standing
+  on it. The collision radius is unchanged, so steering is unaffected.
+- **`perch KIND` console argument.** The props with a sub-20 radius could not be
+  exercised at all without it, because the spider wanders off before a script
+  can place and block an item under it.
+
+### Exact verification evidence
+
+- Build exit 0, zero `main` warnings. Flash exit 0, `Hash of data verified`.
+- Silk clamp on the player's real save: `stat` reported `silk=99999` on the
+  first boot after flashing, down from 305,213. `silk add 500000` then reported
+  `OK silk added=500000 total=99999 saved=1` followed by
+  `NOTE silk is at the 99999 cap; further grants have no effect`.
+- Book Stack perch on hardware: `perch 40` ->
+  `PERCH slot=0 kind=40 pos=(295,277) perch=1 radius=20 heading=1.571`.
+  The radius is 20, widened from the item's 12, which is the fix. Watching the
+  state over 20 samples gave `1010101010101010101010101010101010101010`, i.e.
+  the spider repeatedly perches and leaves rather than walking over.
+- Screenshot confirms the spider sitting on the Book Stack, foreshortened and
+  facing the viewer.
+- Browser suite 254/254 pass, including two new tests: "silk is capped so the
+  economy stays readable" (clamp, idempotence, and that the cap exceeds the
+  whole decor catalogue total) and "a wandering spider perches instead of
+  walking over the prop", plus the Book Stack case added to the perch test.
+- Native suite 49 passed / 3 failed, identical to the stashed pre-change
+  baseline (`gifttest`, `uitest`, `wifi connect`).
+- Soak `stability_check.py COM7 40` -> `VERDICT: PASS - clean boot window`,
+  `FAULTS/ERRORS: 0`.
+- `render 500` -> `RENDER ticks=500 largest_drift=0`. `scanloop 5` ->
+  `LOOP ok=5 failed=0 largest_drift=0`.
+- `mem` -> `internal=123907 largest=63488 dma=116175 psram=1140700`, so
+  `largest` is 63,488 against the 51,200 floor.
+
+### Honest boundaries
+
+The 99,999 cap is a judgement call, not a measured requirement: it is roughly
+twenty times the total cost of the entire decor catalogue. If a future feature
+adds a sink larger than that, the cap needs revisiting. Whether the perch reads
+as convincing on the physical panel still needs human eyes.
