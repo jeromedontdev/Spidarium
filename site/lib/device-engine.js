@@ -241,12 +241,35 @@ export const ACHIEVEMENTS = [
   ['first_border','Framed','Buy an enclosure border','ui_display'],
   ['first_gift','Gift Giver','Place a gift in the enclosure','ui_treats'],
 ].map(([id,name,goal,asset],index)=>Object.freeze({id,bit:1<<index,name,goal,asset:asset??`achievement_${id}`,xp:15,silk:20}));
+/* Columns: name, want, weight, hunger<, energy<, mood<, hygiene<, bond>,
+ * prey, period, climbable, gift.
+ *
+ * The last three columns are what make the spider feel like it has a LIFE
+ * rather than a stat readout: it notices the time of day, the things you have
+ * put in its tank, and the gift you gave it. A rule whose condition cannot be
+ * satisfied (no clock, no climbable decor, no gift) simply never fires, so the
+ * table degrades cleanly on a fresh tank. Mirrors k_mind_rules in mind.c. */
 export const MIND_RULES = [
-  ['starving','food',100,25,-1,-1,-1,-1,-1],['exhausted','rest',90,-1,20,-1,-1,-1,-1],
-  ['hungry','food',70,60,-1,-1,-1,-1,1],['peckish','explore',50,60,-1,-1,-1,-1,0],
-  ['sad','play',60,-1,-1,25,-1,-1,-1],['grimy','clean',55,-1,-1,-1,25,-1,-1],
-  ['content','watch',30,-1,-1,60,-1,50,-1],['curious','explore',20,-1,-1,-1,-1,-1,-1],
-  ['idle','nothing',1,-1,-1,-1,-1,-1,-1],
+  ['starving','food',100,25,-1,-1,-1,-1,-1,-1,-1,-1],
+  ['exhausted','rest',95,-1,20,-1,-1,-1,-1,-1,-1,-1],
+  ['hungry','food',70,60,-1,-1,-1,-1,1,-1,-1,-1],
+  ['peckish','explore',50,60,-1,-1,-1,-1,0,-1,-1,-1],
+  ['sad','play',60,-1,-1,25,-1,-1,-1,-1,-1,-1],
+  ['grimy','clean',55,-1,-1,-1,25,-1,-1,-1,-1,-1],
+  ['drowsy','rest',45,-1,70,-1,-1,-1,-1,3,-1,-1],
+  ['dusk','explore',35,-1,-1,-1,-1,-1,-1,2,-1,-1],
+  ['basking','sun',32,-1,-1,-1,-1,-1,-1,0,-1,-1],
+  ['content','watch',30,-1,-1,60,-1,50,-1,-1,-1,-1],
+  ['restless','climb',28,-1,55,45,-1,-1,-1,-1,1,-1],
+  ['perching','perch',26,-1,40,40,-1,-1,-1,-1,-1,-1],
+  ['fond','visit',24,-1,30,50,-1,20,-1,-1,-1,1],
+  ['curious','explore',20,-1,-1,-1,-1,-1,-1,-1,-1,-1],
+  ['weary','rest',15,-1,35,-1,-1,-1,-1,-1,-1,-1],
+  ['shy','hide',14,-1,-1,-1,-1,10,-1,-1,-1,-1],
+  ['fidget','perch',8,-1,-1,-1,-1,-1,-1,-1,-1,-1],
+  ['idle','nothing',1,-1,-1,-1,-1,-1,-1,-1,-1,-1],
+  ['reserved0','nothing',-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],
+  ['reserved1','nothing',-1,-1,-1,-1,-1,-1,-1,-1,-1,-1],
 ];
 const services = new WeakMap();
 const clamp = (v,min=0,max=100)=>Math.max(min,Math.min(max,v));
@@ -281,7 +304,7 @@ export function giftBonus(s) {
   return b;
 }
 function engineDefaults(now=0) {
-  return {now_ms:now,last_decay:now,last_age:now,next_mind:now,remainder:0,hunger_acc:0,hygiene_acc:0,energy_acc:0,
+  return {now_ms:now,last_decay:now,last_age:now,next_mind:now,mind_since:now,remainder:0,hunger_acc:0,hygiene_acc:0,energy_acc:0,
     px:240,py:240,idle_until:0,retarget_at:0,wander_dir:0,target:null,drag:null,
     aim_start:0,aim_active:false,aim_power:0,aim_ideal:0,pounce:null,next_pounce_at:0,
     sleep_forced:false,sleep_start:0,oneshot_until:0,gift_visit_at:0,gift_hold_until:0,
@@ -1455,14 +1478,42 @@ function needsTick(s) {
 }
 function mindTick(s){
   const r=runtime(s);if(r.now_ms<r.next_mind)return;r.next_mind=r.now_ms+4000;
+  /* Environment probes, cached once per evaluation rather than per rule. */
+  const climbable=s.decor.some(d=>d.kind!==DECOR_EMPTY&&decorClimbable(d.kind));
+  const giftPlaced=Boolean(s.gift?.used);
+  const period=dayPeriod(s);
   let best=null;
   for(const row of MIND_RULES){
-    const [,want,weight,h,e,m,y,b,p]=row;
+    const [,want,weight,h,e,m,y,b,p,per,climb,gift]=row;
+    if(weight<0)continue;
     if((h>=0&&s.hunger>=h)||(e>=0&&s.energy>=e)||(m>=0&&s.mood>=m)||(y>=0&&s.hygiene>=y)||(b>=0&&s.bond<=b)||(p===1&&!preyCount(s))||(p===0&&preyCount(s)))continue;
+    /* A period rule needs a real clock. Without one the period is 255, which
+     * matches no specific period, so time-of-day behaviour is absent rather
+     * than wrong. */
+    if(per>=0&&period!==per)continue;
+    if(climb===1&&!climbable)continue;
+    if(climb===0&&climbable)continue;
+    if(gift===1&&!giftPlaced)continue;
+    if(gift===0&&giftPlaced)continue;
     if(!best||weight>best[2])best=row;
   }
-  s.mind_rule=best?.[0]??null;s.want=best?.[1]??'nothing';
-  s.thought={food:'hungry',rest:'sleepy',play:'wants to play',clean:'feels grubby',explore:'exploring',watch:'watching you',nothing:''}[s.want];
+  const want=best?.[1]??'nothing';
+  /* Only restart the dwell timer when the INTENT changes, not when the rule
+   * that produced it changes: two rules can both want 'explore', and resetting
+   * as they swap would keep the spider from ever acting on either. */
+  if(want!==s.want)r.mind_since=r.now_ms;
+  s.mind_rule=best?.[0]??null;s.want=want;
+  s.thought={food:'hungry',rest:'sleepy',play:'wants to play',clean:'feels grubby',
+    explore:'exploring',watch:'watching you',hide:'hiding',climb:'wants to climb',
+    perch:'looking for a perch',visit:'visiting its gift',sun:'basking',nothing:''}[want];
+}
+/* The current day period, mirroring life_period_now(): 0 morning, 1 afternoon,
+ * 2 evening, 3 night, 255 when the clock is unavailable. */
+function dayPeriod(s){
+  const epoch=s.epoch??0;
+  if(!(epoch>=1704067200))return 255;
+  const hour=Math.floor((epoch%86400)/3600);
+  return hour<6||hour>=22?3:hour<12?0:hour<18?1:2;
 }
 // The gift is always walked over.
 //
@@ -1640,6 +1691,11 @@ function behaviourTick(s,dt){
       if(perchWanted(s,t)){
         r.perch_heading=null;r.perch_until=now+2500+roll(s,2500);setState(s,10);break;
       }
+      /* A wander with no destination is the spider pottering about, which is
+       * exactly when a new intent should be able to take over. Without this the
+       * mind was only consulted from IDLE, so a spider that had started
+       * wandering never reconsidered and the brain looked inert. */
+      if(!r.target&&actOnIntent(s,now))break;
       if(r.target){
         if(Math.hypot(r.target.x-s.spider_x,r.target.y-s.spider_y)<12){setState(s,0);break;}
         steer(s,Math.atan2(r.target.y-s.spider_y,r.target.x-s.spider_x),dt,true);
@@ -1690,11 +1746,63 @@ function behaviourTick(s,dt){
       }
       else if(s.mood<20&&s.hunger>40){if(done)setState(s,1);}
       else if(s.auto_hunt&&preyCount(s)&&s.hunger<95)setState(s,2);
+      else if(done&&actOnIntent(s,now)){/* the mind chose something to do */}
       else if(done)setState(s,1);
     }
   }
   if(s.spider_x!==round(r.px))r.px=s.spider_x;if(s.spider_y!==round(r.py))r.py=s.spider_y;
   s.spider_x=clamp(s.spider_x,34,446);s.spider_y=clamp(s.spider_y,34,446);
+}
+/* Act on the mind's current intent, mirroring act_on_intent() in behaviour.c.
+ *
+ * This is the bridge that makes the brain matter: without it the rules engine
+ * computed an intent every four seconds and nothing ever read it, so the spider
+ * behaved exactly as it did before the mind existed.
+ *
+ * Returns true when the intent took over the decision. Every branch is guarded
+ * by the same safety conditions the FSM already used, so an intent can never
+ * override hunger, exhaustion or sickness -- those are handled before this is
+ * called. */
+function actOnIntent(s,now){
+  const r=runtime(s);
+  /* Give an intent a moment to settle before acting on it. A creature that
+   * changes its mind every four seconds reads as twitchy. */
+  if(now-(r.mind_since??0)<2500)return false;
+  switch(s.want){
+    case 'climb':{
+      if(s.sick||s.energy<30||s.hunger<40)return false;
+      let best=null,bestD=0;
+      for(const d of s.decor){
+        if(d.kind===DECOR_EMPTY||!decorClimbable(d.kind))continue;
+        const dd=Math.hypot(d.x-s.spider_x,d.y-s.spider_y);
+        if(!best||dd<bestD){best=d;bestD=dd;}
+      }
+      if(!best||bestD<24)return false;
+      seekTo(s,best.x,best.y);
+      return true;
+    }
+    case 'visit':{
+      if(!s.gift?.used||s.energy<20||s.hunger<60)return false;
+      if(Math.hypot(s.gift.x-s.spider_x,s.gift.y-s.spider_y)<40)return false;
+      seekTo(s,s.gift.x,s.gift.y);
+      return true;
+    }
+    case 'hide':{
+      const cx=(field.left+field.right)/2,cy=(field.top+field.bottom)/2;
+      seekTo(s,s.spider_x<cx?field.left+40:field.right-40,
+               s.spider_y<cy?field.top+40:field.bottom-40);
+      return true;
+    }
+    case 'sun':
+    case 'watch':
+      /* Both are "settle and be still". The FSM has no separate state for them,
+       * and inventing one would need new artwork; holding IDLE with a longer
+       * dwell is the honest expression of the same idea. */
+      r.idle_until=now+4000+roll(s,4000);
+      return false;
+    default:
+      return false;
+  }
 }
 function automationTick(s){
   const r=runtime(s),now=r.now_ms;

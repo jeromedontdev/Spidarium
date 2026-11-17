@@ -227,6 +227,14 @@
  * PERCH and the foreshortening pulsed, which read as the spider vibrating. */
 #define PERCH_COOLDOWN_MS      4000u
 
+/* How long the spider holds an intent before acting on it.
+ *
+ * The mind re-evaluates every four seconds. Acting on the very first
+ * evaluation made the spider dart off the instant a stat crossed a threshold,
+ * which read as twitchy rather than deliberate. A short dwell means the
+ * creature visibly settles on a plan before carrying it out. */
+#define MIND_DWELL_MS          2500u
+
 /* How long the auto-hiding HUD chrome stays up after being revealed. */
 #define CHROME_HOLD_MS         5000u
 

@@ -8,6 +8,7 @@
 #include "decor.h"
 #include "game_config.h"
 #include "gift.h"
+#include "mind.h"
 #include "prey.h"
 #include "spider.h"
 #include "ui_hud.h"
@@ -766,6 +767,115 @@ static bool perch_wanted(void)
     return decor_perch_at(g.spider_x, g.spider_y);
 }
 
+/* Is there anything tall enough to climb, and is the spider free to go?
+ *
+ * The mind can want WANT_CLIMB, but the tank may have no climbable decor at
+ * all, or the spider may be too tired or too hungry to make the trip. This is
+ * the gate that keeps an intent from becoming a stuck state. */
+static bool climb_available(void)
+{
+    if (g.sick) return false;
+    if (g.energy < 30) return false;
+    if (g.hunger < PERCH_HUNGER_LEAVE) return false;
+    int slots = decor_slot_count();
+    for (int i = 0; i < slots; i++) {
+        const decor_item_t *item = decor_at(i);
+        if (item && decor_climbable(item->kind)) return true;
+    }
+    return false;
+}
+
+/* Walk to the nearest climbable structure and start up it.
+ *
+ * Returns true when it took over, so the caller stops deciding. The actual
+ * climbing is done by the existing climb geometry once the spider is standing
+ * on the artwork, so this only has to get it there. */
+static bool try_climb(void)
+{
+    if (!climb_available()) return false;
+    int slots = decor_slot_count();
+    int best = -1;
+    float best_d2 = 0.0f;
+    for (int i = 0; i < slots; i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || !decor_climbable(item->kind)) continue;
+        float dx = (float)(item->x - g.spider_x);
+        float dy = (float)(item->y - g.spider_y);
+        float d2 = dx * dx + dy * dy;
+        if (best < 0 || d2 < best_d2) { best = i; best_d2 = d2; }
+    }
+    if (best < 0) return false;
+    const decor_item_t *item = decor_at(best);
+    if (!item) return false;
+    /* Already standing on it: the climb geometry takes over from here, so just
+     * hold position and let the renderer raise the body. */
+    if (best_d2 < 24.0f * 24.0f) return false;
+    behaviour_seek_to(item->x, item->y);
+    return true;
+}
+
+/* Walk to the gift. The visit machinery in behaviour_tick() owns what happens
+ * on arrival, so this only has to start the trip. */
+static bool try_visit_gift(void)
+{
+    if (!g.gift.used) return false;
+    if (g.energy < 20 || g.hunger < 60) return false;
+    float dx = (float)(g.gift.x - g.spider_x);
+    float dy = (float)(g.gift.y - g.spider_y);
+    if (dx * dx + dy * dy < 40.0f * 40.0f) return false;
+    behaviour_seek_to(g.gift.x, g.gift.y);
+    return true;
+}
+
+/* Act on the mind's current intent.
+ *
+ * This is the bridge that makes the brain matter: without it the rules engine
+ * computed an intent every four seconds and nothing ever read it, so the spider
+ * behaved exactly as it did before the mind existed.
+ *
+ * Returns true when the intent took over the decision, so the caller stops.
+ * Every branch is guarded by the same safety conditions the FSM already used,
+ * so an intent can never override hunger, exhaustion or sickness -- those are
+ * handled before this is called. */
+static bool act_on_intent(uint32_t now_ms)
+{
+    /* Give an intent a moment to settle before acting on it. A creature that
+     * changes its mind every four seconds reads as twitchy, and acting on the
+     * very first evaluation made the spider dart off the instant a stat
+     * crossed a threshold. */
+    if (mind_held_ms(now_ms) < MIND_DWELL_MS) return false;
+
+    switch (mind_want()) {
+    case WANT_CLIMB:
+        return try_climb();
+    case WANT_VISIT:
+        return try_visit_gift();
+    case WANT_PERCH:
+        /* Perching is positional: the spider has to already be standing on a
+         * prop, so there is nothing to walk to. Returning false lets the
+         * existing perch_wanted() check handle it. */
+        return false;
+    case WANT_HIDE: {
+        /* Retreat to the corner furthest from the centre of the tank. */
+        int32_t cx = (g_play.left + g_play.right) / 2;
+        int32_t cy = (g_play.top + g_play.bottom) / 2;
+        int32_t tx = g.spider_x < cx ? g_play.left + 40 : g_play.right - 40;
+        int32_t ty = g.spider_y < cy ? g_play.top + 40 : g_play.bottom - 40;
+        behaviour_seek_to(tx, ty);
+        return true;
+    }
+    case WANT_SUN:
+    case WANT_WATCH:
+        /* Both are "settle and be still". The FSM has no separate state for
+         * them, and inventing one would need new artwork; holding IDLE with a
+         * longer dwell is the honest expression of the same idea. */
+        s_idle_until = now_ms + 4000u + (uint32_t)(rand() % 4000);
+        return false;
+    default:
+        return false;
+    }
+}
+
 void behaviour_tick(uint32_t now_ms, float dt_s)
 {
     static int reported_auto_hunt = -1;
@@ -1100,6 +1210,12 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
             break;
         }
 
+        /* A wander with no destination is the spider pottering about, which is
+         * exactly when a new intent should be able to take over. Without this
+         * the mind was only consulted from IDLE, so a spider that had started
+         * wandering never reconsidered and the brain looked inert. */
+        if (!s_has_target && act_on_intent(now_ms)) break;
+
         if (s_has_target) {
             float d = dist_to(s_target_x, s_target_y);
             if (d < ARRIVE_RADIUS) {
@@ -1278,6 +1394,10 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
              * The old <70 gate meant a fed spider ignored prey the player had
              * just spawned with FEED, which read as a broken button. */
             behaviour_set_state(SPIDER_STALK);
+        } else if (idle_done && act_on_intent(now_ms)) {
+            /* The mind chose something to do and took over. Checked after the
+             * survival branches above, so an intent can never outrank hunger,
+             * exhaustion or sickness. */
         } else if (idle_done) {
             behaviour_set_state(SPIDER_WANDER);
         }

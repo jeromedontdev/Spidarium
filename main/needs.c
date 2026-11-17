@@ -8,6 +8,7 @@
 #include "cspider.h"
 #include "game_config.h"
 #include "gift.h"
+#include "mind.h"
 #include "prey.h"
 #include "rtc.h"
 #include "spider.h"
@@ -156,6 +157,10 @@ void needs_feed(void)
     }
     /* Feeding spawns prey; the spider must catch it. */
     prey_spawn();
+    /* The mind may have been sitting on "hungry" for up to four seconds. Wake
+     * it so the spider notices the food immediately rather than finishing a
+     * nap it had already decided on. */
+    mind_wake();
     audio_play(SFX_TAP);
     ESP_LOGI(TAG, "feed: prey spawned");
 }

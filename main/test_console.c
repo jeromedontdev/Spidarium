@@ -40,6 +40,7 @@
 #include "game.h"
 #include "game_config.h"
 #include "meminfo.h"
+#include "mind.h"
 #include "needs.h"
 #include "net.h"
 #include "rtc.h"
@@ -124,6 +125,8 @@ static void cmd_help(void)
     printf("  uitest               test paging, keyboard, password, HUD, backgrounds\n");
     printf("  hunttest             inject touch, jump/catch, restore pet/prey\n");
     printf("  gaittest             cadence and bounded leg geometry checks\n");
+    printf("  mindtest             mind rule table and intent stability\n");
+    printf("  mind                 report the live intent and day period\n");
     printf("  preytest             eight level gates, restore pet level\n");
     printf("  decortest            place every decor kind, verify the layer\n");
     printf("  climb [N]            report the live climb lift; N pins it for testing\n");
@@ -1230,6 +1233,27 @@ static void run_line(char *line)
     }
     else if (!strcmp(line, "gaittest")) {
         if (!game_ui_call(GAME_UI_TEST_GAIT)) printf("ERR gait test request or assertion failed\n");
+    }
+    else if (!strcmp(line, "mindtest")) {
+        /* The mind is a pure rules engine, so it can be checked directly
+         * without touching the FSM. */
+        bool ok = mind_test();
+        printf("MIND want=%s rule=%s thought=\"%s\" ok=%d\n",
+               mind_want_name(mind_want()),
+               mind_active_rule() ? mind_active_rule()->name : "none",
+               mind_thought(), ok ? 1 : 0);
+        if (!ok) printf("ERR mind test failed\n");
+        else printf("OK mindtest\n");
+    }
+    else if (!strcmp(line, "mind")) {
+        /* Report the live intent, so the brain can be observed on hardware
+         * rather than only asserted in a test. */
+        printf("MIND want=%s rule=%s thought=\"%s\" held=%lums period=%u\n",
+               mind_want_name(mind_want()),
+               mind_active_rule() ? mind_active_rule()->name : "none",
+               mind_thought(), (unsigned long)mind_held_ms(lv_tick_get()),
+               (unsigned)life_period_now());
+        printf("OK mind\n");
     }
     else if (!strcmp(line, "preytest")) {
         if (!game_ui_call(GAME_UI_TEST_PREY)) printf("ERR prey test request or assertion failed\n");

@@ -103,6 +103,12 @@ static life_clock_t current_clock(void)
     return life_clock(s_testing ? s_test_epoch :
         now > 0 && (uint64_t)now <= UINT32_MAX ? (uint32_t)now : 0);
 }
+
+uint8_t life_period_now(void)
+{
+    life_clock_t c = current_clock();
+    return c.available ? c.period : 255;
+}
 bool life_visitor_available(void)
 {
     life_clock_t c = current_clock();

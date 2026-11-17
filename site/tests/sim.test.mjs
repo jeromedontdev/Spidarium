@@ -10,7 +10,7 @@ import {
   addBugPoop,terrariumDirt,cleanNeeded,cleanReward,
   dailyToday,dailyTask,dailyTaskName,dailyTaskGoal,dailyTaskProgress,dailyTaskReady,
   dailyAvailable,dailyClaim,dailyTaskClaim,dailyEnsureBase,TREATS,buyTreat,pet,
-  needsAgeScale,
+  needsAgeScale,placeDecor,DECOR_CLIMB_FIRST,
 } from '../lib/sim.js';
 const native=path=>readFile(new URL(`../../main/${path}`,import.meta.url),'utf8');
 const state=options=>freshState({random:()=>.5,temperament:0,...options});
@@ -369,6 +369,83 @@ test('mind reevaluates4s; weights/native strict thresholds and tie order',()=>{
   const s=state();s.hunger=24;s.energy=10;tick(s);assert.equal(s.want,'food');assert.equal(s.mind_rule,'starving');
   s.hunger=25;tick(s,3.95);assert.equal(s.want,'food');
   tick(s);assert.equal(s.want,'rest');assert.equal(s.mind_rule,'exhausted');
+});
+
+test('the mind notices the time of day, the decor and the gift',()=>{
+  /* The old table only read the four stats, so the spider behaved identically
+   * at 3am and 3pm and never reacted to anything the player had placed. These
+   * three environment columns are what make it feel like it has a life. */
+  const night=state();night.epoch=1704067200+22*3600; /* 22:00 -> night */
+  night.hunger=80;night.energy=50;night.mood=80;night.hygiene=80;
+  tick(night);assert.equal(night.mind_rule,'drowsy','a fed spider settles at night');
+  assert.equal(night.want,'rest');
+
+  const morning=state();morning.epoch=1704067200+8*3600; /* 08:00 */
+  morning.hunger=80;morning.energy=50;morning.mood=80;morning.hygiene=80;
+  tick(morning);assert.equal(morning.mind_rule,'basking','a comfortable spider basks in the morning');
+  assert.equal(morning.want,'sun');
+
+  /* Without a clock the period is 255, which matches no specific period, so
+   * time-of-day rules are absent rather than wrong. */
+  const noClock=state();noClock.epoch=0;
+  noClock.hunger=80;noClock.energy=50;noClock.mood=80;noClock.hygiene=80;
+  tick(noClock);
+  assert.notEqual(noClock.mind_rule,'drowsy');
+  assert.notEqual(noClock.mind_rule,'basking');
+});
+
+test('a climbable prop and a gift unlock their own intents',()=>{
+  /* WANT_CLIMB and WANT_VISIT must not fire on a bare tank, or the spider
+   * would walk to a target that does not exist. */
+  const bare=state();bare.hunger=80;bare.energy=50;bare.mood=40;bare.hygiene=80;
+  tick(bare);
+  assert.notEqual(bare.want,'climb','no climbable decor means no climb intent');
+
+  const withProp=state();withProp.hunger=80;withProp.energy=50;withProp.mood=40;
+  withProp.hygiene=80;withProp.climb_owned=0x3f;
+  placeDecor(withProp,DECOR_CLIMB_FIRST,240,240);
+  tick(withProp);
+  assert.equal(withProp.want,'climb','a climbable prop unlocks the climb intent');
+
+  /* The `fond` rule wants a bonded spider that is a little tired and a little
+   * flat -- a contented spider has better things to do than sit by its gift. */
+  const withGift=state();withGift.hunger=80;withGift.energy=25;withGift.mood=45;
+  withGift.hygiene=80;withGift.bond=40;
+  placeGift(withGift,0);
+  tick(withGift);
+  assert.equal(withGift.want,'visit','a placed gift unlocks the visit intent');
+});
+
+test('the intent actually drives the spider, not just the readout',()=>{
+  /* The bug this guards: mind_tick() ran every frame but nothing ever read
+   * mind_want(), so the brain computed an intent and threw it away. The spider
+   * behaved exactly as it did before the mind existed. */
+  const s=state();s.hunger=80;s.energy=50;s.mood=40;s.hygiene=80;
+  s.climb_owned=0x3f;
+  placeDecor(s,DECOR_CLIMB_FIRST,300,300);
+  s.spider_x=120;s.spider_y=120;s._engine.px=120;s._engine.py=120;
+  /* Let the mind evaluate and the dwell timer elapse. The FSM only consults
+   * the intent when its own idle window expires, so tick until it acts. The
+   * want is captured at the moment it acts, because the stats keep decaying
+   * and a later evaluation may legitimately choose something else. */
+  /* Ordinary wandering also sets a target, so the assertion has to be on the
+   * DESTINATION: only the climb intent aims at the prop's exact centre. */
+  let aimed=null;
+  for(let i=0;i<12;i++){
+    tick(s,1);
+    const t=s._engine.target;
+    if(t&&t.x===300&&t.y===300){aimed=s.want;break;}
+  }
+  assert.equal(aimed,'climb','the climb intent is what sent it to the prop');
+});
+
+test('an intent never outranks hunger, exhaustion or sickness',()=>{
+  /* The safety guarantee the FSM already had must survive the new bridge. */
+  const s=state();s.hunger=10;s.energy=50;s.mood=40;s.hygiene=80;
+  s.climb_owned=0x3f;placeDecor(s,DECOR_CLIMB_FIRST,300,300);
+  for(let i=0;i<8;i++)tick(s,1);
+  assert.equal(s.want,'food','starving outranks the climb intent');
+  assert.equal(s._engine.target,null,'a starving spider never walks off to climb');
 });
 test('automatic FSM stalk/crouch/window/pounce obeys flags and temperament',()=>{
   const s=state();bug(s,{x:320});s.autoHunt=true;
