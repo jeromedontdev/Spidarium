@@ -11,6 +11,7 @@
  */
 #include "cspider.h"
 
+#include "ambient.h"
 #include "behaviour.h"
 #include "decor.h"
 #include "game.h"
@@ -855,6 +856,15 @@ void cspider_render(uint32_t now_ms)
 
     bool asleep = (g.state == SPIDER_SLEEP);
 
+    /* Breathing. A real spider's abdomen pumps; the cephalothorax does not.
+     * Scaling only the abdomen keeps the legs and eyes anchored, so the body
+     * does not appear to slide. Frozen while asleep -- a sleeping spider is
+     * still, and a breathing sleeper reads as a rendering bug. */
+    float breath = asleep ? 1.0f : ambient_breath();
+    int32_t abd_r = (int32_t)lroundf((float)ABD_R * breath);
+    if (abd_r < ABD_R - 1) abd_r = ABD_R - 1;
+    if (abd_r > ABD_R + 1) abd_r = ABD_R + 1;
+
     /* --- clear ------------------------------------------------------
      * Zero alpha is transparent, so the tank shows through everywhere the
      * spider is not drawn. The colour plane does not need clearing because
@@ -904,20 +914,20 @@ void cspider_render(uint32_t now_ms)
 
     /* --- abdomen ---------------------------------------------------- */
     to_canvas(ABD_FWD, 0.0f, heading, sx, sy, &x, &y);
-    fill_circle(x, y, ABD_R, col_base);
+    fill_circle(x, y, abd_r, col_base);
 
     to_canvas(ABD_FWD - 1.5f, -1.5f, heading, sx, sy, &x, &y);
-    fill_circle(x, y, ABD_R - 3, col_mid);
+    fill_circle(x, y, abd_r - 3, col_mid);
 
     to_canvas(ABD_FWD - 3.0f, -3.0f, heading, sx, sy, &x, &y);
-    fill_circle(x, y, ABD_R - 7, col_hi);
+    fill_circle(x, y, abd_r - 7, col_hi);
 
     /* Fuzzy rim. */
     for (int i = 0; i < FUZZ_COUNT; i++) {
         float a = (float)i * 2.0f * PI_F / (float)FUZZ_COUNT;
         int32_t fr = FUZZ_R - (i % 2);
-        to_canvas(ABD_FWD + cosf(a) * (float)(ABD_R + FUZZ_OUT),
-                  sinf(a) * (float)(ABD_R + FUZZ_OUT),
+        to_canvas(ABD_FWD + cosf(a) * (float)(abd_r + FUZZ_OUT),
+                  sinf(a) * (float)(abd_r + FUZZ_OUT),
                   heading, sx, sy, &x, &y);
         fill_circle(x, y, fr, col_fuzz);
     }
@@ -954,24 +964,47 @@ void cspider_render(uint32_t now_ms)
 
     /* --- primary eyes -----------------------------------------------
      * Asleep: the eyes go black, so the spider reads as resting rather than
-     * staring. Same rule as the widget renderer. */
+     * staring. Same rule as the widget renderer.
+     *
+     * Awake: the eyes blink and glance. Both come from ambient.c, which runs on
+     * this same task, so there is no extra state to keep in sync. A blink is
+     * drawn as a closed lid rather than a shrunken circle -- a shrinking circle
+     * reads as the eye receding, a lid reads as a blink. */
     uint32_t col_eye = asleep ? 0x000000 : sick_aware(0xf7f9ff);
+    float blink = asleep ? 0.0f : ambient_blink();
+    bool lids_shut = blink > 0.55f;
+    float glance = asleep ? 0.0f : ambient_glance();
 
-    to_canvas(CEPH_FWD + EYE_FWD, -EYE_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_R, col_eye);
-    to_canvas(CEPH_FWD + EYE_FWD, +EYE_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_R, col_eye);
+    if (lids_shut) {
+        /* Closed lid: a short dark bar where the eye was. */
+        for (int s = 0; s < 2; s++) {
+            float side = (s == 0) ? -1.0f : 1.0f;
+            int32_t lx0, ly0, lx1, ly1;
+            to_canvas(CEPH_FWD + EYE_FWD, side * EYE_DX - EYE_R * 0.8f,
+                      heading, sx, sy, &lx0, &ly0);
+            to_canvas(CEPH_FWD + EYE_FWD, side * EYE_DX + EYE_R * 0.8f,
+                      heading, sx, sy, &lx1, &ly1);
+            draw_line(lx0, ly0, lx1, ly1, 2, sick_aware(0x2a2233));
+        }
+    } else {
+        to_canvas(CEPH_FWD + EYE_FWD, -EYE_DX, heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_R, col_eye);
+        to_canvas(CEPH_FWD + EYE_FWD, +EYE_DX, heading, sx, sy, &x, &y);
+        fill_circle(x, y, EYE_R, col_eye);
+    }
 
     /* --- pupils and glints ------------------------------------------ */
-    if (!asleep) {
-        to_canvas(CEPH_FWD + EYE_FWD + 1.0f, -EYE_DX, heading, sx, sy, &x, &y);
+    if (!asleep && !lids_shut) {
+        /* The glance shifts the pupils across the eye, not the whole head. */
+        float gx = glance * 2.0f;
+        to_canvas(CEPH_FWD + EYE_FWD + 1.0f, -EYE_DX + gx, heading, sx, sy, &x, &y);
         fill_circle(x, y, PUPIL_R, col_pup);
-        to_canvas(CEPH_FWD + EYE_FWD + 1.0f, +EYE_DX, heading, sx, sy, &x, &y);
+        to_canvas(CEPH_FWD + EYE_FWD + 1.0f, +EYE_DX + gx, heading, sx, sy, &x, &y);
         fill_circle(x, y, PUPIL_R, col_pup);
 
-        to_canvas(CEPH_FWD + EYE_FWD + 2.0f, -EYE_DX - 2.0f, heading, sx, sy, &x, &y);
+        to_canvas(CEPH_FWD + EYE_FWD + 2.0f, -EYE_DX - 2.0f + gx, heading, sx, sy, &x, &y);
         fill_circle(x, y, 1, sick_aware(0xffffff));
-        to_canvas(CEPH_FWD + EYE_FWD + 2.0f, +EYE_DX - 2.0f, heading, sx, sy, &x, &y);
+        to_canvas(CEPH_FWD + EYE_FWD + 2.0f, +EYE_DX - 2.0f + gx, heading, sx, sy, &x, &y);
         fill_circle(x, y, 1, sick_aware(0xffffff));
     }
 

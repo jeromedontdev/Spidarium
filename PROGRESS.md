@@ -11012,3 +11012,90 @@ that needs human eyes over several minutes, and it is the whole point of the
 change. The artwork for the two new games is drawn from the existing palette and
 tile geometry rather than new generated sprites; a richer pass would need the
 asset pipeline and a review at native scale.
+
+## Round 124 - A living ecosystem, without spending a token on art
+
+### The question
+
+"Without spending a lot of tokens on art generation because its expensive.
+What's some more way we can make the game and the environment feel alive? Let's
+start implementing them. This should be a living ecosystem."
+
+### The constraint that shaped it
+
+Every effect here is drawn from primitives and palette the renderer already had.
+No new sprite, no new asset, no image generation. The whole module is a few
+hundred bytes of state and eight LVGL objects created once and moved.
+
+### Decisions made
+
+**Dust motes, tinted from a colour that was already there.** `theme_def_t` has
+carried a `dust` column since the theme table was written, and nothing ever read
+it. Eight 2-4 px squares now drift upward with a sideways sway and wrap at the
+top of the playfield, tinted from `theme->dust`. That makes the motes
+theme-aware for free -- the gothic tank gets grey motes, the fairy glade gets
+lilac ones -- with no new palette work and no per-theme tuning.
+
+**Idle life, sampled by the renderer.** `ambient_breath()`, `ambient_blink()`
+and `ambient_glance()` are read by `cspider_render()`, so the spider is never
+perfectly still even when the FSM has it in IDLE. Three details were deliberate:
+
+- Breathing scales **only the abdomen**. Scaling the whole body makes the legs
+  slide, which reads as the spider being dragged.
+- A blink is a **closed lid**, not a shrunken circle. A shrinking circle reads as
+  the eye receding into the head.
+- A glance shifts the **pupils**, not the head. Turning the head sweeps the whole
+  leg fan, which reads as the legs moving on a stopped spider.
+
+All three are frozen while asleep. A breathing sleeper reads as a rendering bug.
+
+**The amplitude was wrong the first time, and a test caught it.** The breath was
+3%, which on a 13 px abdomen is a third of a pixel and rounds away entirely. The
+effect was invisible. It is now 8%, the smallest value that actually moves a
+pixel. This is exactly the class of bug that a screenshot cannot catch and a
+range assertion can.
+
+**The enclosure light drifts.** `s_light_overlay` was a fixed 110 opacity, which
+reads as a filter laid over a photograph. `ambient_light_opa()` drifts it a few
+percent around 110, capped at a 20/255 swing so it never looks like a flicker. A
+room whose light is coming from somewhere, rather than a still image.
+
+**Browser parity without a random source.** The device uses `esp_random()` for
+its blink and glance intervals, which cannot be reproduced.
+`site/lib/ambient.js` derives the same shape from a hash of the time bucket
+instead. The result reads the same and is stable under test -- which matters,
+because a test that asserts "the spider blinks" must not be flaky.
+
+### Evidence
+
+- Build exit 0, zero main warnings. `spidarium.bin` 0x2094c0, 32% of the app
+  partition free.
+- Flash exit 0.
+- `ambienttest` on hardware -> `AMBIENT ok=1`.
+- `ambient` -> `motes=8 inside=8 visible=1 dust=0x8a7a52 breath=1.079 blink=0.00
+  glance=1 light=116`. All eight motes inside the playfield, the theme's dust
+  colour resolved, the light drifting off its 110 base.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline
+  (`uitest` hud/backgrounds, `hunttest`). All five minigames `ok=1`.
+- Browser suite 288/288, up from 277. Ten new tests in `ambient.test.mjs` cover
+  the blink window, the glance range, the breath range, mote containment and
+  drift over two simulated minutes, the dust table matching the theme count, the
+  light drift, and pixel-level assertions that a blink, a glance and a breath
+  each change the render while a sleeping spider does not.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor and
+  unchanged from before this round.
+
+### Honest boundaries
+
+The tests prove the motes stay in the tank and move, that the idle life stays in
+a range that reads as alive, and that each effect changes the rendered pixels.
+They do not prove the tank *feels* alive on the physical panel -- that needs
+human eyes over several minutes, and it is the whole point of the change. The
+mote density (eight) and the breath amplitude (8%) are judgement calls that may
+want tuning once someone has watched it.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Climb,
+Holo Garden gift (kind 34) at (240,300) Walk Over. `gifttest` and `uitest` reset
+both during verification and both were restored.

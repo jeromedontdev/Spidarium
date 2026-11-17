@@ -10,8 +10,9 @@
 #include "achievements.h"
 #include "help_content.h"
 
-#include "assets.h"
 #include "album.h"
+#include "ambient.h"
+#include "assets.h"
 #include "audio.h"
 #include "behaviour.h"
 #include "buttons.h"
@@ -736,6 +737,15 @@ static void apply_enclosure_lights(void)
     if (s_light_overlay) lv_obj_set_hidden(s_light_overlay, !g.lights_dimmed);
 }
 
+/* The dimmed overlay drifts a few percent so the tank reads as a room with a
+ * light source rather than a photograph with a filter on it. Only touched while
+ * the overlay is actually visible, so a lit tank costs nothing. */
+static void tick_enclosure_lights(void)
+{
+    if (!s_light_overlay || !g.lights_dimmed) return;
+    lv_obj_set_style_bg_opa(s_light_overlay, ambient_light_opa(), 0);
+}
+
 static void delayed_pet(lv_timer_t *timer)
 {
     (void)timer;
@@ -865,6 +875,7 @@ static void on_theme_pick(uint8_t id)
         return;
     }
     terrarium_rebuild();
+    ambient_retint();
     menu_open(MENU_THEME);   /* stay in the submenu so the choice is visible */
 }
 
@@ -3657,6 +3668,10 @@ void game_tick_logic(lv_timer_t *timer)
     bool tank_hidden = screen_off || ui_menu_visible() || ui_hud_chrome_visible() ||
                        lv_screen_active() != ui.screen;
 
+    /* Motes are invisible behind a menu or a dark screen; moving them is wasted
+     * work, and on a hidden screen it is wasted work that still costs a redraw. */
+    ambient_set_visible(!tank_hidden);
+
     uint32_t now = lv_tick_get();
     float dt = (float)(now - s_last_logic) / 1000.0f;
     s_last_logic = now;
@@ -3914,6 +3929,8 @@ void game_tick_render(lv_timer_t *timer)
     now = lv_tick_get();
     life_visual_tick(now);
     terrarium_tick(now);
+    ambient_tick(now);
+    tick_enclosure_lights();
     terrarium_decor_depth();
     terrarium_gift_depth();
     cspider_render(now);
@@ -4021,6 +4038,10 @@ void game_init(void)
                         LV_EVENT_LONG_PRESSED, NULL);
 
     terrarium_init(root);
+    /* Ambient motes sit above the background but below the creature, so the
+     * spider walks in front of them. Created here because they need the
+     * background canvas's parent as their layer. */
+    ambient_init();
     ui.creature_layer = lv_obj_create(root);
     lv_obj_remove_style_all(ui.creature_layer);
     lv_obj_set_size(ui.creature_layer, ui.W, ui.H);

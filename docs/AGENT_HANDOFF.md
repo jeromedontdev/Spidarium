@@ -13,6 +13,37 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- Ambient life (`ambient.c`) is the "living ecosystem" layer, and it costs no
+  new art. Two effects, both drawn from primitives and palette the renderer
+  already had:
+  - **Dust motes.** Eight 2-4 px squares drifting upward with a sideways sway,
+    wrapping at the top of the playfield. Tinted from `theme->dust`, which was
+    defined in the theme table and never read by anything until now -- so the
+    motes are theme-aware for free. Created once in `ambient_init()` and moved,
+    never created or deleted per frame. Hidden while the tank is hidden, because
+    moving invisible objects still costs a redraw.
+  - **Idle life.** `ambient_breath()`, `ambient_blink()` and `ambient_glance()`
+    are sampled by `cspider_render()`, so the spider is never perfectly still
+    even in IDLE. Breathing scales **only the abdomen** -- scaling the whole body
+    makes the legs slide. A blink is drawn as a closed lid, not a shrunken
+    circle: a shrinking circle reads as the eye receding. A glance shifts the
+    pupils, not the head, because turning the head sweeps the whole leg fan and
+    reads as the legs moving on a stopped spider. All three are frozen while
+    asleep; a breathing sleeper reads as a rendering bug.
+  - **Amplitude matters.** The breath was 3% at first, which on a 13 px abdomen
+    is a third of a pixel and rounds away entirely -- the effect was invisible
+    until it was raised to 8%, the smallest value that actually moves a pixel.
+    `ambient_test()` asserts the range, that the motes move, and that the
+    enclosure light drifts without flickering.
+  - `ambient_light_opa()` drifts the dimmed-enclosure overlay a few percent
+    around its historical 110. A fixed value reads as a filter laid over a
+    photograph; a slow drift reads as a room whose light is coming from
+    somewhere. The swing is capped at 20/255 so it never looks like a flicker.
+  - Browser parity lives in `site/lib/ambient.js`. The device uses `esp_random()`
+    for its intervals, which cannot be reproduced, so the browser derives the
+    same shape from a hash of the time bucket -- the result reads the same and is
+    stable under test, which matters because a test that asserts "the spider
+    blinks" must not be flaky.
 - The spider's MIND (`mind.c`) is a rules table, not a state machine. It
   publishes an intent (`mind_want()`) that `behaviour.c` consults through
   `act_on_intent()`. **The bridge is the part that matters**: `mind_tick()` ran

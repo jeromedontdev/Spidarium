@@ -1,5 +1,6 @@
 import * as E from './sim.js?v=1.1.31';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
+import { blinkAt, glanceAt, breathAt, motesAt, dustColour, lightOpaAt } from './ambient.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
 import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.31';
@@ -1194,16 +1195,30 @@ export class DeviceGame {
     const performance=s._engine?.life_performance;
     const performing=performance && s.now_ms-performance.start<performance.duration;
     if(performing&&performance.trick===2)state='aim';
+    // Idle life: the device's ambient.c gives the spider a breath, a blink and
+    // a glance so it is never perfectly still. Same three here, from the clock.
+    const nowMs = s.now_ms ?? 0;
     return { state, emote: reacting || performing ? 'happy' : s.gift_visit ? 'happy' : state === 'sleep' ? 'sleepy' : ['aim', 'stalk'].includes(state) ? 'alert' : state === 'sick' || s.mood < 18 ? 'sad' : state === 'eat' || state === 'play' || s.mood>=80 || s.bond>=75 ? 'happy' : 'none',
-      heading: s.heading, phase: s.gait_phase, now: s.now_ms ?? 0,
+      heading: s.heading, phase: s.gait_phase, now: nowMs,
       walking: s.spider.walking, colour: s.bodyColour, pupilColour: s.eyeColour,
-      legColour: s.legColour, fangColour: s.fangColour, sick: s.sick !== 0 };
+      legColour: s.legColour, fangColour: s.fangColour, sick: s.sick !== 0,
+      blink: blinkAt(nowMs), glance: glanceAt(nowMs), breath: breathAt(nowMs) };
   }
   draw() {
     const s = this.state, ctx = this.ctx;
     ctx.fillStyle = '#101c2c'; ctx.fillRect(0, 0, 480, 480);
     const bg = this.image(`background_${s.theme}_0`); if (bg.complete && bg.naturalWidth) ctx.drawImage(bg, 0, 0, 480, 480);
     this.drawCalendar();
+    // Dust motes: the cheapest way to make a still image read as a place with
+    // air in it. Drawn above the background and below the decor, so the spider
+    // and the furniture sit in front of them. Tinted from the theme's own dust
+    // colour, which the device also uses.
+    {
+      const dust = dustColour(E.BACKGROUNDS.indexOf(s.theme));
+      ctx.fillStyle = `rgba(${(dust >> 16) & 255},${(dust >> 8) & 255},${dust & 255},.42)`;
+      for (const m of motesAt(s.now_ms ?? 0, { left: 8, top: 8, right: 472, bottom: 472 }))
+        ctx.fillRect(m.x, m.y, m.size, m.size);
+    }
     if(s.border_id!==255){
       const border=this.image(`border_${E.BACKGROUNDS[s.border_id]}_0`);
       if(border.complete&&border.naturalWidth)ctx.drawImage(border,0,0,480,480);
@@ -1320,7 +1335,11 @@ export class DeviceGame {
     }
     this.drawDecor(true);
     if(s.lights_dimmed){
-      ctx.fillStyle='rgba(7,12,32,0.43)';ctx.fillRect(0,0,480,480);
+      // The overlay drifts a few percent so the tank reads as a room with a
+      // light source rather than a photograph with a filter on it. Same drift
+      // as the device's ambient_light_opa().
+      ctx.fillStyle=`rgba(7,12,32,${(lightOpaAt(s.now_ms ?? 0)/255).toFixed(3)})`;
+      ctx.fillRect(0,0,480,480);
     }
   }
   drawCalendar() {

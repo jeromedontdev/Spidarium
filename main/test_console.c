@@ -33,6 +33,7 @@
  */
 #include "test_console.h"
 
+#include "ambient.h"
 #include "cspider.h"
 #include "behaviour.h"
 #include "buttons.h"
@@ -126,6 +127,8 @@ static void cmd_help(void)
     printf("  hunttest             inject touch, jump/catch, restore pet/prey\n");
     printf("  gaittest             cadence and bounded leg geometry checks\n");
     printf("  mindtest             mind rule table and intent stability\n");
+    printf("  ambienttest          ambient motes and idle-life ranges\n");
+    printf("  ambient              report the live ambient state\n");
     printf("  mind                 report the live intent and day period\n");
     printf("  preytest             eight level gates, restore pet level\n");
     printf("  decortest            place every decor kind, verify the layer\n");
@@ -1259,6 +1262,16 @@ static void run_line(char *line)
                ui_hud_chrome_visible() ? 1 : 0,
                lv_screen_active() == ui.screen ? 1 : 0);
         printf("OK mind\n");
+    }
+    else if (!strcmp(line, "ambienttest")) {
+        bool ok = ambient_test();
+        printf("AMBIENT ok=%d\n", ok ? 1 : 0);
+        if (!ok) printf("ERR ambient test failed\n");
+        else printf("OK ambienttest\n");
+    }
+    else if (!strcmp(line, "ambient")) {
+        ambient_report();
+        printf("OK ambient\n");
     }
     else if (!strcmp(line, "preytest")) {
         if (!game_ui_call(GAME_UI_TEST_PREY)) printf("ERR prey test request or assertion failed\n");

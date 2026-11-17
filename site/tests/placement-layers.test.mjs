@@ -127,7 +127,9 @@ test('canopy renders above the entire creature layer and below one lighting over
   ui.spiderCanvas={name:'spider'};ui.spiderCtx={putImageData(){}};
   ui.ctx=new Proxy({}, {get(target,key){
     if(key==='drawImage')return image=>calls.push(image.name);
-    if(key==='fillRect')return ()=>{if(target.fillStyle==='rgba(7,12,32,0.43)')calls.push('dim');};
+    /* The dim overlay's opacity now drifts a few percent (ambient_light_opa),
+     * so match the colour prefix rather than one fixed alpha. */
+    if(key==='fillRect')return ()=>{if(String(target.fillStyle).startsWith('rgba(7,12,32,'))calls.push('dim');};
     return target[key]??(()=>{});
   }});
   ui.image=name=>({name,complete:true,naturalWidth:64});

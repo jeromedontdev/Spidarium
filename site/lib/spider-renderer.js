@@ -34,7 +34,7 @@ export function rgb565Channels(rgb) {
   const r = (rgb >> 19) & 31, g = (rgb >> 10) & 63, b = (rgb >> 3) & 31;
   return [(r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2)];
 }
-export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote = 'none', now = 0, phase = 0, walking = false, colour = 0, pupilColour = 0, legColour = 2, fangColour = 1, sick = false, fangDrop = 0 } = {}) {
+export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote = 'none', now = 0, phase = 0, walking = false, colour = 0, pupilColour = 0, legColour = 2, fangColour = 1, sick = false, fangDrop = 0, blink = 0, glance = 0, breath = 1 } = {}) {
   if (!(pixels instanceof Uint8ClampedArray) || pixels.length !== 96 * 96 * 4) throw new Error('Spider needs a 96×96 RGBA buffer');
   pixels.fill(0);
   /* fangDrop moves the fangs down the face for the large hero portrait only.
@@ -118,10 +118,14 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
     const hip = toCanvas(pose.hf, pose.hr, 1, 1), knee = toCanvas(pose.kf, pose.kr, 1, 1), foot = toCanvas(pose.ff, pose.fr, 1, 1);
     line(hip, knee, 3, leg); line(knee, foot, 3, leg);
   }
-  for (const [forward, radius] of [[-13, 13], [8, 11]]) {
+  // Breathing scales only the abdomen, exactly as cspider_render() does: the
+  // cephalothorax and legs stay anchored so the body does not appear to slide.
+  const asleep = state === 'sleep';
+  const abdR = asleep ? 13 : Math.max(12, Math.min(14, Math.round(13 * breath)));
+  for (const [forward, radius] of [[-13, abdR], [8, 11]]) {
     circle(...toCanvas(forward, 0), radius, body);
     circle(...toCanvas(f(forward - 1.5), f(-1.5)), radius - 3, mid);
-    circle(...toCanvas(f(forward - 3), f(-3)), radius - (radius === 13 ? 7 : 6), hi);
+    circle(...toCanvas(f(forward - 3), f(-3)), radius - (radius >= 13 ? 7 : 6), hi);
     for (let i = 0; i < 14; i++) {
       const angle = f(f(f(i) * f(2 * PI_F)) / f(14));
       circle(...toCanvas(f(forward + f(fcos(angle) * f(radius + 2))),
@@ -129,14 +133,24 @@ export function renderSpider(pixels, { heading = PI * .5, state = 'idle', emote 
     }
   }
   for (const [forward, right] of [[4, -8], [4, 8], [0, -4], [0, 4]]) circle(...toCanvas(forward, right), 2, dull(0x6b7280));
-  const asleep = state === 'sleep';
   // Both eyes first, then both pupils, then both fangs -- the same order as
   // cspider_render(). Interleaving them lets the second eye overwrite the first
   // pupil's inner edge, which is a visible notch at this size.
-  for (const side of [-1, 1]) circle(...toCanvas(14, f(side * 5.5)), 7, asleep ? 0 : dull(0xf7f9ff));
-  if (!asleep) {
-    for (const side of [-1, 1]) circle(...toCanvas(15, f(side * 5.5)), 4, pupil);
-    for (const side of [-1, 1]) circle(...toCanvas(16, f(f(side * 5.5) - 2)), 1, dull(0xffffff));
+  //
+  // A blink is a closed lid, not a shrunken circle: a shrinking circle reads as
+  // the eye receding, a lid reads as a blink. The glance shifts the pupils
+  // across the eye rather than turning the head, so a stopped spider does not
+  // appear to be walking.
+  const lidsShut = !asleep && blink > .55;
+  if (lidsShut) {
+    for (const side of [-1, 1]) line(toCanvas(14, f(side * 5.5 - 5.6)), toCanvas(14, f(side * 5.5 + 5.6)), 2, dull(0x2a2233));
+  } else {
+    for (const side of [-1, 1]) circle(...toCanvas(14, f(side * 5.5)), 7, asleep ? 0 : dull(0xf7f9ff));
+  }
+  if (!asleep && !lidsShut) {
+    const gx = f(glance * 2);
+    for (const side of [-1, 1]) circle(...toCanvas(15, f(f(side * 5.5) + gx)), 4, pupil);
+    for (const side of [-1, 1]) circle(...toCanvas(16, f(f(f(side * 5.5) - 2) + gx)), 1, dull(0xffffff));
     for (const side of [-1, 1]) {
       triangle([toCanvas(f(8 + fangFwd - f(fangLen * .5)), f(f(side * fangDx) - fangHalfW)),
         toCanvas(f(8 + fangFwd - f(fangLen * .5)), f(f(side * fangDx) + fangHalfW)),

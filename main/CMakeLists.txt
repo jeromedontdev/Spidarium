@@ -8,6 +8,7 @@ idf_component_register(
          "assets.c"
          "sprites.c"
          "terrarium.c"
+         "ambient.c"
          "spider.c"
          "cspider.c"
          "behaviour.c"
