@@ -62,7 +62,9 @@ adds2236 life bytes after that860-byte prefix, before the six-byte decor tail
 (new tail offset3096). Save v18 appends `decor_locked` and `auto_clean` at
 bytes3096/3097 plus two reserved bytes, moving the decor tail to3100 and the
 maximum payload to23308. Save v19 reuses the blocking byte for the Climb path
-(value3). Save v20 reuses the first v18 reserved byte for `gift_path` at3098.
+(value3). Save v20 reuses the first v18 reserved byte for `gift_path` at3098;
+the gift's path control has since been removed (it is always walked over) but
+the byte is kept so the layout does not change, and migration folds it to0.
 Save v21 reuses the second for `climb_owned` at3099, the ownership bitmap for
 the six large climb structures (decor kinds68..73). None of v18-v21 moves the
 prefix, so the tail offset and payload bound are unchanged and the schema has

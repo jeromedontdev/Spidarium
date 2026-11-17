@@ -10836,3 +10836,83 @@ constants are ordered correctly; they do not prove the spider looks natural
 walking up to a Solid gift on the physical panel, which still needs human eyes.
 The `decor_test()` crash was a test-harness bug, not a gameplay bug -- no
 shipped code path dereferences `decor_at()` without a NULL check.
+
+## Round 122 - The gift is always walked over, and its path button is gone
+
+### The question
+
+"If I put the gift to solid or walk over does one or the other cause issues with
+them visiting it?" led to "How do we make sure that gifts don't have this push
+radius issue? Should we make it only allow walk over? If that's the fix then do
+it and remove the button."
+
+### Decisions made
+
+**Removed the gift's path control entirely rather than just the Solid option.**
+Only one path would have remained, so a one-option button is not a control. The
+button is gone from both the native placement strip and the browser editor.
+
+**Why Solid was not worth keeping.** It bought nothing the player could see: the
+gift is a single 64x64 object with no depth, so "the spider steers around it"
+read as an invisible wall around a flat sprite. What it cost was a fragile
+coupling -- Solid pushed the spider out to `GIFT_PUSH_RADIUS` (18) while the
+visit only counted as arrived inside `GIFT_VISIT_ARRIVE` (18), so the two
+constants had to stay in the right order or a visit would shove the spider out
+every tick and circle forever. Round 121 named both constants and asserted the
+ordering; this round deletes the need for the assertion.
+
+**What was deleted, not just disabled.** `gift_blocks_movement()`,
+`gift_avoidance()`, `separate_from_gift()` and the `GIFT_PUSH_RADIUS` /
+`GIFT_BLOCK_RADIUS` / `GIFT_AVOID_RADIUS` constants are gone from
+`behaviour.c`; `giftBlocksMovement()` returns false in `device-engine.js` and
+the gift branch of `steer()` and the separation block in `tick()` are removed.
+`gift_canopy_now()` in `terrarium.c` is deleted outright -- `gift_band()`
+returns the floor layer, so the gift is always drawn there. Leaving the code in
+place behind a false flag would have kept the coupling alive for the next person
+to trip over.
+
+**The stored byte stays.** `gift_path` is still at byte 3098 so the save layout
+does not move; `save.c` folds any stored value to Walk Over during migration
+rather than rejecting the blob, and the raw-save validator still bounds-checks
+it. `giftpath` on the console is now a read-only probe.
+
+**The layer control stays.** It is the one thing the gift editor still needs:
+ordering the gift against the decor sharing its band. Only the path row is
+hidden for a gift.
+
+### The new invariant
+
+`behaviour_gift_block_test()` used to assert the constant ordering and the push
+distances. It now asserts something stronger and simpler: for every path value
+0..3, a tick with the spider dead centre on the gift leaves it exactly where it
+is. Dead centre is the one place a push would be most visible, and it is the
+case the old code had a special branch for. The browser suite asserts the same
+over all four paths.
+
+`uitest` gained a check that `game_on_placement_blocking()` is a no-op in gift
+mode and that the commit stores Walk Over, so the removed button cannot come
+back silently.
+
+### Evidence
+
+- `build.ps1` -> exit 0, zero main warnings. `flash.ps1 COM7` -> exit 0,
+  `Hash of data verified`.
+- `gifttest` -> `OK gifts tested=36 removed_neutral=1 economy=1 visits=1
+  blocks=1`.
+- `run_tests.py COM7` -> `passed=50 failed=2`, no crash. The two are the
+  documented baseline: `uitest` (hud/backgrounds/companion) and `hunttest`
+  (landed/subpixel). `editor=1` in the `uitest` line is the new gift-path
+  assertion passing.
+- Browser suite 267/267 (two gift-path tests replaced by two stronger ones).
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+- Hardware probes: `giftreport` -> `band=floor ... canopy=0` with the gift at
+  (240,300); `giftpath` -> `path=0 canopy=0`; `giftlayer` -> `index=0 count=2`.
+
+### Honest boundaries
+
+The tests prove the spider is never displaced by the gift and that the visit
+completes. They do not prove the spider crossing the gift artwork looks right on
+the physical panel -- that still needs human eyes, and it is the one thing the
+removed Solid option was nominally protecting against.

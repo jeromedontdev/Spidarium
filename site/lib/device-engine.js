@@ -1464,50 +1464,28 @@ function mindTick(s){
   s.mind_rule=best?.[0]??null;s.want=best?.[1]??'nothing';
   s.thought={food:'hungry',rest:'sleepy',play:'wants to play',clean:'feels grubby',explore:'exploring',watch:'watching you',nothing:''}[s.want];
 }
-// The gift sprite is a 64x64 canvas centred on the gift, so its visible
-// half-extent is 32 px. Walk Behind blocks against this rather than the small
-// push radius, so the spider is kept clear of the whole artwork.
-export const GIFT_BLOCK_RADIUS=28;
-// Solid pushes the spider out to this radius, and the visit counts as arrived
-// inside GIFT_VISIT_ARRIVE. The two are coupled: if the push radius ever grew
-// past the arrival threshold, a Solid gift would shove the spider out every
-// tick and it would circle forever without completing the visit.
-export const GIFT_PUSH_RADIUS=18;
+// The gift is always walked over.
+//
+// It used to have a path control like decor, offering Walk Over and Solid. Solid
+// bought nothing the player could see -- the gift is a single 64x64 object with
+// no depth, so "the spider goes around it" read as an invisible wall around a
+// flat sprite -- and it cost a fragile coupling: Solid pushed the spider out to
+// GIFT_PUSH_RADIUS while the visit only counted as arrived inside
+// GIFT_VISIT_ARRIVE, so the two constants had to stay in the right order or a
+// visit would shove the spider out every tick and circle forever.
+//
+// Removing the choice removes the coupling. There is no push radius, no arrival
+// threshold to keep in sync, and no avoidance steering to tune: the spider
+// crosses the gift, which is also what the artwork reads as.
 export const GIFT_VISIT_ARRIVE=18;
-// Walk Behind blocks movement as well as occluding. It used to be
-// non-blocking, so the spider crossed the footprint and was drawn ON TOP of the
-// gift's lower half before popping behind its upper half.
-export function giftBlocksMovement(path){
-  return path===1||path===2;
-}
-// A gift cannot be set to Walk Behind. It is a single 64x64 object with no
-// depth to walk behind: the canopy switch only ever fired while the spider was
-// above the artwork, and because the gift also blocks, the spider could never
-// get there -- so the path looked like it did nothing. Walk Over and Solid are
-// the two states a gift can actually express. Mirrors game_on_placement_blocking.
-export function giftPathAllowed(path){
-  return path===0||path===1;
-}
-// The next path the gift editor should stage, skipping Walk Behind entirely.
-export function nextGiftPath(path){
-  let p=path;
-  for(let i=0;i<4;i++){
-    p=(p+1)%4;
-    if(giftPathAllowed(p))return p;
-  }
-  return 0;
+// Kept as a named constant because the visit branch is the one place that can
+// drive the spider onto the gift, and the arrival test reads better named.
+export function giftBlocksMovement(){
+  return false;
 }
 function steer(s,want,dt,avoid=false){
   if(avoid){
     let a=0;
-    if(s.gift.used&&giftBlocksMovement(s.gift_path)){
-      const dx=s.gift.x-s.spider_x,dy=s.gift.y-s.spider_y,d=Math.hypot(dx,dy);
-      // Walk Behind has to be steered around from further out, because it
-      // blocks against the whole artwork rather than the small push radius.
-      const avoidR=s.gift_path===2?GIFT_BLOCK_RADIUS+40:40;
-      if(d>.1&&d<=avoidR&&(dx*Math.cos(want)+dy*Math.sin(want))/d>=.15)
-        a=(wrap(Math.atan2(dy,dx)-want)>=0?-1:1)*(1-d/avoidR)*PI*.5;
-    }
     // Blocking decor: same steering principle, measured from the edge the
     // spider is actually blocked at, so a big log pushes it away further out
     // than a small rock. Walk Behind blocks the whole artwork, so measuring
@@ -1713,17 +1691,6 @@ function behaviourTick(s,dt){
       else if(s.mood<20&&s.hunger>40){if(done)setState(s,1);}
       else if(s.auto_hunt&&preyCount(s)&&s.hunger<95)setState(s,2);
       else if(done)setState(s,1);
-    }
-  }
-  if(!r.pounce&&s.gift.used&&giftBlocksMovement(s.gift_path)){
-    const dx=s.spider_x-s.gift.x,dy=s.spider_y-s.gift.y,d=Math.hypot(dx,dy);
-    // Walk Behind blocks against the artwork, not the small push radius: the
-    // spider must not be able to stand on the gift's lower half at all.
-    const radius=s.gift_path===2?GIFT_BLOCK_RADIUS:GIFT_PUSH_RADIUS;
-    if(d<radius){
-      // Exactly coincident has no direction to push along, so pick one.
-      if(d<.1){s.spider_y=Math.trunc(s.gift.y+radius);}
-      else{s.spider_x=Math.trunc(s.spider_x+dx/d*(radius-d));s.spider_y=Math.trunc(s.spider_y+dy/d*(radius-d));}
     }
   }
   if(s.spider_x!==round(r.px))r.px=s.spider_x;if(s.spider_y!==round(r.py))r.py=s.spider_y;

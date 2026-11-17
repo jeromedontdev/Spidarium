@@ -142,16 +142,15 @@ static void steer_toward(float want, float dt_s)
 }
 
 /* Defined below; declared here because steering needs them first. */
-static float gift_avoidance(float heading);
 static float decor_avoidance(float heading);
 static float wall_avoidance(float want);
 
-/* Steer toward `want` while bending away from the gift and any blocking decor
- * in the way. This is the steering-level avoidance: the spider turns around an
- * obstacle instead of walking into it and being shoved back out. */
+/* Steer toward `want` while bending away from any blocking decor in the way.
+ * This is the steering-level avoidance: the spider turns around an obstacle
+ * instead of walking into it and being shoved back out. */
 static void steer_avoiding(float want, float dt_s)
 {
-    float avoid = gift_avoidance(want) + decor_avoidance(want) + wall_avoidance(want);
+    float avoid = decor_avoidance(want) + wall_avoidance(want);
     steer_toward(wrap_pi(want + avoid), dt_s);
 }
 
@@ -245,86 +244,24 @@ static void advance(float speed, float dt_s)
     g.spider_y = (int16_t)lroundf(ny);
 }
 
-/* Gift avoidance.
+/* The gift is always walked over.
  *
- * There is only ONE gift now, so this is far simpler than the old multi-item
- * decor avoidance. The principle is unchanged and still the important part:
- * avoidance is a STEERING input, not a positional shove. The spider turns away
- * from the gift before reaching it, so it walks around instead of grinding
- * against it.
+ * It used to have a path control like decor, offering Walk Over and Solid. Solid
+ * bought nothing the player could see -- the gift is a single 64x64 object with
+ * no depth, so "the spider goes around it" read as an invisible wall around a
+ * flat sprite -- and it cost a fragile coupling: Solid pushed the spider out to
+ * GIFT_PUSH_RADIUS while the visit only counted as arrived inside
+ * GIFT_VISIT_ARRIVE, so the two constants had to stay in the right order or a
+ * visit would shove the spider out every tick and circle forever.
  *
- * The gift is also something the spider is fond of, so it is avoided gently --
- * a wide berth would read as fear.
- */
-#define GIFT_AVOID_RADIUS   40.0f   /* start steering away this far out */
-#define GIFT_PUSH_RADIUS    18.0f   /* only shove if actually this close */
-
-/* The visit counts as arrived inside this distance. It is coupled to
- * GIFT_PUSH_RADIUS: Solid pushes the spider out to exactly the push radius, so
- * if the push radius ever grew past this, a Solid gift would shove the spider
- * out every tick and it would circle forever without completing the visit.
- * behaviour_gift_block_test() asserts the ordering. */
+ * Removing the choice removes the coupling. There is no push radius, no arrival
+ * threshold to keep in sync, and no avoidance steering to tune: the spider
+ * crosses the gift, which is also what the artwork reads as. */
 #define GIFT_VISIT_ARRIVE   18.0f
-
-/* The gift sprite is a 64x64 canvas centred on the gift, so its visible
- * half-extent is 32 px. Walk Behind blocks against this rather than the small
- * push radius, so the spider is kept clear of the whole artwork. */
-#define GIFT_BLOCK_RADIUS   28.0f
-
-/* True when the gift's path stops the spider walking through it.
- *
- * Walk Behind used to be non-blocking, which meant the spider crossed the
- * footprint and was drawn ON TOP of the gift's lower half before popping behind
- * its upper half. That is the "they walk over the bottom and then behind above
- * it" report. A gift is a solid object standing on the floor, so the spider has
- * to go around it; the canopy switch then only ever fires while the spider is
- * genuinely above the artwork, which is what makes the occlusion read. */
-static bool gift_blocks_movement(void)
-{
-    return g.gift_path == DECOR_SOLID || g.gift_path == DECOR_WALK_BEHIND;
-}
-
-/* Returns a heading offset (radians) that steers away from the gift, or 0 if
- * the path ahead is clear. */
-static float gift_avoidance(float heading)
-{
-    if (!g.gift.used) return 0.0f;
-    /* Walk Over and Climb are meant to be crossed, so pushing the spider away
-     * would contradict the path the player chose. Solid and Walk Behind are
-     * obstacles. */
-    if (!gift_blocks_movement()) return 0.0f;
-
-    float dx = (float)(g.gift.x - g.spider_x);
-    float dy = (float)(g.gift.y - g.spider_y);
-    float d2 = dx * dx + dy * dy;
-    /* Walk Behind has to be steered around from further out, because it blocks
-     * against the whole artwork rather than the small push radius. */
-    float avoid = (g.gift_path == DECOR_WALK_BEHIND)
-        ? GIFT_BLOCK_RADIUS + GIFT_AVOID_RADIUS : GIFT_AVOID_RADIUS;
-    if (d2 < 0.01f || d2 > avoid * avoid) return 0.0f;
-
-    float d = sqrtf(d2);
-
-    /* Only avoid the gift when it is roughly AHEAD. An item behind the spider
-     * must not push it, or the spider could never turn around. */
-    float dot = (dx * cosf(heading) + dy * sinf(heading)) / d;
-    if (dot < 0.15f) return 0.0f;
-
-    /* Steer perpendicular to the gift, on whichever side the spider is already
-     * leaning. Picking the side from the current heading avoids the dithering
-     * you get from always turning the same way. */
-    float to_gift = atan2f(dy, dx);
-    float side = wrap_pi(to_gift - heading);
-    float turn = (side >= 0.0f) ? -1.0f : 1.0f;
-
-    /* Weight by proximity: barely a nudge at the edge, a firm turn up close. */
-    float w = 1.0f - d / avoid;
-    return turn * w * (PI_F * 0.5f);
-}
 
 /* Decor avoidance.
  *
- * Same principle as gift_avoidance, but for the player-placed blocking items.
+ * Same principle as decor_avoidance, but for the player-placed blocking items.
  * Non-blocking decor is ignored entirely: the spider is meant to walk over a
  * leaf pile, and steering around it would make the blocking flag meaningless.
  *
@@ -382,9 +319,9 @@ static float decor_avoidance(float heading)
  * intent, so it pressed into the wall until the stuck detector fired 1.5 s
  * later.
  *
- * This turns the spider BEFORE it reaches the edge, the same way gift_avoidance
- * turns it before the gift. The margin is wider than the playfield inset so the
- * turn starts early enough to look deliberate. */
+ * This turns the spider BEFORE it reaches the edge, the same way
+ * decor_avoidance turns it before a blocking item. The margin is wider than the
+ * playfield inset so the turn starts early enough to look deliberate. */
 #define WALL_AVOID_PX   70.0f
 
 /* Returns a heading offset that steers the spider away from a wall it is
@@ -431,43 +368,12 @@ static float wall_avoidance(float want)
     return wrap_pi(want_in - want) * depth;
 }
 
-/* Last-resort shove: only fires when the spider is genuinely inside the gift. */
-static void separate_from_gift(void)
-{
-    if (!g.gift.used) return;
-    /* Walk Over and Climb are meant to be crossed, so shoving the spider out of
-     * them would fight the player's choice. Solid and Walk Behind are obstacles. */
-    if (!gift_blocks_movement()) return;
-
-    float dx = (float)(g.spider_x - g.gift.x);
-    float dy = (float)(g.spider_y - g.gift.y);
-    float d2 = dx * dx + dy * dy;
-
-    /* Walk Behind blocks against the artwork, not the small push radius: the
-     * spider must not be able to stand on the gift's lower half at all. */
-    float radius = (g.gift_path == DECOR_WALK_BEHIND) ? GIFT_BLOCK_RADIUS
-                                                      : GIFT_PUSH_RADIUS;
-    if (d2 >= radius * radius) return;
-
-    /* Exactly coincident has no direction to push along, so pick one. Without
-     * this the spider could sit dead centre on the gift forever, which is the
-     * one place the block is most visible. */
-    if (d2 < 0.01f) {
-        g.spider_y = (int16_t)((float)g.gift.y + radius);
-        return;
-    }
-    float d = sqrtf(d2);
-    float push = radius - d;
-    g.spider_x = (int16_t)((float)g.spider_x + dx / d * push);
-    g.spider_y = (int16_t)((float)g.spider_y + dy / d * push);
-}
-
 static void clamp_to_playfield(void)
 {
-    /* Adopt a position written directly by another code path (pounce, gift
-     * separation) -- but do NOT overwrite the sub-pixel accumulator every
-     * tick. Doing so rounded the position to whole pixels each tick and
-     * destroyed sub-pixel motion, which made the gait stutter. */
+    /* Adopt a position written directly by another code path (pounce) -- but do
+     * NOT overwrite the sub-pixel accumulator every tick. Doing so rounded the
+     * position to whole pixels each tick and destroyed sub-pixel motion, which
+     * made the gait stutter. */
     if (g.spider_x != (int16_t)lroundf(s_px)) s_px = (float)g.spider_x;
     if (g.spider_y != (int16_t)lroundf(s_py)) s_py = (float)g.spider_y;
 
@@ -1379,11 +1285,6 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
     }
     }
 
-    /* The hard shove must NOT run during a pounce. A pounce is a committed
-     * ballistic leap: nudging the landing point away from the gift moved the
-     * spider off the bug it was aiming at, so catches that looked dead-on
-     * missed. The pounce owns its position until it resolves. */
-    if (!s_pouncing) separate_from_gift();
     clamp_to_playfield();
 }
 
@@ -1415,13 +1316,17 @@ bool behaviour_gift_test(void)
     return ok;
 }
 
-/* Walk Behind must block movement, not just occlude.
+/* The gift must never block or push the spider.
  *
- * The bug this guards: Walk Behind was non-blocking, so the spider crossed the
- * gift's footprint and was drawn ON TOP of its lower half before popping behind
- * the upper half. The separation pass is the only thing that can prevent that,
- * and it cannot be checked from the console because the spider wanders faster
- * than a script can issue commands. */
+ * The bug this guards: the gift used to have a Solid path that pushed the
+ * spider out to GIFT_PUSH_RADIUS while the visit only counted as arrived inside
+ * GIFT_VISIT_ARRIVE. Those two constants had to stay in the right order or a
+ * visit would shove the spider out every tick and circle forever. The path
+ * control is gone, so the invariant is now much simpler and much stronger: the
+ * spider is never displaced by the gift, whatever the stored path byte says.
+ *
+ * The stored byte is still checked because a save written before the control was
+ * removed can carry any value, and the migration folds it to Walk Over. */
 bool behaviour_gift_block_test(void)
 {
     game_state_t *original = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -1434,39 +1339,20 @@ bool behaviour_gift_block_test(void)
     g.gift.x = 240; g.gift.y = 240;
     bool ok = true;
 
-    /* The push radius must not exceed the visit arrival threshold. Solid pushes
-     * the spider out to exactly GIFT_PUSH_RADIUS and the visit only counts as
-     * arrived inside GIFT_VISIT_ARRIVE, so if the push radius grew past it a
-     * Solid gift would shove the spider out every tick and it would circle
-     * forever without completing the visit. */
-    ok = ok && GIFT_PUSH_RADIUS <= GIFT_VISIT_ARRIVE;
-
-    /* Walk Behind: a spider standing on the gift's lower half is pushed clear of
-     * the whole artwork. */
-    g.gift_path = DECOR_WALK_BEHIND;
-    g.spider_x = 240; g.spider_y = 250;
-    separate_from_gift();
-    float dx = (float)(g.spider_x - 240), dy = (float)(g.spider_y - 240);
-    ok = ok && hypotf(dx, dy) >= GIFT_BLOCK_RADIUS - 0.5f;
-
-    /* Dead centre has no direction to push along, so it must still be ejected. */
-    g.spider_x = 240; g.spider_y = 240;
-    separate_from_gift();
-    dx = (float)(g.spider_x - 240); dy = (float)(g.spider_y - 240);
-    ok = ok && hypotf(dx, dy) >= GIFT_BLOCK_RADIUS - 0.5f;
-
-    /* Walk Over is meant to be crossed, so it must NOT push. */
-    g.gift_path = DECOR_WALK_OVER;
-    g.spider_x = 240; g.spider_y = 240;
-    separate_from_gift();
-    ok = ok && g.spider_x == 240 && g.spider_y == 240;
-
-    /* Solid still pushes, but only out of the small push radius. */
-    g.gift_path = DECOR_SOLID;
-    g.spider_x = 240; g.spider_y = 245;
-    separate_from_gift();
-    dx = (float)(g.spider_x - 240); dy = (float)(g.spider_y - 240);
-    ok = ok && hypotf(dx, dy) >= GIFT_PUSH_RADIUS - 0.5f;
+    /* Every path value, including the ones a gift can no longer express, must
+     * leave the spider exactly where it is -- dead centre included, which is the
+     * one place a push would be most visible. */
+    for (int path = 0; path < DECOR_PATH_COUNT; path++) {
+        g.gift_path = (uint8_t)path;
+        g.spider_x = 240; g.spider_y = 240;
+        behaviour_tick(lv_tick_get(), 0.05f);
+        ok = ok && g.spider_x == 240 && g.spider_y == 240;
+        if (!ok) {
+            ESP_LOGW("spidarium.behaviour", "gift path %d displaced the spider to (%d,%d)",
+                     path, (int)g.spider_x, (int)g.spider_y);
+            break;
+        }
+    }
 
     g = *original; s_px = px; s_py = py; s_pos_init = pos_init;
     heap_caps_free(original);

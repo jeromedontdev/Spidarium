@@ -117,7 +117,7 @@ static void cmd_help(void)
     printf("  buttons [lock|unlock|toggle]  report or drive the side buttons\n");
     printf("  rtcset EPOCH          set RTC to UTC epoch (manual recovery)\n");
     printf("  gifttest             verify 36 effective bonuses and removal\n");
-    printf("  giftpath [0-3]       report or set the placed gift's path\n");
+    printf("  giftpath             report the placed gift's path (always Walk Over)\n");
     printf("  giftlayer [N]        report or set the gift's layer within its band\n");
     printf("  giftreport           report the gift's rendered objects and preview state\n");
     printf("  giftplace K X Y      place a gift through the real commit path\n");
@@ -1173,22 +1173,11 @@ static void run_line(char *line)
                     GIFT_KINDS);
     }
     else if (!strcmp(line, "giftpath")) {
-        /* Report or set the placed gift's path. The gift honours the same
-         * Walk Over / Solid / Walk Behind control as decor, so this is the only
-         * way to confirm the stored byte and the canopy re-parenting. */
-        if (arg) {
-            int path = atoi(arg);
-            if (path < 0 || path >= DECOR_PATH_COUNT) {
-                printf("ERR giftpath requires 0..%d\n", DECOR_PATH_COUNT - 1);
-                return;
-            }
-            g.gift_path = (uint8_t)path;
-            terrarium_refresh_gift();
-            game_save_now();
-        }
+        /* Report the placed gift's path. The gift is always walked over now --
+         * its path control was removed -- so this is a read-only probe that
+         * confirms the stored byte and that the canopy band is never used. */
         printf("GIFTPATH used=%u kind=%u path=%u canopy=%d mode=%u existing=%d\n",
-               g.gift.used, g.gift.kind, g.gift_path,
-               (g.gift.used && g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y) ? 1 : 0,
+               g.gift.used, g.gift.kind, g.gift_path, 0,
                g.gift_mode, game_placement_existing() ? 1 : 0);
         printf("OK giftpath\n");
     }

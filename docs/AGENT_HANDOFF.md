@@ -54,9 +54,10 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   64..67. v21 accepts decor kinds 0..73, v12..v20 accept 0..67. A large
   structure in an older save is rejected rather than silently reinterpreted.
 - Save v20 adds `gift_path` at byte3098, reusing a v18 reserved byte, so the
-  payload prefix stays 3,100 bytes. Gifts gain the same Solid/Walk Over/Walk
-  Behind/Climb/Back/Front control as decor. v20 accepts gift paths 0..3,
-  v13..v19 accept 0..2, older 0..1.
+  payload prefix stays 3,100 bytes. The gift's path control has since been
+  REMOVED: it is always walked over, and the migration folds any stored value
+  back to Walk Over. The byte is kept so the payload layout does not change.
+  v20 accepts gift paths 0..3, v13..v19 accept 0..2, older 0..1.
 - Save v19 adds the Climb decor path (value 3 in the existing blocking byte).
   No new fields: the payload prefix stays 3,100 bytes, bound 23,308, 55 schema
   fields. v19 accepts paths 0..3, v13..v18 accept 0..2, older 0..1. A Climb
@@ -266,8 +267,9 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   buffer with 62px of transparent headroom. Do not shrink it back.
   Stage position/path/layer until Done; Cancel discards all. Floor is beneath
   the spider; Canopy (Walk Behind) is above the creature layer. Arrows reorder
-  within a band. Gifts carry the same path/layer controls as decor (save v20
-  `gift_path`, v22 `gift_layer`). The gift is parented DIRECTLY into the decor
+  within a band. The gift carries the layer control but NOT the path control:
+  it is always walked over (save v20 `gift_path` is kept for layout only and is
+  always 0, v22 `gift_layer`). The gift is parented DIRECTLY into the decor
   band it belongs to (`s_gift_obj`), not into a container of its own: a separate
   gift layer made the layer control meaningless, because
   `lv_obj_move_to_index()` only reorders siblings, so a gift in its own layer
@@ -276,29 +278,21 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   oscillates every tick. The layer row is hidden when the band holds nothing but
   the gift, since "1 / 1" is not a choice. All exits stay in
   the enclosure, with no Back-to-Settings route.
-  Walk Behind BLOCKS movement as well as occluding (`gift_blocks_movement()` in
-  behaviour.c, `GIFT_BLOCK_RADIUS` 28 against the 64x64 artwork). It used to be
-  non-blocking, so the spider crossed the footprint and was drawn on top of the
-  gift's lower half before popping behind its upper half -- the "they walk over
-  the bottom and then behind above it" report. Blocking is what makes the canopy
-  switch read: the only way to be above the gift's centre line is to be
-  genuinely behind the artwork. `behaviour_gift_block_test()` guards it, and
-  `gifttest` reports `blocks=1`.
-  Gifts cannot express Walk Behind at all. A single 64x64 object has no depth,
-  and because it blocks, the spider could never reach the canopy band, so the
-  path would be a dead setting. `game_on_placement_blocking()` skips it when
-  cycling a gift, the commit path and both editor-seed sites clamp a stale value
-  to Walk Over, and `save.c` folds it during migration. Walk Over and Solid are
-  the only usable gift paths.
-  Both usable paths still let the spider VISIT the gift. The visit branch steers
-  straight at the gift and returns before the separation pass, so it is the one
-  path that can drive the spider inside the push radius. `GIFT_PUSH_RADIUS` (18)
-  and `GIFT_VISIT_ARRIVE` (18) are therefore coupled: Solid pushes the spider
-  out to exactly the push radius and the visit only counts as arrived inside the
-  arrival threshold, so if the push radius ever grew past it a Solid gift would
-  shove the spider out every tick and it would circle forever without completing
-  the visit. `behaviour_gift_block_test()` asserts the ordering, and the browser
-  test asserts the same on the exported constants.
+  The gift NEVER blocks or pushes the spider. It used to offer Walk Over and
+  Solid; Solid bought nothing visible (a single 64x64 object has no depth, so
+  "the spider goes around it" read as an invisible wall around a flat sprite)
+  and cost a fragile coupling: Solid pushed the spider out to `GIFT_PUSH_RADIUS`
+  while the visit only counted as arrived inside `GIFT_VISIT_ARRIVE`, so the two
+  constants had to stay in the right order or a visit would shove the spider out
+  every tick and circle forever. Removing the choice removed the coupling --
+  there is no push radius, no arrival threshold to keep in sync, and no gift
+  avoidance steering at all. `gift_blocks_movement()` is gone from behaviour.c
+  and returns false in device-engine.js; `separate_from_gift()` and
+  `gift_avoidance()` are deleted. `behaviour_gift_block_test()` now asserts the
+  stronger invariant: no path value displaces the spider, dead centre included.
+  `save.c` folds any stored `gift_path` to Walk Over, and `gift_canopy_now()` in
+    terrarium.c is deleted outright -- `gift_band()` returns the floor layer, so
+    the gift is always drawn there and there is no canopy case left to handle.
   Decor keeps Walk Behind, and it blocks the same way. `decor_path_blocks()` is
   true for Solid and Walk Behind; `decor_blocks_point()` and
   `decor_nearest_blocking()` use it, and `behaviour.c`'s `decor_avoidance()`

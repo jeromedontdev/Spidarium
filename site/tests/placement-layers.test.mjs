@@ -496,64 +496,45 @@ test('the spider is always drawn from directly above',()=>{
     'the perch foreshortening still compresses the forward axis');
 });
 
-test('walk behind blocks movement as well as occluding',()=>{
-  /* Walk Behind used to be non-blocking, so the spider crossed the gift's
-   * footprint and was drawn ON TOP of its lower half before popping behind the
-   * upper half. A gift is a solid object standing on the floor, so the spider
-   * has to go around it; the canopy switch then only ever fires while the
-   * spider is genuinely above the artwork. */
-  assert.equal(E.giftBlocksMovement(1),true,'Solid blocks');
-  assert.equal(E.giftBlocksMovement(2),true,'Walk Behind blocks');
-  assert.equal(E.giftBlocksMovement(0),false,'Walk Over is meant to be crossed');
-  assert.equal(E.giftBlocksMovement(3),false,'Climb is meant to be crossed');
-  /* The block radius covers the artwork, not just the small push radius. */
-  assert.ok(E.GIFT_BLOCK_RADIUS>18,
-    'Walk Behind blocks against the artwork, not the push radius');
-});
-
-test('a gift cannot be set to walk behind',()=>{
-  /* A gift is a single 64x64 object with no depth to walk behind. The canopy
-   * switch only ever fired while the spider was above the artwork, and because
-   * the gift also blocks, the spider could never get there -- so the path
-   * looked like it did nothing. Walk Over and Solid are the two states a gift
-   * can actually express. */
-  assert.equal(E.giftPathAllowed(0),true,'Walk Over is allowed');
-  assert.equal(E.giftPathAllowed(1),true,'Solid is allowed');
-  assert.equal(E.giftPathAllowed(2),false,'Walk Behind is not');
-  assert.equal(E.giftPathAllowed(3),false,'Climb is not');
-  /* Cycling must skip Walk Behind entirely rather than land on it and clamp. */
-  const seen=[];
-  let path=0;
-  for(let i=0;i<4;i++){path=E.nextGiftPath(path);seen.push(path);}
-  assert.ok(!seen.includes(2),`Walk Behind must never be staged, got ${seen}`);
-  assert.ok(seen.includes(0)&&seen.includes(1),'both usable paths are reachable');
-});
-
-test('a visit reaches the gift on both usable paths',()=>{
-  /* The visit branch steers straight at the gift and returns before the
-   * separation pass, so it is the one path that can drive the spider inside the
-   * push radius. The arrival test is `d <= GIFT_VISIT_ARRIVE` and Solid pushes
-   * out to exactly GIFT_PUSH_RADIUS, so the two are coupled: if the push radius
-   * ever grew past the arrival threshold, a Solid gift would shove the spider
-   * out every tick and it would circle forever without completing the visit. */
-  assert.ok(E.GIFT_PUSH_RADIUS<=E.GIFT_VISIT_ARRIVE,
-    `the push radius (${E.GIFT_PUSH_RADIUS}) must not exceed the arrival `+
-    `threshold (${E.GIFT_VISIT_ARRIVE})`);
-  for(const path of [0,1]){
+test('the gift never blocks or pushes the spider',()=>{
+  /* The gift used to have a Solid path that pushed the spider out to
+   * GIFT_PUSH_RADIUS while the visit only counted as arrived inside
+   * GIFT_VISIT_ARRIVE. Those two constants had to stay in the right order or a
+   * visit would shove the spider out every tick and circle forever. The path
+   * control is gone, so the invariant is now much stronger and much simpler:
+   * the spider is never displaced by the gift, whatever the stored byte says. */
+  for(const path of [0,1,2,3]){
+    assert.equal(E.giftBlocksMovement(path),false,
+      `path ${path} must not block`);
     const s=E.freshState();
     s.gift.used=1;s.gift.kind=0;s.gift.x=240;s.gift.y=240;
     s.gift_path=path;
-    s.spider_x=240;s.spider_y=280;
+    /* Dead centre is the one place a push would be most visible. */
+    s.spider_x=240;s.spider_y=240;
     s.state=0;s.hunger=80;s.energy=50;s.mood=50;s.sick=0;
-    const r=s._engine;
-    r.gift_visiting=true;r.gift_hold_until=0;r.gift_visit_end=r.now_ms+20000;
-    let arrived=false;
-    for(let i=0;i<120&&!arrived;i++){
-      E.tick(s,0.05);
-      arrived=r.gift_hold_until!==0;
-    }
-    assert.ok(arrived,`path ${path} must complete the visit`);
+    E.tick(s,0.05);
+    assert.equal(s.spider_x,240,`path ${path} must not displace x`);
+    assert.equal(s.spider_y,240,`path ${path} must not displace y`);
   }
+});
+
+test('a visit completes with the gift walked over',()=>{
+  /* The visit branch steers straight at the gift and returns before anything
+   * else can move the spider, so it is the one path that can drive the spider
+   * onto the gift. With no push radius there is nothing to fight it. */
+  const s=E.freshState();
+  s.gift.used=1;s.gift.kind=0;s.gift.x=240;s.gift.y=240;
+  s.gift_path=0;
+  s.spider_x=240;s.spider_y=280;
+  s.state=0;s.hunger=80;s.energy=50;s.mood=50;s.sick=0;
+  const r=s._engine;
+  r.gift_visiting=true;r.gift_hold_until=0;r.gift_visit_end=r.now_ms+20000;
+  let arrived=false;
+  for(let i=0;i<120&&!arrived;i++){
+    E.tick(s,0.05);
+    arrived=r.gift_hold_until!==0;
+  }
+  assert.ok(arrived,'the visit must complete');
 });
 
 test('walk behind blocks decor against the whole artwork',()=>{

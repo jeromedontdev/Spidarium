@@ -402,7 +402,7 @@ int game_placement_layers(void)
 {
     /* A gift is a single item, but it still has a position among the decor
      * sharing its band, which is what the player is arranging. */
-    if (g.gift_mode) return decor_gift_layer_count(s_place_blocking);
+    if (g.gift_mode) return decor_gift_layer_count(DECOR_WALK_OVER);
     return decor_layer_count(s_place_blocking, g_decor_move_slot) + 1;
 }
 bool game_placement_existing(void)
@@ -413,36 +413,25 @@ bool game_placement_existing(void)
 void game_on_placement_blocking(lv_event_t *e)
 {
     (void)e;
-    if (!g_decor_mode && !g.gift_mode) return;
+    /* A gift has no path control: it is always walked over. See the note in
+     * behaviour.c for why the Solid option was removed rather than kept. */
+    if (!g_decor_mode) return;
     uint8_t previous = s_place_blocking;
     /* Cycle only through the paths this kind supports, so a flat prop never
-     * lands on Climb and a climbable one always reaches it.
-     *
-     * A gift has no climb height, so it cycles the flat paths -- and NOT Walk
-     * Behind. A gift is a single 64x64 object with no depth to walk behind: the
-     * canopy switch only ever fired while the spider was above the artwork, and
-     * because the gift also blocks, the spider could never get there. The
-     * result was a path that looked like it did nothing. Walk Over and Solid
-     * are the two states a gift can actually express. */
-    uint8_t kind = g.gift_mode ? g.gift_selected : g_decor_selected;
-    if (g_decor_mode && g_decor_move_slot >= 0) {
+     * lands on Climb and a climbable one always reaches it. */
+    uint8_t kind = g_decor_selected;
+    if (g_decor_move_slot >= 0) {
         const decor_item_t *item = decor_at(g_decor_move_slot);
         if (item) kind = item->kind;
     }
     for (int i = 0; i < DECOR_PATH_COUNT; i++) {
         s_place_blocking = (uint8_t)((s_place_blocking + 1) % DECOR_PATH_COUNT);
-        if (g.gift_mode && s_place_blocking == DECOR_WALK_BEHIND) continue;
         if (s_place_blocking != DECOR_CLIMB || decor_climbable(kind)) break;
     }
     if ((previous == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND)) {
         /* Changing band changes how many items the layer is ordered against, so
-         * the staged index has to be re-seeded. A gift is ordered against the
-         * decor in its band, not against the decor slots, so it needs the gift
-         * count: using the decor count here let the staged index exceed the
-         * gift's own range and the commit was rejected. */
-        s_place_layer = g.gift_mode
-            ? decor_gift_layer_index(s_place_blocking)
-            : decor_layer_count(s_place_blocking, g_decor_move_slot);
+         * the staged index has to be re-seeded. */
+        s_place_layer = decor_layer_count(s_place_blocking, g_decor_move_slot);
     }
     placement_position(s_place_x, s_place_y);
     ui_hud_set_place_mode(true, NULL);
@@ -550,10 +539,8 @@ void game_on_placement_done(lv_event_t *e)
         g.gift.used = 1;
         g.gift.x = s_place_x;
         g.gift.y = s_place_y;
-        /* A gift cannot express Walk Behind (see game_on_placement_blocking),
-         * so clamp it here too: a stale staged value must not reach the save. */
-        g.gift_path = (s_place_blocking == DECOR_WALK_BEHIND)
-            ? DECOR_WALK_OVER : s_place_blocking;
+        /* The gift is always walked over; it has no path control any more. */
+        g.gift_path = DECOR_WALK_OVER;
         if (!decor_gift_set_layer(g.gift_path, s_place_layer)) {
             ESP_LOGW(TAG, "gift layer commit failed: %d", s_place_layer);
         }
@@ -626,13 +613,8 @@ void game_gift_chosen(uint8_t kind)
     g.gift_mode = 1;
     behaviour_aim_cancel();
     s_place_dragging = false;
-    /* Seed the path from the gift already in the tank when moving it, so
-     * re-opening the editor does not silently reset the player's choice. */
-    s_place_blocking = s_gift_moving ? g.gift_path : DECOR_WALK_OVER;
-    /* A gift cannot express Walk Behind, so a stale value must not seed the
-     * editor either. */
-    if (s_place_blocking >= DECOR_PATH_COUNT ||
-        s_place_blocking == DECOR_WALK_BEHIND) s_place_blocking = DECOR_WALK_OVER;
+    /* The gift is always walked over, so there is no path to seed. */
+    s_place_blocking = DECOR_WALK_OVER;
     s_place_layer = s_gift_moving ? decor_gift_layer_index(s_place_blocking) : 0;
     placement_position(ui.W / 2, ui.H / 2);
     ui_hud_set_gift_mode(true);
@@ -1271,9 +1253,8 @@ static void on_gift_item_pick(uint8_t id)
         s_gift_moving = true;
         g.gift_mode = 1;
         g.gift_selected = g.gift.kind;
-        s_place_blocking = (g.gift_path < DECOR_PATH_COUNT &&
-                            g.gift_path != DECOR_WALK_BEHIND)
-            ? g.gift_path : DECOR_WALK_OVER;
+        /* The gift is always walked over, so there is no path to seed. */
+        s_place_blocking = DECOR_WALK_OVER;
         s_place_layer = decor_gift_layer_index(s_place_blocking);
         ui_menu_close();
         ui_hud_set_chrome(false);
@@ -2629,10 +2610,16 @@ static bool test_furniture_pointer(void)
              g.gift.x == 200 && g.gift.y == 200;
     test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_RELEASED);
     staged = staged && g.gift_mode && g.gift.x == 200;
+    /* The gift has no path control any more: the handler is a no-op, so the
+     * staged path cannot leave Walk Over and the commit cannot store anything
+     * else. */
+    game_on_placement_blocking(NULL);
+    staged = staged && s_place_blocking == DECOR_WALK_OVER;
     test_pointer_send(indev, &pointer, 372, 436, LV_INDEV_STATE_PRESSED);
     test_pointer_send(indev, &pointer, 372, 436, LV_INDEV_STATE_RELEASED);
     bool gift_moved = !g.gift_mode && g.gift.x == 350 && g.gift.y == 180 &&
-                      g.gift.variant == 2 && g.silk == silk && g.gifts_owned == owned;
+                      g.gift.variant == 2 && g.silk == silk && g.gifts_owned == owned &&
+                      g.gift_path == DECOR_WALK_OVER;
     on_gift_item_pick(0);
     test_pointer_send(indev, &pointer, 350, 180, LV_INDEV_STATE_PRESSED);
     test_pointer_send(indev, &pointer, 300, 240, LV_INDEV_STATE_PRESSED);

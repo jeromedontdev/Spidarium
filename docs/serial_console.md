@@ -1040,8 +1040,10 @@ Malformed v16 backups with a nonzero former reserved byte remain rejected.
 Old firmware cannot read v17 backups: export before updating.
 v18 appends `decor_locked` and `auto_clean` at3096/3097 plus two reserved bytes,
 moving the decor tail to3100. v19 reuses the blocking byte for the Climb path
-(value3). v20 reuses the first v18 reserved byte for `gift_path` at3098, giving
-gifts the same path control as decor. v21 reuses the second for `climb_owned` at
+(value3). v20 reuses the first v18 reserved byte for `gift_path` at3098; the
+gift's path control has since been removed (it is always walked over) but the
+byte is kept so the layout does not change, and migration folds it to0. v21
+reuses the second for `climb_owned` at
 3099, the ownership bitmap for the six large climb structures (decor kinds
 68..73). None of v18-v21 changes the 3,100-byte prefix, so the payload bound and
 decor tail offset are unchanged. v21 accepts decor kinds0..73; v12-v20 accept

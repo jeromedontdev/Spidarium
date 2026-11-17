@@ -197,23 +197,15 @@ static lv_obj_t *dot(lv_obj_t *parent, int x, int y, int radius, uint32_t color)
     return obj;
 }
 
-/* The gift honours the same Walk Behind rule as decor: it may only cover the
- * spider with its top half, so it moves to the canopy band while the spider is
- * above its centre line and drops back to the floor band once the spider is
- * level with or below the base.
+/* The gift is always walked over, so it is always drawn in the FLOOR band.
  *
- * Walk Behind also BLOCKS movement (see gift_blocks_movement() in behaviour.c),
- * so the spider can never stand on the gift's lower half. That is what makes
- * this rule read correctly: the only way to be above the centre line is to be
- * genuinely behind the artwork, never on top of it. */
-static bool gift_canopy_now(void)
-{
-    return g.gift_path == DECOR_WALK_BEHIND && g.spider_y < g.gift.y;
-}
-
+ * It used to honour the Walk Behind rule, moving to the canopy band while the
+ * spider was above its centre line. That only ever fired for a path a gift can
+ * no longer express -- the path control is gone -- so the band is now fixed and
+ * there is no canopy case to handle. */
 static lv_obj_t *gift_band(void)
 {
-    return gift_canopy_now() ? s_canopy_layer : s_decor_layer;
+    return s_decor_layer;
 }
 
 void terrarium_refresh_gift(void)
@@ -266,12 +258,12 @@ void terrarium_gift_report(void)
     }
     /* The index of the first decor item in the same band, so the two numbers can
      * be compared directly: the gift is behind that item when its index is
-     * lower. This is the check that the layer control actually reorders. */
-    bool canopy = gift_canopy_now();
+     * lower. This is the check that the layer control actually reorders. The
+     * gift is always in the floor band, so that is the band to compare against. */
     for (int i = 0; i < s_decor_capacity; i++) {
         const decor_item_t *item = decor_at(i);
         if (!item || !s_decor_obj[i]) continue;
-        if (decor_canopy_now(item) != canopy) continue;
+        if (decor_canopy_now(item)) continue;
         decor_index = (int)lv_obj_get_index(s_decor_obj[i]);
         break;
     }
@@ -282,7 +274,7 @@ void terrarium_gift_report(void)
            gift_hidden ? 1 : 0, preview_hidden ? 1 : 0, band,
            decor_gift_layer_index(g.gift_path),
            decor_gift_layer_count(g.gift_path), gift_index, decor_index,
-           g.gift.x, g.gift.y, g.spider_y, gift_canopy_now() ? 1 : 0);
+           g.gift.x, g.gift.y, g.spider_y, 0);
 }
 
 void terrarium_gift_depth(void)
@@ -306,14 +298,15 @@ void terrarium_gift_depth(void)
      * index oscillates: the gift lands after the item, the item's index drops,
      * and the next tick moves the gift back. Comparing the two indices first
      * makes the result a fixed point. */
-    bool canopy = gift_canopy_now();
     int index = decor_gift_layer_index(g.gift_path);
     int seen = 0;
     for (int i = 0; i < s_decor_capacity; i++) {
         const decor_item_t *item = decor_at(i);
         lv_obj_t *obj = s_decor_obj[i];
         if (!item || !obj) continue;
-        if (decor_canopy_now(item) != canopy) continue;
+        /* The gift is always in the floor band, so only floor decor is ordered
+         * against. */
+        if (decor_canopy_now(item)) continue;
         if (seen++ == index) {
             int gift_at = (int)lv_obj_get_index(s_gift_obj);
             int decor_at_index = (int)lv_obj_get_index(obj);

@@ -399,13 +399,13 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_care_label, true);
     lv_obj_set_hidden(s_place_done, !on);
     lv_obj_set_hidden(s_place_cancel, !on);
-    /* A gift gets the same path AND layer control as decor. Its layer orders it
-     * against the decor sharing its band, which is what the player is actually
-     * arranging. When the band holds nothing but the gift there is nothing to
-     * order against, so the whole layer row is hidden rather than showing a
-     * meaningless "1 / 1". */
-    bool path_row = on && (g_decor_mode || g.gift_mode);
-    bool layer_row = path_row && game_placement_layers() > 1;
+    /* A gift gets the layer control but NOT the path control: it is always
+     * walked over. Its layer orders it against the decor sharing its band,
+     * which is what the player is actually arranging. When the band holds
+     * nothing but the gift there is nothing to order against, so the whole
+     * layer row is hidden rather than showing a meaningless "1 / 1". */
+    bool path_row = on && g_decor_mode;
+    bool layer_row = on && (g_decor_mode || g.gift_mode) && game_placement_layers() > 1;
     lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
     lv_obj_set_hidden(s_place_path, !path_row);
     lv_obj_set_hidden(s_place_back, !layer_row);
@@ -425,7 +425,7 @@ void ui_hud_set_place_mode(bool on, const char *hint)
             "Spider climbs onto this item"};
         lv_label_set_text(s_hint, tips[path]);
     }
-    if (path_row) {
+    if (layer_row) {
         uint8_t path = game_placement_blocking();
         lv_obj_set_state(s_place_back, LV_STATE_DISABLED, game_placement_layer() == 0);
         lv_obj_set_state(s_place_front, LV_STATE_DISABLED,

@@ -213,9 +213,10 @@ export class DeviceGame {
     const editing=this.placement&&(this.placement.slot!==null||this.giftMoving);
     this.placementAway.hidden=!editing;
     const decor=!!this.placement&&!this.placement.gift,p=this.placement;
-    /* A gift gets the same path control as decor. It has no siblings, so the
-     * Back/Front layer arrows and the layer counter stay decor-only. */
-    const pathRow=!!this.placement;
+    /* A gift gets the layer control but NOT the path control: it is always
+     * walked over. It has no siblings, so the Back/Front layer arrows and the
+     * layer counter stay decor-only. */
+    const pathRow=!!this.placement&&!p.gift;
     this.placementPaths.forEach((button,path)=>{
       button.hidden=!pathRow;
       button.setAttribute('aria-pressed',String(pathRow&&p.blocking===path));
@@ -930,9 +931,8 @@ export class DeviceGame {
       this.placement.layer=slot!==null?E.decorLayerIndex(this.state,slot):
         E.decorLayerSlots(this.state,this.placement.blocking).length;
     } else {
-      /* A gift gets the same path control as decor. Seed it from the placed gift
-       * when moving, so re-opening the editor does not reset the choice. */
-      this.placement.blocking=this.giftMoving?(this.state.gift_path??0):0;
+      /* The gift is always walked over, so there is no path to seed. */
+      this.placement.blocking=0;
       this.placement.layer=0;
     }
     this.refreshHUD();this.report('Slide to position. Done saves; Cancel leaves placement unchanged.');
@@ -962,9 +962,8 @@ export class DeviceGame {
       slot!==null?E.moveDecor(this.state,slot,p.x,p.y):(slot=E.placeDecor(this.state,p.kind,p.x,p.y))>=0;
     if(!ok){this.report('Placement could not be saved. Check ownership and available space.',true);return;}
     if(p.gift){
-      /* The gift honours the same path control as decor. There is only one gift,
-       * so no layer ordering is stored. */
-      this.state.gift_path=p.blocking;
+      /* The gift is always walked over; it has no path control any more. */
+      this.state.gift_path=0;
     } else {
       this.state.decor[slot].blocking=p.blocking;
       if(!E.setDecorLayer(this.state,slot,p.layer)){this.report('Layer could not be saved.',true);return;}
@@ -1210,10 +1209,8 @@ export class DeviceGame {
       if(border.complete&&border.naturalWidth)ctx.drawImage(border,0,0,480,480);
     }
     this.drawDecor(false);
-    /* A Walk Behind gift is drawn in the canopy pass instead, so it only covers
-     * the spider with its top half. */
-    const giftCanopy = s.gift?.used && s.gift_path === 2 && s.spider_y < s.gift.y;
-    if (s.gift?.used && !this.placement?.gift && !giftCanopy) {
+    /* The gift is always walked over, so it is always drawn in the floor pass. */
+    if (s.gift?.used && !this.placement?.gift) {
       const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
       if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
     }
@@ -1322,12 +1319,6 @@ export class DeviceGame {
       }
     }
     this.drawDecor(true);
-    /* The canopy pass draws a Walk Behind gift above the creature layer, so it
-     * covers the spider only while the spider is above the gift's centre line. */
-    if (s.gift?.used && !this.placement?.gift && s.gift_path === 2 && s.spider_y < s.gift.y) {
-      const gift = E.GIFTS[s.gift.kind], image = this.image(gift.asset);
-      if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
-    }
     if(s.lights_dimmed){
       ctx.fillStyle='rgba(7,12,32,0.43)';ctx.fillRect(0,0,480,480);
     }
