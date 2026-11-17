@@ -496,6 +496,43 @@ test('the spider is always drawn from directly above',()=>{
     'the perch foreshortening still compresses the forward axis');
 });
 
+test('the gift editor hides the path row and keeps the layer row',()=>{
+  /* The user-visible half of removing the gift's path control: the button must
+   * actually disappear, not just stop working. refreshHUD() is a pure function
+   * of this.placement plus the DOM nodes, so stub the nodes and read .hidden. */
+  const node=()=>({hidden:false,disabled:false,style:{},textContent:'',
+    setAttribute(){},children:[{textContent:''},{textContent:''},{textContent:''}]});
+  const ui=Object.assign(Object.create(DeviceGame.prototype),{
+    state:E.freshState(),hud:false,modal:null,game:null,started:true,
+    placement:null,giftMoving:false,decorMoveSlot:null,decorKind:null,giftKind:null,
+    hudLayer:node(),ear:node(),earMark:node(),placementControls:node(),
+    placementAway:node(),placementHint:node(),placementBack:node(),
+    placementFront:node(),placementLayer:node(),
+    placementPaths:[node(),node(),node(),node()],
+    stats:[0,1,2,3].map(()=>({key:'hunger',bar:{firstChild:{style:{}}},value:node()})),
+    careButtons:{Feed:node(),Sleep:{lastChild:{textContent:''}}},
+    identity:{children:[node(),node(),node()]},
+    persist(){},report(){},
+  });
+  /* A gift being moved: the layer row is live (there is decor to order
+   * against) but the path row must be gone. */
+  ui.state.decor_owned=1;E.placeDecor(ui.state,0,180,180);
+  ui.placement={gift:true,kind:0,x:240,y:240,blocking:0,layer:0};
+  ui.giftMoving=true;
+  ui.refreshHUD();
+  assert.ok(ui.placementPaths.every(button=>button.hidden),
+    'no path button is shown for a gift');
+  assert.equal(ui.placementHint.textContent,'Slide to position; Done saves',
+    'the gift hint does not describe a path');
+  assert.equal(ui.placementBack.hidden,true,'the layer arrows stay decor-only');
+  /* Decor still gets the path row, so the removal is gift-specific. */
+  ui.placement={gift:false,kind:0,slot:0,x:180,y:180,blocking:0,layer:0};
+  ui.giftMoving=false;
+  ui.refreshHUD();
+  assert.ok(ui.placementPaths.every(button=>!button.hidden),
+    'decor still shows the path buttons');
+});
+
 test('the gift never blocks or pushes the spider',()=>{
   /* The gift used to have a Solid path that pushed the spider out to
    * GIFT_PUSH_RADIUS while the visit only counted as arrived inside
