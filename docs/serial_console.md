@@ -559,6 +559,21 @@ Climb in one command, which exercises the real footprint-driven path.
 `climbhere big` places a Driftwood structure instead, which is the only way to
 exercise the ramped large-structure lift and the 96x160 canvas headroom.
 
+### `climbat X Y`, `blockat X Y`
+
+`climbat` samples the climb ramp at an arbitrary point and prints the lift, the
+slot and the surface slope. `blockat` samples the blocking test at the same
+point and prints `blocks=0|1`. They answer different questions: a structure can
+block a point without lifting the spider there, because Walk Behind blocks the
+whole artwork while Climb lifts only along the ramp.
+
+Both exist because the spider wanders faster than a script can walk it across a
+structure. Use them to confirm the hitbox follows the artwork rather than a
+circle: on the Driftwood at (190,275) the four box corners report `height=0` and
+`blocks=0`, while the ends of the log report a lift and, on Walk Behind, block.
+Those ends lie outside a circle of radius `DECOR_CLIMB_EXTENT`, so a circular
+test would have let the spider walk through them.
+
 ### `perch [KIND]`
 
 Places a Hollow Log under the spider, sets it to Climb, refreshes the decor

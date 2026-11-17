@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import * as E from '../lib/device-engine.js';
 import {DeviceGame} from '../lib/device-ui.js';
 import {decodeSave} from '../lib/save.js';
+import {CLIMB_MASK} from '../lib/climb-mask.js';
 
 function fixture(){
   const state=E.freshState();state.decor_owned=0xffff;state.level=40;
@@ -18,10 +19,13 @@ function fixture(){
 test('all three path modes distinguish steering from canopy draw/hit order',()=>{
   const {state}=fixture();
   for(const item of state.decor)item.blocking=0;
-  assert.equal(E.decorBlocksPoint(state,240,240),false);
+  assert.equal(E.decorBlocksPoint(state,240,240),false,'Walk Over does not block');
+  /* Walk Behind BLOCKS as well as occluding. It used to be non-blocking, which
+   * let the spider walk over the bottom of the sprite and then pop behind the
+   * top. */
   state.decor[0].blocking=2;
-  assert.equal(E.decorBlocksPoint(state,240,240),false);
-  assert.equal(E.decorNearestBlocking(state,240,240,100),null);
+  assert.equal(E.decorBlocksPoint(state,240,240),true,'Walk Behind blocks');
+  assert.ok(E.decorNearestBlocking(state,240,240,100),'Walk Behind steers');
   assert.equal(E.decorHitTest(state,240,240),0,'canopy wins above later floor slots');
   state.decor[1].blocking=1;
   assert.equal(E.decorBlocksPoint(state,240,240),true);
@@ -31,18 +35,24 @@ test('all three path modes distinguish steering from canopy draw/hit order',()=>
   assert.equal(E.decorHitTest(state,240,240),14);
 });
 
-test('overlapping canopy cannot change the steering footprint of a solid item',()=>{
-  const states=[true,false].map(canopy=>{
+test('walk behind steers from the artwork edge, walk over never steers',()=>{
+  /* Walk Behind blocks against the whole artwork, so the spider must start
+   * turning before it reaches the sprite. Walk Over is meant to be crossed, so
+   * it must not steer at all. */
+  const run=blocking=>{
     const s=E.freshState({random:()=>.5});
     Object.assign(s,{state:E.STATES.WANDER,spider_x:202,spider_y:240,spider_heading:0});
     Object.assign(s._engine,{px:202,py:240,retarget_at:1e9,wander_dir:0});
-    s.decor=[...(canopy?[{kind:3,blocking:2,x:240,y:240}]:[]),
-      {kind:0,blocking:1,x:240,y:240}];
+    s.decor=[{kind:3,blocking,x:240,y:240}];
     E.tick(s,.05);return s;
-  });
-  assert.equal(states[0].spider_heading,states[1].spider_heading);
-  assert.equal(states[0].spider_x,states[1].spider_x);
-  assert.equal(states[0].spider_y,states[1].spider_y);
+  };
+  const walkOver=run(0),walkBehind=run(2);
+  assert.equal(E.decorBlocksPoint(walkOver,240,240),false);
+  assert.equal(E.decorBlocksPoint(walkBehind,240,240),true);
+  /* The spider starts 38 px away. A prop's artwork half-extent is 2*radius, so
+   * Walk Behind is already inside its steering berth while Walk Over is not. */
+  assert.notEqual(walkOver.spider_heading,walkBehind.spider_heading,
+    'Walk Behind steers the spider, Walk Over does not');
 });
 
 test('layer reordering crosses the inline/tail boundary and preserves all item records',()=>{
@@ -170,24 +180,27 @@ test('climb path lifts the spider and leaves a floor shadow',()=>{
   assert.equal(extent,E.DECOR_CLIMB_EXTENT,'a structure ramps across its artwork');
   assert.ok(extent>def.radius,
     'the artwork is much wider than the collision footprint');
-  /* The slope runs up the screen: the spider enters at the BOTTOM edge and rises
-   * as it walks toward the TOP edge. Ramping radially from the centre made it
-   * rise from whichever side it approached, which read as being lifted onto a
-   * platform rather than climbing a branch. */
-  const bottom=E.decorClimbAt(state,240,240+extent-2);
-  const middle=E.decorClimbAt(state,240,240);
-  const top=E.decorClimbAt(state,240,240-extent+2);
-  assert.ok(bottom<middle,`bottom ${bottom} must be lower than middle ${middle}`);
-  assert.ok(middle<top,`middle ${middle} must be lower than top ${top}`);
-  assert.ok(top>def.climb*0.9,`the top edge is near full height, got ${top}`);
-  assert.ok(bottom<def.climb*0.1,`the bottom edge is near ground, got ${bottom}`);
-  /* Horizontal position must not change the height: it is a slope, not a dome. */
-  assert.equal(E.decorClimbAt(state,240-30,240),E.decorClimbAt(state,240+30,240),
-    'height depends on vertical position only');
-  /* The ramp is vertical, so the lift fades out toward the side edges instead of
-   * jumping to half height the instant the spider crosses them. */
-  assert.ok(E.decorClimbAt(state,240+extent-4,240)<def.climb/4,
-    'the lift fades out at the side edge');
+  /* The slope runs up the screen: the spider enters at the BOTTOM of the
+   * artwork and rises as it walks toward the TOP. The driftwood is a DIAGONAL
+   * log running from lower-right to upper-left, so the samples follow its
+   * centre line: a vertical line through the item centre leaves the artwork at
+   * both ends. */
+  const high=E.decorClimbAt(state,172,172);   /* upper-left of the log */
+  const mid =E.decorClimbAt(state,246,240);   /* middle */
+  const low =E.decorClimbAt(state,296,308);   /* lower-right */
+  assert.ok(low>0&&mid>0&&high>0,`all three are on the log: ${low}/${mid}/${high}`);
+  assert.ok(low<mid,`lower-right ${low} must be lower than middle ${mid}`);
+  assert.ok(mid<high,`middle ${mid} must be lower than upper-left ${high}`);
+  assert.ok(high>def.climb*0.9,`the top of the log is near full height, got ${high}`);
+  assert.ok(low<def.climb*0.2,`the bottom of the log is near ground, got ${low}`);
+  /* The corners of the 192 px sprite box are EMPTY. This is the "hitbox is way
+   * off, the spider is well above the decor item and it thinks it is on it"
+   * report: a circle or a box covers the transparent corners, so the spider was
+   * lifted while standing in space beside the log. */
+  assert.equal(E.decorClimbAt(state,240,240-extent+2),0,'top centre is empty');
+  assert.equal(E.decorClimbAt(state,240,240+extent-2),0,'bottom centre is empty');
+  assert.equal(E.decorClimbAt(state,240-extent+4,240-extent+4),0,'top-left corner');
+  assert.equal(E.decorClimbAt(state,240+extent-4,240+extent-4),0,'bottom-right corner');
   assert.equal(E.decorClimbAt(state,240+extent+2,240),0,'nothing past the rim');
   /* A prop still snaps to full height across its whole footprint. */
   state.decor[0]={kind:3,blocking:3,x:240,y:240};
@@ -202,55 +215,59 @@ test('the climb surface reports a slope the body can lean with',()=>{
   const def=E.DECOR_KINDS[kind];
   state.decor[0]={kind,blocking:3,x:240,y:240};
   /* A large structure ramps linearly, so its gradient is constant across the
-   * whole footprint: climb height spread over the ARTWORK's vertical extent.
-   * Measuring against the much smaller collision radius made the same climb a
-   * 1.8 slope that clamped to the tilt limit and looked like a wall. */
+   * whole artwork: climb height spread over the ARTWORK's own vertical span.
+   * Measuring against the square box understated it, and against the much
+   * smaller collision radius it was a 1.8 slope that clamped to the tilt limit
+   * and looked like a wall. */
   const extent=E.decorClimbExtent(kind);
-  const expected=-def.climb/(2*extent);
+  const range=E.climbRowRange(kind);
+  const expected=-def.climb/((range.bot-range.top+1)*2);
   assert.ok(Math.abs(expected)<0.5,`a believable ramp, got ${expected}`);
-  /* Sampled inside the footprint: at the very bottom edge the lift rounds to
-   * zero, so there is no surface there to report a slope for. */
-  const bottom=E.decorClimbSlope(state,240,240+extent-8);
-  const middle=E.decorClimbSlope(state,240,240);
-  const top=E.decorClimbSlope(state,240,240-extent+8);
-  assert.ok(Math.abs(middle-expected)<1e-9,`middle ${middle} vs ${expected}`);
-  assert.equal(bottom,middle,'a linear ramp has one gradient');
-  assert.equal(top,middle,'a linear ramp has one gradient');
+  /* Sampled along the log, since a vertical line leaves the artwork. */
+  const low =E.decorClimbSlope(state,296,308);
+  const mid =E.decorClimbSlope(state,246,240);
+  const high=E.decorClimbSlope(state,172,172);
+  assert.ok(Math.abs(mid-expected)<1e-9,`middle ${mid} vs ${expected}`);
+  assert.equal(low,mid,'a linear ramp has one gradient');
+  assert.equal(high,mid,'a linear ramp has one gradient');
   /* The sign is in screen space, where y grows downward: a surface rising
    * toward the TOP of the screen is negative. */
-  assert.ok(middle<0,`rising toward the top is negative, got ${middle}`);
-  /* Off the footprint there is no surface, so no slope. */
+  assert.ok(mid<0,`rising toward the top is negative, got ${mid}`);
+  /* Off the artwork there is no surface, so no slope. */
+  assert.equal(E.decorClimbSlope(state,240,240-extent+2),0,'empty top centre');
   assert.equal(E.decorClimbSlope(state,240+extent+2,240),0);
   /* A small prop is a flat disc, so its top is level. */
   state.decor[0]={kind:3,blocking:3,x:240,y:240};
   assert.equal(E.decorClimbSlope(state,240,240),0,'a prop top is level');
   });
 
-test('climbing compresses the body and tilts it with the ramp',()=>{
-  /* The 2.5D read needs two things beyond the lift: the viewing angle changes
-   * as the spider gets higher, and the body leans with the surface. Without
-   * them the creature keeps its flat top-down silhouette and slides up the
-   * screen, which is the "no perspective shift" report. */
-  assert.ok(E.CLIMB_FORESHORTEN<E.PERCH_FORESHORTEN||E.CLIMB_FORESHORTEN<1,
-    'climbing must compress the forward axis');
-  assert.ok(E.CLIMB_FORESHORTEN>0.6,
-    'below about 0.6 the abdomen overlaps the cephalothorax');
-  assert.ok(E.CLIMB_FULL_LIFT>0,'the compression needs a reference height');
-  assert.ok(E.CLIMB_TILT_FOLLOW>0&&E.CLIMB_TILT_FOLLOW<=1,
-    'the body follows most, not all, of the surface gradient');
-  assert.ok(E.CLIMB_TILT_MAX>0&&E.CLIMB_TILT_MAX<Math.PI/4,
-    'beyond about 30 degrees the legs fold through the body');
-  /* The tilt derived from a real structure must stay inside the clamp. */
+test('climbing lifts the spider without re-posing it',()=>{
+  /* There is deliberately NO perspective shift while climbing. Three attempts
+   * were made at one -- a forward-axis compression, a body tilt following the
+   * surface gradient, and a full dorsal projection into a side view -- and each
+   * looked wrong on the panel. A 96x96 pixel-art sprite authored from above
+   * cannot be re-projected into a convincing profile by moving its parts.
+   *
+   * What remains is the lift plus the contact shadow at the ground point, which
+   * is what actually reads as standing on something with height. */
+  assert.equal(E.CLIMB_FORESHORTEN,undefined,
+    'climbing must not compress the body');
+  assert.equal(E.CLIMB_TILT_FOLLOW,undefined,
+    'climbing must not tilt the body');
+  assert.equal(E.CLIMB_PROFILE_RIGHT,undefined,
+    'climbing must not project a side view');
+  assert.equal(E.climbProfile,undefined,
+    'there is no profile blend to drive');
+  /* The projection is a plain top-down rotation: no dorsal axis, no tilt. */
+  const flat=E.toCanvas(0,10,0,1,1,1);
+  assert.ok(Math.abs(Math.hypot(flat.x,flat.y)-10)<1e-9,
+    'the right axis keeps its full width at every lift');
+  /* The lift itself still exists and still scales with the structure. */
   const {state}=fixture();
   for(const item of state.decor)item.kind=E.DECOR_EMPTY;
   const kind=E.DECOR_KINDS.length-1;
-  const def=E.DECOR_KINDS[kind];
   state.decor[0]={kind,blocking:3,x:240,y:240};
-  const slope=E.decorClimbSlope(state,240,240);
-  const tilt=Math.min(E.CLIMB_TILT_MAX,
-    Math.max(-E.CLIMB_TILT_MAX,-Math.atan(slope)*E.CLIMB_TILT_FOLLOW));
-  assert.ok(Math.abs(tilt)<=E.CLIMB_TILT_MAX,'the tilt is clamped');
-  assert.ok(tilt>0,'a surface rising toward the top tilts the front down-screen');
+  assert.ok(E.decorClimbAt(state,240,240)>0,'the structure still lifts the spider');
   });
 
 test('a small prop is perched on, not walked across',()=>{
@@ -436,61 +453,33 @@ test('the gift has the same layer control as decor',()=>{
   assert.equal(E.giftLayerIndex(state,0),2,'clamped to the band size');
 });
 
-test('climbing blends the spider into a side view',()=>{
-  /* Rotating a top-down spider does not produce a side view: the abdomen stays
-   * behind the cephalothorax in the same plane and the legs stay splayed
-   * radially. The profile blend is what projects the body's dorsal axis onto the
-   * screen, so the outline becomes a profile rather than a leaning plan view. */
-  assert.equal(E.climbProfile(0),0,'the floor is a flat top-down pose');
-  assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT),1,'the top is a full profile');
-  assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT*2),1,'the blend is clamped');
-  /* The blend holds the top-down pose through the lower part of the ramp: at
-   * the very bottom the spider is still effectively on the floor, so a profile
-   * there looked wrong. */
-  assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT*E.CLIMB_PROFILE_START),0,
-    'the bottom of the ramp is still top-down');
-  assert.equal(E.climbProfile(E.CLIMB_FULL_LIFT*0.2),0,
-    'the dead zone covers the lower third');
-  /* Above the dead zone it rises monotonically to a full profile. */
-  const mid=E.climbProfile(E.CLIMB_FULL_LIFT*0.675);
-  assert.ok(mid>0.4&&mid<0.6,`the blend tracks the lift, got ${mid}`);
-  assert.ok(E.climbProfile(E.CLIMB_FULL_LIFT*0.5)<
-            E.climbProfile(E.CLIMB_FULL_LIFT*0.8),'the blend rises with the lift');
+test('the spider is always drawn from directly above',()=>{
+  /* The climb perspective was removed rather than tuned. A 96x96 pixel-art
+   * sprite authored from above cannot be re-projected into a convincing profile
+   * by moving its parts around: the silhouette is top-down, so skewing it
+   * produces a distorted top-down spider, not a side view. */
+  for(const name of ['CLIMB_PROFILE_RIGHT','ABD_DORSAL','CEPH_DORSAL',
+                     'EYE_DORSAL','FANG_DORSAL','LEG_DORSAL','LEG_DORSAL_NEAR',
+                     'ABD_PROFILE_SCALE','CLIMB_PROFILE_START','CLIMB_TILT_FOLLOW',
+                     'CLIMB_TILT_MAX','CLIMB_FORESHORTEN']){
+    assert.equal(E[name],undefined,`${name} must be gone, not dormant`);
+  }
+  assert.equal(E.climbProfile,undefined,'there is no profile blend');
+  assert.equal(E.toCanvasDorsal,undefined,'there is no dorsal projection');
 
-  /* At full profile the body's right axis collapses, which is the strongest
-   * side-view cue: a top-down spider is as wide as it is long. */
-  const heading=0, fs=1, tilt=0;
-  const flat=E.toCanvasDorsal(0,10,0,heading,1,1,fs,0,tilt);
-  const prof=E.toCanvasDorsal(0,10,0,heading,1,1,fs,1,tilt);
-  const flatLen=Math.hypot(flat.x,flat.y);
-  const profLen=Math.hypot(prof.x,prof.y);
-  assert.ok(Math.abs(flatLen-10)<0.01,'flat: the right axis is full width');
-  assert.ok(Math.abs(profLen-10*E.CLIMB_PROFILE_RIGHT)<0.01,
-    'profile: the right axis collapses to CLIMB_PROFILE_RIGHT');
-
-  /* The dorsal axis only exists in profile: it lifts a part up the screen. */
-  const noDorsal=E.toCanvasDorsal(0,0,0,heading,1,1,fs,1,tilt);
-  const withDorsal=E.toCanvasDorsal(0,0,E.ABD_DORSAL,heading,1,1,fs,1,tilt);
-  assert.ok(withDorsal.y<noDorsal.y,'dorsal lifts the part up the screen');
-  assert.ok(Math.abs((noDorsal.y-withDorsal.y)-E.ABD_DORSAL)<0.01,
-    'the lift equals the dorsal offset at full profile');
-  const floorDorsal=E.toCanvasDorsal(0,0,E.ABD_DORSAL,heading,1,1,fs,0,tilt);
-  assert.ok(Math.abs(floorDorsal.y-noDorsal.y)<0.01,
-    'on the floor the dorsal axis is invisible');
-
-  /* The abdomen rides higher than the cephalothorax, which is the classic
-   * spider profile: a raised teardrop behind a lower head. */
-  assert.ok(E.ABD_DORSAL>E.CEPH_DORSAL,'the abdomen rides higher than the head');
-  assert.ok(E.LEG_DORSAL>0,'the legs hang below the body in profile');
-
-  /* The SEPARATION is what makes the profile read. The first attempt used 7 and
-   * 3, a 4 px gap between circles of radius 13 and 11, so the two masses merged
-   * into one blob and the side view looked like a lump. */
-  const gap=E.ABD_DORSAL-E.CEPH_DORSAL;
-  assert.ok(gap>=10,`the body masses must be clearly separated, got ${gap}`);
-  /* Seen from the side the abdomen is a teardrop, not a circle, so it narrows. */
-  assert.ok(E.ABD_PROFILE_SCALE<1&&E.ABD_PROFILE_SCALE>0.7,
-    'the abdomen narrows in profile but stays readable');
+  /* The projection is a plain top-down rotation. The right axis keeps its full
+   * width, and nothing lifts a part up the screen. */
+  const heading=0;
+  const right=E.toCanvas(0,10,heading,1,1,1);
+  assert.ok(Math.abs(Math.hypot(right.x,right.y)-10)<1e-9,
+    'the right axis is full width');
+  const centre=E.toCanvas(0,0,heading,1,1,1);
+  assert.ok(Math.abs(centre.x)<1e-9&&Math.abs(centre.y)<1e-9,
+    'the body centre is unmoved');
+  /* Foreshortening still applies, but only from the PERCH pose. */
+  const squashed=E.toCanvas(10,0,heading,1,1,0.72);
+  assert.ok(Math.abs(Math.hypot(squashed.x,squashed.y)-7.2)<1e-9,
+    'the perch foreshortening still compresses the forward axis');
 });
 
 test('walk behind blocks movement as well as occluding',()=>{
@@ -506,6 +495,82 @@ test('walk behind blocks movement as well as occluding',()=>{
   /* The block radius covers the artwork, not just the small push radius. */
   assert.ok(E.GIFT_BLOCK_RADIUS>18,
     'Walk Behind blocks against the artwork, not the push radius');
+});
+
+test('a gift cannot be set to walk behind',()=>{
+  /* A gift is a single 64x64 object with no depth to walk behind. The canopy
+   * switch only ever fired while the spider was above the artwork, and because
+   * the gift also blocks, the spider could never get there -- so the path
+   * looked like it did nothing. Walk Over and Solid are the two states a gift
+   * can actually express. */
+  assert.equal(E.giftPathAllowed(0),true,'Walk Over is allowed');
+  assert.equal(E.giftPathAllowed(1),true,'Solid is allowed');
+  assert.equal(E.giftPathAllowed(2),false,'Walk Behind is not');
+  assert.equal(E.giftPathAllowed(3),false,'Climb is not');
+  /* Cycling must skip Walk Behind entirely rather than land on it and clamp. */
+  const seen=[];
+  let path=0;
+  for(let i=0;i<4;i++){path=E.nextGiftPath(path);seen.push(path);}
+  assert.ok(!seen.includes(2),`Walk Behind must never be staged, got ${seen}`);
+  assert.ok(seen.includes(0)&&seen.includes(1),'both usable paths are reachable');
+});
+
+test('walk behind blocks decor against the whole artwork',()=>{
+  /* The same rule that makes Walk Behind read on a gift applies to decor: the
+   * spider must not stand on the item's lower half. Blocking only the small
+   * collision footprint let it walk over the bottom of the sprite and then pop
+   * behind the top. */
+  const {state}=fixture();
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  /* A prop: 64x64 drawn at radius*16, so its screen half-extent is 2*radius. */
+  state.decor[0]={kind:3,blocking:2,x:240,y:240};
+  const def=E.DECOR_KINDS[3];
+  const extent=E.decorBlockRadius(state,0);
+  assert.ok(extent>def.radius,
+    `Walk Behind blocks the artwork, not the footprint (${extent} vs ${def.radius})`);
+  assert.ok(Math.abs(extent-def.radius*2)<1e-9,
+    'a prop sprite covers 2*radius screen pixels each way');
+  /* Solid still blocks only its collision footprint. */
+  state.decor[0].blocking=1;
+  assert.ok(Math.abs(E.decorBlockRadius(state,0)-def.radius)<1e-9,
+    'Solid blocks its footprint');
+  /* Walk Over and Climb do not block at all. */
+  state.decor[0].blocking=0;
+  assert.equal(E.decorBlocksPoint(state,240,240),false,'Walk Over does not block');
+  state.decor[0].blocking=3;
+  assert.equal(E.decorBlocksPoint(state,240,240),false,'Climb does not block');
+});
+
+test('walk behind blocks a structure only where its artwork is',()=>{
+  /* A large structure is a diagonal log in a square box. Blocking the box
+   * would stop the spider walking through thin air beside the log; blocking a
+   * circle of radius 96 clipped the ends of the log, because the box corners
+   * sit at r*sqrt(2). The span table is exact, so it is the only test. */
+  const {state}=fixture();
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  const kind=E.DECOR_CLIMB_FIRST+5; /* driftwood */
+  state.decor[0]={kind,blocking:2,x:240,y:240};
+  assert.equal(E.decorBlocksPoint(state,240,240),true,'the centre blocks');
+  /* The four box corners are transparent, so they must not block. */
+  for(const [dx,dy] of [[-95,-95],[95,-95],[-95,95],[95,95]])
+    assert.equal(E.decorBlocksPoint(state,240+dx,240+dy),false,
+      `corner ${dx},${dy} is empty artwork`);
+  /* The ends of the log are opaque and lie outside a radius-96 circle, so a
+   * circular pre-check would have let the spider walk through them. */
+  const rows=CLIMB_MASK[5];
+  let checked=0;
+  for(let sy=0;sy<rows.length;sy++){
+    const span=rows[sy];
+    if(!span)continue;
+    for(const sx of [span[0],span[1]]){
+      const dx=(sx-48)*2,dy=(sy-48)*2;
+      if(dx*dx+dy*dy<=96*96)continue;
+      assert.equal(E.decorBlocksPoint(state,240+dx,240+dy),true,
+        `opaque log end ${sx},${sy} must block`);
+      checked++;
+    }
+  }
+  assert.ok(checked>0,'the driftwood has opaque pixels outside the circle');
 });
 
 test('the layer row is hidden when there is nothing to order against',()=>{

@@ -7,6 +7,7 @@
  * shoves the spider, so it walks around an item instead of grinding against it.
  */
 #include "decor.h"
+#include "climb_mask.h"
 
 #include "game.h"
 #include "save.h"
@@ -351,6 +352,36 @@ static float climb_extent(const decor_item_t *item, const decor_def_t *def)
         ? (float)DECOR_CLIMB_EXTENT : (float)def->radius;
 }
 
+/* True when a screen point lands on a large structure's actual artwork.
+ *
+ * The sprites are diagonal logs, branches and arches, so a circle centred on
+ * the sprite covers a lot of empty corner. That is the "hitbox is way off, the
+ * spider is well above the decor item and it thinks it is on it" report: the
+ * spider was lifted while standing in transparent space beside the log, with
+ * the contact shadow left far away at the floor point.
+ *
+ * The generated span table records the first and last opaque source column of
+ * every source row, so this asks the real question instead of approximating it
+ * with a radius. A row with small gaps (between two branches of a vine) is one
+ * span: a spider standing in a gap is still on the structure. */
+static bool climb_on_art(const decor_item_t *item, int16_t x, int16_t y)
+{
+    int index = (int)item->kind - (int)DECOR_CLIMB_FIRST;
+    if (index < 0 || index >= CLIMB_MASK_COUNT) return false;
+
+    /* Screen -> source. LVGL scales an image about its own centre, so the
+     * sprite covers item->x +/- DECOR_CLIMB_EXTENT and each source pixel covers
+     * two screen pixels. Source 48 is the item centre. */
+    int sx = (x - item->x) / 2 + DECOR_CLIMB_SPRITE / 2;
+    int sy = (y - item->y) / 2 + DECOR_CLIMB_SPRITE / 2;
+    if (sx < 0 || sx >= CLIMB_MASK_ROWS || sy < 0 || sy >= CLIMB_MASK_ROWS)
+        return false;
+
+    const climb_span_t *span = &k_climb_mask[index][sy];
+    if (span->empty) return false;
+    return sx >= span->first && sx <= span->last;
+}
+
 static uint8_t climb_lift_on(const decor_item_t *item, const decor_def_t *def,
                              int16_t x, int16_t y)
 {
@@ -358,25 +389,56 @@ static uint8_t climb_lift_on(const decor_item_t *item, const decor_def_t *def,
     float dy = (float)(y - item->y);
     float r = climb_extent(item, def);
     if (r <= 0.0f) return 0;
-    float d2 = dx * dx + dy * dy;
-    if (d2 > r * r) return 0;
-    if (!decor_is_climb_structure(item->kind)) return def->climb_height;
 
-    /* 0 at the bottom edge of the footprint, 1 at the top edge. Screen y grows
-     * downward, so the bottom edge is item->y + r. */
-    float t = (dy + r) / (2.0f * r);
+    if (!decor_is_climb_structure(item->kind)) {
+        /* A prop is a flat disc: inside the footprint you are at full height. */
+        return (dx * dx + dy * dy <= r * r) ? def->climb_height : 0;
+    }
+
+    /* A large structure only lifts the spider where its artwork actually is.
+     *
+     * There is deliberately no circular pre-check here. The sprite is a square
+     * box, so its corners sit at r*sqrt(2) from the centre: a circle of radius r
+     * clipped the ends of the diagonal logs, which is why the top of the
+     * driftwood reported no lift at all. The span table is exact, so it is the
+     * only test needed. */
+    if (!climb_on_art(item, x, y)) return 0;
+
+    /* 0 at the bottom of the ARTWORK, 1 at the top. Measured against the rows
+     * the sprite actually occupies, not the square box: the driftwood's opaque
+     * rows are 10..87 of 96, so using the box would leave the spider short of
+     * full height at the visible top and still lifted below the visible base. */
+    int index = (int)item->kind - (int)DECOR_CLIMB_FIRST;
+    int sy = (y - item->y) / 2 + DECOR_CLIMB_SPRITE / 2;
+    int top_row = 0, bot_row = CLIMB_MASK_ROWS - 1;
+    if (index >= 0 && index < CLIMB_MASK_COUNT) {
+        while (top_row < CLIMB_MASK_ROWS && k_climb_mask[index][top_row].empty)
+            top_row++;
+        while (bot_row > top_row && k_climb_mask[index][bot_row].empty)
+            bot_row--;
+    }
+    float t = (float)(sy - top_row) / (float)(bot_row - top_row + 1);
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
     float lift = (float)def->climb_height * (1.0f - t);
 
-    /* Fade the lift out toward the left and right edges. The ramp is vertical,
-     * so without this the spider gained half the climb height the instant it
-     * crossed the side of the footprint, which is the jump that made the
-     * perspective shift look wrong. */
-    float nx = dx / r;
-    float fade = 1.0f - nx * nx;
-    if (fade < 0.0f) fade = 0.0f;
-    lift *= fade;
+    /* Fade the lift out toward the left and right edges of the artwork, so the
+     * spider does not gain half the climb height the instant it steps onto the
+     * side of the log. Measured against the row's own span rather than the
+     * sprite box, so the fade follows the diagonal instead of the square. */
+    if (index >= 0 && index < CLIMB_MASK_COUNT &&
+        sy >= 0 && sy < CLIMB_MASK_ROWS) {
+        const climb_span_t *span = &k_climb_mask[index][sy];
+        if (!span->empty) {
+            float mid = ((float)span->first + (float)span->last) * 0.5f;
+            float half = ((float)span->last - (float)span->first) * 0.5f + 1.0f;
+            float sx = (float)(x - item->x) / 2.0f + DECOR_CLIMB_SPRITE / 2.0f;
+            float nx = (sx - mid) / half;
+            float fade = 1.0f - nx * nx;
+            if (fade < 0.0f) fade = 0.0f;
+            lift *= fade;
+        }
+    }
 
     return (uint8_t)(lift + 0.5f);
 }
@@ -435,9 +497,21 @@ float decor_climb_slope(int16_t x, int16_t y, int *out_slot)
         if (out_slot) *out_slot = i;
         /* A small prop is a flat disc, so its top is level. */
         if (!decor_is_climb_structure(item->kind)) { best = 0.0f; continue; }
-        float r = climb_extent(item, def);
-        if (r <= 0.0f) { best = 0.0f; continue; }
-        best = -(float)def->climb_height / (2.0f * r);
+        /* The run is the artwork's own vertical span, matching the ramp in
+         * climb_lift_on(): the driftwood's opaque rows are 10..87 of 96, so
+         * using the square box would understate the gradient. */
+        int index = (int)item->kind - (int)DECOR_CLIMB_FIRST;
+        int top_row = 0, bot_row = CLIMB_MASK_ROWS - 1;
+        if (index >= 0 && index < CLIMB_MASK_COUNT) {
+            while (top_row < CLIMB_MASK_ROWS && k_climb_mask[index][top_row].empty)
+                top_row++;
+            while (bot_row > top_row && k_climb_mask[index][bot_row].empty)
+                bot_row--;
+        }
+        /* Source rows are 2 screen pixels each. */
+        float run = (float)(bot_row - top_row + 1) * 2.0f;
+        if (run <= 0.0f) { best = 0.0f; continue; }
+        best = -(float)def->climb_height / run;
     }
     return best;
 }
@@ -708,16 +782,70 @@ int decor_hit_test(int16_t x, int16_t y)
     return -1;
 }
 
+/* The screen half-extent of an item's ARTWORK, as opposed to its collision
+ * footprint.
+ *
+ * A prop's sprite is 64x64 drawn at LVGL scale radius*16, which is radius/16 of
+ * 1:1, so it covers 4*radius screen pixels and its half-extent is 2*radius. A
+ * large climb structure is DECOR_CLIMB_SPRITE square drawn at 2x, so its
+ * half-extent is DECOR_CLIMB_EXTENT.
+ *
+ * Walk Behind blocks against this rather than `radius`, because the point of
+ * the rule is that the spider must not stand on the item's lower half. Blocking
+ * only the small collision footprint let it walk over the bottom of the sprite
+ * and then pop behind the top, which is the "they walk over the bottom and then
+ * behind above it" report. */
+static float decor_art_extent(const decor_item_t *item, const decor_def_t *def)
+{
+    return decor_is_climb_structure(item->kind)
+        ? (float)DECOR_CLIMB_EXTENT : (float)def->radius * 2.0f;
+}
+
+/* True when the item's path stops the spider walking through it.
+ *
+ * Walk Behind is included. It used to be non-blocking, which meant the spider
+ * crossed the footprint and was drawn on top of the item's lower half before
+ * popping behind its upper half. Blocking is what makes the canopy switch read:
+ * the only way to be above the item's centre line is to be genuinely behind the
+ * artwork. */
+static bool decor_path_blocks(uint8_t path)
+{
+    return path == DECOR_SOLID || path == DECOR_WALK_BEHIND;
+}
+
+float decor_block_radius(int slot)
+{
+    const decor_item_t *item = decor_at(slot);
+    if (!item) return 0.0f;
+    const decor_def_t *def = decor_def(item->kind);
+    if (!def) return 0.0f;
+    return (item->blocking == DECOR_WALK_BEHIND)
+        ? decor_art_extent(item, def) : (float)def->radius;
+}
+
 bool decor_blocks_point(int16_t x, int16_t y)
 {
     for (int i = 0; i < decor_slot_count(); i++) {
         const decor_item_t *item = decor_at(i);
-        if (!item || item->blocking != DECOR_SOLID) continue;
+        if (!item || !decor_path_blocks(item->blocking)) continue;
         const decor_def_t *def = decor_def(item->kind);
         if (!def) continue;
         float dx = (float)(x - item->x);
         float dy = (float)(y - item->y);
-        if (dx * dx + dy * dy <= (float)def->radius * def->radius) return true;
+        /* A large structure's artwork is a diagonal log, so the square box
+         * around it is mostly empty. Blocking the box would make the spider
+         * refuse to walk through thin air beside the log. The span table is
+         * exact, so it replaces the circular test entirely: the box corners sit
+         * at r*sqrt(2), and a circle of radius r clipped the ends of the logs. */
+        if (item->blocking == DECOR_WALK_BEHIND &&
+            decor_is_climb_structure(item->kind)) {
+            if (!climb_on_art(item, x, y)) continue;
+            return true;
+        }
+        float r = (item->blocking == DECOR_WALK_BEHIND)
+            ? decor_art_extent(item, def) : (float)def->radius;
+        if (dx * dx + dy * dy > r * r) continue;
+        return true;
     }
     return false;
 }
@@ -729,7 +857,7 @@ bool decor_nearest_blocking(int16_t x, int16_t y, float max_distance,
     int found = -1;
     for (int i = 0; i < decor_slot_count(); i++) {
         const decor_item_t *item = decor_at(i);
-        if (!item || item->blocking != DECOR_SOLID) continue;
+        if (!item || !decor_path_blocks(item->blocking)) continue;
         float dx = (float)(item->x - x);
         float dy = (float)(item->y - y);
         float d2 = dx * dx + dy * dy;
@@ -856,8 +984,16 @@ bool decor_test(void)
     int b = decor_place(DECOR_CRYSTAL, 200, 200);
     int c = decor_place(DECOR_ROCK_SMALL, 200, 200);
     ok = ok && decor_set_path(b, DECOR_WALK_BEHIND);
-    ok = ok && !decor_blocks_point(200, 200) &&
-         !decor_nearest_blocking(200, 200, 100, NULL, NULL, NULL);
+    /* Walk Behind BLOCKS, and against the whole artwork rather than the small
+     * collision footprint. It used to be non-blocking, which let the spider
+     * walk over the bottom of the sprite and then pop behind the top. */
+    ok = ok && decor_blocks_point(200, 200);
+    ok = ok && decor_nearest_blocking(200, 200, 100, NULL, NULL, NULL);
+    ok = ok && decor_block_radius(b) > (float)k_decor_kinds[DECOR_CRYSTAL].radius;
+    /* Walk Over still does not block. Checked at a point where only a Walk Over
+     * item sits, since b covers (200,200). */
+    ok = ok && decor_at(a)->blocking == DECOR_WALK_OVER;
+    ok = ok && !decor_blocks_point(200 + (int16_t)decor_block_radius(b) + 4, 200);
     ok = ok && decor_hit_test(200, 200) == b && decor_layer_count(0, -1) == 2;
     ok = ok && decor_layer_count(2, -1) == 1 && decor_layer_index(c) == 1;
     int reordered = decor_set_layer(c, 0);
@@ -931,17 +1067,30 @@ bool decor_test(void)
      * appear while the spider was still above the artwork. */
     int extent = DECOR_CLIMB_EXTENT;
     ok = ok && full >= 40;                     /* genuinely tall, not a hop */
-    /* The ramp runs up the screen: ground at the bottom edge, full at the top. */
-    uint8_t bottom = decor_climb_at(240, 240 + extent - 2, NULL);
-    uint8_t middle = decor_climb_at(240, 240, NULL);
-    uint8_t top = decor_climb_at(240, 240 - extent + 2, NULL);
-    ok = ok && bottom < full / 8;
-    ok = ok && middle > full / 3 && middle < full * 2 / 3;
-    ok = ok && top > full * 7 / 8;
+    /* The ramp runs up the screen: ground at the bottom of the artwork, full at
+     * the top. The driftwood is a DIAGONAL log running from lower-right to
+     * upper-left, so the samples follow its centre line rather than a vertical
+     * line through the item centre: a vertical line leaves the artwork at both
+     * ends. */
+    uint8_t high = decor_climb_at(172, 172, NULL);   /* upper-left of the log */
+    uint8_t mid  = decor_climb_at(246, 240, NULL);   /* middle */
+    uint8_t low  = decor_climb_at(296, 308, NULL);   /* lower-right */
+    ok = ok && low > 0 && mid > 0 && high > 0;
+    ok = ok && low < mid && mid < high;              /* rises along the log */
+    ok = ok && high > full * 3 / 4;
+    /* The ramp is measured against the artwork's own rows, so the visible top
+     * of the log reaches nearly full height rather than stopping short. */
+    ok = ok && high >= full - 6;
+    /* The corners of the 192 px sprite box are EMPTY. This is the "hitbox is
+     * way off, the spider is well above the decor item and it thinks it is on
+     * it" report: a circle or a box covers the transparent corners, so the
+     * spider was lifted while standing in space beside the log. */
+    ok = ok && decor_climb_at(240, 240 - extent + 2, NULL) == 0;  /* top centre */
+    ok = ok && decor_climb_at(240, 240 + extent - 2, NULL) == 0;  /* bottom centre */
+    ok = ok && decor_climb_at(240 - extent + 4, 240 - extent + 4, NULL) == 0;
+    ok = ok && decor_climb_at(240 + extent - 4, 240 + extent - 4, NULL) == 0;
+    /* Outside the sprite box there is nothing at all. */
     ok = ok && decor_climb_at(240, 240 + extent + 2, NULL) == 0;
-    /* The ramp is vertical, so the lift must fall off toward the side edges
-     * rather than jumping to half height the instant the spider crosses them. */
-    ok = ok && decor_climb_at(240 + extent - 4, 240, NULL) < full / 4;
     ok = ok && decor_climb_at(240 + extent + 2, 240, NULL) == 0;
     /* A prop still snaps: no gradient across its footprint. */
     int flat = decor_place(DECOR_LOG, 120, 120);

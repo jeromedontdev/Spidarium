@@ -3,6 +3,7 @@ export * from './companion.js?v=1.1.31';
 import { lifeDefaults, lifeValid, lifeTick, lifeContext,
   lifeRetire as retireLifePet, lifeResume as resumeLifePet } from './life.js?v=1.1.31';
 export * from './life.js?v=1.1.31';
+import { CLIMB_MASK, CLIMB_MASK_ROWS, CLIMB_MASK_COUNT } from './climb-mask.js?v=1.1.31';
 /**
  * Native flat persistent fields plus browser-only runtime `_engine`, `prey`,
  * `poop`, and `spider` rendering view. Coordinates are native 480x480 pixels.
@@ -55,35 +56,20 @@ export const STATE_NAMES = ['idle','wander','stalk','aim','pounce','eat','sleep'
 // Forward-axis compression while perched on a small prop. Mirrors
 // PERCH_FORESHORTEN in main/cspider.c.
 export const PERCH_FORESHORTEN = 0.72;
-// Forward-axis compression at the TOP of a large climb structure. Climbing
-// changes the viewing angle, so the body's forward axis compresses as the
-// spider gets higher. Mirrors CLIMB_FORESHORTEN in main/cspider.c.
-export const CLIMB_FORESHORTEN = 0.80;
-// The lift at which CLIMB_FORESHORTEN is fully applied. Mirrors CLIMB_FULL_LIFT.
-export const CLIMB_FULL_LIFT = 66;
-// How much of the surface gradient the body follows, and the steepest tilt
-// allowed in radians. Mirrors CLIMB_TILT_FOLLOW and CLIMB_TILT_MAX.
-export const CLIMB_TILT_FOLLOW = 0.85;
-export const CLIMB_TILT_MAX = 0.52;
-// Side-view blend: 0 = flat top-down, 1 = full profile. Rotating a top-down
-// spider does not produce a side view, so the body's dorsal axis is projected
-// onto the screen as this rises. Mirrors CLIMB_PROFILE_RIGHT and the dorsal
-// offsets in main/cspider.c.
-export const CLIMB_PROFILE_RIGHT = 0.55;
-// The SEPARATION between the two body masses is what makes the profile read.
-// 7 and 3 left a 4 px gap between circles of radius 13 and 11, so they merged
-// into one blob. A profile needs the abdomen clearly above and behind the head.
-export const ABD_DORSAL = 12.0;
-export const CEPH_DORSAL = 0.0;
-export const EYE_DORSAL = 3.0;
-export const FANG_DORSAL = -1.0;
-// Seen from the side the abdomen is a teardrop, not a circle, so it narrows.
-export const ABD_PROFILE_SCALE = 0.86;
-export const LEG_DORSAL = 7.0;
-export const LEG_DORSAL_NEAR = 1.5;
-// Fraction of the climb at which the side view starts to blend in. Below this
-// the spider is still effectively on the floor, so it stays top-down.
-export const CLIMB_PROFILE_START = 0.35;
+// There is deliberately NO perspective shift while climbing, and the constants
+// that drove one are gone rather than left dormant.
+//
+// Three attempts were made: a forward-axis compression, a body tilt following
+// the surface gradient, and a full dorsal projection that turned the top-down
+// sprite into a side view. Each was individually plausible and each looked
+// wrong on the panel, because a 96x96 pixel-art sprite drawn from above cannot
+// be re-projected into a convincing profile by moving its parts around. The
+// silhouette is authored top-down; skewing it produces a distorted top-down
+// spider, not a side view.
+//
+// What remains is the honest part of the effect: the spider is LIFTED up the
+// structure and keeps its contact shadow at the ground point, so it visibly
+// stands on something with height. Mirrors main/cspider.c.
 export const STAGES = ['Spiderling','Juvenile','Adult'];
 export const TEMPERAMENTS = [
   {name:'bold',aim_window_mult:.85,catch_mult:1.1,speed_mult:1.1,hunger_decay_mult:1,sleep_threshold:15},
@@ -966,6 +952,35 @@ export const decorClimbHeight=(s,slot)=>{
   if(!item||item.kind===DECOR_EMPTY||item.blocking!==3)return 0;
   return DECOR_KINDS[item.kind]?.climb??0;
 };
+// The opaque span of a large structure's artwork at a screen point, or null
+// when the point is off the artwork. The sprites are diagonal logs and arches,
+// so a circle centred on the sprite covers a lot of empty corner: the spider
+// was lifted while standing in transparent space beside the log, with the
+// contact shadow left far away at the floor point.
+export function climbSpanAt(kind,x,y,itemX,itemY){
+  const index=kind-DECOR_CLIMB_FIRST;
+  if(index<0||index>=CLIMB_MASK_COUNT)return null;
+  // LVGL scales an image about its own centre, so the sprite covers
+  // item +/- DECOR_CLIMB_EXTENT and each source pixel covers two screen pixels.
+  const sx=Math.floor((x-itemX)/2)+DECOR_CLIMB_SPRITE/2;
+  const sy=Math.floor((y-itemY)/2)+DECOR_CLIMB_SPRITE/2;
+  if(sx<0||sx>=CLIMB_MASK_ROWS||sy<0||sy>=CLIMB_MASK_ROWS)return null;
+  const span=CLIMB_MASK[index][sy];
+  if(!span)return null;
+  if(sx<span[0]||sx>span[1])return null;
+  return {span,sx,sy};
+}
+// The first and last opaque source row of a structure, so the ramp is measured
+// against the artwork rather than the square box around it.
+export function climbRowRange(kind){
+  const index=kind-DECOR_CLIMB_FIRST;
+  if(index<0||index>=CLIMB_MASK_COUNT)return null;
+  const rows=CLIMB_MASK[index];
+  let top=0,bot=rows.length-1;
+  while(top<rows.length&&!rows[top])top++;
+  while(bot>top&&!rows[bot])bot--;
+  return {top,bot};
+}
 export function decorClimbAt(s,x,y){
   let best=0;
   for(const item of s.decor){
@@ -975,31 +990,29 @@ export function decorClimbAt(s,x,y){
     const dx=x-item.x,dy=y-item.y;
     const r=decorClimbExtent(item.kind);
     if(r<=0)continue;
-    const d2=dx*dx+dy*dy;
-    if(d2>r*r)continue;
-    // A prop is a flat disc: inside the footprint you are at full height. A
-    // large climb structure is a SLOPE that runs UP THE SCREEN: the spider
-    // enters at the bottom edge and rises as it walks toward the top edge,
-    // which is what makes it read as climbing a branch rather than floating
-    // over one. Ramping radially from the centre made the spider rise from
-    // whichever side it approached, which read as being lifted onto a platform.
-    //
-    // The ramp spans the ARTWORK, not the collision footprint: the sprite is
-    // DECOR_CLIMB_SPRITE square drawn at 2x, so its half-extent is
-    // DECOR_CLIMB_EXTENT. Using the much smaller `radius` confined the climb to
-    // a circle in the middle of the sprite.
-    let lift;
-    if(decorIsClimbStructure(item.kind)){
-      const t=Math.min(1,Math.max(0,(dy+r)/(2*r)));
-      // Fade out toward the left and right edges: the ramp is vertical, so
-      // without this the spider gained half the climb height the instant it
-      // crossed the side of the footprint.
-      const nx=dx/r;
-      const fade=Math.max(0,1-nx*nx);
-      lift=Math.round(def.climb*(1-t)*fade);
-    }else{
-      lift=def.climb;
+    // A prop is a flat disc: inside the footprint you are at full height.
+    if(!decorIsClimbStructure(item.kind)){
+      if(dx*dx+dy*dy<=r*r&&def.climb>best)best=def.climb;
+      continue;
     }
+    // A large structure is a SLOPE that runs UP THE SCREEN: the spider enters at
+    // the bottom of the artwork and rises as it walks toward the top, which is
+    // what makes it read as climbing a branch rather than floating over one.
+    //
+    // There is deliberately no circular pre-check: the sprite is a square box,
+    // so its corners sit at r*sqrt(2) from the centre and a circle of radius r
+    // clipped the ends of the diagonal logs. The span table is exact.
+    const hit=climbSpanAt(item.kind,x,y,item.x,item.y);
+    if(!hit)continue;
+    const range=climbRowRange(item.kind);
+    const t=Math.min(1,Math.max(0,(hit.sy-range.top)/(range.bot-range.top+1)));
+    // Fade out toward the left and right edges of the artwork, measured against
+    // the row's own span so the fade follows the diagonal, not the square.
+    const mid=(hit.span[0]+hit.span[1])/2;
+    const half=(hit.span[1]-hit.span[0])/2+1;
+    const nx=(hit.sx-mid)/half;
+    const fade=Math.max(0,1-nx*nx);
+    const lift=Math.round(def.climb*(1-t)*fade);
     if(lift>best)best=lift;
   }
   return best;
@@ -1023,60 +1036,33 @@ export function decorClimbSlope(s,x,y){
     if(item.kind===DECOR_EMPTY||item.blocking!==3)continue;
     const def=DECOR_KINDS[item.kind];
     if(!def||!def.climb)continue;
-    const dx=x-item.x,dy=y-item.y;
-    const r=decorClimbExtent(item.kind);
-    if(r<=0)continue;
-    if(dx*dx+dy*dy>r*r)continue;
-    let lift;
-    if(decorIsClimbStructure(item.kind)){
-      const t=Math.min(1,Math.max(0,(dy+r)/(2*r)));
-      const nx=dx/r;
-      const fade=Math.max(0,1-nx*nx);
-      lift=Math.round(def.climb*(1-t)*fade);
-    }else{
-      lift=def.climb;
-    }
+    const lift=decorClimbAt({decor:[item]},x,y);
     if(lift===0||lift<=bestLift)continue;
     bestLift=lift;
     if(!decorIsClimbStructure(item.kind)){best=0;continue;}
-    // Measured against the artwork extent, not the collision radius: the same
-    // climb over the smaller radius was a 1.8 slope that clamped to the tilt
-    // limit and looked like the spider was standing on a wall.
-    best=-def.climb/(2*r);
+    // The run is the artwork's own vertical span, matching the ramp in
+    // decorClimbAt(): the driftwood's opaque rows are 10..87 of 96, so using
+    // the square box would understate the gradient. Source rows are 2 screen
+    // pixels each.
+    const range=climbRowRange(item.kind);
+    const run=(range.bot-range.top+1)*2;
+    if(run<=0){best=0;continue;}
+    best=-def.climb/run;
   }
   return best;
 }
 
-// Side-view blend for a given climb lift: 0 on the floor, 1 at the top of the
-// tallest structure. Mirrors the s_profile easing in main/cspider.c, including
-// the dead zone through the lower part of the ramp where the spider is still
-// effectively on the floor and should stay top-down.
-export function climbProfile(lift){
-  if(!(lift>0))return 0;
-  const t=lift/CLIMB_FULL_LIFT;
-  if(t<=CLIMB_PROFILE_START)return 0;
-  const u=(t-CLIMB_PROFILE_START)/(1-CLIMB_PROFILE_START);
-  return u>1?1:u;
-}
-
-// Project a body-local (forward, right, dorsal) offset into canvas coordinates.
-// `dorsal` is the body's up axis: 0 for a flat top-down pose, positive to lift a
-// part up the screen as the profile blend rises. Mirrors to_canvas_dorsal().
-export function toCanvasDorsal(fwd,right,dorsal,heading,scaleF,scaleR,
-                               foreshorten,profile,tilt){
+// Project a body-local (forward, right) offset into canvas coordinates.
+//
+// The spider is always drawn from directly above: there is no dorsal axis, no
+// profile blend and no body tilt. See the note near the top of this file for why
+// the climb perspective was removed rather than tuned. Mirrors to_canvas().
+export function toCanvas(fwd,right,heading,scaleF,scaleR,foreshorten){
   const fx=Math.cos(heading),fy=Math.sin(heading);
   const rx=-fy,ry=fx;
   const f=fwd*scaleF*foreshorten;
-  const r=right*scaleR*(1-(1-CLIMB_PROFILE_RIGHT)*profile);
-  let ox=fx*f+rx*r;
-  let oy=fy*f+ry*r;
-  oy-=dorsal*profile;
-  if(tilt!==0){
-    const c=Math.cos(tilt),s=Math.sin(tilt);
-    const tx=ox*c-oy*s,ty=ox*s+oy*c;
-    ox=tx;oy=ty;
-  }
-  return {x:ox,y:oy};
+  const r=right*scaleR;
+  return {x:fx*f+rx*r,y:fy*f+ry*r};
 }
 
 // Perching on a small prop. A prop is too short to read as a climb, so the
@@ -1172,14 +1158,44 @@ export function decorHitTest(s,x,y){
   }
   return -1;
 }
+// Walk Behind blocks movement as well as occluding. It used to be
+// non-blocking, which let the spider walk over the bottom of the sprite and
+// then pop behind the top. Mirrors decor_path_blocks() in main/decor.c.
+export function decorPathBlocks(path){
+  return path===1||path===2;
+}
+// The radius an item actually blocks at. Solid blocks its collision footprint;
+// Walk Behind blocks the whole ARTWORK, because the point of that path is that
+// the spider must not stand on the item's lower half. A prop's sprite is 64x64
+// drawn at radius*16, so it covers 2*radius screen pixels each way; a large
+// climb structure is DECOR_CLIMB_SPRITE square drawn at 2x.
+export function decorBlockRadius(s,slot){
+  const item=s.decor[slot];
+  if(!item||item.kind===DECOR_EMPTY)return 0;
+  const d=DECOR_KINDS[item.kind];
+  if(!d)return 0;
+  if(item.blocking!==2)return d.radius;
+  return decorIsClimbStructure(item.kind)?DECOR_CLIMB_EXTENT:d.radius*2;
+}
 /** True when a point is inside a blocking item's footprint. */
 export function decorBlocksPoint(s,x,y){
   for(const item of s.decor){
-    if(item.kind===DECOR_EMPTY||item.blocking!==1)continue;
+    if(item.kind===DECOR_EMPTY||!decorPathBlocks(item.blocking))continue;
     const d=DECOR_KINDS[item.kind];
     if(!d)continue;
     const dx=x-item.x,dy=y-item.y;
-    if(dx*dx+dy*dy<=d.radius*d.radius)return true;
+    // A large structure's artwork is a diagonal log, so the square box around
+    // it is mostly empty. Blocking the box would make the spider refuse to walk
+    // through thin air beside the log. The span table is exact, so it replaces
+    // the circular test entirely: the box corners sit at r*sqrt(2), and a
+    // circle of radius r clipped the ends of the logs.
+    if(item.blocking===2&&decorIsClimbStructure(item.kind)){
+      if(!climbSpanAt(item.kind,x,y,item.x,item.y))continue;
+      return true;
+    }
+    const r=item.blocking===2?d.radius*2:d.radius;
+    if(dx*dx+dy*dy>r*r)continue;
+    return true;
   }
   return false;
 }
@@ -1187,7 +1203,7 @@ export function decorBlocksPoint(s,x,y){
 export function decorNearestBlocking(s,x,y,maxDistance){
   let best=maxDistance*maxDistance,found=null;
   for(const item of s.decor){
-    if(item.kind===DECOR_EMPTY||item.blocking!==1)continue;
+    if(item.kind===DECOR_EMPTY||!decorPathBlocks(item.blocking))continue;
     const dx=item.x-x,dy=item.y-y,d2=dx*dx+dy*dy;
     if(d2<best){best=d2;found=item;}
   }
@@ -1458,6 +1474,23 @@ export const GIFT_BLOCK_RADIUS=28;
 export function giftBlocksMovement(path){
   return path===1||path===2;
 }
+// A gift cannot be set to Walk Behind. It is a single 64x64 object with no
+// depth to walk behind: the canopy switch only ever fired while the spider was
+// above the artwork, and because the gift also blocks, the spider could never
+// get there -- so the path looked like it did nothing. Walk Over and Solid are
+// the two states a gift can actually express. Mirrors game_on_placement_blocking.
+export function giftPathAllowed(path){
+  return path===0||path===1;
+}
+// The next path the gift editor should stage, skipping Walk Behind entirely.
+export function nextGiftPath(path){
+  let p=path;
+  for(let i=0;i<4;i++){
+    p=(p+1)%4;
+    if(giftPathAllowed(p))return p;
+  }
+  return 0;
+}
 function steer(s,want,dt,avoid=false){
   if(avoid){
     let a=0;
@@ -1469,14 +1502,17 @@ function steer(s,want,dt,avoid=false){
       if(d>.1&&d<=avoidR&&(dx*Math.cos(want)+dy*Math.sin(want))/d>=.15)
         a=(wrap(Math.atan2(dy,dx)-want)>=0?-1:1)*(1-d/avoidR)*PI*.5;
     }
-    // Blocking decor: same steering principle, measured from the footprint
-    // edge so a big log pushes the spider away further out than a small rock.
-    // Non-blocking items are ignored entirely.
+    // Blocking decor: same steering principle, measured from the edge the
+    // spider is actually blocked at, so a big log pushes it away further out
+    // than a small rock. Walk Behind blocks the whole artwork, so measuring
+    // from the small collision radius would let the spider walk into the
+    // sprite before it started turning. Non-blocking items are ignored.
     const near=decorNearestBlocking(s,s.spider_x,s.spider_y,66);
     if(near){
-      const def=DECOR_KINDS[s.decor.find(d=>d.kind!==DECOR_EMPTY&&d.blocking===1&&
-        d.x===near.x&&d.y===near.y)?.kind];
-      const edge=near.distance-(def?def.radius:0);
+      const slot=s.decor.findIndex(d=>d.kind!==DECOR_EMPTY&&
+        decorPathBlocks(d.blocking)&&d.x===near.x&&d.y===near.y);
+      const blockR=slot>=0?decorBlockRadius(s,slot):0;
+      const edge=near.distance-blockR;
       if(edge<=26&&near.distance>.1){
         const dx=near.x-s.spider_x,dy=near.y-s.spider_y;
         if((dx*Math.cos(want)+dy*Math.sin(want))/near.distance>=.15){

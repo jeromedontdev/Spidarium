@@ -10,6 +10,7 @@ import core_decor_art
 import furnishing_art
 import small_art
 import companion_icon_art
+import climb_mask
 
 from asset_build import (
     ACHIEVEMENT_ICONS, BACKGROUNDS, DECOR_ITEMS, GIFTS, TREATS, expected_dimensions,
@@ -536,6 +537,23 @@ class ArtStyleTests(unittest.TestCase):
         image = Image.new("RGBA", (32, 32), (100, 120, 80, 255))
         with self.assertRaisesRegex(ValueError, "at least 8"):
             validate_pixel_art(image, "gift_leaf.png")
+
+    def test_climb_hit_mask_matches_the_artwork(self):
+        """The mask is generated; a stale copy would misplace the climb hitbox."""
+        tables = climb_mask.build()
+        self.assertEqual([name for name, _ in tables], climb_mask.NAMES)
+        self.assertEqual(climb_mask.HEADER.read_text(encoding="utf-8"),
+                         climb_mask.render(tables))
+        self.assertEqual(climb_mask.JS_MODULE.read_text(encoding="utf-8"),
+                         climb_mask.render_js(tables))
+
+    def test_climb_hit_mask_excludes_the_empty_corners(self):
+        """A circle of radius 96 covered these; the mask must not."""
+        for name, rows in climb_mask.build():
+            for x, y in ((0, 0), (95, 0), (0, 95), (95, 95)):
+                span = rows[y]
+                self.assertTrue(span is None or not span[0] <= x <= span[1],
+                                f"{name} corner {x},{y}")
 
 
 if __name__ == "__main__":

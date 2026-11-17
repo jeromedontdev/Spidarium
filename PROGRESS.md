@@ -10577,3 +10577,113 @@ did when it could walk through it. That is the intended reading of "walk behind"
 but it is a behaviour change, not just a rendering one. `decortest` still fails
 on the six climb structures reporting "not owned" -- a pre-existing harness gap,
 not a regression, and it is not part of `run_tests.py`.
+
+---
+
+## Round 119 - The climb hitbox follows the artwork, and the perspective is gone
+
+**Status:** COMPLETE - build, flash, native suite, soak and drift all green.
+
+### What was reported
+
+Two things, in order. First: "let's leave the shadow but remove the perspective
+shift on climbing larger items. It's buggy and will take forever to get right.
+For gifts let's prevent walk behind altogether, but apply that same logic that
+makes walk behind look good to decor items." Second, after that shipped: "the
+hitbox for the larger decor pieces is way off, the spider will be well above the
+decor item and it will think its on it and the shadow will be far away."
+
+### Decisions made
+
+- **The climb perspective is deleted, not disabled.** Three attempts were made
+  across Rounds 116-118: forward-axis compression, a body tilt from the surface
+  gradient, and a full dorsal projection into a side view with separated body
+  masses and retracting far-side legs. All three looked wrong on the panel. A
+  96x96 sprite authored top-down cannot be re-projected into a convincing
+  profile by moving its parts, and each attempt cost a round. The constants
+  (`s_profile`, `s_tilt`, `CLIMB_PROFILE_*`, `ABD_DORSAL`, `CEPH_DORSAL`,
+  `EYE_DORSAL`, `FANG_DORSAL`, `ABD_PROFILE_SCALE`, `LEG_DORSAL*`,
+  `CLIMB_FORESHORTEN`, `CLIMB_TILT_*`) were removed rather than left dormant so
+  they cannot be switched back on by accident. `to_canvas_dorsal()` became a
+  plain `to_canvas()`. What remains is the lift plus the contact shadow at the
+  ground point; the gap between them is the whole effect, so the shadow is now
+  drawn unconditionally instead of only when `climb == 0`.
+- **Gifts cannot express Walk Behind.** A single 64x64 object has no depth, and
+  because Walk Behind blocks, the spider could never reach the canopy band, so
+  the setting would be dead. `game_on_placement_blocking()` skips it while
+  cycling, the commit path and both editor-seed sites clamp a stale value to
+  Walk Over, and `save.c` folds it during migration. Walk Over and Solid remain.
+- **Decor keeps Walk Behind, and it blocks.** `decor_path_blocks()` is true for
+  Solid and Walk Behind. `decor_blocks_point()` and `decor_nearest_blocking()`
+  use it, and `behaviour.c`'s `decor_avoidance()` measures from
+  `decor_block_radius()` instead of a hardcoded 24. The radius differs by path:
+  Solid blocks at `radius`, Walk Behind at the artwork extent
+  (`decor_art_extent()`), because the spider must clear the whole sprite before
+  it can legitimately appear in front of it.
+- **The hit test follows the artwork, not a circle and not a box.** The sprites
+  are diagonal logs and arches. A circle of radius 96 covered the empty corners,
+  so the spider counted as standing on the item while visibly above it with the
+  shadow far away -- the exact report. A square box over-corrected the other
+  way: its corners sit at `r*sqrt(2)`, so a circular pre-check clipped the ends
+  of the logs and the top of the driftwood reported no lift at all.
+  `main/climb_mask.h` is a per-row opaque span table generated from the
+  installed PNGs by `tools/climb_mask.py`, and `climb_on_art()` asks the real
+  question. Rows with small gaps between vine branches are recorded as one span,
+  because a spider in a gap is still on the structure.
+- **Two mapping details are easy to get wrong.** LVGL scales about the image
+  centre, so screen maps to source as `sx = (x - item->x) / 2 + 48`, not
+  `(x - item->x + 48) / 2`; the first attempt used the latter and was wrong. And
+  the ramp `t` is measured against the artwork's own opaque row range
+  (`top_row`..`bot_row`), with the horizontal fade using each row's own span
+  midpoint and half-width, so both follow the diagonal rather than the square.
+  `decor_climb_slope()` uses the artwork row span for its run, giving -0.397 for
+  the driftwood instead of the -1.83 that `radius` produced.
+- **The mask is generated, so it needs a staleness guard.** `tools/climb_mask.py
+  --check` fails when either output is out of date, and the guard runs from
+  `tools/test_art_style.py` -- the file the documented art command already
+  executes -- rather than a new test file nobody would run.
+
+### Evidence
+
+- `build.ps1` -> exit 0, zero main warnings. `flash.ps1 COM7` -> exit 0,
+  `Hash of data verified`.
+- Hardware probe `climbat X Y` along the driftwood at slot 0 (190,275):
+  59 -> 39 -> 32 -> 17 -> 5 rising toward the upper-left, all four empty box
+  corners 0, slope constant -0.397.
+- `run_tests.py COM7` -> `passed=50 failed=2` (`hunttest`, `uitest`), at or
+  better than the documented 49/3 baseline.
+- Browser suite 265/265, including the rewritten climb tests that sample along
+  the diagonal and assert the four box corners are 0.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+- `tools/test_art_style.py` -> 41 tests, 8 failures, all pre-existing at
+  `a142543` (the six climb items are absent from the procedural material
+  recipes, plus two catalogue-ordering assertions). The two new mask tests pass.
+
+### Honest boundaries
+
+The probe proves the lift follows the artwork along one structure; it does not
+prove all six read correctly on the physical panel, which still needs human
+eyes. Removing the perspective means the climb is now conveyed only by the lift
+and the shadow gap -- if that reads as "hopping" rather than "climbing" on the
+panel, the answer is better artwork or a different effect, not another
+re-projection of a top-down sprite. The mask is derived from the installed PNGs,
+so regenerating the climb art without re-running `tools/climb_mask.py` would
+silently misplace the hitbox; the new guard catches that, but only if the art
+command is actually run. `decortest` still fails on the six climb structures
+reporting "not owned" -- a pre-existing harness gap, not a regression, and it is
+not part of `run_tests.py`.
+
+### Follow-up found while verifying
+
+`decor_blocks_point()` still tested a circle of radius `DECOR_CLIMB_EXTENT`
+before consulting the mask, so the ends of the diagonal logs -- which lie
+outside that circle -- were walkable on Walk Behind. The mask now replaces the
+circular test for a structure instead of supplementing it, in both `main/decor.c`
+and `site/lib/device-engine.js`. A new `blockat X Y` console probe samples the
+blocking test directly, because `climbat` answers a different question: Walk
+Behind blocks the whole artwork while Climb lifts only along the ramp. On the
+Driftwood at (190,275) the four box corners report `blocks=0` and the two log
+ends report `blocks=1`; a browser test asserts the same, including that the
+driftwood really does have opaque pixels outside the circle.

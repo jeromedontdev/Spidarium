@@ -416,8 +416,14 @@ void game_on_placement_blocking(lv_event_t *e)
     if (!g_decor_mode && !g.gift_mode) return;
     uint8_t previous = s_place_blocking;
     /* Cycle only through the paths this kind supports, so a flat prop never
-     * lands on Climb and a climbable one always reaches it. A gift has no
-     * climb height, so it cycles the three flat paths. */
+     * lands on Climb and a climbable one always reaches it.
+     *
+     * A gift has no climb height, so it cycles the flat paths -- and NOT Walk
+     * Behind. A gift is a single 64x64 object with no depth to walk behind: the
+     * canopy switch only ever fired while the spider was above the artwork, and
+     * because the gift also blocks, the spider could never get there. The
+     * result was a path that looked like it did nothing. Walk Over and Solid
+     * are the two states a gift can actually express. */
     uint8_t kind = g.gift_mode ? g.gift_selected : g_decor_selected;
     if (g_decor_mode && g_decor_move_slot >= 0) {
         const decor_item_t *item = decor_at(g_decor_move_slot);
@@ -425,6 +431,7 @@ void game_on_placement_blocking(lv_event_t *e)
     }
     for (int i = 0; i < DECOR_PATH_COUNT; i++) {
         s_place_blocking = (uint8_t)((s_place_blocking + 1) % DECOR_PATH_COUNT);
+        if (g.gift_mode && s_place_blocking == DECOR_WALK_BEHIND) continue;
         if (s_place_blocking != DECOR_CLIMB || decor_climbable(kind)) break;
     }
     if ((previous == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND)) {
@@ -543,8 +550,11 @@ void game_on_placement_done(lv_event_t *e)
         g.gift.used = 1;
         g.gift.x = s_place_x;
         g.gift.y = s_place_y;
-        g.gift_path = s_place_blocking;
-        if (!decor_gift_set_layer(s_place_blocking, s_place_layer)) {
+        /* A gift cannot express Walk Behind (see game_on_placement_blocking),
+         * so clamp it here too: a stale staged value must not reach the save. */
+        g.gift_path = (s_place_blocking == DECOR_WALK_BEHIND)
+            ? DECOR_WALK_OVER : s_place_blocking;
+        if (!decor_gift_set_layer(g.gift_path, s_place_layer)) {
             ESP_LOGW(TAG, "gift layer commit failed: %d", s_place_layer);
         }
         /* Hide the preview BEFORE refreshing the gift. The preview image is a
@@ -619,7 +629,10 @@ void game_gift_chosen(uint8_t kind)
     /* Seed the path from the gift already in the tank when moving it, so
      * re-opening the editor does not silently reset the player's choice. */
     s_place_blocking = s_gift_moving ? g.gift_path : DECOR_WALK_OVER;
-    if (s_place_blocking >= DECOR_PATH_COUNT) s_place_blocking = DECOR_WALK_OVER;
+    /* A gift cannot express Walk Behind, so a stale value must not seed the
+     * editor either. */
+    if (s_place_blocking >= DECOR_PATH_COUNT ||
+        s_place_blocking == DECOR_WALK_BEHIND) s_place_blocking = DECOR_WALK_OVER;
     s_place_layer = s_gift_moving ? decor_gift_layer_index(s_place_blocking) : 0;
     placement_position(ui.W / 2, ui.H / 2);
     ui_hud_set_gift_mode(true);
@@ -1258,7 +1271,9 @@ static void on_gift_item_pick(uint8_t id)
         s_gift_moving = true;
         g.gift_mode = 1;
         g.gift_selected = g.gift.kind;
-        s_place_blocking = g.gift_path < DECOR_PATH_COUNT ? g.gift_path : DECOR_WALK_OVER;
+        s_place_blocking = (g.gift_path < DECOR_PATH_COUNT &&
+                            g.gift_path != DECOR_WALK_BEHIND)
+            ? g.gift_path : DECOR_WALK_OVER;
         s_place_layer = decor_gift_layer_index(s_place_blocking);
         ui_menu_close();
         ui_hud_set_chrome(false);
@@ -2697,8 +2712,12 @@ static bool test_furniture_pointer(void)
     bool paths = s_place_blocking == DECOR_WALK_BEHIND && decor_at(first)->blocking == 0 &&
         terrarium_preview_test(DECOR_WALK_BEHIND, 0);
     game_on_placement_done(NULL);
+    /* Walk Behind blocks, so the committed item must now block its own centre.
+     * It used to be non-blocking, which let the spider walk over the bottom of
+     * the sprite and then pop behind the top. */
     paths = paths && decor_at(first)->blocking == DECOR_WALK_BEHIND &&
-        !decor_blocks_point(120, 150) && decor_hit_test(120, 150) == first && terrarium_decor_test();
+        decor_blocks_point(120, 150) && decor_hit_test(120, 150) == first &&
+        terrarium_decor_test();
     decor_begin_placement(0);
     game_on_placement_blocking(NULL);
     game_on_placement_blocking(NULL);

@@ -191,6 +191,11 @@ static void migrate_automation(game_state_t *state, uint16_t version)
     /* v20 added the gift path. Before v20 the byte was reserved and always 0,
      * which is Walk Over, so an older blob needs no rewriting. */
     if (version < 20) state->gift_path = DECOR_WALK_OVER;
+    /* A gift cannot express Walk Behind: it is a single 64x64 object with no
+     * depth to walk behind, and because it blocks, the spider could never reach
+     * the canopy band anyway. A save written before that rule existed may carry
+     * the value, so fold it back to Walk Over rather than rejecting the blob. */
+    if (state->gift_path == DECOR_WALK_BEHIND) state->gift_path = DECOR_WALK_OVER;
     /* v21 added the large climb structures. Their ownership byte was the last
      * v18 reserved byte and always 0, so an older blob simply owns none of
      * them and needs no rewriting. */

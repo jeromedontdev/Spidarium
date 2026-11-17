@@ -183,54 +183,45 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   the spider rise from whichever side it approached, which read as being lifted
   onto a platform rather than climbing a branch. Their ownership lives in
   `climb_owned`, not `catalogue_owned_high`.
-  The lift alone does not sell the climb. `decor_climb_slope()` reports the
-  ramp gradient as a signed -1..1 value (negative = rising toward the top of the
-  screen) and the renderer tilts the whole body by `atan(slope) *
-  CLIMB_TILT_FOLLOW`, clamped to `CLIMB_TILT_MAX`. The forward axis also
-  compresses toward `CLIMB_FORESHORTEN` as the lift approaches
-  `CLIMB_FULL_LIFT`, so the viewing angle changes with height. The contact
-  shadow is drawn ONLY on the floor: casting it while climbing put it on the
-  structure being climbed, which is physically wrong and was the main reason
-  the first 2.5D attempt failed.
-  Tilt and foreshortening alone still read as a top-down spider leaning, because
-  rotating a plan view never produces a profile. `s_profile` (0 on the floor,
-  1 at `CLIMB_FULL_LIFT`) drives a real side view: `to_canvas_dorsal()` projects
-  the body's dorsal axis up the screen, the right axis collapses toward
-  `CLIMB_PROFILE_RIGHT`, the abdomen rides higher than the cephalothorax
-  (`ABD_DORSAL` > `CEPH_DORSAL`), the legs hang below the body with a
-  hip-to-foot gradient (`LEG_DORSAL`), and the far-side eyes are dropped so a
-  single eye sits on the front face. All of it is blended by one eased factor,
-  so stepping on and off is a camera swing rather than a pose pop.
-  Three details decide whether the pose reads at all. The SEPARATION between the
-  two body masses is the main one: 7 and 3 left a 4 px gap between circles of
-  radius 13 and 11, so they merged into one blob and the "side view" looked like
-  a lump. It is now 12 px, and the abdomen narrows to `ABD_PROFILE_SCALE` (0.86)
-  because a side view sees a teardrop rather than a circle. The far-side legs
-  also have to RETRACT, not just sit lower: the right axis is only
-  `CLIMB_PROFILE_RIGHT` wide at full profile, so drawing all eight legs merged
-  them into a thicket (the "legs on both sides show" report). The far side lerps
-  its knee and foot back toward the hip as the profile rises, which reads as the
-  legs passing behind the body.
-  Two constants keep that swing readable. `CLIMB_PROFILE_START` (0.35) holds the
-  top-down pose through the lower third of the ramp, because a profile at the
-  very bottom looked wrong: the spider is still effectively on the floor there.
-  `CLIMB_PROFILE_RATE` (2.5) is deliberately slower than the foreshortening's
-  6.0, because the profile changes the whole silhouette and matching the faster
-  constant made the camera swing read as a snap.
-  The ramp must span the ARTWORK, not the collision footprint. A large
-  structure's sprite is `DECOR_CLIMB_SPRITE` square drawn at LVGL scale 512
-  (2x), so its screen half-extent is `DECOR_CLIMB_EXTENT` (96); its `radius` is
-  only 13..18. Measuring the ramp against `radius` confined the whole climb to a
-  36 px circle in the middle of a 192 px sprite, so the spider rose and fell
-  while still well inside the artwork -- the "side view happens when the spider
-  is above the decor, not on the decor" report. `climb_extent()` returns the
-  artwork extent for a structure and `radius` for a small prop, and both
-  `climb_lift_on()` and `decor_climb_slope()` use it. The same mistake made the
-  slope `-climb_height / (2 * radius)` = -1.83, which clamped to `CLIMB_TILT_MAX`
-  and looked like the spider was standing on a wall; against the artwork extent
-  it is -0.32, a believable 18-degree lean. The lift also fades horizontally
-  (`1 - nx^2`) so it eases out toward the side edges instead of jumping to half
-  height the instant the spider crosses them.
+  The lift alone does not sell the climb, and three attempts at a pose did not
+  either. Forward-axis compression, a body tilt from the surface gradient, and a
+  full dorsal projection into a side view were all tried and all looked wrong on
+  the panel: a 96x96 sprite authored top-down cannot be re-projected into a
+  convincing profile by moving its parts. The perspective system was deleted
+  rather than left dormant so it cannot be switched back on by accident. What
+  remains is the lift plus the contact shadow at the ground point; the gap
+  between them is the whole effect. `decor_climb_slope()` still reports the ramp
+  gradient, but only the debug console uses it.
+  The hit test must follow the ARTWORK, not a circle. A large structure's sprite
+  is `DECOR_CLIMB_SPRITE` square drawn at LVGL scale 512 (2x), so its screen
+  half-extent is `DECOR_CLIMB_EXTENT` (96); its `radius` is only 13..18.
+  Measuring the ramp against `radius` confined the whole climb to a 36 px circle
+  in the middle of a 192 px sprite, so the spider rose and fell while still well
+  inside the artwork. Measuring against the square box instead over-corrected:
+  the sprites are diagonal logs and arches, so the box corners are empty and the
+  spider counted as standing on the item while visibly above it, with the
+  contact shadow far away. `main/climb_mask.h` is a per-row opaque span table
+  generated from the installed PNGs by `tools/climb_mask.py`, and
+  `climb_on_art()` asks the real question: is this point on the artwork? Rows
+  with small gaps (between two branches of a vine) are recorded as one span,
+  because a spider in a gap is still on the structure.
+  Two details of that mapping are easy to get wrong. LVGL scales about the image
+  centre, so screen maps to source as `sx = (x - item->x) / 2 + 48`, NOT
+  `(x - item->x + 48) / 2`. And there is no circular pre-check for structures:
+  the box corners sit at `r*sqrt(2)`, so a circle of radius `r` clipped the ends
+  of the diagonal logs and the top of the driftwood reported no lift at all. The
+  ramp `t` is measured against the artwork's own opaque row range
+  (`top_row`..`bot_row`), and the horizontal fade uses each row's own span
+  midpoint and half-width, so both follow the diagonal rather than the square.
+  `tools/climb_mask.py --check` fails when the table is stale; the guard runs
+  from `tools/test_art_style.py`. Regenerate after changing the climb art.
+  The same circle-versus-artwork mistake was in `decor_blocks_point()`: it
+  tested the circle first and only then the mask, so the ends of the logs (which
+  lie outside a radius-96 circle) were walkable. The mask now replaces the
+  circular test for a structure on Walk Behind. `blockat X Y` samples the
+  blocking test directly; `climbat X Y` samples the lift. They are different
+  questions, because Walk Behind blocks the whole artwork while Climb lifts only
+  along the ramp.
   Their artwork is generated by nano banana through `tools/climb_prompts.py`
   and installed by `tools/import_climb.py`; `gen_sprites.py` preserves the
   installed PNGs and `climb_art.py` is only a fallback. See ART_STYLE.md. The
@@ -288,6 +279,26 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   switch read: the only way to be above the gift's centre line is to be
   genuinely behind the artwork. `behaviour_gift_block_test()` guards it, and
   `gifttest` reports `blocks=1`.
+  Gifts cannot express Walk Behind at all. A single 64x64 object has no depth,
+  and because it blocks, the spider could never reach the canopy band, so the
+  path would be a dead setting. `game_on_placement_blocking()` skips it when
+  cycling a gift, the commit path and both editor-seed sites clamp a stale value
+  to Walk Over, and `save.c` folds it during migration. Walk Over and Solid are
+  the only usable gift paths.
+  Decor keeps Walk Behind, and it blocks the same way. `decor_path_blocks()` is
+  true for Solid and Walk Behind; `decor_blocks_point()` and
+  `decor_nearest_blocking()` use it, and `behaviour.c`'s `decor_avoidance()`
+  measures from `decor_block_radius()` rather than a hardcoded 24. The radius
+  differs by path: Solid blocks at `radius`, Walk Behind blocks at the artwork
+  extent (`decor_art_extent()` -- `2*radius` for a 64x64 prop drawn at
+  `radius*16`, `DECOR_CLIMB_EXTENT` for a structure), because the spider has to
+  be clear of the whole sprite before it can legitimately appear in front of it.
+  For a structure the extent is additionally gated on `climb_on_art()`, so the
+  empty corners of a diagonal log do not block. That gate REPLACES the circular
+  test rather than supplementing it: the box corners sit at `r*sqrt(2)`, so a
+  circle of radius `DECOR_CLIMB_EXTENT` clipped the ends of the logs and the
+  spider could walk through opaque artwork. `blockat X Y` samples the blocking
+  test directly, which is how that was found.
   Save v13 keeps the v12 layout, storing path0/1/2 in the existing byte and
   layer order in record order. Only path1 collides. Read old v2-v12 saves,
   reject path2 before v13/path3 always; do not downgrade a v13 save to old

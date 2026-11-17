@@ -292,6 +292,14 @@ void decor_climb_force(int32_t lift);
 /* The placed item whose footprint contains a point, or -1. */
 int decor_hit_test(int16_t x, int16_t y);
 
+/* The radius at which an item actually blocks the spider.
+ *
+ * Solid blocks against its collision footprint. Walk Behind blocks against the
+ * whole ARTWORK, because the point of that path is that the spider must not
+ * stand on the item's lower half: blocking only the small footprint let it walk
+ * over the bottom of the sprite and then pop behind the top. */
+float decor_block_radius(int slot);
+
 /* True if a point is inside any blocking item's footprint. Used by the
  * behaviour module to steer around decor. */
 bool decor_blocks_point(int16_t x, int16_t y);

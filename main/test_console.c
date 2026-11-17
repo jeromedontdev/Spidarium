@@ -36,6 +36,7 @@
 #include "cspider.h"
 #include "behaviour.h"
 #include "buttons.h"
+#include "decor.h"
 #include "game.h"
 #include "game_config.h"
 #include "meminfo.h"
@@ -1305,8 +1306,24 @@ static void run_line(char *line)
                px, py, height, slot, (double)slope);
         printf("OK climbat\n");
     }
-    else if (!strcmp(line, "climbhere")) {
-        /* Place a climbable item under the spider and set it to Climb in one
+    else if (!strcmp(line, "blockat")) {
+        /* Sample the blocking test at an arbitrary point. `climbat` reports the
+         * lift, which is a different question: a structure can block a point
+         * without lifting the spider there (Walk Behind blocks the whole
+         * artwork, Climb lifts along the ramp). The ends of a diagonal log lie
+         * outside a circle of radius DECOR_CLIMB_EXTENT, so this is what proves
+         * the span table replaced the circular test rather than supplementing
+         * it. */
+        int px = 0, py = 0;
+        if (!arg || sscanf(arg, "%d %d", &px, &py) != 2) {
+            printf("ERR usage: blockat X Y\n");
+            return;
+        }
+        printf("BLOCKAT pos=(%d,%d) blocks=%d\n", px, py,
+               decor_blocks_point((int16_t)px, (int16_t)py) ? 1 : 0);
+        printf("OK blockat\n");
+    }
+    else if (!strcmp(line, "climbhere")) {        /* Place a climbable item under the spider and set it to Climb in one
          * command. The spider wanders faster than a script can issue separate
          * place/block/climb commands, so the footprint path could never be
          * exercised from the console without this.

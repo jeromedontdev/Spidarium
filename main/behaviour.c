@@ -340,8 +340,13 @@ static float decor_avoidance(float heading)
     const decor_def_t *def = item ? decor_def(item->kind) : NULL;
     if (!def) return 0.0f;
 
-    /* Distance from the footprint edge, not the centre. */
-    float edge = d - (float)def->radius;
+    /* Distance from the edge the spider is actually blocked at, not the centre.
+     * Walk Behind blocks against the whole artwork, so measuring from the small
+     * collision radius would let the spider walk into the sprite before it
+     * started turning. */
+    float block_r = (item->blocking == DECOR_WALK_BEHIND)
+        ? decor_block_radius(slot) : (float)def->radius;
+    float edge = d - block_r;
     if (edge > DECOR_AVOID_MARGIN) return 0.0f;
 
     float dx = (float)(ix - g.spider_x);
@@ -476,12 +481,17 @@ static void clamp_to_playfield(void)
             float ax = (float)(g.spider_x - bx), ay = (float)(g.spider_y - by);
             float ad = sqrtf(ax * ax + ay * ay);
             if (ad < 1.0f) { ax = 0.0f; ay = -1.0f; ad = 1.0f; }
-            float r = 24.0f;
+            /* Push clear of the radius the item actually blocks at. A fixed 24
+             * left the spider inside a Walk Behind item, which blocks against
+             * the whole artwork and is therefore much wider than a prop. */
+            int slot = decor_hit_test(bx, by);
+            float r = slot >= 0 ? decor_block_radius(slot) : 24.0f;
+            if (r < 24.0f) r = 24.0f;
             g.spider_x = (int16_t)((float)bx + ax / ad * r);
             g.spider_y = (int16_t)((float)by + ay / ad * r);
             s_px = (float)g.spider_x;
             s_py = (float)g.spider_y;
-            ESP_LOGW("spidarium.behaviour", "spider was inside solid decor; moved to (%d,%d)",
+            ESP_LOGW("spidarium.behaviour", "spider was inside blocking decor; moved to (%d,%d)",
                      (int)g.spider_x, (int)g.spider_y);
         }
     }
