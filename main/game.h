@@ -398,6 +398,7 @@ typedef enum {
     GAME_UI_SET_AUTO_CLEAN,
     GAME_UI_TEST_UI,
     GAME_UI_BACKGROUND,
+    GAME_UI_REBUILD_BACKGROUND,
     GAME_UI_TEST_HUNT,
     GAME_UI_TEST_GAIT,
     GAME_UI_TEST_PREY,
@@ -469,6 +470,10 @@ void game_on_terrarium_release(lv_event_t *e);
 
 /* Helpers shared across modules. */
 uint32_t game_now(void);
+
+/* Report and reset the render-tick cost, in microseconds. The 30 Hz timer gives
+ * 33,333 us per tick, so a tick approaching that is a visible stutter. */
+void game_render_cost_report(void);
 void game_add_xp(uint32_t amount);
 void game_award(uint32_t achievement);
 void game_check_achievements(void);

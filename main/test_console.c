@@ -59,6 +59,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_system.h"
 #include "esp_sleep.h"
 
@@ -131,6 +132,7 @@ static void cmd_help(void)
     printf("  ambienttest          ambient motes and idle-life ranges\n");
     printf("  ambient              report the live ambient state\n");
     printf("  dayperiod [EPOCH]    force the clock to test the day/night tint\n");
+    printf("  rendercost           report and reset the render-tick cost\n");
     printf("  mind                 report the live intent and day period\n");
     printf("  preytest             eight level gates, restore pet level\n");
     printf("  decortest            place every decor kind, verify the layer\n");
@@ -414,6 +416,12 @@ static void cmd_render(int count)
     print_mem_line("render-before");
     size_t first_largest = internal_largest();
 
+    /* Time the ticks as well as checking memory. Memory drift catches leaks;
+     * this catches the other failure mode, which is a frame that is correct but
+     * too slow. The rotated light shafts were exactly that: no leak, no crash,
+     * just 111,000 blended pixels per shaft per frame, which showed up as the
+     * spider's movement becoming choppy. */
+    int64_t start_us = esp_timer_get_time();
     for (int i = 0; i < count; i++) {
         if (!game_ui_call(GAME_UI_RENDER)) {
             if (!game_ui_call(GAME_UI_SCANLOOP_END))
@@ -422,13 +430,18 @@ static void cmd_render(int count)
             return;
         }
     }
+    int64_t elapsed_us = esp_timer_get_time() - start_us;
 
     vTaskDelay(pdMS_TO_TICKS(100));
     print_mem_line("render-after");
     size_t last_largest = internal_largest();
     long drift = (long)last_largest - (long)first_largest;
 
-    printf("RENDER ticks=%d largest_drift=%ld\n", count, drift);
+    /* Per-tick cost in microseconds. The render timer runs at 30 Hz, so a tick
+     * must stay well under 33,333 us or the display stutters. */
+    long per_tick_us = (long)(elapsed_us / (count > 0 ? count : 1));
+    printf("RENDER ticks=%d largest_drift=%ld per_tick_us=%ld\n",
+           count, drift, per_tick_us);
 
     if (!game_ui_call(GAME_UI_SCANLOOP_END)) {
         printf("ERR render could not restore gameplay\n");
@@ -1286,8 +1299,11 @@ static void run_line(char *line)
     }
     else if (!strcmp(line, "ambient")) {
         ambient_report();
-        ambient_shafts_report();
         printf("OK ambient\n");
+    }
+    else if (!strcmp(line, "rendercost")) {
+        game_render_cost_report();
+        printf("OK rendercost\n");
     }
     else if (!strcmp(line, "dayperiod")) {
         /* Force the clock so the tint and the shafts can be exercised at a
@@ -1306,6 +1322,26 @@ static void run_line(char *line)
                    life_phase_name(c.period));
         }
         printf("OK dayperiod\n");
+    }
+    else if (!strcmp(line, "shafts")) {
+        /* Force the baked light shafts to a day period so they can be looked at
+         * on the panel. `shafts` with no argument returns to following the
+         * clock. The bake only happens on a background rebuild, so this asks for
+         * one. */
+        if (!arg) {
+            ambient_shafts_force(255);
+            printf("SHAFTS off\n");
+        } else {
+            int p = atoi(arg);
+            if (p < 0 || p > 3) {
+                printf("ERR shafts needs 0..3 (morning..night)\n");
+            } else {
+                ambient_shafts_force((uint8_t)p);
+                printf("SHAFTS period=%d\n", p);
+            }
+        }
+        game_ui_call(GAME_UI_REBUILD_BACKGROUND);
+        printf("OK shafts\n");
     }
     else if (!strcmp(line, "preytest")) {
         if (!game_ui_call(GAME_UI_TEST_PREY)) printf("ERR prey test request or assertion failed\n");

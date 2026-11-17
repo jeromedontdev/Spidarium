@@ -43,6 +43,7 @@
 #include "src/misc/cache/instance/lv_image_header_cache.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "esp_app_desc.h"
 #include "esp_lv_adapter.h"
@@ -710,6 +711,13 @@ static bool s_pet_change_waiting;
 static lv_obj_t *s_daylight_overlay, *s_weather[6], *s_visitor;
 static lv_image_dsc_t s_album_image;
 static album_image_t s_album_loaded;
+
+/* Render-tick cost accounting. The 30 Hz timer gives 33,333 us per tick, so a
+ * tick that approaches that is a visible stutter. Accumulated here rather than
+ * measured from the console, because a console round trip is dominated by the
+ * timer period and cannot see the difference. */
+static uint32_t s_render_us_total;
+static uint32_t s_render_ticks;
 void game_diary_removed(unsigned slot)
 {
     if (s_open_menu != MENU_MEMORY || s_memory_slot == 255) return;
@@ -748,25 +756,23 @@ void game_cancel_pending_tap(void)
  * so every period looked the same, just slightly dimmer.
  *
  * This version changes COLOUR as well as opacity, so the tank reads as a
- * different time of day rather than as a slightly dirty screen:
+ * different time of day rather than as a slightly dirty screen.
  *
- *   morning    warm gold, very light
- *   afternoon  neutral, none at all
- *   evening    amber, moderate
- *   night      deep blue, strong
- *
- * The opacities are chosen to be clearly visible without hiding the artwork:
- * night is 96/255, which is a real blue hour rather than a blackout. */
+ * The opacities are a compromise. The first pass used 26/54/96, which was
+ * clearly visible but stacked with the light shafts to grey the whole tank out
+ * -- the "screen looks a bit hazy" report. These are roughly half that: still
+ * unmistakably a different time of day, without putting a film over the art.
+ * Night is the one that has to carry the effect, so it stays the strongest. */
 typedef struct {
     uint32_t colour;
     uint8_t  opa;
 } light_tint_t;
 
 static const light_tint_t k_light_tints[4] = {
-    { 0xffd9a0, 26 },   /* morning: warm gold */
+    { 0xffd9a0, 16 },   /* morning: warm gold */
     { 0x000000, 0  },   /* afternoon: no tint */
-    { 0xff9a4d, 54 },   /* evening: amber */
-    { 0x1a2f6b, 96 },   /* night: deep blue */
+    { 0xff9a4d, 30 },   /* evening: amber */
+    { 0x1a2f6b, 52 },   /* night: deep blue */
 };
 
 static void apply_enclosure_lights(void)
@@ -789,6 +795,15 @@ static void tick_enclosure_lights(void)
 static void apply_daylight_tint(uint8_t period, bool available)
 {
     if (!s_daylight_overlay) return;
+    /* The light shafts are baked into the background, so they only change when
+     * the background is rebuilt. Rebuild only when the period actually moves --
+     * this runs once a second and a rebuild is a full 480x480 refill. */
+    uint8_t shaft_period = (available && g.life.daynight) ? period : 255;
+    if (ambient_shafts_forced()) shaft_period = ambient_shafts_period();
+    if (shaft_period != ambient_shafts_period()) {
+        ambient_shafts_set_period(shaft_period);
+        terrarium_rebuild();
+    }
     if (!available || !g.life.daynight) {
         lv_obj_set_hidden(s_daylight_overlay, true);
         return;
@@ -3121,6 +3136,12 @@ static void ui_service_request(void)
         atomic_store(&s_ui_ok, theme_set(s_ui_value));
         if (atomic_load(&s_ui_ok)) terrarium_rebuild();
         break;
+    case GAME_UI_REBUILD_BACKGROUND:
+        /* Test-only: repaint the background so a forced shaft period is visible
+         * without waiting for the clock to roll over. */
+        terrarium_rebuild();
+        atomic_store(&s_ui_ok, true);
+        break;
     case GAME_UI_TEST_HUNT: atomic_store(&s_ui_ok, test_hunt()); break;
     case GAME_UI_TEST_GAIT: {
         bool ok = cspider_gait_test();
@@ -3856,7 +3877,6 @@ static void life_visual_tick(uint32_t now)
          * what the brain saw but not what the screen showed. */
         clock = life_clock_now();
         apply_daylight_tint(clock.period, clock.available);
-        ambient_shafts_set_period(clock.available ? clock.period : 255);
         lv_obj_set_hidden(s_visitor, !clock.visitor);
         if (clock.available && last_activity != clock.activity) {
             last_activity = clock.activity;
@@ -3884,6 +3904,20 @@ static void life_visual_tick(uint32_t now)
                           0x76d6b1, 1600);
         }
     }
+}
+
+/* Report and reset the render-tick cost. Called from the console so a
+ * performance regression is a number rather than a feeling. */
+void game_render_cost_report(void)
+{
+    uint32_t ticks = s_render_ticks;
+    uint32_t total = s_render_us_total;
+    s_render_ticks = 0;
+    s_render_us_total = 0;
+    printf("RENDERCOST ticks=%lu avg_us=%lu budget_us=%d\n",
+           (unsigned long)ticks,
+           (unsigned long)(ticks ? total / ticks : 0),
+           1000000 / RENDER_HZ);
 }
 
 void game_tick_render(lv_timer_t *timer)
@@ -4004,6 +4038,7 @@ void game_tick_render(lv_timer_t *timer)
      * terrarium_tick() made now - stamp negative, which wraps to a huge
      * unsigned value and expires the object on the very tick it was made. */
     now = lv_tick_get();
+    int64_t render_start = esp_timer_get_time();
     life_visual_tick(now);
     terrarium_tick(now);
     ambient_tick(now);
@@ -4014,6 +4049,11 @@ void game_tick_render(lv_timer_t *timer)
     spider_render(now);   /* aim visuals only */
     prey_render(now);
     ui_hud_tick(now);
+    /* Accumulate the real cost of a render tick, so a regression shows up as a
+     * number rather than as "the movement feels choppy". The 30 Hz timer gives
+     * 33,333 us per tick; anything approaching that is a stutter. */
+    s_render_us_total += (uint32_t)(esp_timer_get_time() - render_start);
+    s_render_ticks++;
 }
 
 /* ------------------------------------------------------------------ */

@@ -83,14 +83,28 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   and the reason the "day and night" setting appeared to do nothing. It also only
   ever darkened, so every period looked the same, just slightly dimmer.
   `k_light_tints[]` in `game.c` now changes COLOUR as well as opacity: morning is
-  warm gold at 26/255, afternoon is untinted, evening is amber at 54, night is
-  deep blue at 96. The tank reads as a different time of day rather than as a
-  slightly dirty screen.
-- **Light shafts** (`ambient_shafts_*` in `ambient.c`) are two wide, very
-  transparent bands drifting diagonally across the tank, tinted per day period.
-  The eye reads moving light as depth even when nothing else moves, which is what
-  makes a static background read as a lit space rather than a picture. Each shaft
-  is one rotated LVGL object created once; only its position changes.
+  warm gold at 16/255, afternoon is untinted, evening is amber at 30, night is
+  deep blue at 52. The tank reads as a different time of day rather than as a
+  slightly dirty screen. These were halved from 26/54/96 when the light shafts
+  came back: stacked, the two together greyed the whole tank out.
+- **Light shafts are baked into the background, not drawn as objects.** Three
+  diagonal beams, each with its own slope, width, taper and brightness, feathered
+  at the edges and banded along their length so they read as light through a
+  canopy. `ambient_shafts_bake()` composites them into the background canvas in
+  `terrarium_rebuild()`, between the art and the border, so they fall on the tank
+  but not on its frame.
+  This is the third design and the first that works. Rotated LVGL rectangles were
+  software rendered at roughly 111,000 blended pixels each per frame and made the
+  whole tank choppy. Unrotated bands were cheap but read as blocky vertical
+  stripes going one way -- "too blocky and symmetrical and only go down the screen
+  in a single direction". Baking costs nothing per frame because the beams are
+  ordinary opaque pixels in an image LVGL already blits, and it is the only
+  approach that allows genuinely diagonal, tapered, asymmetric beams.
+  The trade is that they only change when the background is rebuilt, which is
+  exactly when the day period changes. `apply_daylight_tint()` compares the period
+  against `ambient_shafts_period()` and rebuilds only on a real change, so the
+  once-a-second clock tick does not repaint the tank. `shafts 0..3` on the console
+  pins a period for inspection; `shafts` releases it.
 - **`life_clock_now()` is the single clock read.** `life_visual_tick()` used to
   call `time(NULL)` directly while the mind used `life_period_now()`, so `rtcset`
   changed what the brain saw but not what the screen showed. Everything that

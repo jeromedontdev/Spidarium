@@ -221,17 +221,20 @@ test('the day/night tint is visible, not a 5% wash', () => {
   // and the reason the setting appeared to do nothing. Each period must now be
   // clearly different from the others AND from no tint at all.
   const tints = {
-    Morning: [255, 217, 160, 0.102],
+    Morning: [255, 217, 160, 0.063],
     Afternoon: [0, 0, 0, 0],
-    Evening: [255, 154, 77, 0.212],
-    Night: [26, 47, 107, 0.376],
+    Evening: [255, 154, 77, 0.118],
+    Night: [26, 47, 107, 0.204],
   };
   // Afternoon is deliberately no tint at all.
   assert.equal(tints.Afternoon[3], 0, 'afternoon should be untinted');
-  // The other three must be strong enough to see. 0.10 is the floor: below
-  // that the change is not perceptible on an AMOLED in daylight.
+  // The other three must be strong enough to see without greying the art.
+  // 0.05 is the floor: below that the change is not perceptible on an AMOLED in
+  // daylight. 0.25 is the ceiling: above that the tank reads as hazy, which is
+  // what the first pass at 0.38 did.
   for (const name of ['Morning', 'Evening', 'Night']) {
-    assert.ok(tints[name][3] >= 0.10, `${name} tint is too weak: ${tints[name][3]}`);
+    assert.ok(tints[name][3] >= 0.05, `${name} tint is too weak: ${tints[name][3]}`);
+    assert.ok(tints[name][3] <= 0.25, `${name} tint is hazy: ${tints[name][3]}`);
   }
   // Night must be the strongest, and it must be blue rather than merely dark.
   assert.ok(tints.Night[3] > tints.Evening[3], 'night should be stronger than evening');
@@ -242,22 +245,47 @@ test('the day/night tint is visible, not a 5% wash', () => {
   assert.ok(tints.Evening[0] > tints.Evening[2], 'evening should be warm');
 });
 
-test('light shafts drift and stay within the tank', () => {
-  // Two shafts sweeping across the tank. The eye reads moving light as depth,
-  // which is what makes a static background read as a lit space.
-  const shaft = (i, t) => {
-    const w = 70 + i * 46, span = 480 + w * 2;
-    const phase = ((i ? 0.55 : 0.15) + t * (i ? 0.011 : 0.017)) % 1;
-    return { x: phase * span - w, w };
-  };
-  for (let t = 0; t < 300; t += 0.5) {
-    for (const i of [0, 1]) {
-      const s = shaft(i, t);
-      // A shaft is allowed to be partly off-screen (that is what makes the
-      // sweep read as light from somewhere), but never fully lost.
-      assert.ok(s.x > -s.w * 2 && s.x < 480 + s.w, `shaft ${i} escaped at t=${t}`);
+test('the light shafts are organic: no two beams alike, and not all one way', () => {
+  // The complaint was "too blocky and symmetrical and only go down the screen in
+  // a single direction". Each of those is asserted directly. The table mirrors
+  // k_shafts in ambient.c: [topX, slope, topHalf, botHalf, peak].
+  const beams = [[92, 0.42, 23, 39, 0.34], [252, -0.30, 35, 20, 0.26], [404, 0.22, 15, 31, 0.22]];
+
+  // Not one direction: at least one beam must lean each way.
+  assert.ok(beams.some(b => b[1] > 0.05), 'no beam leans right');
+  assert.ok(beams.some(b => b[1] < -0.05), 'no beam leans left');
+
+  // Diagonal, not vertical: every beam must travel sideways as it descends.
+  for (const [topX, slope] of beams)
+    assert.ok(Math.abs(slope * 480) > 40, `beam at ${topX} is nearly vertical`);
+
+  // Not symmetrical: no two beams may share a width or a brightness.
+  for (let i = 0; i < beams.length; i++)
+    for (let j = i + 1; j < beams.length; j++) {
+      assert.ok(Math.abs(beams[i][2] - beams[j][2]) > 2, 'two beams share a width');
+      assert.ok(Math.abs(beams[i][4] - beams[j][4]) > 0.01, 'two beams share a brightness');
     }
+
+  // Tapered: each beam must change width along its length, so it does not read
+  // as a rectangle.
+  for (const [topX, , topHalf, botHalf] of beams)
+    assert.ok(Math.abs(topHalf - botHalf) > 4, `beam at ${topX} does not taper`);
+
+  // Feathered, not blocky: the alpha must ramp across the beam rather than step.
+  // Reproduce the device's profile and require many intermediate values.
+  const alphaAt = (x, y, [, , topHalf, botHalf, peak]) => {
+    const t = y / 480, half = topHalf + (botHalf - topHalf) * t;
+    const d = Math.abs(x - 240) / half;
+    if (d >= 1) return 0;
+    const f = (1 - d * d) ** 2;
+    return peak * (1 - 0.55 * t) * f;
+  };
+  let steps = 0;
+  for (let x = 0; x < 480; x++) {
+    const a = alphaAt(x, 240, beams[0]);
+    if (a > 0.01 && a < beams[0][4] * 0.9) steps++;
   }
-  // It must actually move.
-  assert.notEqual(shaft(0, 0).x, shaft(0, 10).x);
+  assert.ok(steps > 10, `beam edge is a hard step, only ${steps} intermediate pixels`);
 });
+
+

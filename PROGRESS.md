@@ -11373,3 +11373,88 @@ watching a real panel for an hour with the timeout set to Never.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+## Round 128 -- Light shafts that actually look like light
+
+### What was asked
+
+"The light shaft currently are too blocky and symmetrical and only go down the
+screen in a single direction. It does not look organic."
+
+### Decisions made
+
+**Bake the beams into the background canvas instead of drawing them as objects.**
+This is the third attempt and the first that works. The history matters because
+each failure was a different constraint:
+
+1. *Rotated LVGL rectangles.* Software rendered at roughly 111,000 blended pixels
+   each per frame -- more than the entire 480x480 screen -- and moved every tick.
+   This is what made the tank choppy.
+2. *Unrotated narrow bands.* Cheap (228 us over no shafts at all) but read as
+   blocky vertical stripes going one way, which is exactly the complaint.
+3. *Baked into the background.* The beams become ordinary opaque pixels in an
+   image LVGL already blits, so they cost nothing per frame, and they can be
+   genuinely diagonal, tapered and asymmetric.
+
+The trade is that they only change when the background is rebuilt. That is
+acceptable because the only thing that changes them is the day period, and
+`apply_daylight_tint()` now compares against `ambient_shafts_period()` and
+rebuilds only on a real change -- otherwise the once-a-second clock tick would
+repaint the whole tank every second.
+
+**Three beams, deliberately irregular.** Each has its own slope (two lean right,
+one leans left), its own width, its own taper direction and its own brightness.
+The centreline wobbles on a sine, the width tapers linearly, the brightness fades
+with depth and bands along the length. Those four together are what stop it
+reading as a rectangle. The edge profile is a squared smoothstep rather than a
+linear ramp, because a linear ramp still shows a visible seam where the beam ends.
+
+**The first peaks were invisible.** 0.15/0.11/0.09 looked reasonable on paper but
+the vertical fade and the canopy banding both cut into them, so the brightest
+point on screen was under 6% and read as a smudge. Doubled to 0.34/0.26/0.22,
+which is the point where the light is unmistakable without washing the art out.
+This was caught by screenshotting the panel, not by any test.
+
+**The tint was halved to make room.** 26/54/96 plus the beams greyed the tank out.
+Now 16/0/30/52. The beams are additive-feeling light, the tint is a wash, so the
+beams can carry more of the effect without the haze.
+
+### Evidence
+
+- Build exit 0, zero main warnings. Flash exit 0.
+- `ambienttest` -> `AMBIENT ok=1`. The self-test asserts, directly against the
+  three complaints: every beam travels sideways as it descends (not vertical), at
+  least one leans each way (not one direction), no two share a width or a
+  brightness (not symmetrical), each tapers, the edge has more than ten
+  intermediate alpha values (not blocky), the bake actually changes pixels and
+  changes them non-uniformly, and period 255 leaves the buffer untouched.
+- `shafts 0..3` on hardware pins each period and `ambient` confirms it sticks
+  (`period=0`, `1`, `2`, `3`); `shafts` releases it.
+- Panel screenshots at morning and night confirm three diagonal beams at
+  different angles, widths and brightnesses, feathered at the edges.
+- `rendercost` -> `avg_us=2476` of a 33,333 us budget. The shaft-free build
+  measured 2483 us, so the beams cost nothing measurable per frame -- which is the
+  whole point of baking them.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline.
+- Browser suite 298/298. New test asserts the beams differ in slope, width,
+  brightness and taper, that they lean both ways, and that the edge is feathered.
+  The placement-layers mock needed `createLinearGradient` because the browser
+  draws the beams as a stack of gradients.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, unchanged.
+
+### Honest boundaries
+
+`rendercost` measures the render callback, not LVGL's own refresh. It could not
+see the cost of the rotated objects that caused the original choppiness, so a low
+number here is necessary but not sufficient. The real evidence that the beams are
+free is structural: they are opaque pixels in an image that was already being
+blitted, and the background is only rebuilt on a period change. The panel was
+watched and did not stutter.
+
+Whether the beams look *good* is a judgement call that needs human eyes. The
+brightness in particular was tuned by screenshot, and may want another pass.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).

@@ -1370,30 +1370,41 @@ export class DeviceGame {
     if(!c.reliable || !s.life)return;
     if(s.life.daynight) {
       // The tint changes COLOUR as well as opacity, so the tank reads as a
-      // different time of day rather than as a slightly dirty screen. The old
-      // values were a 2-12% wash, which was invisible on the panel and is why
-      // the setting appeared to do nothing. Mirrors k_light_tints in game.c.
-      ctx.fillStyle=({Morning:'rgba(255,217,160,0.102)',Afternoon:'rgba(0,0,0,0)',
-        Evening:'rgba(255,154,77,0.212)',Night:'rgba(26,47,107,0.376)'})[c.phase];
+      // different time of day rather than as a slightly dirty screen. Mirrors
+      // k_light_tints in game.c, which was halved when the shafts came back:
+      // stacked with the beams the old values greyed the whole tank out.
+      ctx.fillStyle=({Morning:'rgba(255,217,160,0.063)',Afternoon:'rgba(0,0,0,0)',
+        Evening:'rgba(255,154,77,0.118)',Night:'rgba(26,47,107,0.204)'})[c.phase];
       ctx.fillRect(0,0,480,480);
     }
-    // Light shafts: two soft diagonal bands drifting across the tank. The eye
-    // reads moving light as depth even when nothing else moves, which is what
-    // makes a static background read as a lit space. Mirrors ambient_shafts_*.
+    // Light shafts. On the device these are baked into the background canvas
+    // (see ambient.h) because rotated LVGL objects were software rendered at
+    // ~111,000 blended pixels each per frame and made the tank choppy. Here a
+    // canvas gradient is free, so they are drawn directly -- but from the same
+    // table, so the two stay in step. Each beam has its own slope, width and
+    // brightness: identical beams read as a pattern rather than as light.
     if(s.life.daynight) {
-      const tint=({Morning:[255,224,176,0.102],Afternoon:[255,244,224,0.055],
-        Evening:[255,176,112,0.118],Night:[143,168,224,0.071]})[c.phase];
-      const t=(s.now_ms??0)/1000;
-      for(let i=0;i<2;i++){
-        const w=70+i*46, span=480+w*2;
-        const phase=((i?0.55:0.15)+t*(i?0.011:0.017))%1;
-        const x=phase*span-w;
-        ctx.save();
-        ctx.translate(x+w/2,240);
-        ctx.rotate((i?140:200)/1000);
-        ctx.fillStyle=`rgba(${tint[0]},${tint[1]},${tint[2]},${tint[3]})`;
-        ctx.fillRect(-w/2,-480,w,960);
-        ctx.restore();
+      // Same three beams for every period; only the colour changes, exactly as
+      // on the device, where the mask is baked once and only the tint differs.
+      const beams=[[92,.42,23,39,.34],[252,-.30,35,20,.26],[404,.22,15,31,.22]];
+      const rgb=({Morning:'255,230,184',Afternoon:'255,244,224',
+        Evening:'255,176,102',Night:'159,184,232'})[c.phase];
+      for(const [topX,slope,topHalf,botHalf,peak] of beams) {
+        // Sample the beam as a stack of thin quads so the taper and the wobble
+        // both show. A single rotated rectangle is exactly the blocky look this
+        // replaced.
+        for(let y=0;y<480;y+=4) {
+          const t=y/480;
+          const centre=topX+slope*y+Math.sin(y*0.011)*14;
+          const half=topHalf+(botHalf-topHalf)*t;
+          const fade=peak*(1-0.55*t)*(1+0.20*Math.sin(y*0.02));
+          const g=ctx.createLinearGradient(centre-half,0,centre+half,0);
+          g.addColorStop(0,`rgba(${rgb},0)`);
+          g.addColorStop(.5,`rgba(${rgb},${fade.toFixed(3)})`);
+          g.addColorStop(1,`rgba(${rgb},0)`);
+          ctx.fillStyle=g;
+          ctx.fillRect(centre-half,y,half*2,4);
+        }
       }
     }
     if(!s.life.weather)return;
