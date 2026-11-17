@@ -1247,12 +1247,17 @@ static void run_line(char *line)
     }
     else if (!strcmp(line, "mind")) {
         /* Report the live intent, so the brain can be observed on hardware
-         * rather than only asserted in a test. */
-        printf("MIND want=%s rule=%s thought=\"%s\" held=%lums period=%u\n",
+         * rather than only asserted in a test. The gate is included because a
+         * mind that is not being ticked looks identical to one that is idle. */
+        printf("MIND want=%s rule=%s thought=\"%s\" held=%lums period=%u "
+               "paused=%d chrome=%d screen=%d\n",
                mind_want_name(mind_want()),
                mind_active_rule() ? mind_active_rule()->name : "none",
                mind_thought(), (unsigned long)mind_held_ms(lv_tick_get()),
-               (unsigned)life_period_now());
+               (unsigned)life_period_now(),
+               game_paused() ? 1 : 0,
+               ui_hud_chrome_visible() ? 1 : 0,
+               lv_screen_active() == ui.screen ? 1 : 0);
         printf("OK mind\n");
     }
     else if (!strcmp(line, "preytest")) {

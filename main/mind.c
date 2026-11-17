@@ -263,7 +263,17 @@ bool mind_test(void)
     ok = ok && starving > 0 && exhausted > 0 && best_comfort > 0;
     ok = ok && starving > best_comfort && exhausted > best_comfort;
 
-    /* The dwell timer must not restart when the intent is unchanged. */
+    /* The dwell timer must not restart when the intent is unchanged.
+     *
+     * This drives the live engine, so the whole state has to be saved and put
+     * back: a diagnostic that left s_want at WANT_NOTHING and s_since at zero
+     * would freeze the spider's intent until the next evaluation, and if the
+     * tank happened to be hidden (so mind_tick() is not called) it would stay
+     * frozen indefinitely. */
+    want_t saved_want = s_want;
+    const mind_rule_t *saved_active = s_active;
+    uint32_t saved_since = s_since, saved_next = s_next_eval;
+
     s_want = WANT_NOTHING; s_since = 0; s_next_eval = 0;
     mind_tick(1000);
     want_t first = s_want;
@@ -271,6 +281,11 @@ bool mind_test(void)
     s_next_eval = 0;
     mind_tick(2000);
     ok = ok && s_want == first && s_since == since;
+
+    s_want = saved_want;
+    s_active = saved_active;
+    s_since = saved_since;
+    s_next_eval = saved_next;
 
     return ok;
 }
