@@ -173,10 +173,39 @@ void ambient_init(void)
         lv_obj_set_size(p->obj, p->size, p->size);
     }
 
-    /* Strands hang from the top edge and the upper corners, where a real web
-     * would start. Spread across the width rather than clustered in the two
-     * corners: with six strands, corner-only placement left the middle of the
-     * tank bare and read as two decorations rather than as a web. */
+    /* Strands hang in CLUSTERS radiating from shared anchors.
+     *
+     * Even spacing with an alternating lean was the "too robotic, not organic
+     * placement at all" report: six lines at regular intervals is a pattern, not
+     * a web. Jittering each strand independently was not enough either -- it
+     * produced scattered lines rather than a web.
+     *
+     * What actually reads as a web is several strands leaving the SAME point at
+     * different angles. So the anchors are chosen first, and each strand is
+     * assigned to one of them exactly. The gaps between clusters are as much a
+     * part of the look as the strands themselves. */
+    static const struct { float fx, fy; } k_web_zones[] = {
+        { 0.07f, 0.06f },   /* top-left corner */
+        { 0.93f, 0.05f },   /* top-right corner */
+        { 0.34f, 0.03f },   /* upper left-of-centre */
+    };
+    const int zones = (int)(sizeof k_web_zones / sizeof k_web_zones[0]);
+    int32_t span_x = g_play.right - g_play.left;
+    int32_t span_y = g_play.bottom - g_play.top;
+
+    /* One anchor per zone, jittered once so the clusters are not at fixed
+     * positions between boots. */
+    int32_t anchor_x[3], anchor_y[3];
+    for (int z = 0; z < zones; z++) {
+        anchor_x[z] = g_play.left + 20 + (int32_t)(k_web_zones[z].fx * (float)(span_x - 40))
+                    + (int32_t)(esp_random() % 30) - 15;
+        anchor_y[z] = g_play.top + 12 + (int32_t)(k_web_zones[z].fy * (float)(span_y - 24))
+                    + (int32_t)(esp_random() % 22) - 11;
+        if (anchor_x[z] < g_play.left + 12) anchor_x[z] = g_play.left + 12;
+        if (anchor_x[z] > g_play.right - 12) anchor_x[z] = g_play.right - 12;
+        if (anchor_y[z] < g_play.top + 8) anchor_y[z] = g_play.top + 8;
+    }
+
     for (int i = 0; i < AMBIENT_STRANDS; i++) {
         strand_t *s = &s_strands[i];
         s->obj = lv_obj_create(ui.bg_canvas ? lv_obj_get_parent(ui.bg_canvas) : NULL);
@@ -185,23 +214,30 @@ void ambient_init(void)
             continue;
         }
         lv_obj_remove_style_all(s->obj);
-        lv_obj_set_style_bg_opa(s->obj, LV_OPA_40, 0);
         lv_obj_set_style_radius(s->obj, 0, 0);
         lv_obj_set_clickable(s->obj, false);
         lv_obj_set_scrollable(s->obj, false);
-        /* Evenly spaced across the playfield, inset past the border. Anchored at
-         * the playfield edge the strand was drawn underneath the frame and could
-         * not be seen at all. */
-        int32_t span = g_play.right - g_play.left;
-        s->ax = g_play.left + 26 + (int32_t)((int64_t)span - 52) * i / (AMBIENT_STRANDS - 1);
-        s->ay = g_play.top + 14 + (int32_t)(esp_random() % 10);
-        s->length = 30.0f + (float)(esp_random() % 46);
-        /* Alternate the lean so the strands do not all fall the same way. */
-        s->base_angle = (i & 1) ? 2.14f : 1.0f;
+
+        /* Deal the strands round-robin across the anchors, so every cluster gets
+         * at least one and the corners get more than the middle -- which is how
+         * a web actually accumulates. */
+        int zone = i % zones;
+        s->ax = anchor_x[zone];
+        s->ay = anchor_y[zone];
+
+        /* Length and angle are independent and both wide. A web has short
+         * cross-strands and long anchor lines at every angle from near-vertical
+         * to near-horizontal; giving every strand the same two angles was the
+         * other half of why it read as a pattern. */
+        s->length = 18.0f + (float)(esp_random() % 100) / 100.0f * 62.0f;
+        s->base_angle = 0.35f + (float)(esp_random() % 100) / 100.0f * 2.44f;
         s->sway_phase = (float)(esp_random() % 628) / 100.0f;
-        s->sway_rate = 0.25f + (float)(esp_random() % 100) / 100.0f * 0.35f;
-        s->sway_amp = 0.10f + (float)(esp_random() % 100) / 100.0f * 0.10f;
+        /* Sway rates spread wide so the strands never move in step. */
+        s->sway_rate = 0.12f + (float)(esp_random() % 100) / 100.0f * 0.55f;
+        s->sway_amp = 0.05f + (float)(esp_random() % 100) / 100.0f * 0.16f;
         s->last_deg = 0x7fffffff;   /* force the first push */
+        /* Opacity varies per strand: a web is denser where more silk crosses. */
+        lv_obj_set_style_bg_opa(s->obj, (lv_opa_t)(40 + esp_random() % 60), 0);
         /* A 2 px wide, `length` tall box, rotated about its top end. One pixel
          * at 20% opacity was invisible on the panel. */
         lv_obj_set_size(s->obj, 2, (int32_t)s->length);
@@ -761,7 +797,50 @@ bool ambient_test(void)
         if (!s->obj) { ok = false; break; }
         if (s->ax < g_play.left || s->ax > g_play.right) { ok = false; break; }
         if (s->ay < g_play.top || s->ay > g_play.bottom) { ok = false; break; }
-        if (s->length < 20.0f || s->length > 80.0f) { ok = false; break; }
+        if (s->length < 15.0f || s->length > 85.0f) { ok = false; break; }
+    }
+    /* The placement must radiate from SHARED anchors, not be evenly spaced.
+     * Even spacing is a pattern, not a web; jittering each strand independently
+     * produces scattered lines rather than a web. Assert the property that
+     * actually reads as a web: several strands leaving the same point. */
+    {
+        int shared = 0;
+        for (int i = 0; i < AMBIENT_STRANDS; i++) {
+            int same = 0;
+            for (int j = 0; j < AMBIENT_STRANDS; j++)
+                if (s_strands[j].ax == s_strands[i].ax &&
+                    s_strands[j].ay == s_strands[i].ay) same++;
+            if (same > shared) shared = same;
+        }
+        ok = ok && shared >= 2;
+
+        /* Unequal spacing between distinct anchors. */
+        int32_t xs[AMBIENT_STRANDS];
+        int n = 0;
+        for (int i = 0; i < AMBIENT_STRANDS; i++) {
+            bool dup = false;
+            for (int j = 0; j < n; j++) if (xs[j] == s_strands[i].ax) dup = true;
+            if (!dup) xs[n++] = s_strands[i].ax;
+        }
+        for (int i = 1; i < n; i++)
+            for (int j = i; j > 0 && xs[j - 1] > xs[j]; j--) {
+                int32_t t = xs[j]; xs[j] = xs[j - 1]; xs[j - 1] = t;
+            }
+        int32_t min_gap = 0x7fffffff, max_gap = 0;
+        for (int i = 1; i < n; i++) {
+            int32_t g = xs[i] - xs[i - 1];
+            if (g < min_gap) min_gap = g;
+            if (g > max_gap) max_gap = g;
+        }
+        ok = ok && n >= 2 && max_gap > min_gap * 3 / 2;
+
+        /* Angles must be genuinely varied, not two alternating values. */
+        float lo = 99.0f, hi = -99.0f;
+        for (int i = 0; i < AMBIENT_STRANDS; i++) {
+            if (s_strands[i].base_angle < lo) lo = s_strands[i].base_angle;
+            if (s_strands[i].base_angle > hi) hi = s_strands[i].base_angle;
+        }
+        ok = ok && (hi - lo) > 0.8f;
     }
     float phase_before = s_strands[0].sway_phase;
     ambient_simulate(1.2f, now + 1200u);

@@ -278,7 +278,7 @@ test('spores form a second air layer that moves on both axes', () => {
   assert.ok(a.some((p, i) => p.y !== b[i].y), 'spores never move vertically');
 });
 
-test('web strands are anchored in the tank and actually pivot', () => {
+test('web strands radiate from shared anchors, not evenly spaced', () => {
   const bounds = { left: 8, top: 8, right: 472, bottom: 472 };
   const a = strandsAt(0, bounds);
   const b = strandsAt(2500, bounds);
@@ -286,17 +286,36 @@ test('web strands are anchored in the tank and actually pivot', () => {
   for (const t of a) {
     assert.ok(t.ax >= bounds.left && t.ax <= bounds.right, `strand anchor out of tank: ${t.ax}`);
     assert.ok(t.ay >= bounds.top && t.ay <= bounds.bottom, `strand anchor out of tank: ${t.ay}`);
-    assert.ok(t.length >= 20 && t.length <= 80, `strand length out of range: ${t.length}`);
+    assert.ok(t.length >= 15 && t.length <= 85, `strand length out of range: ${t.length}`);
+    assert.ok(t.alpha > 0 && t.alpha <= 0.4, `strand alpha out of range: ${t.alpha}`);
   }
   // A strand whose angle never changes is a static line drawn over the art.
   assert.ok(a.some((t, i) => t.angle !== b[i].angle), 'strands never pivot');
-  // Spread across the width rather than clustered in the corners: with six
-  // strands, corner-only placement left the middle of the tank bare.
-  const xs = a.map(t => t.ax).sort((p, q) => p - q);
-  assert.ok(xs[0] < 120 && xs[xs.length - 1] > 360, 'strands do not span the tank');
-  assert.ok(xs[xs.length - 1] - xs[0] > 300, 'strands are clustered, not spread');
-  // Alternating lean, so they do not all fall the same way.
-  assert.ok(a.some(t => t.angle > 1.5) && a.some(t => t.angle < 1.5), 'strands all lean one way');
+
+  // SHARED ANCHORS are what read as a web. Several strands must leave the exact
+  // same point at different angles; scattered lines are not a web, and even
+  // spacing is a pattern.
+  const anchorKey = t => `${t.ax},${t.ay}`;
+  const counts = new Map();
+  for (const t of a) counts.set(anchorKey(t), (counts.get(anchorKey(t)) ?? 0) + 1);
+  const shared = [...counts.values()].filter(n => n >= 2);
+  assert.ok(shared.length >= 1, 'no two strands share an anchor, so there is no web');
+  assert.ok(Math.max(...counts.values()) >= 2, 'no cluster has more than one strand');
+
+  // NOT evenly spaced: the gaps between distinct anchors must be visibly unequal.
+  // With only three anchors there are just two gaps, so the bar is "clearly
+  // different" rather than a fixed ratio.
+  const xs = [...new Set(a.map(t => t.ax))].sort((p, q) => p - q);
+  const gaps = xs.slice(1).map((x, i) => x - xs[i]);
+  assert.ok(Math.max(...gaps) > Math.min(...gaps) * 1.4,
+    `anchor spacing is too regular (${gaps.join(', ')})`);
+
+  // Angles must be genuinely varied, not two alternating values.
+  const angles = a.map(t => t.angle).sort((p, q) => p - q);
+  assert.ok(angles[angles.length - 1] - angles[0] > 1.2, 'strand angles are too uniform');
+  // And lengths must differ, or every strand is the same stick.
+  const lengths = a.map(t => t.length);
+  assert.ok(Math.max(...lengths) - Math.min(...lengths) > 20, 'strand lengths are too uniform');
 });
 
 test('decor and gift particles use a fixed pool, not one emitter per item', () => {

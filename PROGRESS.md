@@ -11712,3 +11712,58 @@ out, which is the actual reported symptom.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+## Round 132 -- Web strands that read as a web
+
+### What was asked
+
+"the web strands are too robotic its not organic placement at all"
+
+### Decisions made
+
+**Evenly spaced was the whole problem.** Round 131 spread the six strands evenly
+across the top edge with an alternating lean, which is a *pattern*, not a web.
+Two attempts were needed to get this right:
+
+1. *Jitter each strand independently inside a few zones.* Better than even
+   spacing, but it produced scattered lines rather than a web -- the screenshot
+   showed six unrelated strokes.
+2. *Shared anchors.* This is what actually reads as a web: several strands
+   leaving the SAME point at different angles. Three anchor zones (top-left
+   corner, top-right corner, upper left-of-centre), each jittered once, and the
+   strands dealt round-robin across them so every cluster gets at least one and
+   the corners get more than the middle -- which is how a web accumulates.
+
+**Everything else about a strand is now independent.** Length 18-80 px, angle
+0.35-2.79 rad (near-vertical through near-horizontal), sway rate 0.12-0.67 rad/s,
+sway amplitude 0.05-0.21 rad, and opacity 40-100/255. Previously the angle was
+one of two values and the opacity was fixed, which is the other half of why it
+read as a mechanical pattern.
+
+### Evidence
+
+- Build exit 0, zero main warnings. Flash exit 0.
+- `ambienttest` -> `AMBIENT ok=1`, three consecutive runs. The self-test now
+  asserts the property that actually matters: at least two strands share an exact
+  anchor, the gaps between distinct anchors are unequal, and the base angles span
+  more than 0.8 rad.
+- Panel screenshots before and after: the first showed six evenly spaced strokes;
+  the second shows strands fanning from shared points in both top corners at
+  visibly different angles and lengths.
+- Browser suite 305/305. The strand test was rewritten to assert shared anchors
+  rather than even spacing -- the old test was asserting the bug.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, unchanged.
+- `rendercost` -> `avg_us=3836` of a 33,333 us budget.
+
+### Honest boundaries
+
+"Organic" is a judgement call and this is the second attempt at it. The shared
+anchors are the structural fix -- scattered lines can never read as a web no
+matter how they are jittered -- but whether three clusters is the right number,
+and whether the strands are the right length, needs eyes on the panel.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).

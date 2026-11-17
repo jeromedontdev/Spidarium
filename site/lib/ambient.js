@@ -148,27 +148,57 @@ export function sporesAt(nowMs, bounds) {
 
 /* Web strands: a thin line anchored at one end, pivoting slowly. A strand that
  * translated would read as a sliding stick; pivoting reads as something hanging
- * and catching the air. Returns the anchor and the current angle in radians. */
+ * and catching the air. Returns the anchor and the current angle in radians.
+ *
+ * Placement is CLUSTERED around shared anchors. Even spacing is a pattern, not a
+ * web; jittering each strand independently produces scattered lines rather than
+ * a web. What actually reads as a web is several strands leaving the SAME point
+ * at different angles, so the anchors are chosen first and each strand is
+ * assigned to one of them exactly. */
 export const STRAND_COUNT = 6;
 
+/* Anchor zones, as fractions of the playfield. The corners get more strands than
+ * the middle, which is how a web actually accumulates. */
+const WEB_ZONES = [
+  [0.07, 0.06],   /* top-left corner */
+  [0.93, 0.05],   /* top-right corner */
+  [0.34, 0.03],   /* upper left-of-centre */
+];
+
 export function strandsAt(nowMs, bounds) {
-  const { left, top, right } = bounds;
+  const { left, top, right, bottom } = bounds;
   const out = [];
-  const span = Math.max(1, right - left);
+  const spanX = Math.max(1, right - left);
+  const spanY = Math.max(1, bottom - top);
+
+  /* One anchor per zone, jittered once so the clusters are not at fixed
+   * positions between loads. */
+  const anchors = WEB_ZONES.map((z, i) => {
+    const seed = i * 401 + 7;
+    let ax = left + 20 + Math.round(z[0] * (spanX - 40)) + Math.round(hash(seed) * 30) - 15;
+    let ay = top + 12 + Math.round(z[1] * (spanY - 24)) + Math.round(hash(seed + 1) * 22) - 11;
+    ax = Math.max(left + 12, Math.min(right - 12, ax));
+    ay = Math.max(top + 8, ay);
+    return [ax, ay];
+  });
+
   for (let i = 0; i < STRAND_COUNT; i++) {
     const seed = i * 173 + 23;
-    const length = 30 + hash(seed + 1) * 46;
-    /* Alternate the lean so the strands do not all fall the same way. */
-    const baseAngle = i % 2 ? 2.14 : 1.0;
-    const swayRate = 0.25 + hash(seed + 2) * 0.35;
-    const swayAmp = 0.10 + hash(seed + 3) * 0.10;
-    /* Evenly spaced across the playfield, inset past the border. Anchored at the
-     * playfield edge the strand is drawn underneath the frame and cannot be
-     * seen at all. */
-    const ax = left + 26 + Math.round((span - 52) * i / (STRAND_COUNT - 1));
-    const ay = top + 14 + Math.floor(hash(seed + 5) * 10);
-    const angle = baseAngle + Math.sin((nowMs / 1000) * swayRate + hash(seed + 4) * 6.28) * swayAmp;
-    out.push({ ax, ay, length, angle });
+    /* Round-robin across the anchors, so every cluster gets at least one. */
+    const [ax, ay] = anchors[i % anchors.length];
+    /* Length and angle are independent and both wide. A web has short
+     * cross-strands and long anchor lines at every angle from near-vertical to
+     * near-horizontal; giving every strand the same two angles is what made it
+     * read as a pattern. */
+    const length = 18 + hash(seed + 3) * 62;
+    const baseAngle = 0.35 + hash(seed + 4) * 2.44;
+    /* Sway rates spread wide so the strands never move in step. */
+    const swayRate = 0.12 + hash(seed + 5) * 0.55;
+    const swayAmp = 0.05 + hash(seed + 6) * 0.16;
+    const angle = baseAngle + Math.sin((nowMs / 1000) * swayRate + hash(seed + 7) * 6.28) * swayAmp;
+    /* Opacity varies per strand: a web is denser where more silk crosses. */
+    const alpha = (40 + Math.floor(hash(seed + 8) * 60)) / 255;
+    out.push({ ax, ay, length, angle, alpha });
   }
   return out;
 }

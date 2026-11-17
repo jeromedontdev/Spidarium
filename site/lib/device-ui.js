@@ -1245,14 +1245,16 @@ export class DeviceGame {
         ctx.fill();
       }
     }
-    // Web strands: anchored at the top corners and pivoting slowly. A strand
-    // that translated would read as a sliding stick; pivoting reads as
-    // something hanging and catching the air.
+    // Web strands: anchored in clusters and pivoting slowly. A strand that
+    // translated would read as a sliding stick; pivoting reads as something
+    // hanging and catching the air. Opacity varies per strand, because a web is
+    // denser where more silk crosses.
     {
       const web = webColour(E.BACKGROUNDS.indexOf(s.theme));
-      ctx.strokeStyle = `rgba(${(web >> 16) & 255},${(web >> 8) & 255},${web & 255},.20)`;
+      const rgb = `${(web >> 16) & 255},${(web >> 8) & 255},${web & 255}`;
       ctx.lineWidth = 1;
       for (const t of strandsAt(s.now_ms ?? 0, { left: 8, top: 8, right: 472, bottom: 472 })) {
+        ctx.strokeStyle = `rgba(${rgb},${t.alpha.toFixed(3)})`;
         ctx.beginPath();
         ctx.moveTo(t.ax, t.ay);
         ctx.lineTo(t.ax + Math.cos(t.angle) * t.length, t.ay + Math.sin(t.angle) * t.length);
