@@ -529,6 +529,33 @@ test('a gift cannot be set to walk behind',()=>{
   assert.ok(seen.includes(0)&&seen.includes(1),'both usable paths are reachable');
 });
 
+test('a visit reaches the gift on both usable paths',()=>{
+  /* The visit branch steers straight at the gift and returns before the
+   * separation pass, so it is the one path that can drive the spider inside the
+   * push radius. The arrival test is `d <= GIFT_VISIT_ARRIVE` and Solid pushes
+   * out to exactly GIFT_PUSH_RADIUS, so the two are coupled: if the push radius
+   * ever grew past the arrival threshold, a Solid gift would shove the spider
+   * out every tick and it would circle forever without completing the visit. */
+  assert.ok(E.GIFT_PUSH_RADIUS<=E.GIFT_VISIT_ARRIVE,
+    `the push radius (${E.GIFT_PUSH_RADIUS}) must not exceed the arrival `+
+    `threshold (${E.GIFT_VISIT_ARRIVE})`);
+  for(const path of [0,1]){
+    const s=E.freshState();
+    s.gift.used=1;s.gift.kind=0;s.gift.x=240;s.gift.y=240;
+    s.gift_path=path;
+    s.spider_x=240;s.spider_y=280;
+    s.state=0;s.hunger=80;s.energy=50;s.mood=50;s.sick=0;
+    const r=s._engine;
+    r.gift_visiting=true;r.gift_hold_until=0;r.gift_visit_end=r.now_ms+20000;
+    let arrived=false;
+    for(let i=0;i<120&&!arrived;i++){
+      E.tick(s,0.05);
+      arrived=r.gift_hold_until!==0;
+    }
+    assert.ok(arrived,`path ${path} must complete the visit`);
+  }
+});
+
 test('walk behind blocks decor against the whole artwork',()=>{
   /* The same rule that makes Walk Behind read on a gift applies to decor: the
    * spider must not stand on the item's lower half. Blocking only the small

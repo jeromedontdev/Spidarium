@@ -1468,6 +1468,12 @@ function mindTick(s){
 // half-extent is 32 px. Walk Behind blocks against this rather than the small
 // push radius, so the spider is kept clear of the whole artwork.
 export const GIFT_BLOCK_RADIUS=28;
+// Solid pushes the spider out to this radius, and the visit counts as arrived
+// inside GIFT_VISIT_ARRIVE. The two are coupled: if the push radius ever grew
+// past the arrival threshold, a Solid gift would shove the spider out every
+// tick and it would circle forever without completing the visit.
+export const GIFT_PUSH_RADIUS=18;
+export const GIFT_VISIT_ARRIVE=18;
 // Walk Behind blocks movement as well as occluding. It used to be
 // non-blocking, so the spider crossed the footprint and was drawn ON TOP of the
 // gift's lower half before popping behind its upper half.
@@ -1578,7 +1584,7 @@ function behaviourTick(s,dt){
     if(!r.gift_visiting&&now>=r.gift_visit_at){r.gift_visiting=true;r.gift_visit_end=now+20000;r.gift_hold_until=0;}
     if(r.gift_visiting){
       const d=Math.hypot(s.gift.x-s.spider_x,s.gift.y-s.spider_y);
-      if(d>18&&!r.gift_hold_until){
+      if(d>GIFT_VISIT_ARRIVE&&!r.gift_hold_until){
         setState(s,1);const want=Math.atan2(s.gift.y-r.py,s.gift.x-r.px);
         s.spider_heading=wrap(s.spider_heading+wrap(want-s.spider_heading)*.15);advance(s,55*scale,dt);
       }else if(!r.gift_hold_until){setState(s,0);r.gift_hold_until=now+3000;}
@@ -1713,7 +1719,7 @@ function behaviourTick(s,dt){
     const dx=s.spider_x-s.gift.x,dy=s.spider_y-s.gift.y,d=Math.hypot(dx,dy);
     // Walk Behind blocks against the artwork, not the small push radius: the
     // spider must not be able to stand on the gift's lower half at all.
-    const radius=s.gift_path===2?GIFT_BLOCK_RADIUS:18;
+    const radius=s.gift_path===2?GIFT_BLOCK_RADIUS:GIFT_PUSH_RADIUS;
     if(d<radius){
       // Exactly coincident has no direction to push along, so pick one.
       if(d<.1){s.spider_y=Math.trunc(s.gift.y+radius);}

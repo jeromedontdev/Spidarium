@@ -290,6 +290,15 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   cycling a gift, the commit path and both editor-seed sites clamp a stale value
   to Walk Over, and `save.c` folds it during migration. Walk Over and Solid are
   the only usable gift paths.
+  Both usable paths still let the spider VISIT the gift. The visit branch steers
+  straight at the gift and returns before the separation pass, so it is the one
+  path that can drive the spider inside the push radius. `GIFT_PUSH_RADIUS` (18)
+  and `GIFT_VISIT_ARRIVE` (18) are therefore coupled: Solid pushes the spider
+  out to exactly the push radius and the visit only counts as arrived inside the
+  arrival threshold, so if the push radius ever grew past it a Solid gift would
+  shove the spider out every tick and it would circle forever without completing
+  the visit. `behaviour_gift_block_test()` asserts the ordering, and the browser
+  test asserts the same on the exported constants.
   Decor keeps Walk Behind, and it blocks the same way. `decor_path_blocks()` is
   true for Solid and Walk Behind; `decor_blocks_point()` and
   `decor_nearest_blocking()` use it, and `behaviour.c`'s `decor_avoidance()`

@@ -259,6 +259,13 @@ static void advance(float speed, float dt_s)
 #define GIFT_AVOID_RADIUS   40.0f   /* start steering away this far out */
 #define GIFT_PUSH_RADIUS    18.0f   /* only shove if actually this close */
 
+/* The visit counts as arrived inside this distance. It is coupled to
+ * GIFT_PUSH_RADIUS: Solid pushes the spider out to exactly the push radius, so
+ * if the push radius ever grew past this, a Solid gift would shove the spider
+ * out every tick and it would circle forever without completing the visit.
+ * behaviour_gift_block_test() asserts the ordering. */
+#define GIFT_VISIT_ARRIVE   18.0f
+
 /* The gift sprite is a 64x64 canvas centred on the gift, so its visible
  * half-extent is 32 px. Walk Behind blocks against this rather than the small
  * push radius, so the spider is kept clear of the whole artwork. */
@@ -902,7 +909,7 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
         }
         if (s_gift_visiting) {
             float d = dist_to(g.gift.x, g.gift.y);
-            if (d > 18 && !s_gift_hold_until) {
+            if (d > GIFT_VISIT_ARRIVE && !s_gift_hold_until) {
                 behaviour_set_state(SPIDER_WANDER);
                 float want = atan2f(g.gift.y - s_py, g.gift.x - s_px);
                 float delta = wrap_pi(want - g.spider_heading);
@@ -1426,6 +1433,13 @@ bool behaviour_gift_block_test(void)
     g.gift.used = 1; g.gift.kind = 0;
     g.gift.x = 240; g.gift.y = 240;
     bool ok = true;
+
+    /* The push radius must not exceed the visit arrival threshold. Solid pushes
+     * the spider out to exactly GIFT_PUSH_RADIUS and the visit only counts as
+     * arrived inside GIFT_VISIT_ARRIVE, so if the push radius grew past it a
+     * Solid gift would shove the spider out every tick and it would circle
+     * forever without completing the visit. */
+    ok = ok && GIFT_PUSH_RADIUS <= GIFT_VISIT_ARRIVE;
 
     /* Walk Behind: a spider standing on the gift's lower half is pushed clear of
      * the whole artwork. */

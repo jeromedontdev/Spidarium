@@ -10758,3 +10758,81 @@ shadow is now a flat ellipse under the feet at every height, so it no longer
 communicates height by itself -- the spider's position over the structure
 artwork does that. If the climb still reads as flat, the next lever is the
 artwork's own shading, not another shadow offset.
+
+---
+
+## Round 121 - Both gift paths still let the spider visit, and a crash in decor_test
+
+**Status:** COMPLETE - build, flash, native suite, soak and drift all green.
+
+### What was asked
+
+"If I put the gift to solid or walk over does one or the other cause issues
+with them visiting it?"
+
+### Answer
+
+No. Both paths let the spider reach and complete a visit. The visit branch
+steers straight at the gift and returns before the separation pass, so the push
+never runs while visiting; the spider walks in, holds for 3 s, and gains the
+mood/energy bonus on either path.
+
+The one fragile coupling is worth recording. `GIFT_PUSH_RADIUS` (18) and the
+visit arrival threshold (18) are the same number, and Solid pushes the spider
+out to exactly the push radius. If the push radius ever grew past the arrival
+threshold, a Solid gift would shove the spider out every tick and it would
+circle forever without completing the visit. Both numbers are now named
+constants (`GIFT_PUSH_RADIUS`, `GIFT_VISIT_ARRIVE`) and both test suites assert
+the ordering, so the coupling cannot drift silently.
+
+### Decisions made
+
+- **Name the coupled constants rather than leaving bare 18s.** The native side
+  had `GIFT_PUSH_RADIUS` but a literal `18` in the arrival test; the browser had
+  literals in both places. Both now use named constants, and the browser exports
+  them so a test can assert the ordering.
+- **Mutation-test the new assertions.** Injecting `GIFT_PUSH_RADIUS = 24` makes
+  the browser test fail with "the push radius (24) must not exceed the arrival
+  threshold (18)" and makes `gifttest` return `ERR gift test UI request failed`
+  on hardware. Two earlier candidate assertions (pushing during a visit, and
+  lowering the arrival threshold) did NOT fail, because the push lands at
+  exactly 18 and still satisfies `d <= 18` -- so those were dropped rather than
+  kept as tests that cannot fail.
+
+### A crash found while verifying
+
+`run_tests.py` began reporting 49/3 with a `Guru Meditation ... LoadProhibited`
+in the middle of `uitest`. Decoding the backtrace with `riscv32-esp-elf-addr2line`
+put it at `decor_test()` in `main/decor.c`. The cause: the harness clears all
+ownership at the top of the test, so `decor_place(DECOR_LOG, ...)` returns -1,
+and `decor_at(-1)` is NULL -- which the climb section dereferenced directly.
+This was pre-existing at `777221c`, not caused by the gift work; it only became
+visible once the ownership grant changed.
+
+Fixed by granting the kinds the climb section places
+(`decor_owned |= LOG|FERN`, `decor_owned_extra |= STONE_BRIDGE`,
+`climb_owned |= DRIFTWOOD`) and guarding the `decor_at()` dereferences. The
+section now actually exercises the paths instead of silently skipping them.
+
+### Evidence
+
+- `build.ps1` -> exit 0, zero main warnings. `flash.ps1 COM7` -> exit 0,
+  `Hash of data verified`.
+- `gifttest` -> `OK gifts tested=36 removed_neutral=1 economy=1 visits=1
+  blocks=1`.
+- `run_tests.py COM7` -> `passed=49 failed=3`, no crash. The three are the
+  documented baseline: `uitest` (hud/backgrounds/companion) and `hunttest`
+  (landed/subpixel).
+- Browser suite 268/268, including the new visit test and the constant-ordering
+  assertion.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+The tests prove the visit completes on both paths in simulation and that the
+constants are ordered correctly; they do not prove the spider looks natural
+walking up to a Solid gift on the physical panel, which still needs human eyes.
+The `decor_test()` crash was a test-harness bug, not a gameplay bug -- no
+shipped code path dereferences `decor_at()` without a NULL check.

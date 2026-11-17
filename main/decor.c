@@ -1011,8 +1011,16 @@ bool decor_test(void)
 
     /* --- climbing (2.5D) ------------------------------------------------
      * A climbable item lifts the spider only while it is over the footprint,
-     * and only on the Climb path. A flat prop must refuse the path outright. */
+     * and only on the Climb path. A flat prop must refuse the path outright.
+     *
+     * The harness starts with nothing owned, so grant the kinds this section
+     * places. Without this decor_place() returns -1 and the decor_at() calls
+     * below dereference NULL -- which crashed the whole test with a
+     * LoadProhibited instead of failing an assertion. */
     decor_clear();
+    g.decor_owned |= (1u << DECOR_LOG) | (1u << DECOR_FERN);
+    g.decor_owned_extra |= (1u << (DECOR_STONE_BRIDGE - 32));
+    g.climb_owned |= (1u << (DECOR_CLIMB_DRIFTWOOD - DECOR_CLIMB_FIRST));
     int log = decor_place(DECOR_LOG, 240, 240);
     ok = ok && log >= 0 && decor_climbable(DECOR_LOG);
     ok = ok && !decor_climbable(DECOR_FERN);
@@ -1027,13 +1035,21 @@ bool decor_test(void)
     int bridge = decor_place(DECOR_STONE_BRIDGE, 240, 240);
     ok = ok && bridge >= 0 && decor_set_path(bridge, DECOR_CLIMB);
     ok = ok && decor_climb_at(240, 240, NULL) == k_decor_kinds[DECOR_STONE_BRIDGE].climb_height;
-    /* A flat prop refuses Climb rather than silently drawing zero lift. */
+    /* A flat prop refuses Climb rather than silently drawing zero lift.
+     *
+     * Guarded anyway: decor_place() returns -1 on any rejection and
+     * decor_at(-1) is NULL, so an unguarded dereference turns a failed
+     * assertion into a LoadProhibited that takes the whole test down. */
     int fern = decor_place(DECOR_FERN, 120, 120);
-    ok = ok && fern >= 0 && !decor_set_path(fern, DECOR_CLIMB);
-    ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
-    /* Cycling skips Climb for a flat prop and reaches it for a climbable one. */
-    for (int i = 0; i < DECOR_PATH_COUNT; i++) decor_toggle_blocking(fern);
-    ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
+    ok = ok && fern >= 0;
+    if (fern >= 0) {
+        ok = ok && !decor_set_path(fern, DECOR_CLIMB);
+        ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
+        /* Cycling skips Climb for a flat prop. */
+        for (int i = 0; i < DECOR_PATH_COUNT; i++) decor_toggle_blocking(fern);
+        ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
+    }
+    /* Cycling reaches Climb for a climbable one. */
     bool reached = false;
     for (int i = 0; i < DECOR_PATH_COUNT; i++) {
         decor_toggle_blocking(log);
