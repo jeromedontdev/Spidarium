@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { blinkAt, glanceAt, breathAt, motesAt, dustColour, lightOpaAt, MOTE_COUNT, DUST_COLOURS } from '../lib/ambient.js';
+import { readFileSync } from 'node:fs';
+import { blinkAt, glanceAt, breathAt, motesAt, dustColour, lightOpaAt, MOTE_COUNT, DUST_COLOURS,
+  sporesAt, strandsAt, webColour, particlesAt, emitForDecorKey, emitForGift,
+  SPORE_COUNT, STRAND_COUNT, PARTICLE_COUNT, EMIT, WEB_COLOURS } from '../lib/ambient.js';
 import { renderSpider } from '../lib/spider-renderer.js';
 import { BACKGROUNDS } from '../lib/device-engine.js';
 import * as E from '../lib/device-engine.js';
@@ -245,47 +248,104 @@ test('the day/night tint is visible, not a 5% wash', () => {
   assert.ok(tints.Evening[0] > tints.Evening[2], 'evening should be warm');
 });
 
-test('the light shafts are organic: no two beams alike, and not all one way', () => {
-  // The complaint was "too blocky and symmetrical and only go down the screen in
-  // a single direction". Each of those is asserted directly. The table mirrors
-  // k_shafts in ambient.c: [topX, slope, topHalf, botHalf, peak].
-  const beams = [[92, 0.42, 23, 39, 0.34], [252, -0.30, 35, 20, 0.26], [404, 0.22, 15, 31, 0.22]];
 
-  // Not one direction: at least one beam must lean each way.
-  assert.ok(beams.some(b => b[1] > 0.05), 'no beam leans right');
-  assert.ok(beams.some(b => b[1] < -0.05), 'no beam leans left');
 
-  // Diagonal, not vertical: every beam must travel sideways as it descends.
-  for (const [topX, slope] of beams)
-    assert.ok(Math.abs(slope * 480) > 40, `beam at ${topX} is nearly vertical`);
 
-  // Not symmetrical: no two beams may share a width or a brightness.
-  for (let i = 0; i < beams.length; i++)
-    for (let j = i + 1; j < beams.length; j++) {
-      assert.ok(Math.abs(beams[i][2] - beams[j][2]) > 2, 'two beams share a width');
-      assert.ok(Math.abs(beams[i][4] - beams[j][4]) > 0.01, 'two beams share a brightness');
-    }
-
-  // Tapered: each beam must change width along its length, so it does not read
-  // as a rectangle.
-  for (const [topX, , topHalf, botHalf] of beams)
-    assert.ok(Math.abs(topHalf - botHalf) > 4, `beam at ${topX} does not taper`);
-
-  // Feathered, not blocky: the alpha must ramp across the beam rather than step.
-  // Reproduce the device's profile and require many intermediate values.
-  const alphaAt = (x, y, [, , topHalf, botHalf, peak]) => {
-    const t = y / 480, half = topHalf + (botHalf - topHalf) * t;
-    const d = Math.abs(x - 240) / half;
-    if (d >= 1) return 0;
-    const f = (1 - d * d) ** 2;
-    return peak * (1 - 0.55 * t) * f;
-  };
-  let steps = 0;
-  for (let x = 0; x < 480; x++) {
-    const a = alphaAt(x, 240, beams[0]);
-    if (a > 0.01 && a < beams[0][4] * 0.9) steps++;
-  }
-  assert.ok(steps > 10, `beam edge is a hard step, only ${steps} intermediate pixels`);
+test('the light shafts are gone, and the tank is not hazy', () => {
+  // The shafts were removed after three attempts: rotated objects were software
+  // rendered at ~111,000 blended pixels each per frame and made the tank choppy,
+  // unrotated bands read as blocky stripes, and baked beams could not move --
+  // and static light reads as a stain rather than as light. This test exists so
+  // they are not quietly reintroduced without solving that.
+  const src = readFileSync(new URL('../lib/device-ui.js', import.meta.url), 'utf8');
+  assert.ok(!/createLinearGradient/.test(src), 'light shafts are back in the tank renderer');
+  assert.ok(!/shaft/i.test(src), 'shaft code is back in the tank renderer');
 });
 
+test('spores form a second air layer that moves on both axes', () => {
+  const bounds = { left: 8, top: 8, right: 472, bottom: 472 };
+  const a = sporesAt(0, bounds);
+  const b = sporesAt(1500, bounds);
+  assert.equal(a.length, SPORE_COUNT);
+  for (const p of a) {
+    assert.ok(p.x >= bounds.left - 4 && p.x <= bounds.right + 4, `spore x out of tank: ${p.x}`);
+    assert.ok(p.y >= bounds.top - 4 && p.y <= bounds.bottom + 4, `spore y out of tank: ${p.y}`);
+    assert.ok(p.size >= 3 && p.size <= 5, `spore size out of range: ${p.size}`);
+  }
+  // They must actually move, and on both axes -- a spore that only rises is
+  // just a bigger mote and the second layer is wasted.
+  assert.ok(a.some((p, i) => p.x !== b[i].x), 'spores never move horizontally');
+  assert.ok(a.some((p, i) => p.y !== b[i].y), 'spores never move vertically');
+});
 
+test('web strands are anchored in the tank and actually pivot', () => {
+  const bounds = { left: 8, top: 8, right: 472, bottom: 472 };
+  const a = strandsAt(0, bounds);
+  const b = strandsAt(2500, bounds);
+  assert.equal(a.length, STRAND_COUNT);
+  for (const t of a) {
+    assert.ok(t.ax >= bounds.left && t.ax <= bounds.right, `strand anchor out of tank: ${t.ax}`);
+    assert.ok(t.ay >= bounds.top && t.ay <= bounds.bottom, `strand anchor out of tank: ${t.ay}`);
+    assert.ok(t.length >= 20 && t.length <= 80, `strand length out of range: ${t.length}`);
+  }
+  // A strand whose angle never changes is a static line drawn over the art.
+  assert.ok(a.some((t, i) => t.angle !== b[i].angle), 'strands never pivot');
+  // One in each corner, so the tank is framed rather than one-sided.
+  assert.ok(a[0].ax < 240 && a[1].ax > 240, 'strands are not in opposite corners');
+});
+
+test('decor and gift particles use a fixed pool, not one emitter per item', () => {
+  // The whole point of the design is that cost does not scale with how much the
+  // player has placed. A pool that grew with the item count would be the worst
+  // possible property for the frame budget.
+  const items = [];
+  for (let i = 0; i < 40; i++) items.push({ x: 100 + i, y: 200, style: EMIT.SPORE });
+  const many = particlesAt(1000, items);
+  assert.ok(many.length <= PARTICLE_COUNT, `pool overflowed: ${many.length} > ${PARTICLE_COUNT}`);
+
+  // An empty tank must cost nothing at all.
+  assert.equal(particlesAt(1000, []).length, 0);
+  assert.equal(particlesAt(1000, [{ x: 1, y: 1, style: EMIT.NONE }]).length, 0);
+});
+
+test('the emitter mapping classifies decor by family and gifts always sparkle', () => {
+  // A table that returned NONE for everything would pass every other check
+  // while doing nothing.
+  assert.equal(emitForDecorKey('fern'), EMIT.SPORE);
+  assert.equal(emitForDecorKey('crystal'), EMIT.GLINT);
+  assert.equal(emitForDecorKey('rock_small'), EMIT.DUST);
+  assert.equal(emitForDecorKey('not_a_real_kind'), EMIT.NONE);
+  assert.equal(emitForGift(), EMIT.GLINT);
+
+  // Every key in the real decor table must classify, so no item is silently
+  // inert. This is the check that catches a new item being added without an
+  // emitter.
+  for (const def of E.DECOR_KINDS) {
+    assert.notEqual(emitForDecorKey(def.key), EMIT.NONE,
+      `decor "${def.key}" has no particle emitter`);
+  }
+});
+
+test('particles fade out rather than popping', () => {
+  const items = [{ x: 240, y: 240, style: EMIT.SPORE }];
+  let sawFade = false;
+  for (let t = 0; t < 4000; t += 40) {
+    for (const p of particlesAt(t, items)) {
+      assert.ok(p.alpha >= 0 && p.alpha <= 1, `alpha out of range: ${p.alpha}`);
+      if (p.alpha < 0.9) sawFade = true;
+    }
+  }
+  assert.ok(sawFade, 'particles never fade, so they pop out of existence');
+});
+
+test('the web palette is complete and distinct from the dust palette', () => {
+  // Spores and strands take theme->web, the motes take theme->dust. If the two
+  // tables were the same the layers would not separate visually.
+  assert.equal(WEB_COLOURS.length, DUST_COLOURS.length);
+  assert.equal(webColour(0), WEB_COLOURS[0]);
+  assert.equal(webColour(9999), WEB_COLOURS[0]);
+  let differing = 0;
+  for (let i = 0; i < WEB_COLOURS.length; i++)
+    if (WEB_COLOURS[i] !== DUST_COLOURS[i]) differing++;
+  assert.ok(differing > WEB_COLOURS.length / 2, 'web and dust palettes are nearly identical');
+});

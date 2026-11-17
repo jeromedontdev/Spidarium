@@ -1,6 +1,8 @@
 import * as E from './sim.js?v=1.1.31';
 import { renderSpider, BODY_COLOURS, ACCENT_COLOURS } from './spider-renderer.js';
-import { blinkAt, glanceAt, breathAt, motesAt, dustColour, lightOpaAt } from './ambient.js';
+import { blinkAt, glanceAt, breathAt, motesAt, dustColour, lightOpaAt,
+  sporesAt, strandsAt, webColour, particlesAt, emitForDecorKey, emitForGift,
+  EMIT } from './ambient.js';
 import { LocalProgress } from './local-progress.js';
 import { Minigame, GAME_NAMES, COLOR_NAMES, COLOR_RGB } from './minigames.js';
 import { DeviceAudio, MUSIC_TRACKS } from './device-audio.js?v=1.1.31';
@@ -1231,6 +1233,32 @@ export class DeviceGame {
       for (const m of motesAt(s.now_ms ?? 0, { left: 8, top: 8, right: 472, bottom: 472 }))
         ctx.fillRect(m.x, m.y, m.size, m.size);
     }
+    // Spores: a second, slower air layer that crosses the tank on both axes.
+    // Round rather than square, and paler, so the two layers read as depth
+    // instead of as one noisy field.
+    {
+      const web = webColour(E.BACKGROUNDS.indexOf(s.theme));
+      ctx.fillStyle = `rgba(${(web >> 16) & 255},${(web >> 8) & 255},${web & 255},.30)`;
+      for (const p of sporesAt(s.now_ms ?? 0, { left: 8, top: 8, right: 472, bottom: 472 })) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // Web strands: anchored at the top corners and pivoting slowly. A strand
+    // that translated would read as a sliding stick; pivoting reads as
+    // something hanging and catching the air.
+    {
+      const web = webColour(E.BACKGROUNDS.indexOf(s.theme));
+      ctx.strokeStyle = `rgba(${(web >> 16) & 255},${(web >> 8) & 255},${web & 255},.20)`;
+      ctx.lineWidth = 1;
+      for (const t of strandsAt(s.now_ms ?? 0, { left: 8, top: 8, right: 472, bottom: 472 })) {
+        ctx.beginPath();
+        ctx.moveTo(t.ax, t.ay);
+        ctx.lineTo(t.ax + Math.cos(t.angle) * t.length, t.ay + Math.sin(t.angle) * t.length);
+        ctx.stroke();
+      }
+    }
     if(s.border_id!==255){
       const border=this.image(`border_${E.BACKGROUNDS[s.border_id]}_0`);
       if(border.complete&&border.naturalWidth)ctx.drawImage(border,0,0,480,480);
@@ -1246,6 +1274,32 @@ export class DeviceGame {
       const image=this.image(p.gift?E.GIFTS[p.kind].asset:E.decorSprite(p.kind));
       if(image.complete&&image.naturalWidth)ctx.drawImage(image,p.x-size/2,p.y-size/2,size,size);
       ctx.strokeStyle='#f5c86b';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2-2,p.y-size/2-2,size+4,size+4);
+    }
+    // Decor and gift particles: a fixed pool reassigned to whichever items are
+    // on screen, so the cost is constant whether the tank holds one item or
+    // thirteen. The style comes from the item's own kind, so nothing has to be
+    // authored per decor entry and no artwork is needed -- a particle is a small
+    // tinted dot. Drawn above the decor and below the spider, so the effect
+    // belongs to the object rather than floating over the creature.
+    {
+      const emitters = [];
+      for (const item of s.decor ?? []) {
+        if (!item || item.kind === E.DECOR_EMPTY) continue;
+        const def = E.DECOR_KINDS[item.kind];
+        if (!def) continue;
+        emitters.push({ x: item.x, y: item.y, style: emitForDecorKey(def.key) });
+      }
+      if (s.gift?.used) emitters.push({ x: s.gift.x, y: s.gift.y, style: emitForGift() });
+      if (emitters.length) {
+        const dust = dustColour(E.BACKGROUNDS.indexOf(s.theme));
+        const rgb = `${(dust >> 16) & 255},${(dust >> 8) & 255},${dust & 255}`;
+        for (const p of particlesAt(s.now_ms ?? 0, emitters)) {
+          ctx.fillStyle = `rgba(${rgb},${(p.alpha * 0.5).toFixed(3)})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
     for (const poop of s.poop ?? []) {
       if (poop.bug) {
@@ -1375,41 +1429,10 @@ export class DeviceGame {
     if(s.life.daynight) {
       // The tint changes COLOUR as well as opacity, so the tank reads as a
       // different time of day rather than as a slightly dirty screen. Mirrors
-      // k_light_tints in game.c, which was halved when the shafts came back:
-      // stacked with the beams the old values greyed the whole tank out.
+      // k_light_tints in game.c.
       ctx.fillStyle=({Morning:'rgba(255,217,160,0.063)',Afternoon:'rgba(0,0,0,0)',
         Evening:'rgba(255,154,77,0.118)',Night:'rgba(26,47,107,0.204)'})[c.phase];
       ctx.fillRect(0,0,480,480);
-    }
-    // Light shafts. On the device these are baked into the background canvas
-    // (see ambient.h) because rotated LVGL objects were software rendered at
-    // ~111,000 blended pixels each per frame and made the tank choppy. Here a
-    // canvas gradient is free, so they are drawn directly -- but from the same
-    // table, so the two stay in step. Each beam has its own slope, width and
-    // brightness: identical beams read as a pattern rather than as light.
-    if(s.life.daynight) {
-      // Same three beams for every period; only the colour changes, exactly as
-      // on the device, where the mask is baked once and only the tint differs.
-      const beams=[[92,.42,23,39,.34],[252,-.30,35,20,.26],[404,.22,15,31,.22]];
-      const rgb=({Morning:'255,230,184',Afternoon:'255,244,224',
-        Evening:'255,176,102',Night:'159,184,232'})[c.phase];
-      for(const [topX,slope,topHalf,botHalf,peak] of beams) {
-        // Sample the beam as a stack of thin quads so the taper and the wobble
-        // both show. A single rotated rectangle is exactly the blocky look this
-        // replaced.
-        for(let y=0;y<480;y+=4) {
-          const t=y/480;
-          const centre=topX+slope*y+Math.sin(y*0.011)*14;
-          const half=topHalf+(botHalf-topHalf)*t;
-          const fade=peak*(1-0.55*t)*(1+0.20*Math.sin(y*0.02));
-          const g=ctx.createLinearGradient(centre-half,0,centre+half,0);
-          g.addColorStop(0,`rgba(${rgb},0)`);
-          g.addColorStop(.5,`rgba(${rgb},${fade.toFixed(3)})`);
-          g.addColorStop(1,`rgba(${rgb},0)`);
-          ctx.fillStyle=g;
-          ctx.fillRect(centre-half,y,half*2,4);
-        }
-      }
     }
     if(!s.life.weather)return;
     const time=(s.now_ms??0)/1000;

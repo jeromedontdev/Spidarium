@@ -11508,3 +11508,112 @@ it wants to go further, `SHADOW_DROP` is the single number to move.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+## Round 130 -- Remove the light shafts, add cheap aliveness instead
+
+### What was asked
+
+"The light beams are too intense and seeing as they are static, its not very
+natural. Let's make it more natural or remove it. There must be other ways to
+make the environment feel more alive. At some point maybe we add animations to
+some of the decor items, or create new ones."
+
+Then: "We could maybe add some sort of effects or particle effects or something
+to gifts and decor to make it cost effective in both compute budget and token
+budget."
+
+### Decisions made
+
+**Removed the shafts rather than dimming them.** "Static light is not natural" is
+a structural complaint, not a tuning one. A baked beam cannot move, and making it
+move means invalidating a large alpha region every frame -- which is the
+choppiness that got the first two versions removed. Three attempts, three
+different failure modes, same root cause: a full-screen lighting effect is the
+wrong shape for this frame budget. Dimming it would have left a faint stain on
+the art.
+
+**Aliveness is now four cheap layers instead of one expensive effect.** This is
+the actual answer to "there must be other ways":
+
+1. Dust motes (existing) -- 8 small squares rising with a sway.
+2. Spores (new) -- 3 larger, slower specks crossing the tank on *both* axes, so
+   the air reads as two layers rather than one uniform field.
+3. Web strands (new) -- 2 thin lines anchored in the top corners, *pivoting*
+   rather than translating. A strand that translated would read as a sliding
+   stick; pivoting reads as something hanging and catching the air.
+4. Decor/gift particles (new) -- see below.
+
+The two air layers use different palette columns (`dust` and `web`), so they
+separate visually instead of reading as one noisy field.
+
+**Decor and gift particles are a FIXED POOL, not one emitter per item.** This is
+the design decision that makes it cost-effective. The tank holds twelve decor
+slots plus a gift; per-item emitters would make the cost scale with how much the
+player has bought, which is the worst possible property for a frame budget.
+Instead 16 objects are created once and reassigned to whichever items are on
+screen, so the cost is constant whether the tank is empty or full.
+
+The emitter style is derived from the item's own kind -- plants emit spores,
+shiny things glint, stone and wood shed dust -- so **nothing has to be authored
+per decor entry and no artwork is needed**. A particle is a small tinted dot. That
+is what makes it cheap in tokens as well as compute: there is nothing to generate.
+
+### Two real bugs found and fixed
+
+**An LVGL thread violation that crashed the board.** `ambient_test()` runs on the
+console task, and it called `ambient_tick()`, which touches `lv_*`. That is a
+Guru Meditation, not a theoretical concern -- it happened on the first flash.
+Fixed by splitting `ambient_simulate()` (pure, no LVGL) from `ambient_present()`
+(LVGL only). The split also makes the effects testable without a display.
+
+**A race that made the self-test pass once then fail forever.** The render task
+keeps running during a console command, so it spawned particles between the
+test's pool reset and its count. Fixed with an `s_emit_suspended` flag, and by
+asserting the invariant that actually matters (the pool cap) rather than an exact
+count that the race could perturb.
+
+### Evidence
+
+- Build exit 0, zero main warnings. Flash exit 0.
+- `ambienttest` -> `AMBIENT ok=1`, **eight consecutive runs**, so it is
+  idempotent. It asserts: spores exist, are in the tank, and move on both axes;
+  strands are anchored in the tank and actually pivot; the pool never exceeds its
+  size however many spawns are requested; every particle expires; the emitter
+  mapping classifies fern/crystal/rock correctly and returns NONE for an unknown
+  kind; and `ambient_wander` stays in 0..1 and is not constant.
+- `ambient` reports `spores=3 strands=2 particles=16 live=N`.
+- Panel screenshots confirm both strands visible in the top corners, spores and
+  particles present. The first pass had the strands anchored at the playfield
+  edge, where they were drawn *underneath* the border and could not be seen at
+  all; moved inward and widened to 2 px at 40% opacity.
+- `rendercost` -> `avg_us=2748` of a 33,333 us budget, up ~270 us from the
+  shaft-free 2476. That is the cost of the new layers and it is small.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline.
+- Browser suite 304/304, up from 298. New tests assert the shafts are gone (so
+  they are not quietly reintroduced), spores move on both axes, strands pivot and
+  sit in opposite corners, the particle pool never overflows, every key in the
+  real decor table has an emitter, particles fade rather than pop, and the web
+  palette is distinct from the dust palette.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, unchanged.
+
+### Honest boundaries
+
+The tests prove the effects exist, move, and stay in bounds. They cannot prove
+the tank *looks* alive -- that needs human eyes, and the opacity values in
+particular were tuned by screenshot and may want another pass.
+
+The particle effect is deliberately subtle: a few specks near a few items, not a
+fountain. If it reads as too quiet, the levers are `AMBIENT_PARTICLES` (pool
+size), the spawn cadence in `particles_emit()`, and the opacity in
+`ambient_present()`.
+
+Decor *animation* (items that move, not just emit) was not attempted. It would
+need either per-item sprite frames -- which is real art cost, the thing this round
+was explicitly avoiding -- or per-item LVGL transforms, which is the rotated-object
+cost that caused the original choppiness. Worth revisiting only with a specific
+budget in mind.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).

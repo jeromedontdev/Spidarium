@@ -87,30 +87,46 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   deep blue at 52. The tank reads as a different time of day rather than as a
   slightly dirty screen. These were halved from 26/54/96 when the light shafts
   came back: stacked, the two together greyed the whole tank out.
-- **Light shafts are baked into the background, not drawn as objects.** Three
-  diagonal beams, each with its own slope, width, taper and brightness, feathered
-  at the edges and banded along their length so they read as light through a
-  canopy. `ambient_shafts_bake()` composites them into the background canvas in
-  `terrarium_rebuild()`, between the art and the border, so they fall on the tank
-  but not on its frame.
-  This is the third design and the first that works. Rotated LVGL rectangles were
-  software rendered at roughly 111,000 blended pixels each per frame and made the
-  whole tank choppy. Unrotated bands were cheap but read as blocky vertical
-  stripes going one way -- "too blocky and symmetrical and only go down the screen
-  in a single direction". Baking costs nothing per frame because the beams are
-  ordinary opaque pixels in an image LVGL already blits, and it is the only
-  approach that allows genuinely diagonal, tapered, asymmetric beams.
-  The trade is that they only change when the background is rebuilt, which is
-  exactly when the day period changes. `apply_daylight_tint()` compares the period
-  against `ambient_shafts_period()` and rebuilds only on a real change, so the
-  once-a-second clock tick does not repaint the tank. `shafts 0..3` on the console
-  pins a period for inspection; `shafts` releases it.
+- **Light shafts were removed, not fixed.** They were tried three ways. Rotated
+  LVGL rectangles were software rendered at roughly 111,000 blended pixels each
+  per frame and made the whole tank choppy. Unrotated bands were cheap but read
+  as blocky vertical stripes going one way. Baking them into the background
+  fixed both, but a baked beam cannot move, and static light does not read as
+  light -- it reads as a stain on the art. Making it move means invalidating a
+  large alpha region every frame, which is the choppiness again.
+  The lesson is that a full-screen lighting effect is the wrong shape for this
+  budget. Aliveness comes from many small things that move independently.
+- **Aliveness is four cheap layers, not one expensive effect.** Dust motes
+  (8 small squares rising with a sway), spores (3 larger, slower specks crossing
+  the tank on both axes), web strands (2 thin lines anchored in the top corners,
+  pivoting rather than translating), and decor/gift particles. Each is a handful
+  of LVGL objects created once and moved; nothing is allocated per frame.
+  The two air layers use different palette columns (`dust` and `web`) so they
+  read as depth rather than as one noisy field.
+- **Decor and gift particles are a FIXED POOL, not one emitter per item.** The
+  tank can hold twelve decor slots plus a gift, and per-item emitters would make
+  the cost scale with how much the player has bought -- the worst possible
+  property for a frame budget. `AMBIENT_PARTICLES` (16) objects are created once
+  and reassigned to whichever items are on screen, so the cost is constant
+  whether the tank is empty or full. The emitter style is derived from the item's
+  own kind (`ambient_emit_for_decor`), so nothing has to be authored per decor
+  entry and no artwork is needed: a particle is a small tinted dot. That is what
+  makes it cheap in both compute and tokens.
+- **`ambient_simulate()` is pure and `ambient_present()` touches LVGL.** The
+  split is not tidiness. The self-test runs on the console task, and calling
+  `lv_*` from there corrupts LVGL's state -- that was a real crash, not a
+  theoretical one. The simulation half is also what makes the effects testable
+  without a display.
+- **The particle self-test suspends emission.** The render task keeps running
+  during a console command, so without `s_emit_suspended` the live tick spawns
+  particles between the test's reset and its count. That race made the test pass
+  once and then fail on every subsequent run.
 - **`life_clock_now()` is the single clock read.** `life_visual_tick()` used to
   call `time(NULL)` directly while the mind used `life_period_now()`, so `rtcset`
   changed what the brain saw but not what the screen showed. Everything that
   reacts to the time of day now goes through `life_clock_now()`, and
-  `life_clock_override()` lets the console (`dayperiod EPOCH`) drive the tint and
-  the shafts at a chosen time.
+  `life_clock_override()` lets the console (`dayperiod EPOCH`) drive the tint at
+  a chosen time.
 - **Screen dimming is a courtesy for a screen about to switch off, not a separate
   power feature.** `brightness_policy()` used to fall back to a flat 60 s dim
   whenever the timeout was "Never", so choosing Never still dimmed the panel after

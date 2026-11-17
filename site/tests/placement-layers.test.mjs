@@ -175,9 +175,6 @@ test('canopy renders above the entire creature layer and below one lighting over
   ui.spiderCanvas={name:'spider'};ui.spiderCtx={putImageData(){}};
   ui.ctx=new Proxy({}, {get(target,key){
     if(key==='drawImage')return image=>calls.push(image.name);
-    /* The light shafts are drawn as a stack of horizontal gradients, so the mock
-     * needs a gradient object with addColorStop. */
-    if(key==='createLinearGradient')return ()=>({addColorStop(){}});
     /* The dim overlay's opacity now drifts a few percent (ambient_light_opa),
      * so match the colour prefix rather than one fixed alpha. */
     if(key==='fillRect')return ()=>{if(String(target.fillStyle).startsWith('rgba(7,12,32,'))calls.push('dim');};

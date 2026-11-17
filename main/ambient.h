@@ -25,49 +25,42 @@
  * in here" without costing a measurable amount of the frame budget. */
 #define AMBIENT_MOTES 8
 
-/* How many light shafts cross the tank. Three is the smallest number that reads
- * as light falling through a canopy rather than as one stripe. */
-#define AMBIENT_SHAFTS 3
+/* How many drifting spores/pollen specks ride the air alongside the dust. These
+ * are larger and slower than the motes and drift sideways as well as up, so the
+ * air reads as having two layers rather than one uniform field. */
+#define AMBIENT_SPORES 3
 
-/* Light shafts are BAKED INTO THE BACKGROUND CANVAS, not drawn as LVGL objects.
+/* How many web strands sway in the corners. A strand is a thin line anchored at
+ * one end, so it pivots rather than translating -- which is what makes it read
+ * as something hanging rather than something sliding. */
+#define AMBIENT_STRANDS 2
+
+/* How many decor/gift particles exist at once.
  *
- * The first two attempts used LVGL rectangles. Rotated ones were software
- * rendered at roughly 111,000 blended pixels each per frame, which made the
- * whole tank choppy. Unrotated ones were cheap but read as blocky vertical
- * stripes going one way -- the "too blocky and symmetrical and only go down the
- * screen in a single direction" report.
+ * This is a FIXED POOL, not one emitter per item. The tank can hold twelve decor
+ * slots plus a gift, and giving each its own particles would make the cost scale
+ * with how much the player has bought -- the worst possible property for a
+ * budget. Instead a small pool is reassigned to whichever items are on screen,
+ * so the cost is constant whether the tank is empty or full.
  *
- * Baking costs nothing per frame: the beams are part of the background image,
- * so LVGL blits them as ordinary opaque pixels. That leaves the whole frame
- * budget for the spider, and it lets the beams be genuinely diagonal, of
- * different widths, and feathered at the edges -- none of which a rectangle can
- * do. The trade is that they only change when the background is rebuilt, which
- * is exactly when the day period changes. */
+ * Sixteen is enough that a couple of items each get a few specks, which is all
+ * that is needed: the effect is meant to say "this thing is alive", not to be a
+ * fireworks display. */
+#define AMBIENT_PARTICLES 16
 
-/* Set the day period the beams are lit for: 0 morning, 1 afternoon, 2 evening,
- * 3 night, or 255 for no beams at all. Does not repaint; the caller rebuilds the
- * background when this actually changes. */
-void ambient_shafts_set_period(uint8_t period);
-
-/* The period the beams are currently lit for, so a caller can tell whether a
- * rebuild is needed. */
-uint8_t ambient_shafts_period(void);
-
-/* Pin the beams to a fixed period, ignoring the clock, so they can be inspected
- * on the panel. `period` 0..3 pins; anything else releases. */
-void ambient_shafts_force(uint8_t period);
-
-/* True while a forced period is in effect. */
-bool ambient_shafts_forced(void);
-
-/* Composite the beams over an RGB565 buffer of `w` x `h` pixels. Called from
- * terrarium_rebuild() after the background is filled and before the border is
- * blitted, so the frame stays on top of the light. */
-void ambient_shafts_bake(uint16_t *dst, int32_t w, int32_t h);
-
-/* True when a beam covers this pixel. Used by the self-test to prove the beams
- * are diagonal and not all parallel, without needing a framebuffer. */
-bool ambient_shafts_lit_at(int32_t x, int32_t y, int32_t h);
+/* There are no light shafts.
+ *
+ * They were tried three ways and removed. Rotated LVGL rectangles were software
+ * rendered at ~111,000 blended pixels each per frame and made the tank choppy.
+ * Unrotated bands were cheap but read as blocky vertical stripes going one way.
+ * Baking them into the background fixed both, but a baked beam cannot move, and
+ * static light does not read as light -- it reads as a stain on the art. Making
+ * it move means invalidating a large alpha region every frame, which is the
+ * choppiness again.
+ *
+ * The lesson is that a full-screen lighting effect is the wrong shape for this
+ * budget. Aliveness comes from many small things that move independently, which
+ * is what the rest of this module does. */
 
 /* Create the mote objects. Call once, after the terrarium exists and before the
  * creature layer, so the motes sit behind the spider. */
@@ -110,3 +103,22 @@ void ambient_report(void);
 
 /* Self-test: the motes stay inside the tank and the idle life stays in range. */
 bool ambient_test(void);
+/* A slow, smooth 0..1 value that never repeats on a short cycle, for effects
+ * that want to breathe at their own pace. `seed` picks a different phase so two
+ * callers do not move in lockstep. */
+float ambient_wander(uint32_t seed);
+
+/* Which particle style an item emits. Chosen from the item's own kind, so no new
+ * data has to be authored per decor entry. */
+typedef enum {
+    AMBIENT_EMIT_NONE = 0,
+    AMBIENT_EMIT_SPORE,   /* drifting specks: plants, moss, mushrooms */
+    AMBIENT_EMIT_GLINT,   /* brief bright flashes: crystal, glass, metal */
+    AMBIENT_EMIT_DUST,    /* slow settling motes: stone, wood, bone */
+} ambient_emit_t;
+
+/* The emitter style for a decor kind. Pure lookup, no state. */
+ambient_emit_t ambient_emit_for_decor(uint8_t kind);
+
+/* The emitter style for a gift kind. */
+ambient_emit_t ambient_emit_for_gift(uint8_t kind);

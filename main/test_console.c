@@ -1323,26 +1323,6 @@ static void run_line(char *line)
         }
         printf("OK dayperiod\n");
     }
-    else if (!strcmp(line, "shafts")) {
-        /* Force the baked light shafts to a day period so they can be looked at
-         * on the panel. `shafts` with no argument returns to following the
-         * clock. The bake only happens on a background rebuild, so this asks for
-         * one. */
-        if (!arg) {
-            ambient_shafts_force(255);
-            printf("SHAFTS off\n");
-        } else {
-            int p = atoi(arg);
-            if (p < 0 || p > 3) {
-                printf("ERR shafts needs 0..3 (morning..night)\n");
-            } else {
-                ambient_shafts_force((uint8_t)p);
-                printf("SHAFTS period=%d\n", p);
-            }
-        }
-        game_ui_call(GAME_UI_REBUILD_BACKGROUND);
-        printf("OK shafts\n");
-    }
     else if (!strcmp(line, "preytest")) {
         if (!game_ui_call(GAME_UI_TEST_PREY)) printf("ERR prey test request or assertion failed\n");
     }

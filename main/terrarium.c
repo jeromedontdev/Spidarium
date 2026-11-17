@@ -1,6 +1,5 @@
 #include "terrarium.h"
 
-#include "ambient.h"
 #include "assets.h"
 #include "decor.h"
 #include "game_config.h"
@@ -88,10 +87,6 @@ void terrarium_rebuild(void)
     for (int y = 0; y < ui.H; y++)
         for (int x = 0; x < ui.W; x++)
             s_pixels[y * ui.W + x] = source[(y / 2) * 240 + x / 2];
-    /* Light shafts are baked in here, between the art and the frame, so they
-     * fall on the tank but not on its border. Doing it as pixels rather than as
-     * LVGL objects is what keeps them free: see ambient.h. */
-    ambient_shafts_bake(s_pixels, ui.W, ui.H);
     if (g.border_id != 255) {
         const lv_image_dsc_t *border = assets_border(sprite_border_index(g.border_id));
         ESP_ERROR_CHECK(border ? ESP_OK : ESP_ERR_INVALID_STATE);
@@ -125,9 +120,6 @@ bool terrarium_test(void)
     for (int y = 0; ok && y < ui.H; y++)
         for (int x = 0; x < ui.W; x++) {
             if (g.border_id != 255 && (x < 32 || x >= 448 || y < 32 || y >= 448)) continue;
-            /* Light shafts are baked over the art, so a lit pixel is legitimately
-             * not the source colour. Skip those rather than fail. */
-            if (ambient_shafts_lit_at(x, y, ui.H)) continue;
             if (s_pixels[y * ui.W + x] !=
                 s_pixels[(y / PIXEL_GRID * PIXEL_GRID) * ui.W + x / PIXEL_GRID * PIXEL_GRID] ||
                 s_pixels[y * ui.W + x] != source[(y / 2) * 240 + x / 2])

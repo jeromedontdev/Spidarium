@@ -795,15 +795,6 @@ static void tick_enclosure_lights(void)
 static void apply_daylight_tint(uint8_t period, bool available)
 {
     if (!s_daylight_overlay) return;
-    /* The light shafts are baked into the background, so they only change when
-     * the background is rebuilt. Rebuild only when the period actually moves --
-     * this runs once a second and a rebuild is a full 480x480 refill. */
-    uint8_t shaft_period = (available && g.life.daynight) ? period : 255;
-    if (ambient_shafts_forced()) shaft_period = ambient_shafts_period();
-    if (shaft_period != ambient_shafts_period()) {
-        ambient_shafts_set_period(shaft_period);
-        terrarium_rebuild();
-    }
     if (!available || !g.life.daynight) {
         lv_obj_set_hidden(s_daylight_overlay, true);
         return;
@@ -3135,12 +3126,6 @@ static void ui_service_request(void)
     case GAME_UI_BACKGROUND:
         atomic_store(&s_ui_ok, theme_set(s_ui_value));
         if (atomic_load(&s_ui_ok)) terrarium_rebuild();
-        break;
-    case GAME_UI_REBUILD_BACKGROUND:
-        /* Test-only: repaint the background so a forced shaft period is visible
-         * without waiting for the clock to roll over. */
-        terrarium_rebuild();
-        atomic_store(&s_ui_ok, true);
         break;
     case GAME_UI_TEST_HUNT: atomic_store(&s_ui_ok, test_hunt()); break;
     case GAME_UI_TEST_GAIT: {
