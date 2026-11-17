@@ -1249,17 +1249,21 @@ export class DeviceGame {
     const trickPerformance=s._engine?.life_performance;
     const t=trickPerformance?clamp((s.now_ms-trickPerformance.start)/trickPerformance.duration,0,1):1;
     // Climbing (2.5D): a climbable item lifts the spider's DRAW position only,
-    // so steering and hit-testing stay in flat floor coordinates. The shadow
-    // stays on the floor, which is what makes the gap read as height.
+    // so steering and hit-testing stay in flat floor coordinates.
     const climb = E.decorClimbAt(s, s.spider_x, s.spider_y);
     const climbLift = -climb;
     if (climb > 0) {
+      // The contact shadow FOLLOWS the body. Pinning it to the floor point put
+      // it up to 84 px below the spider at full lift, which read as floating
+      // above the structure rather than standing on it. A contact shadow
+      // belongs where the object touches its surface, and while climbing that
+      // surface is the top of the structure, directly under the feet.
       const shrink = climb / 3;
       ctx.save();
       ctx.globalAlpha = Math.max(.24, (150 - climb * 4) / 255);
       ctx.fillStyle = '#000';
       ctx.beginPath();
-      ctx.ellipse(s.spider_x, s.spider_y + 6, Math.max(10, 26 - shrink), Math.max(5, 13 - shrink / 2), 0, 0, Math.PI * 2);
+      ctx.ellipse(s.spider_x, s.spider_y + 6 + climbLift, Math.max(10, 26 - shrink), Math.max(5, 13 - shrink / 2), 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }

@@ -68,8 +68,8 @@ export const PERCH_FORESHORTEN = 0.72;
 // spider, not a side view.
 //
 // What remains is the honest part of the effect: the spider is LIFTED up the
-// structure and keeps its contact shadow at the ground point, so it visibly
-// stands on something with height. Mirrors main/cspider.c.
+// structure, with its contact shadow under its feet, so it visibly stands on
+// something with height. Mirrors main/cspider.c.
 export const STAGES = ['Spiderling','Juvenile','Adult'];
 export const TEMPERAMENTS = [
   {name:'bold',aim_window_mult:.85,catch_mult:1.1,speed_mult:1.1,hunger_decay_mult:1,sleep_threshold:15},

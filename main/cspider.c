@@ -38,8 +38,8 @@ static const char *TAG = "spidarium.cspider";
  * inside the buffer while the canvas stays anchored at the floor. A 96x96
  * buffer clipped the body off the top once the lift passed ~30 px, which is
  * exactly the range the large climb structures use (up to 62 px). The extra
- * rows are transparent headroom; the body still sits at CANVAS_CY so the floor
- * point and the contact shadow stay at the bottom of the buffer. */
+ * rows are transparent headroom; the body sits at CANVAS_CY and the contact
+ * shadow follows it up, so both stay inside the buffer at full lift. */
 #define CANVAS_W      96
 #define CANVAS_H      160
 #define CANVAS_CX     (CANVAS_W / 2)
@@ -87,11 +87,11 @@ static const char *TAG = "spidarium.cspider";
 /* State                                                               */
 /* ------------------------------------------------------------------ */
 static lv_obj_t   *s_canvas;
-/* The climb contact shadow is drawn INSIDE the spider canvas, at the floor
- * point, before the legs and body. It cannot be a separate widget: a widget
- * needs its own style and stacking, and the shadow has to sit under the body
- * in the same buffer to composite correctly. Drawing it first means the legs
- * and body paint over it, which is exactly the occlusion a real shadow has. */
+/* The climb contact shadow is drawn INSIDE the spider canvas, under the feet,
+ * before the legs and body. It cannot be a separate widget: a widget needs its
+ * own style and stacking, and the shadow has to sit under the body in the same
+ * buffer to composite correctly. Drawing it first means the legs and body paint
+ * over it, which is exactly the occlusion a real shadow has. */
 
 /* The canvas is RGB565A8: an RGB565 colour plane followed by an 8-bit alpha
  * plane.
@@ -499,9 +499,9 @@ static void fill_triangle(int32_t x0, int32_t y0,
 /* Body-local to canvas                                                */
 /* Vertical offset applied to every body part, in canvas pixels. The climb
  * feature raises the spider by writing a negative value here rather than moving
- * the widget: the canvas stays anchored at the spider's floor position so the
- * contact shadow can be drawn at the true ground point, and the body rises away
- * from it inside the buffer. */
+ * the widget: the canvas stays anchored at the spider's floor position, so the
+ * body and its contact shadow both rise inside the buffer and the widget
+ * position stays a pure function of the logical floor point. */
 static int32_t s_draw_dy;
 
 /* Foreshortening of the body's forward axis, 1.0 = flat top-down.
@@ -525,8 +525,8 @@ static float s_foreshorten = 1.0f;
  * distorted top-down spider, not a side view.
  *
  * What remains is the honest part of the effect: the spider is LIFTED up the
- * structure and keeps its contact shadow at the ground point, so it visibly
- * stands on something with height. That reads correctly and costs nothing.
+ * structure, with its contact shadow under its feet, so it visibly stands on
+ * something with height. That reads correctly and costs nothing.
  *
  * Do not reintroduce a profile blend, a climb foreshortening or a surface tilt
  * without a physical-panel check. The constants and the dorsal projection were
@@ -608,9 +608,10 @@ void cspider_shadow_report(void)
      * 1..254 therefore proves whether the shadow actually reached the buffer,
      * independently of whether it is visible on screen.
      *
-     * The shadow is drawn only on the floor, so `partial` must be non-zero at
-     * lift 0 and exactly 0 while climbing. That is the check that the shadow is
-     * no longer cast onto the structure being climbed. */
+     * `rows` is the shadow's vertical extent in the canvas. It must TRACK the
+     * lift: the shadow follows the body, so its rows move up as the spider
+     * climbs. A shadow whose rows stay put while `lift` rises is the "floating
+     * above the decor" bug -- it was pinned to the logical floor point. */
     int partial = 0, opaque = 0;
     int min_y = CANVAS_H, max_y = -1;
     if (s_buf) {
@@ -868,19 +869,21 @@ void cspider_render(uint32_t now_ms)
     int32_t x, y;
 
     /* --- contact shadow ---------------------------------------------
-     * Drawn FIRST, at the ground point, so the legs and body paint over its
-     * middle and only the feathered rim shows. That rim is what grounds the
-     * spider against the floor.
+     * Drawn FIRST, at the feet, so the legs and body paint over its middle and
+     * only the feathered rim shows. That rim is what grounds the spider.
      *
-     * The shadow is drawn at the FLOOR point even while climbing. The body is
-     * lifted inside the canvas, so the shadow stays behind at ground level and
-     * the gap between them is what shows the spider is standing on something
-     * with height. That gap is now the whole climb effect, so the shadow must
-     * never be suppressed.
+     * The shadow FOLLOWS the body while climbing. It used to stay pinned to the
+     * logical floor point, which put it up to 84 px below the spider at full
+     * lift -- nearly a whole sprite height -- and read as the spider floating
+     * above the structure rather than standing on it. A contact shadow belongs
+     * where the object touches its surface, and while climbing that surface is
+     * the top of the structure, directly under the feet. The height cue comes
+     * from the spider's screen position over the structure artwork, not from a
+     * gap to a shadow left behind on the floor.
      *
      * The ellipse is WIDER than the leg span so the feet do not cover it
      * completely. */
-    fill_shadow(CANVAS_CX, CANVAS_CY + (int32_t)LEG_LEN, 34, 12, 150);
+    fill_shadow(CANVAS_CX, CANVAS_CY + (int32_t)LEG_LEN + s_draw_dy, 34, 12, 150);
 
     /* --- legs -------------------------------------------------------
      * Drawn first so the body covers the hips. The far side is drawn first so

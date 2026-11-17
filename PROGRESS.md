@@ -10687,3 +10687,74 @@ Behind blocks the whole artwork while Climb lifts only along the ramp. On the
 Driftwood at (190,275) the four box corners report `blocks=0` and the two log
 ends report `blocks=1`; a browser test asserts the same, including that the
 driftwood really does have opaque pixels outside the circle.
+
+---
+
+## Round 120 - The climb shadow follows the feet
+
+**Status:** COMPLETE - build, flash, native suite, soak and drift all green.
+
+### What was reported
+
+"The shadow is off when climbing, its so far away it looks like its floating
+above the large decor."
+
+### Decisions made
+
+- **The contact shadow follows the body.** Round 119 left it pinned to the
+  logical floor point, reasoning that the gap between body and shadow was the
+  whole climb cue. That was wrong in practice: at full lift the gap is 84 px
+  (62 px of lift plus the 22 px leg length) on a 96 px-wide sprite, so the
+  shadow sat nearly a whole sprite height below the spider and read as floating
+  rather than standing. A contact shadow belongs where the object touches its
+  surface, and while climbing that surface is the top of the structure, directly
+  under the feet. The height cue is the spider's screen position over the
+  structure artwork, which the mask-based hitbox already makes accurate.
+- **The fix is one term.** `fill_shadow()` now takes
+  `CANVAS_CY + LEG_LEN + s_draw_dy`, so the shadow inherits the same lift offset
+  as every body part. The browser engine's `ctx.ellipse()` gained the matching
+  `+ climbLift`.
+- **The report now checks the right thing.** `cspider_shadow_report()` used to
+  document `partial == 0` while climbing as the proof that the shadow was not
+  cast onto the structure. That assertion is now inverted: `rows` must TRACK the
+  lift, and a shadow whose rows stay put while `lift` rises is the bug.
+- **The help text had to change with it.** The Decor topic said "with a floor
+  shadow", which is now wrong. Both `main/help_content.h` and `site/lib/help.js`
+  say "shadow under its feet". The help test enforces a 430-character ceiling,
+  so the sentence was reworded to fit rather than the limit raised.
+
+### Evidence
+
+- `build.ps1` -> exit 0, zero main warnings. `flash.ps1 COM7` -> exit 0,
+  `Hash of data verified`.
+- Hardware `climb N` then `climb` on the Driftwood at (190,275), sampling the
+  shadow's canvas rows at five forced lifts:
+
+  | lift | shadow rows |
+  |---|---|
+  | 0 | 124..145 |
+  | 15 | 109..130 |
+  | 31 | 93..114 |
+  | 45 | 78..100 |
+  | 62 | 61..83 |
+
+  A 63-row shift for 62 px of lift: the shadow tracks the body exactly. Before
+  the fix the rows were identical at every lift.
+- Spider-canvas captures at lift 0 and 62 show the shadow under the feet in
+  both, with the body raised inside the buffer.
+- `run_tests.py COM7` -> `passed=50 failed=2` (`hunttest`, `uitest`), at or
+  better than the documented 49/3 baseline.
+- Browser suite 267/267, including a new test asserting the climb ellipse's
+  y-coordinate carries `climbLift`.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+The row table proves the shadow moves with the lift; it does not prove the
+result reads as contact on the physical panel, which still needs human eyes. The
+shadow is now a flat ellipse under the feet at every height, so it no longer
+communicates height by itself -- the spider's position over the structure
+artwork does that. If the climb still reads as flat, the next lever is the
+artwork's own shading, not another shadow offset.

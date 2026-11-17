@@ -172,8 +172,8 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   New/moved decor add Solid, Walk Over, Walk Behind, Climb and Back/Front layer
   arrows. Climb (2.5D) raises the spider's draw position only, leaving its
   logical position on the floor so steering/hunting/hit-testing are untouched;
-  a contact shadow stays at the ground point. Offered only for kinds with a
-  climb height.
+  a contact shadow follows the body under its feet. Offered only for kinds with
+  a climb height.
   Two climb families exist. The 53 small props (64x64, drawn at radius*16)
   snap to their full climb height anywhere inside the footprint. The six large
   structures (decor kinds 68..73, authored 96x96, drawn at LVGL scale 512 which
@@ -189,9 +189,14 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   the panel: a 96x96 sprite authored top-down cannot be re-projected into a
   convincing profile by moving its parts. The perspective system was deleted
   rather than left dormant so it cannot be switched back on by accident. What
-  remains is the lift plus the contact shadow at the ground point; the gap
-  between them is the whole effect. `decor_climb_slope()` still reports the ramp
-  gradient, but only the debug console uses it.
+  remains is the lift plus a contact shadow UNDER THE FEET. The shadow must
+  follow the body: pinning it to the logical floor point put it up to 84 px
+  below the spider at full lift, nearly a whole sprite height, which read as
+  floating above the structure. A contact shadow belongs where the object
+  touches its surface, and while climbing that surface is the top of the
+  structure. The height cue is the spider's screen position over the artwork,
+  not a gap to a shadow left behind. `decor_climb_slope()` still reports the
+  ramp gradient, but only the debug console uses it.
   The hit test must follow the ARTWORK, not a circle. A large structure's sprite
   is `DECOR_CLIMB_SPRITE` square drawn at LVGL scale 512 (2x), so its screen
   half-extent is `DECOR_CLIMB_EXTENT` (96); its `radius` is only 13..18.
@@ -257,8 +262,8 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   `s_perch_until` window, because it never runs the trigger that sets it.
   The spider canvas is 96x160, not 96x96: `s_draw_dy` raises the body inside
   the buffer, so a 62px lift on a 96px canvas clipped the body off the top.
-  `CANVAS_CX`/`CANVAS_CY` keep the floor point and contact shadow at the
-  bottom with 62px of transparent headroom. Do not shrink it back.
+  `CANVAS_CX`/`CANVAS_CY` keep the body and its contact shadow inside the
+  buffer with 62px of transparent headroom. Do not shrink it back.
   Stage position/path/layer until Done; Cancel discards all. Floor is beneath
   the spider; Canopy (Walk Behind) is above the creature layer. Arrows reorder
   within a band. Gifts carry the same path/layer controls as decor (save v20

@@ -248,8 +248,8 @@ test('climbing lifts the spider without re-posing it',()=>{
    * looked wrong on the panel. A 96x96 pixel-art sprite authored from above
    * cannot be re-projected into a convincing profile by moving its parts.
    *
-   * What remains is the lift plus the contact shadow at the ground point, which
-   * is what actually reads as standing on something with height. */
+   * What remains is the lift plus the contact shadow under the feet, which is
+   * what actually reads as standing on something with height. */
   assert.equal(E.CLIMB_FORESHORTEN,undefined,
     'climbing must not compress the body');
   assert.equal(E.CLIMB_TILT_FOLLOW,undefined,
@@ -269,6 +269,20 @@ test('climbing lifts the spider without re-posing it',()=>{
   state.decor[0]={kind,blocking:3,x:240,y:240};
   assert.ok(E.decorClimbAt(state,240,240)>0,'the structure still lifts the spider');
   });
+
+test('the climb contact shadow follows the body, not the floor',async()=>{
+  /* The shadow used to stay pinned to the logical floor point while the body
+   * rose, which put it up to 84 px below the spider at full lift -- nearly a
+   * whole sprite height -- and read as the spider floating above the structure
+   * rather than standing on it. A contact shadow belongs where the object
+   * touches its surface, and while climbing that surface is the top of the
+   * structure, directly under the feet. */
+  const ui=await readFile(new URL('../lib/device-ui.js',import.meta.url),'utf8');
+  const ellipse=ui.match(/ctx\.ellipse\(s\.spider_x,\s*([^,]+),/);
+  assert.ok(ellipse,'the climb shadow is drawn as an ellipse');
+  assert.match(ellipse[1],/climbLift/,
+    'the shadow must move with the lift, not stay on the floor');
+});
 
 test('a small prop is perched on, not walked across',()=>{
 const {state}=fixture();
