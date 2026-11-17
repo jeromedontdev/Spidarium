@@ -146,6 +146,7 @@ static void cmd_help(void)
     printf("  feed                 press FEED\n");
     printf("  clean                press CLEAN\n");
     printf("  speckle [N]          drop N bug speckles (default 1)\n");
+    printf("  pests                report waste and the flies it has attracted\n");
     printf("  daily [show|claim|task|reset]  inspect or drive the daily loop\n");
     printf("  treat [0..%d]         buy a treat with Silk (no arg lists them)\n", TREAT_COUNT - 1);
     printf("  play                 press PLAY\n");
@@ -757,6 +758,17 @@ static void cmd_speckle(const char *arg)
     }
     printf("OK speckle count=%d dirt=%d clean_xp=%lu\n", terrarium_poop_count(),
            terrarium_dirt(), (unsigned long)needs_clean_reward());
+}
+
+/* Report the neglect cycle: how much waste is in the tank and how many flies it
+ * has attracted. A fly only appears once a dropping has been ignored for
+ * FLY_ATTRACT_MS, so this is the observable proof that neglect has a visible
+ * consequence rather than only a number in a menu. */
+static void cmd_pests(void)
+{
+    printf("PESTS poop=%d dirt=%d flies=%d\n", terrarium_poop_count(),
+           terrarium_dirt(), terrarium_pest_count());
+    printf("OK pests\n");
 }
 
 static void cmd_daily(const char *arg)
@@ -1465,6 +1477,7 @@ static void run_line(char *line)
     else if (!strcmp(line, "feed"))     cmd_feed();
     else if (!strcmp(line, "clean"))    cmd_clean();
     else if (!strcmp(line, "speckle"))  cmd_speckle(arg);
+    else if (!strcmp(line, "pests"))    cmd_pests();
     else if (!strcmp(line, "daily"))    cmd_daily(arg);
     else if (!strcmp(line, "treat"))    cmd_treat(arg);
     else if (!strcmp(line, "play"))     cmd_play();

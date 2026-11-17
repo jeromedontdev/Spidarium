@@ -8,6 +8,7 @@
 #include "theme.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include <math.h>
 #include <stdio.h>
 
 /* Backgrounds are authored at the panel's native 240x240 and enlarged 2x into
@@ -38,6 +39,31 @@ static uint32_t s_poop_at[MAX_POOP];
 /* Dirt points each dropping is worth, so Clean can pay for the mess it actually
  * removed instead of for the tap. */
 static uint8_t s_poop_dirt[MAX_POOP];
+
+/* --- flies ---------------------------------------------------------------
+ * A dropping left alone long enough attracts a fly. This is the neglect cycle
+ * made visible: hygiene stops being a number in a menu and becomes something
+ * buzzing around the mess. The fly is drawn from the same primitives as the
+ * droppings, so it costs no new art.
+ *
+ * One fly per dropping, capped, and each fly orbits the dropping that spawned
+ * it. When the dropping is cleaned the fly goes with it, which is the reward:
+ * the tank visibly settles. */
+#define MAX_FLIES 4
+#define FLY_ATTRACT_MS 45000u   /* how long a dropping is ignored before it draws a fly */
+#define FLY_ORBIT_R 9.0f
+#define FLY_ORBIT_HZ 1.7f
+
+typedef struct {
+    lv_obj_t *obj;
+    int poop_slot;      /* which dropping this fly belongs to, -1 when free */
+    float phase;        /* orbit angle */
+    float bob;          /* vertical wobble phase */
+} fly_t;
+
+static fly_t s_flies[MAX_FLIES];
+static lv_obj_t *s_fly_layer;
+static void fly_free(int i);
 
 static const lv_image_dsc_t *background_asset(int scene)
 {
@@ -588,6 +614,9 @@ void terrarium_clear_poop(void)
         s_poop_at[i] = 0;
         s_poop_dirt[i] = 0;
     }
+    /* Cleaning must visibly settle the tank: the flies go with the mess that
+     * attracted them. */
+    for (int i = 0; i < MAX_FLIES; i++) fly_free(i);
 }
 
 int terrarium_poop_count(void)
@@ -604,6 +633,103 @@ int terrarium_dirt(void)
     return dirt;
 }
 
+/* --- flies ---------------------------------------------------------------
+ * A fly is three tiny dark lobes with a pale wing smudge. Drawn from the same
+ * primitives as the droppings, so it needs no artwork. */
+static lv_obj_t *fly_blob(lv_obj_t *parent, int32_t x, int32_t y,
+                          int32_t w, int32_t h, int32_t radius, uint32_t color)
+{
+    lv_obj_t *obj = lv_obj_create(parent);
+    lv_obj_remove_style_all(obj);
+    lv_obj_set_size(obj, w, h);
+    lv_obj_set_pos(obj, x - w / 2, y - h / 2);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(obj, radius, 0);
+    lv_obj_set_clickable(obj, false);
+    lv_obj_set_scrollable(obj, false);
+    return obj;
+}
+
+static void fly_free(int i)
+{
+    if (s_flies[i].obj) lv_obj_delete(s_flies[i].obj);
+    s_flies[i].obj = NULL;
+    s_flies[i].poop_slot = -1;
+}
+
+static void fly_spawn(int i, int poop_slot)
+{
+    if (!s_fly_layer) return;
+    /* Body, then a wing smudge offset up and to one side. Small enough to read
+     * as a speck at arm's length, which is the point: it should catch the eye
+     * without competing with the spider. */
+    lv_obj_t *base = fly_blob(s_fly_layer, 0, 0, 5, 4, 2, 0x2b2620);
+    fly_blob(base, 3, 1, 3, 2, 1, 0x3d372e);
+    fly_blob(base, 2, 0, 3, 2, 1, 0x9aa3a8);
+    s_flies[i].obj = base;
+    s_flies[i].poop_slot = poop_slot;
+    s_flies[i].phase = (float)(lv_tick_get() % 628u) / 100.0f;
+    s_flies[i].bob = (float)(lv_tick_get() % 314u) / 100.0f;
+}
+
+int terrarium_pest_count(void)
+{
+    int n = 0;
+    for (int i = 0; i < MAX_FLIES; i++) if (s_flies[i].obj) n++;
+    return n;
+}
+
+/* Drop every fly whose dropping has gone. Called from the tick and from
+ * terrarium_clear_poop(), so cleaning the tank visibly settles it. */
+static void flies_reap(void)
+{
+    for (int i = 0; i < MAX_FLIES; i++) {
+        if (!s_flies[i].obj) continue;
+        int slot = s_flies[i].poop_slot;
+        if (slot < 0 || slot >= MAX_POOP || !ui.poop[slot]) fly_free(i);
+    }
+}
+
+/* Give a fly to the oldest dropping that has been ignored long enough and does
+ * not already have one. One fly per dropping keeps the tank from swarming. */
+static void flies_attract(uint32_t now_ms)
+{
+    for (int i = 0; i < MAX_FLIES; i++) {
+        if (s_flies[i].obj) continue;
+        for (int slot = 0; slot < MAX_POOP; slot++) {
+            if (!ui.poop[slot] || !s_poop_at[slot]) continue;
+            if ((int32_t)(now_ms - s_poop_at[slot]) < (int32_t)FLY_ATTRACT_MS) continue;
+            bool taken = false;
+            for (int j = 0; j < MAX_FLIES; j++)
+                if (s_flies[j].obj && s_flies[j].poop_slot == slot) { taken = true; break; }
+            if (taken) continue;
+            fly_spawn(i, slot);
+            ESP_LOGI("spidarium.tank", "fly attracted to dropping slot %d", slot);
+            break;
+        }
+    }
+}
+
+/* Orbit each fly around its dropping. The orbit is what makes it read as alive
+ * rather than as a second speck of dirt. */
+static void flies_move(uint32_t now_ms)
+{
+    for (int i = 0; i < MAX_FLIES; i++) {
+        fly_t *f = &s_flies[i];
+        if (!f->obj) continue;
+        lv_obj_t *poop = ui.poop[f->poop_slot];
+        if (!poop) continue;
+        int32_t px = lv_obj_get_x(poop) + lv_obj_get_width(poop) / 2;
+        int32_t py = lv_obj_get_y(poop) + lv_obj_get_height(poop) / 2;
+        float t = (float)now_ms / 1000.0f;
+        float a = f->phase + t * FLY_ORBIT_HZ * 2.0f * 3.14159265f;
+        int32_t x = px + (int32_t)(cosf(a) * FLY_ORBIT_R);
+        int32_t y = py - 6 + (int32_t)(sinf(a * 1.7f + f->bob) * 3.0f);
+        lv_obj_set_pos(f->obj, x, y);
+    }
+}
+
 void terrarium_tick(uint32_t now_ms)
 {
     for (int i = 0; i < MAX_POOP; i++) {
@@ -616,6 +742,11 @@ void terrarium_tick(uint32_t now_ms)
             s_poop_dirt[i] = 0;
         }
     }
+    /* Reap before attracting: a fly whose dropping just expired must not be
+     * counted as occupying a slot, or the tank would slowly stop attracting. */
+    flies_reap();
+    flies_attract(now_ms);
+    flies_move(now_ms);
 }
 
 void terrarium_init(lv_obj_t *parent)
@@ -638,6 +769,9 @@ void terrarium_init(lv_obj_t *parent)
     s_gift_pixels = heap_caps_malloc(64 * 64 * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     ESP_ERROR_CHECK(s_gift_pixels ? ESP_OK : ESP_ERR_NO_MEM);
     s_poop_layer = layer(parent);
+    /* Flies sit above the droppings they orbit, so a fly is never hidden behind
+     * the mess that attracted it. */
+    s_fly_layer = layer(parent);
     s_preview_ring = layer(parent);
     lv_obj_set_style_border_width(s_preview_ring, 2, 0);
     lv_obj_set_style_border_color(s_preview_ring, lv_color_hex(0xf5c86b), 0);

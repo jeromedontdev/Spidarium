@@ -1,8 +1,10 @@
 /*
  * Spidarium — terrarium background.
  *
- * Eight authored pixel-art images in a reusable PSRAM RGB565 canvas.
- * No mandatory props, large web overlay or randomly moving dust.
+ * Eight authored pixel-art images in a reusable PSRAM RGB565 canvas, plus the
+ * decor, gift and waste layers. Ambient motion (dust motes, the spider's idle
+ * life) lives in ambient.c; this module owns the static furniture and the
+ * neglect cycle.
  */
 #pragma once
 
@@ -53,6 +55,15 @@ int terrarium_poop_count(void);
  * reward tracks the mess actually removed rather than the tap. */
 int terrarium_dirt(void);
 
+/* Number of flies currently circling the tank's waste.
+ *
+ * This is the neglect cycle made visible: a dropping that is left alone long
+ * enough attracts a fly, and the fly is the player's cue that the tank needs
+ * cleaning. It costs no new art -- the fly is drawn from the same primitives as
+ * the droppings -- and it turns "hygiene is a number" into something you can
+ * see. */
+int terrarium_pest_count(void);
+
 /* Retained placement artwork/ring; drag updates never mutate saved furniture
  * or allocate new LVGL objects. A moving item's original visual is hidden. */
 void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_t y,
@@ -62,5 +73,5 @@ bool terrarium_preview_test(uint8_t path, int layer);
 void terrarium_preview_show(int32_t x, int32_t y, int32_t radius);
 void terrarium_preview_hide(void);
 
-/* Decompose care-related waste. The background does not animate. */
+/* Decompose care-related waste, and let neglected waste attract flies. */
 void terrarium_tick(uint32_t now_ms);

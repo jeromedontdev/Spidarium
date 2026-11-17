@@ -11099,3 +11099,77 @@ want tuning once someone has watched it.
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Climb,
 Holo Garden gift (kind 34) at (240,300) Walk Over. `gifttest` and `uitest` reset
 both during verification and both were restored.
+
+## Round 125 - The neglect cycle, so hygiene is something you can see
+
+### The question
+
+Continuing Round 124's "living ecosystem" work: what else makes the tank feel
+alive without spending a token on art?
+
+### The gap Round 124 left
+
+Round 124 added motion -- dust motes, breathing, blinking, a drifting light. But
+motion is not the same as *consequence*. The tank moved; nothing in it responded
+to how the player was treating it. Hygiene was a number in a menu, and a dropping
+simply expired after ten minutes whether or not anyone noticed it.
+
+### Decisions made
+
+**A dropping left alone attracts a fly.** `FLY_ATTRACT_MS` is 45 s. The fly
+orbits the dropping that drew it, so it reads as a creature rather than as a
+second speck of dirt. It is drawn from the same primitives as the droppings --
+three tiny dark lobes and a pale wing smudge -- so it costs no art, exactly like
+Round 124's motes.
+
+**One fly per dropping, capped at four.** A swarm would be noise. One fly per
+dropping means the number of flies is a readable measure of how much mess has
+been ignored, which is the whole point: the player can see the state of the tank
+without opening a menu.
+
+**Cleaning frees the flies.** `terrarium_clear_poop()` deletes them along with
+the droppings. This is the reward loop: the tank visibly settles. Without it the
+flies would linger over a clean floor and the effect would read as a bug.
+
+**Reap before attracting.** `terrarium_tick()` expires droppings, then reaps
+flies whose dropping has gone, then attracts. The order matters: a fly whose
+dropping just expired must not be counted as occupying a slot, or the tank would
+slowly stop attracting new flies as stale entries accumulated. This is the kind
+of ordering bug that only shows up after an hour of play.
+
+**The browser derives flies from the poop list rather than storing them.**
+`fliesAt()` computes the set from `s.poop` and the clock. Separate state could
+drift out of sync with the mess it describes -- a fly outliving its dropping, or
+a dropping with no fly -- and there is no reason to store what can be derived.
+The age comes from `POOP_LIFETIME_MS - (expires - now)`, so a restored save
+attracts flies at the right time without a second timestamp.
+
+### Evidence
+
+- Build exit 0, zero main warnings.
+- Flash exit 0.
+- Full neglect cycle on hardware in one session:
+  `PESTS poop=3 dirt=18 flies=0` -> wait 50 s -> `PESTS poop=3 dirt=18 flies=3`
+  -> `clean` -> `OK clean xp=3` -> `PESTS poop=0 dirt=0 flies=0`. The log shows
+  `fly attracted to dropping slot 0/1/2`, so the flies are attached to specific
+  droppings rather than spawned at random.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline.
+- Browser suite 291/291, up from 288. Three new tests cover the attract
+  threshold (nothing at 44,999 ms, one fly at 45,001 ms), the cap and the
+  one-fly-per-dropping rule, and that a fly anchors to its dropping.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, unchanged.
+
+### Honest boundaries
+
+The tests prove the cycle fires at the right time, is capped, and is cleaned up.
+They do not prove a fly reads as a fly at arm's length on the physical panel --
+it is five pixels across, and that is a judgement call that wants human eyes.
+`FLY_ATTRACT_MS` (45 s) is deliberately short so the effect is observable during
+a session; it may want lengthening once it has been lived with, because a fly
+appearing 45 seconds after every meal could read as nagging rather than as
+atmosphere.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Climb,
+Holo Garden gift (kind 34) at (240,300) Walk Over.

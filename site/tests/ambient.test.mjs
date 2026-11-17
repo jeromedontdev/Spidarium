@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { blinkAt, glanceAt, breathAt, motesAt, dustColour, lightOpaAt, MOTE_COUNT, DUST_COLOURS } from '../lib/ambient.js';
 import { renderSpider } from '../lib/spider-renderer.js';
 import { BACKGROUNDS } from '../lib/device-engine.js';
+import * as E from '../lib/device-engine.js';
 
 const BOUNDS = { left: 8, top: 8, right: 472, bottom: 472 };
 
@@ -132,4 +133,48 @@ test('a sleeping spider does not blink or breathe', () => {
   renderSpider(pixels, { ...base, blink: 1, glance: 1, breath: 1.03 });
   const b = pixels.slice();
   assert.deepEqual(a, b, 'a sleeping spider moved');
+});
+
+test('neglected waste attracts flies, and cleaning settles them', () => {
+  const s = E.freshState();
+  s._engine.now_ms = 0;
+  E.addPoop(s, 200, 300);
+  // A fresh dropping is not yet interesting.
+  assert.equal(E.fliesAt(s).length, 0, 'a fresh dropping attracted a fly');
+
+  // Just before the threshold, still nothing.
+  s._engine.now_ms = E.FLY_ATTRACT_MS - 1;
+  assert.equal(E.fliesAt(s).length, 0, 'a fly appeared too early');
+
+  // Past it, exactly one fly.
+  s._engine.now_ms = E.FLY_ATTRACT_MS + 1;
+  assert.equal(E.fliesAt(s).length, 1, 'neglect did not attract a fly');
+
+  // Cleaning removes the mess and therefore the fly.
+  s.poop.length = 0;
+  assert.equal(E.fliesAt(s).length, 0, 'a fly outlived its dropping');
+});
+
+test('flies are capped and one per dropping', () => {
+  const s = E.freshState();
+  s._engine.now_ms = 0;
+  for (let i = 0; i < E.CONFIG.MAX_POOP; i++) E.addPoop(s, 100 + i * 20, 300);
+  s._engine.now_ms = E.FLY_ATTRACT_MS + 1;
+  const flies = E.fliesAt(s);
+  assert.ok(flies.length <= E.MAX_FLIES, `too many flies: ${flies.length}`);
+  // One fly per dropping: no two flies share a position.
+  const seen = new Set(flies.map(f => `${f.x},${f.y}`));
+  assert.equal(seen.size, flies.length, 'two flies share a dropping');
+});
+
+test('a fly anchors to its dropping rather than drifting', () => {
+  const s = E.freshState();
+  s._engine.now_ms = 0;
+  E.addPoop(s, 240, 300);
+  s._engine.now_ms = E.FLY_ATTRACT_MS + 1;
+  const a = E.fliesAt(s)[0];
+  // The orbit is applied by the renderer from the clock, so the anchor is
+  // stable; assert the anchor is the dropping, not a drifting point.
+  assert.equal(a.x, 240);
+  assert.equal(a.y, 300);
 });

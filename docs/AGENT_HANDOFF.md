@@ -44,6 +44,16 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
     same shape from a hash of the time bucket -- the result reads the same and is
     stable under test, which matters because a test that asserts "the spider
     blinks" must not be flaky.
+- The neglect cycle (`terrarium.c`) makes hygiene visible instead of numeric. A
+  dropping left alone for `FLY_ATTRACT_MS` (45 s) attracts a fly that orbits it;
+  the fly is drawn from the same primitives as the droppings, so it costs no
+  art. One fly per dropping, capped at `MAX_FLIES` (4), and `terrarium_clear_poop()`
+  frees them, so cleaning visibly settles the tank. `terrarium_tick()` reaps
+  before it attracts -- a fly whose dropping just expired must not be counted as
+  occupying a slot, or the tank would slowly stop attracting. The browser
+  derives the same cycle from the poop list (`fliesAt()`) rather than keeping
+  separate state, so it cannot drift out of sync with the mess it describes.
+  `pests` on the console reports `poop`/`dirt`/`flies`.
 - The spider's MIND (`mind.c`) is a rules table, not a state machine. It
   publishes an intent (`mind_want()`) that `behaviour.c` consults through
   `act_on_intent()`. **The bridge is the part that matters**: `mind_tick()` ran

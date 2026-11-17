@@ -659,6 +659,31 @@ export function addPoop(s,x,y) {
   s.poop.push(poop);
   return poop;
 }
+/** Flies attracted by neglected waste.
+ *
+ * The device's terrarium.c gives a dropping that has been ignored for
+ * FLY_ATTRACT_MS a fly that orbits it, and the fly goes when the dropping is
+ * cleaned. This is the same cycle, derived from the poop list rather than kept
+ * as separate state, so it cannot drift out of sync with the mess it describes.
+ *
+ * One fly per dropping, capped at MAX_FLIES, oldest dropping first. */
+export const MAX_FLIES = 4;
+export const FLY_ATTRACT_MS = 45000;
+
+export function fliesAt(s) {
+  const now = runtime(s).now_ms;
+  const out = [];
+  for (const poop of s.poop ?? []) {
+    if (out.length >= MAX_FLIES) break;
+    /* `expires` is stamped at creation, so the age is the lifetime minus what
+     * is left. Deriving it this way means a restored save attracts flies at the
+     * right time without storing a second timestamp. */
+    const age = C.POOP_LIFETIME_MS - (poop.expires - now);
+    if (age < FLY_ATTRACT_MS) continue;
+    out.push({ x: poop.x, y: poop.y, age });
+  }
+  return out;
+}
 function setState(s,state) {
   if(s.state===state)return;
   s.state=state;

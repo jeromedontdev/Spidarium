@@ -1250,8 +1250,20 @@ export class DeviceGame {
         ctx.fillStyle = '#8f6a3d'; ctx.beginPath(); ctx.ellipse(poop.x, poop.y - 4, 1.5, 1.5, 0, 0, Math.PI * 2); ctx.fill();
       }
     }
-    renderSpider(this.spiderPixels.data, this.spiderOptions()); this.spiderCtx.putImageData(this.spiderPixels, 0, 0);
-    // Life-stage size: a spiderling reads as small, an adult as full size.
+    // Flies: a dropping left alone long enough attracts one, and it orbits the
+    // mess that drew it. This is the neglect cycle made visible -- hygiene stops
+    // being a number in a menu. Drawn above the droppings so a fly is never
+    // hidden behind the mess that attracted it.
+    {
+      const now = s.now_ms ?? 0;
+      for (const f of E.fliesAt(s)) {
+        const a = now / 1000 * 1.7 * Math.PI * 2 + f.x * 0.01;
+        const fx = f.x + Math.cos(a) * 9, fy = f.y - 6 + Math.sin(a * 1.7) * 3;
+        ctx.fillStyle = '#2b2620'; ctx.beginPath(); ctx.ellipse(fx, fy, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#9aa3a8'; ctx.beginPath(); ctx.ellipse(fx + 1, fy - 1.5, 1.5, 1, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    renderSpider(this.spiderPixels.data, this.spiderOptions()); this.spiderCtx.putImageData(this.spiderPixels, 0, 0);    // Life-stage size: a spiderling reads as small, an adult as full size.
     const stageScale = s.stage === 0 ? .75 : s.stage === 1 ? .875 : 1;
     const half = 48 * stageScale;
     // Petting bounce: one smooth rise and fall, matching the device's
