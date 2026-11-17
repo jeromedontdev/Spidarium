@@ -11458,3 +11458,53 @@ brightness in particular was tuned by screenshot, and may want another pass.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+## Round 129 -- Pull the contact shadow under the body
+
+### What was asked
+
+"Let's also pull the shadow into the body just a tad more."
+
+### Decisions made
+
+The contact shadow was drawn at `CANVAS_CY + LEG_LEN` -- the leg tips, 22 px below
+the body centre. The body radius is 16, so that left a 6 px gap between the
+abdomen and its own shadow, which read as the spider hovering slightly rather
+than resting on the ground.
+
+Moved to `CANVAS_CY + SHADOW_DROP` where `SHADOW_DROP` is `BODY_R - 2` (14 px).
+That tucks the ellipse under the abdomen, where a contact shadow belongs, while
+still leaving the feathered rim visible past the body silhouette -- which is the
+whole point of drawing it wider than the leg span.
+
+Named the constant rather than inlining the number so the relationship to
+`BODY_R` is explicit: if the body is ever resized, the shadow follows.
+
+The browser mirror in `device-ui.js` already used `spider_y + 6`, which is the
+same 14 px offset in its own coordinate space, so it needed only a comment
+pointing at `SHADOW_DROP` to keep the two from drifting apart.
+
+### Evidence
+
+- Build exit 0, zero main warnings. Flash exit 0.
+- `climb` reports `SHADOW ... rows=117..137`. The ellipse centre is
+  `CANVAS_CY + SHADOW_DROP` = 112 + 14 = 126 with ry 12, so it spans 114..138;
+  the reported top of 117 is the body painting over the upper rim, which is the
+  intended occlusion. At the old offset the centre was 134, so the shadow moved
+  8 px up -- exactly the 22 -> 14 px change.
+- Spider canvas captured and zoomed: the ellipse now sits under the abdomen with
+  its rim showing past the body, rather than trailing at the leg tips.
+- Full tank captured: the spider reads as resting on the ground.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline.
+- Browser suite 298/298.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, unchanged.
+
+### Honest boundaries
+
+"Just a tad" is a judgement call. 8 px is a visible but not dramatic change; if
+it wants to go further, `SHADOW_DROP` is the single number to move.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).

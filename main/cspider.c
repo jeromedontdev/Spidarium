@@ -78,6 +78,13 @@ static const char *TAG = "spidarium.cspider";
 #define BODY_R       16
 #define LEG_WIDTH    3
 
+/* How far below the body centre the contact shadow sits. It used to be drawn at
+ * the leg tips (LEG_LEN, 22 px), which left a visible gap between the body and
+ * its own shadow and read as the spider hovering a little above the ground.
+ * Pulling it up to the body radius tucks it under the abdomen, where a contact
+ * shadow belongs. */
+#define SHADOW_DROP  (BODY_R - 2)
+
 /* Forward-axis compression while perched on a small prop. 0.72 shortens the
  * body by roughly a quarter, which is what a lower viewing angle does to a
  * body pointing away from the viewer. Below about 0.6 the abdomen starts to
@@ -893,7 +900,7 @@ void cspider_render(uint32_t now_ms)
      *
      * The ellipse is WIDER than the leg span so the feet do not cover it
      * completely. */
-    fill_shadow(CANVAS_CX, CANVAS_CY + (int32_t)LEG_LEN + s_draw_dy, 34, 12, 150);
+    fill_shadow(CANVAS_CX, CANVAS_CY + SHADOW_DROP + s_draw_dy, 34, 12, 150);
 
     /* --- legs -------------------------------------------------------
      * Drawn first so the body covers the hips. The far side is drawn first so

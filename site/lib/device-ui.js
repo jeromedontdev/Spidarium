@@ -1293,6 +1293,10 @@ export class DeviceGame {
       // above the structure rather than standing on it. A contact shadow
       // belongs where the object touches its surface, and while climbing that
       // surface is the top of the structure, directly under the feet.
+      //
+      // The +6 offset mirrors SHADOW_DROP in cspider.c: the shadow sits under
+      // the abdomen rather than out at the leg tips, which left a visible gap
+      // and read as the spider hovering.
       const shrink = climb / 3;
       ctx.save();
       ctx.globalAlpha = Math.max(.24, (150 - climb * 4) / 255);
