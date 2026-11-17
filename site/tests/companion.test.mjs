@@ -51,7 +51,7 @@ test('strict validation rejects malformed nested requests, memories, counts and 
     c=>{c.treat_counts[0]=256;},c=>{c.play_counts[0]=-1;},c=>{c.gift_counts.pop();},
     c=>{c.favorite_treat=12;},c=>{c.favorite_gift=36;},c=>{c.favorite_play=3;},
     c=>{c.bond_level=5;},c=>{c.last_stage=3;},c=>{c.was_sick=2;},
-    c=>{c.reserved[0]=256;},c=>{c.diary_count=1;},
+    c=>{c.play_counts[0]=256;},c=>{c.diary_count=1;},
     c=>{c.favorite_treat=0;c.treat_counts[0]=2;},
     c=>{delete c.requests[0].kind;},c=>{delete c.play_counts[0];},
     ...[{kind:0,value:0},{kind:1,value:12},{kind:2,value:36},{kind:3,value:3},
@@ -67,8 +67,10 @@ test('strict validation rejects malformed nested requests, memories, counts and 
   }
   const uninitialized=E.companionDefaults();uninitialized.clock_mode=1;
   assert.equal(E.companionValid(uninitialized),false);
-  const reserved=E.companionDefaults();reserved.reserved=[1,255];
-  assert.equal(E.companionValid(reserved),true);
+  /* The two bytes that used to be `reserved` now hold play_counts[3..4], so a
+   * full five-entry play_counts array is what has to validate. */
+  const counts=E.companionDefaults();counts.play_counts=[1,2,3,4,5];
+  assert.equal(E.companionValid(counts),true);
   assert.throws(()=>E.restoreSim({...copy(s),companion:null}),/companion/);
 });
 

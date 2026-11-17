@@ -199,9 +199,11 @@ test('maximum v14 enclosure migrates without losing any of its 3368 extra placem
 
 test('v15 rejects companion enums counts and invalid pins, ignoring reserved and unused slots',()=>{
   const bytes=encodeSave(current(),schema);
+  /* play_counts is five entries now (64..68), so the favourite and flag bytes
+   * all moved up by two. */
   for(const [offset,value] of [[4,0x10],[8,5],[9,0],[10,3],[11,1],[13,36],[14,2],[15,3],
     [27,2],[63,2],[66,2],
-    [67,12],[68,36],[69,3],[70,65],[71,3],[72,2],[73,5],[74,3],[75,2],
+    [69,12],[70,36],[71,5],[72,65],[73,3],[74,2],[75,5],[76,3],[77,2],
     [84,9],[85,36],[86,2],[87,2]]) {
     const invalid=bytes.slice();invalid[280+offset]=value;
     if(offset===4)invalid[287]=0x10;
@@ -211,7 +213,7 @@ test('v15 rejects companion enums counts and invalid pins, ignoring reserved and
   c.companion.diary_count=9;assert.throws(()=>encodeSave(c,schema),/companion/);
   const bad=structuredClone(schema);bad.companion.diary.offset=79;
   assert.throws(()=>validateSchema(bad),/companion/);
-  for(const offset of [76,77,78,79,88,591]) {
+  for(const offset of [78,79,88,591]) {
     const ignored=bytes.slice();ignored[280+offset]=255;
     assert.equal(decodeSave(ignored,schema).fields.companion.diary.length,1);
   }

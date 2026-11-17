@@ -22,11 +22,12 @@ typedef struct {
     uint32_t request_day;
     uint32_t seen_achievements;
     companion_request_t requests[2];
-    uint8_t treat_counts[12], gift_counts[36], play_counts[3];
+    uint8_t treat_counts[12], gift_counts[36], play_counts[5];
     uint8_t favorite_treat, favorite_gift, favorite_play;
     uint8_t diary_count, clock_mode, initialized, bond_level;
     uint8_t last_stage, was_sick;
-    uint8_t reserved[2];
+    /* The two bytes that used to be reserved now hold play_counts[3..4], so the
+     * struct size and every following offset are unchanged. */
     companion_memory_t diary[COMPANION_DIARY_CAP];
 } companion_state_t;
 

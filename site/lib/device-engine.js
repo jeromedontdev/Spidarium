@@ -1318,9 +1318,14 @@ export function visitGift(s){
   if(!canVisit(s))return event(s,'rejected',{reason:'gift visit unavailable'});
   r.gift_visit_at=r.now_ms||1;return true;
 }
+/* The play menu offers five games. The first three are the original
+ * tap-and-match games; the last two are spider-themed and use the same
+ * round/score/reward plumbing. Mirrors PLAY_KINDS in ui_menu.c. */
+export const PLAY_KINDS=5;
+export const PLAY_NAMES=['Bug Hunt','Color Match','Quick Tap','Web Weave','Pounce'];
 export function minigameReward(s,kind,score) {
   // ui_menu callback takes score only; accept (state, score) too.
-  const completedKind=score!==undefined&&Number.isInteger(kind)&&kind>=0&&kind<3?kind:null;
+  const completedKind=score!==undefined&&Number.isInteger(kind)&&kind>=0&&kind<PLAY_KINDS?kind:null;
   if(score===undefined)score=kind;
   if(score&&typeof score==='object')score=score.score;
   score=integer(score,0,8);

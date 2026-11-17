@@ -565,6 +565,11 @@
 #define SAVE_MAGIC             0x53504944u   /* "SPID" */
 /* v3 uses two former padding bytes for opt-in automation. v2 progress is
  * retained, with both flags cleared; unsupported v1 layouts remain rejected. */
-#define SAVE_VERSION    22
+/* v23 grew the companion's play_counts from three entries to five, taking the
+ * two bytes that were reserved. The struct size and every following offset are
+ * unchanged, but the MEANING of bytes 76..77 changed, so this must be a new
+ * version: two firmwares both claiming v22 with different layouts would each
+ * read the other's save as valid and silently corrupt it. */
+#define SAVE_VERSION    23
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

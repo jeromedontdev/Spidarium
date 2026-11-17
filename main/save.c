@@ -55,16 +55,15 @@ _Static_assert(offsetof(companion_state_t, requests) == 8, "request ABI changed"
 _Static_assert(offsetof(companion_state_t, treat_counts) == 16, "treat ABI changed");
 _Static_assert(offsetof(companion_state_t, gift_counts) == 28, "gift ABI changed");
 _Static_assert(offsetof(companion_state_t, play_counts) == 64, "play ABI changed");
-_Static_assert(offsetof(companion_state_t, favorite_treat) == 67, "favorite ABI changed");
-_Static_assert(offsetof(companion_state_t, favorite_gift) == 68, "gift favorite ABI changed");
-_Static_assert(offsetof(companion_state_t, favorite_play) == 69, "play favorite ABI changed");
-_Static_assert(offsetof(companion_state_t, diary_count) == 70, "diary count ABI changed");
-_Static_assert(offsetof(companion_state_t, clock_mode) == 71, "clock ABI changed");
-_Static_assert(offsetof(companion_state_t, initialized) == 72, "initialized ABI changed");
-_Static_assert(offsetof(companion_state_t, bond_level) == 73, "bond ABI changed");
-_Static_assert(offsetof(companion_state_t, last_stage) == 74, "stage ABI changed");
-_Static_assert(offsetof(companion_state_t, was_sick) == 75, "sick ABI changed");
-_Static_assert(offsetof(companion_state_t, reserved) == 76, "reserved ABI changed");
+_Static_assert(offsetof(companion_state_t, favorite_treat) == 69, "favorite ABI changed");
+_Static_assert(offsetof(companion_state_t, favorite_gift) == 70, "gift favorite ABI changed");
+_Static_assert(offsetof(companion_state_t, favorite_play) == 71, "play favorite ABI changed");
+_Static_assert(offsetof(companion_state_t, diary_count) == 72, "diary count ABI changed");
+_Static_assert(offsetof(companion_state_t, clock_mode) == 73, "clock ABI changed");
+_Static_assert(offsetof(companion_state_t, initialized) == 74, "initialized ABI changed");
+_Static_assert(offsetof(companion_state_t, bond_level) == 75, "bond ABI changed");
+_Static_assert(offsetof(companion_state_t, last_stage) == 76, "stage ABI changed");
+_Static_assert(offsetof(companion_state_t, was_sick) == 77, "sick ABI changed");
 _Static_assert(offsetof(companion_state_t, diary) == 80, "diary ABI changed");
 _Static_assert(sizeof(companion_memory_t) == 8, "memory ABI changed");
 _Static_assert(sizeof(companion_request_t) == 4, "request size ABI changed");
@@ -204,6 +203,14 @@ static void migrate_automation(game_state_t *state, uint16_t version)
      * gift starts at the back of its band, which is where it was drawn before
      * the field existed. */
     if (version < 22) state->gift_layer = 0;
+    /* v23 grew play_counts from three entries to five, taking the two bytes that
+     * were reserved. A v22 blob's reserved bytes were always written as zero, so
+     * the new counters start at zero; clearing them explicitly means a blob that
+     * carried junk there cannot invent a favourite game. */
+    if (version < 23) {
+        state->companion.play_counts[3] = 0;
+        state->companion.play_counts[4] = 0;
+    }
 }
 
 static void save_worker(void *arg)
@@ -632,7 +639,7 @@ static bool raw_valid_state(const void *src, size_t len, game_state_t *state)
         hdr.version != 10 && hdr.version != 11 && hdr.version != 12 && hdr.version != 13 &&
         hdr.version != 14 && hdr.version != 15 && hdr.version != 16 && hdr.version != 17 &&
         hdr.version != 18 && hdr.version != 19 && hdr.version != 20 &&
-        hdr.version != 21) {
+        hdr.version != 21 && hdr.version != 22) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;

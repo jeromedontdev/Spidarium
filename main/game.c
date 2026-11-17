@@ -1753,7 +1753,8 @@ static void menu_open(int which)
         const char *heading = "Your Spider";
         ui_menu_pick_cb callback = on_main_pick;
         if (which == MENU_PERSONALITY) {
-            static const char *const games[] = {"Bug Hunt", "Color Match", "Quick Tap"};
+            static const char *const games[] = {"Bug Hunt", "Color Match", "Quick Tap",
+                                                "Web Weave", "Pounce"};
             const companion_state_t *c = &g.companion;
             snprintf(rows[0].detail, sizeof rows[0].detail, "%s / Bond %u / %s",
                      game_temperament()->name, g.bond,
@@ -3251,8 +3252,7 @@ static void ui_service_request(void)
         companion_ok = s_memory_slot == 255 && companion_ok;
         s_open_menu = MENU_DIARY;
         bool decor_ok = decor_test();
-        bool pointer_ok = test_furniture_pointer();
-        bool original_muted = audio_muted();
+        bool pointer_ok = test_furniture_pointer();        bool original_muted = audio_muted();
         uint8_t original_music = g.music_enabled;
         s_testing_placement = true;
         on_sound_pick(1);

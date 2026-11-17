@@ -1,11 +1,11 @@
 // Timing and round transitions match main/ui_menu.c; time is injected in ms.
-export const GAME_NAMES = ['Bug Hunt', 'Color Match', 'Quick Tap'];
+export const GAME_NAMES = ['Bug Hunt', 'Color Match', 'Quick Tap', 'Web Weave', 'Pounce'];
 export const COLOR_NAMES = ['Coral', 'Mint', 'Gold', 'Blue'];
 export const COLOR_RGB = ['#b94646', '#296e55', '#846421', '#315c94'];
 const roll = (random, n) => Math.floor(random() * n);
 export class Minigame {
   constructor(kind, now, random = Math.random) {
-    if (!Number.isInteger(kind) || kind < 0 || kind > 2) throw new Error('Unknown minigame');
+    if (!Number.isInteger(kind) || kind < 0 || kind > 4) throw new Error('Unknown minigame');
     this.kind = kind; this.random = random; this.round = 0; this.score = 0;
     this.finished = false; this.cancelled = false; this.startRound(now);
   }
@@ -34,6 +34,8 @@ export class Minigame {
     this.deadline = now + (this.preview ? 750 : this.kind === 2 ? 900 + roll(this.random, 1600) : this.duration);
     this.shiftAt = now + 1500 - this.round * 60;
     this.feedback = '';
+    if (this.kind === 3) this.startWeave(now);
+    if (this.kind === 4) this.startPounce(now);
   }
   endRound(correct, now) {
     if (correct) this.score++;
@@ -53,6 +55,15 @@ export class Minigame {
         this.feedback = 'Good / Next Color...'; return true;
       }
     }
+    if (this.kind === 3) {
+      // Follow the strands in order. A wrong anchor ends the round.
+      if (!inTime || index !== this.weave[this.weaveStep]) { this.endRound(false, now); return true; }
+      this.weaveStep++;
+      if (this.weaveStep < this.length) {
+        this.inputGuard = now + 120; this.feedback = 'Good / Next Strand...'; return true;
+      }
+      this.endRound(true, now); return true;
+    }
     this.endRound(this.kind === 2 ? this.ready && inTime : index === this.answer && inTime, now);
     return true;
   }
@@ -65,7 +76,11 @@ export class Minigame {
     }
     if (now < this.deadline) return;
     if (this.pending) this.startRound(now);
-    else if (this.preview) {
+    else if (this.preview && this.kind === 3) {
+      this.previewStep++;
+      if (this.previewStep < this.length) this.deadline = now + 700;
+      else { this.preview = false; this.weaveStep = 0; this.deadline = now + this.duration; }
+    } else if (this.preview) {
       this.previewStep++;
       if (this.previewStep < this.length) this.deadline = now + 750;
       else { this.preview = false; this.deadline = now + this.duration; }
@@ -74,6 +89,38 @@ export class Minigame {
         this.feints++; this.deadline = now + 400 + roll(this.random, 700);
       } else { this.ready = true; this.deadline = now + this.duration; }
     } else this.endRound(false, now);
+  }
+  /* Web Weave: four anchors lit in a growing order; the player taps the same
+   * order back. Mirrors play_weave_start() in ui_menu.c. */
+  startWeave(now) {
+    this.weaveStep = 0;
+    this.length = Math.min(4, 2 + Math.floor(this.round / 2));
+    this.weave = Array.from({ length: this.length }, () => roll(this.random, 4));
+    // Never repeat the same anchor twice in a row: a doubled tap reads as one
+    // tap, which made the sequence impossible to follow.
+    for (let i = 1; i < this.length; i++)
+      if (this.weave[i] === this.weave[i - 1]) this.weave[i] = (this.weave[i] + 1) % 4;
+    this.preview = true; this.previewStep = 0;
+    this.deadline = now + 700;
+    this.feedback = '';
+  }
+  /* Pounce: a target appears at a random spot and the player taps it before the
+   * window closes. Mirrors play_pounce_start() in ui_menu.c. */
+  startPounce(now) {
+    this.pounceSize = Math.max(36, 64 - this.round * 4);
+    this.pounceX = 12 + Math.floor(this.pounceSize / 2) +
+      roll(this.random, Math.max(1, 456 - 24 - this.pounceSize));
+    this.pounceY = 160 + Math.floor(this.pounceSize / 2) +
+      roll(this.random, Math.max(1, 480 - 260));
+    this.ready = true;
+    this.deadline = now + this.duration;
+    this.feedback = '';
+  }
+  /* Tapping the pounce target. */
+  pounce(now) {
+    if (this.finished || this.cancelled || this.pending || this.kind !== 4 || !this.ready) return false;
+    this.endRound(now < this.deadline, now);
+    return true;
   }
   cancel() { this.cancelled = true; }
   remaining(now) {
@@ -87,6 +134,10 @@ export class Minigame {
     if (this.kind === 1) return this.preview
       ? `${prefix}Remember ${this.previewStep + 1}/${this.length}: ${COLOR_NAMES[this.colors[this.sequence[this.previewStep]]]}`
       : this.length > 1 ? 'Repeat the Colors in Order' : 'Match the Color You Remembered';
+    if (this.kind === 3) return this.preview
+      ? `Watch the Web... ${this.previewStep + 1}/${this.length}`
+      : 'Tap the Strands in Order';
+    if (this.kind === 4) return 'Pounce!';
     return this.ready ? 'Tap Now!' : `${prefix}Only Tap GREEN`;
   }
 }

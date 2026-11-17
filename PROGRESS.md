@@ -10916,3 +10916,99 @@ The tests prove the spider is never displaced by the gift and that the visit
 completes. They do not prove the spider crossing the gift artwork looks right on
 the physical panel -- that still needs human eyes, and it is the one thing the
 removed Solid option was nominally protecting against.
+
+## Round 123 - A brain the spider actually uses, and two new games
+
+### The question
+
+"Is it time to revisit the brain of the spider? Are the rules still applicable
+or should we update them to make it feel more alive and autonomous?"
+
+### The finding that answered it
+
+The rules were not stale. They were **disconnected**. `mind_tick()` ran every
+frame from `game.c`, but `mind_want()`, `mind_thought()` and
+`mind_active_rule()` were never read anywhere in the firmware. The engine
+computed an intent every four seconds and threw it away, so the spider behaved
+exactly as it did before the mind existed. That is why it did not feel alive:
+there was no path from the brain to the legs.
+
+The table also only read the four stats, so the spider behaved identically at
+3am and 3pm and never reacted to anything the player had placed.
+
+### Decisions made
+
+**Built the bridge first, then widened the table.** `act_on_intent()` in
+`behaviour.c` (and `actOnIntent()` in `device-engine.js`) is the part that was
+missing. It is consulted from IDLE and from a WANDER with no destination. The
+second is essential: a spider that had started wandering never reconsidered, so
+an IDLE-only bridge still looked inert. Every branch is guarded by the same
+safety conditions the FSM already used, so an intent can never outrank hunger,
+exhaustion or sickness.
+
+**Three new condition columns, not just more rows.** `period` (day period from
+`life_period_now()`), `climbable` (a climbable item is placed) and
+`gift_placed`. A rule whose condition cannot be satisfied never fires, so the
+table degrades cleanly on a fresh tank. Without a clock the period is 255, which
+matches no specific period, so time-of-day behaviour is absent rather than
+wrong.
+
+**Nine rules became twenty**, adding `drowsy` (crepuscular: settles at night),
+`dusk` (explores in the evening), `basking` (morning sun), `restless` (climbs
+when there is something tall), `perching`, `fond` (visits the gift, gated on
+bond), `weary`, `shy` and `fidget`. New wants: climb, perch, visit, sun.
+
+**Two anti-twitch details.** A 2.5 s `MIND_DWELL_MS` before acting, and the
+dwell timer restarting only when the INTENT changes rather than when the rule
+that produced it changes -- two rules can both want `explore`, and resetting as
+they swap would keep the spider from ever acting on either.
+
+**Two new minigames, both spider verbs.** Web Weave (follow the strands in
+order) and Pounce (tap the bug before the window closes). They reuse the
+existing round/score/reward plumbing rather than adding a subsystem, so
+`PLAY_KINDS` and `k_play_names` are the only new source of truth.
+
+### A real bug found and fixed
+
+`companion_state_t.play_counts` had to grow from three entries to five so a
+favourite game could be discovered for any of them. The two extra bytes came
+from the former `reserved` tail, so the struct size and every following offset
+were unchanged -- and I initially left `SAVE_VERSION` at 22. That was wrong:
+two firmwares both claiming v22 with different meanings for bytes 76..77 would
+each read the other's save as valid and silently corrupt it. It did exactly
+that during verification: flashing the older firmware over a v22 save reset the
+pet to level 1 and wiped its decor.
+
+Fixed by bumping to **v23**, accepting v22 as migratable, and clearing the two
+new counters on migration (a v22 blob's reserved bytes were always zero, so
+clearing them means junk cannot invent a favourite game). The lesson is in the
+handoff: a layout change that keeps the size still needs a version bump when the
+MEANING of a byte changes.
+
+### Evidence
+
+- `build.ps1` -> exit 0, zero main warnings. `flash.ps1 COM7` -> exit 0,
+  `Hash of data verified`.
+- `run_tests.py COM7` -> `passed=49 failed=3`, no crash. All five minigames
+  report `ok=1` on hardware (`kind=3 score=8`, `kind=4 score=8`). The three
+  failures are the documented baseline: `uitest` (hud/pointer) and `hunttest`.
+  `pointer` was confirmed pre-existing by stashing this work, rebuilding and
+  re-running at `ea37afa` -- it fails identically there.
+- Browser suite 277/277, including new tests for the time-of-day/decor/gift
+  rules, the intent bridge, and both new games.
+- Mutation-tested: disabling the intent bridge makes "the intent actually drives
+  the spider" fail; removing the weave duplicate guard makes the weave test fail.
+- `mindtest` on hardware -> `MIND want=explore rule=curious ok=1`; `mind` ->
+  `held=118060ms period=3`, so the clock is being read.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, above the 51,200 floor.
+
+### Honest boundaries
+
+The tests prove the intent reaches the FSM and that the new games complete and
+score. They do not prove the spider *looks* more alive on the physical panel --
+that needs human eyes over several minutes, and it is the whole point of the
+change. The artwork for the two new games is drawn from the existing palette and
+tile geometry rather than new generated sprites; a richer pass would need the
+asset pipeline and a review at native scale.

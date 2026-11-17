@@ -27,6 +27,19 @@
 #define MENU_WIDTH (ui.W - 2 * UI_CORNER)
 #define MENU_HEIGHT (ui.H - 2 * UI_CORNER)
 #define PLAY_ROUNDS 8
+/* The play menu offers five games. The first three are the original
+ * tap-and-match games; the last two are spider-themed and use the same
+ * round/score/reward plumbing, so a new game is a new branch rather than a new
+ * subsystem. */
+#define PLAY_KINDS 5
+#define PLAY_BUG_HUNT   0
+#define PLAY_COLOR_MATCH 1
+#define PLAY_QUICK_TAP  2
+#define PLAY_WEB_WEAVE  3
+#define PLAY_POUNCE     4
+static const char *const k_play_names[PLAY_KINDS] = {
+    "Bug Hunt", "Color Match", "Quick Tap", "Web Weave", "Pounce",
+};
 #define MENU_ITEMS DECOR_COUNT
 
 static lv_obj_t *s_menu, *s_backdrop, *s_page_label, *s_prev, *s_next;
@@ -70,6 +83,16 @@ static uint8_t s_play_bug, s_play_bugs[4], s_play_colors[4];
 static uint8_t s_play_feints;
 static uint8_t s_play_sequence[3], s_play_length, s_play_step, s_play_preview_step;
 static uint32_t s_play_input_guard;
+/* Web Weave: the player taps the four corners in the order the web lit them.
+ * The sequence is the same shape as Color Match, but the tiles are a 2x2 grid
+ * of web anchors rather than colour swatches, and the preview is a lit strand
+ * rather than a word. */
+static uint8_t s_weave_order[4], s_weave_step;
+/* Pounce: a target bug appears at a random spot and the player taps it before
+ * the window closes. The window shrinks each round. */
+static int16_t s_pounce_x, s_pounce_y;
+static uint8_t s_pounce_size;
+static lv_obj_t *s_pounce_obj;
 static const char *const k_play_colors[] = {"Coral", "Mint", "Gold", "Blue"};
 static const uint32_t k_play_rgb[] = {0xb94646, 0x296e55, 0x846421, 0x315c94};
 
@@ -431,14 +454,107 @@ void ui_menu_set_destructive(uint8_t id)
     if (s_items) refresh_page();
 }
 
+static void play_round_start(void);
+static void play_weave_start(void);
+static void play_pounce_start(void);
+static void play_round_end(bool correct);
+
+/* Tapping the pounce target. Registered on the target object itself, so the
+ * hit test is the object's own bounds rather than a coordinate comparison. */
+static void play_pounce_hit(lv_event_t *e)
+{
+    (void)e;
+    if (!s_play_timer || s_play_pending || s_play_kind != PLAY_POUNCE) return;
+    if (!s_play_ready) return;
+    uint32_t now = lv_tick_get();
+    bool in_time = (int32_t)(s_play_deadline - now) > 0;
+    if (s_pounce_obj) lv_obj_add_flag(s_pounce_obj, LV_OBJ_FLAG_HIDDEN);
+    play_round_end(in_time);
+}
+
+/* --- Web Weave -----------------------------------------------------------
+ *
+ * The spider spins a web and the player follows the strands. Four anchors sit
+ * in a 2x2 grid; the game lights them in a growing order and the player taps
+ * the same order back. It is the memory game the spider would actually play,
+ * and it reuses the Color Match round/score plumbing rather than adding a
+ * subsystem.
+ *
+ * The order is stored in s_weave_order and the player's progress in
+ * s_weave_step, so a wrong tap ends the round exactly like Color Match. */
+static void play_weave_start(void)
+{
+    s_weave_step = 0;
+    s_play_length = 2 + s_play_round / 2;
+    if (s_play_length > 4) s_play_length = 4;
+    for (int i = 0; i < s_play_length; i++) s_weave_order[i] = esp_random() % 4;
+    /* Never repeat the same anchor twice in a row: a doubled tap reads as one
+     * tap, which made the sequence impossible to follow. */
+    for (int i = 1; i < s_play_length; i++)
+        if (s_weave_order[i] == s_weave_order[i - 1])
+            s_weave_order[i] = (uint8_t)((s_weave_order[i] + 1) % 4);
+    s_play_preview = true;
+    s_play_preview_step = 0;
+    s_play_deadline = lv_tick_get() + 700;
+    lv_label_set_text(s_play_prompt, "Watch the Web...");
+    for (int i = 0; i < 4; i++) {
+        lv_obj_set_style_bg_color(s_play_tiles[i], lv_color_hex(COL_CARD), 0);
+        lv_label_set_text(s_play_text[i], "");
+    }
+}
+
+/* Light one anchor, then clear it. Called from play_tick while previewing. */
+static void play_weave_flash(uint8_t anchor, bool on)
+{
+    if (anchor > 3) return;
+    lv_obj_set_style_bg_color(s_play_tiles[anchor],
+        lv_color_hex(on ? COL_ACCENT : COL_CARD), 0);
+}
+
+/* --- Pounce --------------------------------------------------------------
+ *
+ * A bug appears somewhere in the panel and the player has to tap it before the
+ * window closes. This is the spider's own verb: the whole game is the pounce
+ * the creature already performs, with the player doing the aiming.
+ *
+ * The target is a plain coloured disc rather than a sprite, because it has to
+ * be tappable at a random position and the prey sprites are 48px with a lot of
+ * transparent margin. */
+static void play_pounce_start(void)
+{
+    /* Keep the target clear of the prompt and the progress bar. */
+    int w = MENU_WIDTH - 24;
+    s_pounce_size = (uint8_t)(64 - s_play_round * 4);
+    if (s_pounce_size < 36) s_pounce_size = 36;
+    int half = s_pounce_size / 2;
+    s_pounce_x = (int16_t)(12 + half + esp_random() % (uint32_t)(w - s_pounce_size));
+    s_pounce_y = (int16_t)(160 + half + esp_random() % (uint32_t)(MENU_HEIGHT - 260));
+    if (!s_pounce_obj) {
+        s_pounce_obj = lv_obj_create(s_menu);
+        lv_obj_set_clickable(s_pounce_obj, true);
+        lv_obj_add_event_cb(s_pounce_obj, play_pounce_hit, LV_EVENT_CLICKED, NULL);
+        lv_obj_set_style_radius(s_pounce_obj, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(s_pounce_obj, 3, 0);
+        lv_obj_set_style_border_color(s_pounce_obj, lv_color_hex(0x18253b), 0);
+        lv_obj_set_style_bg_color(s_pounce_obj, lv_color_hex(0xb94646), 0);
+    }
+    lv_obj_set_size(s_pounce_obj, s_pounce_size, s_pounce_size);
+    lv_obj_set_pos(s_pounce_obj, s_pounce_x - half, s_pounce_y - half);
+    lv_obj_set_hidden(s_pounce_obj, false);
+    s_play_ready = true;
+    s_play_deadline = lv_tick_get() + s_play_duration;
+    lv_label_set_text(s_play_prompt, "Pounce!");
+}
+
 static void play_round_start(void)
 {
     char text[96];
     s_play_answer = esp_random() % 4;
-    s_play_ready = s_play_kind != 2;
+    s_play_ready = s_play_kind != PLAY_QUICK_TAP;
     s_play_pending = false;
-    s_play_preview = s_play_kind == 1;
-    s_play_duration = s_play_kind == 2 ? 620 - s_play_round * 45 :
+    s_play_preview = s_play_kind == PLAY_COLOR_MATCH;
+    s_play_duration = s_play_kind == PLAY_QUICK_TAP ? 620 - s_play_round * 45 :
+                      s_play_kind == PLAY_POUNCE ? 1400 - s_play_round * 110 :
                       2000 - s_play_round * 110;
     s_play_feints = 0;
     s_play_length = 1 + s_play_round / 3;
@@ -469,20 +585,22 @@ static void play_round_start(void)
         s_play_colors[j] = color;
     }
     s_play_deadline = lv_tick_get() + (s_play_preview ? 750 :
-        s_play_kind == 2 ? 900 + esp_random() % 1600 : s_play_duration);
+        s_play_kind == PLAY_QUICK_TAP ? 900 + esp_random() % 1600 : s_play_duration);
     /* Bugs shuffle far less often than they used to: the old 700 ms ramp made
      * the target move before it could be read. */
     s_play_shift_at = lv_tick_get() + 1500 - s_play_round * 60;
     snprintf(text, sizeof text, "Round %u/%u / Score %u\n%s%s",
              s_play_round + 1, PLAY_ROUNDS, s_play_score,
-             s_play_kind == 0 ? "Find: " : s_play_kind == 1 ? "Remember: " : "",
-             s_play_kind == 0 ? species_get(s_play_bug)->name :
-             s_play_kind == 1 ? k_play_colors[s_play_colors[s_play_answer]] : "Only Tap GREEN");
-    if (s_play_kind == 1)
+             s_play_kind == PLAY_BUG_HUNT ? "Find: " :
+             s_play_kind == PLAY_COLOR_MATCH ? "Remember: " : "",
+             s_play_kind == PLAY_BUG_HUNT ? species_get(s_play_bug)->name :
+             s_play_kind == PLAY_COLOR_MATCH ? k_play_colors[s_play_colors[s_play_answer]] :
+             "Only Tap GREEN");
+    if (s_play_kind == PLAY_COLOR_MATCH)
         snprintf(text, sizeof text, "Round %u/%u / Score %u\nRemember 1/%u: %s",
                  s_play_round + 1, PLAY_ROUNDS, s_play_score, s_play_length,
                  k_play_colors[s_play_colors[s_play_answer]]);
-    if (s_play_kind == 0) {
+    if (s_play_kind == PLAY_BUG_HUNT) {
         const lv_image_dsc_t *image = assets_image(sprite_prey_index(s_play_bug, false, false, 0));
         if (image) lv_image_set_src(s_play_target, image);
     }
@@ -490,15 +608,17 @@ static void play_round_start(void)
     lv_bar_set_value(s_play_bar, 100, LV_ANIM_OFF);
     for (int i = 0; i < 4; i++) {
         lv_obj_set_style_bg_color(s_play_tiles[i],
-            lv_color_hex(s_play_kind == 1 ? k_play_rgb[s_play_colors[i]] : COL_CARD), 0);
-        lv_label_set_text(s_play_text[i], s_play_kind == 0 ? "" :
-                          s_play_kind == 1 ? "..." : "WAIT");
-        if (s_play_kind == 0) {
+            lv_color_hex(s_play_kind == PLAY_COLOR_MATCH ? k_play_rgb[s_play_colors[i]] : COL_CARD), 0);
+        lv_label_set_text(s_play_text[i], s_play_kind == PLAY_BUG_HUNT ? "" :
+                          s_play_kind == PLAY_COLOR_MATCH ? "..." : "WAIT");
+        if (s_play_kind == PLAY_BUG_HUNT) {
             const lv_image_dsc_t *image = assets_image(sprite_prey_index(s_play_bugs[i], false, false, 0));
             if (image) lv_image_set_src(s_play_images[i], image);
             else lv_label_set_text(s_play_text[i], species_get(s_play_bugs[i])->name);
         }
     }
+    if (s_play_kind == PLAY_WEB_WEAVE) play_weave_start();
+    if (s_play_kind == PLAY_POUNCE) play_pounce_start();
 }
 
 static void play_result_back(lv_event_t *e)
@@ -540,7 +660,7 @@ static void play_pick(lv_event_t *e)
     if (s_play_input_guard && (int32_t)(now - s_play_input_guard) < 0) return;
     bool in_time = (int32_t)(s_play_deadline - now) > 0;
     int index = (int)(uintptr_t)lv_event_get_user_data(e);
-    if (s_play_kind == 1 && index == s_play_answer && in_time) {
+    if (s_play_kind == PLAY_COLOR_MATCH && index == s_play_answer && in_time) {
         s_play_step++;
         if (s_play_step < s_play_length) {
             s_play_answer = s_play_sequence[s_play_step];
@@ -549,7 +669,23 @@ static void play_pick(lv_event_t *e)
             return;
         }
     }
-    play_round_end(s_play_kind == 2 ? s_play_ready && in_time :
+    if (s_play_kind == PLAY_WEB_WEAVE) {
+        /* Follow the strands in order. A wrong anchor ends the round, which is
+         * the same failure the memory game already uses. */
+        if (!in_time || index != s_weave_order[s_weave_step]) {
+            play_round_end(false);
+            return;
+        }
+        s_weave_step++;
+        if (s_weave_step < s_play_length) {
+            s_play_input_guard = now + 120;
+            lv_label_set_text(s_play_prompt, "Good / Next Strand...");
+            return;
+        }
+        play_round_end(true);
+        return;
+    }
+    play_round_end(s_play_kind == PLAY_QUICK_TAP ? s_play_ready && in_time :
                    index == s_play_answer && in_time);
 }
 
@@ -561,7 +697,8 @@ static void play_tick(lv_timer_t *timer)
         int32_t left = (int32_t)(s_play_deadline - now);
         lv_bar_set_value(s_play_bar, left > 0 ? left * 100 / s_play_duration : 0, LV_ANIM_OFF);
     }
-    if (s_play_kind == 0 && !s_play_pending && (int32_t)(now - s_play_shift_at) >= 0 &&
+    if (s_play_kind == PLAY_BUG_HUNT && !s_play_pending &&
+        (int32_t)(now - s_play_shift_at) >= 0 &&
         (int32_t)(now - s_play_deadline) < 0) {
         int other = (s_play_answer + 1 + esp_random() % 3) % 4;
         uint8_t bug = s_play_bugs[other];
@@ -580,6 +717,23 @@ static void play_tick(lv_timer_t *timer)
     if ((int32_t)(now - s_play_deadline) < 0) return;
     if (s_play_pending) {
         play_round_start();
+    } else if (s_play_preview && s_play_kind == PLAY_WEB_WEAVE) {
+        /* Flash the next anchor, then clear it and wait for the next beat. */
+        play_weave_flash(s_weave_order[s_play_preview_step], false);
+        s_play_preview_step++;
+        if (s_play_preview_step < s_play_length) {
+            play_weave_flash(s_weave_order[s_play_preview_step], true);
+            char prompt[64];
+            snprintf(prompt, sizeof prompt, "Watch the Web... %u/%u",
+                     s_play_preview_step + 1, s_play_length);
+            lv_label_set_text(s_play_prompt, prompt);
+            s_play_deadline = now + 700;
+            return;
+        }
+        s_play_preview = false;
+        s_weave_step = 0;
+        s_play_deadline = now + s_play_duration;
+        lv_label_set_text(s_play_prompt, "Tap the Strands in Order");
     } else if (s_play_preview) {
         s_play_preview_step++;
         if (s_play_preview_step < s_play_length) {
@@ -597,7 +751,7 @@ static void play_tick(lv_timer_t *timer)
                           "Repeat the Colors in Order" : "Match the Color You Remembered");
         for (int i = 0; i < 4; i++)
             lv_label_set_text(s_play_text[i], k_play_colors[s_play_colors[i]]);
-    } else if (s_play_kind == 2 && !s_play_ready) {
+    } else if (s_play_kind == PLAY_QUICK_TAP && !s_play_ready) {
         if (s_play_feints < (s_play_round >= 2 ? 2 : 1)) {
             s_play_feints++;
             s_play_deadline = now + 400 + esp_random() % 700;
@@ -618,11 +772,11 @@ static void play_tick(lv_timer_t *timer)
 
 static void play_open(uint8_t kind, ui_minigame_reward_cb reward)
 {
-    static const char *const names[] = {"Bug Hunt", "Color Match", "Quick Tap"};
-    open_panel(names[kind]);
+    open_panel(k_play_names[kind]);
     s_play_kind = kind;
     s_play_round = s_play_score = 0;
     s_play_reward = reward;
+    s_pounce_obj = NULL;
     s_play_prompt = label(s_menu, "", &lv_font_montserrat_18);
     lv_obj_set_style_text_align(s_play_prompt, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(s_play_prompt, MENU_WIDTH - 24);
@@ -630,8 +784,8 @@ static void play_open(uint8_t kind, ui_minigame_reward_cb reward)
     s_play_target = lv_image_create(s_menu);
     lv_obj_set_pos(s_play_target, 12, 80);
     lv_obj_set_clickable(s_play_target, false);
-    lv_obj_set_hidden(s_play_target, kind != 0);
-    if (kind == 0) {
+    lv_obj_set_hidden(s_play_target, kind != PLAY_BUG_HUNT);
+    if (kind == PLAY_BUG_HUNT) {
         lv_obj_set_pos(s_play_prompt, 72, 84);
         lv_obj_set_width(s_play_prompt, MENU_WIDTH - 84);
     }
@@ -654,23 +808,26 @@ static void play_open(uint8_t kind, ui_minigame_reward_cb reward)
         s_play_images[i] = lv_image_create(s_play_tiles[i]);
         lv_obj_center(s_play_images[i]);
         lv_obj_set_clickable(s_play_images[i], false);
-        lv_obj_set_hidden(s_play_images[i], kind != 0);
-        if (kind == 2) lv_obj_set_hidden(s_play_tiles[i], i != 0);
+        lv_obj_set_hidden(s_play_images[i], kind != PLAY_BUG_HUNT);
+        if (kind == PLAY_QUICK_TAP) lv_obj_set_hidden(s_play_tiles[i], i != 0);
+        /* Pounce has no tile grid at all: the target is a single object placed
+         * at a random spot each round. */
+        if (kind == PLAY_POUNCE) lv_obj_set_hidden(s_play_tiles[i], true);
     }
-    if (kind == 2) {
+    if (kind == PLAY_QUICK_TAP) {
         lv_obj_set_pos(s_play_tiles[0], 12, 148);
         lv_obj_set_size(s_play_tiles[0], MENU_WIDTH - 24, 212);
     }
     play_round_start();
     s_play_timer = lv_timer_create(play_tick, 50, NULL);
-    ESP_LOGI("spidarium.menu", "minigame started: %s", names[kind]);
+    ESP_LOGI("spidarium.menu", "minigame started: %s", k_play_names[kind]);
 }
 
 void ui_menu_open_minigame(ui_minigame_reward_cb reward)
 {
     static int previous = -1;
-    int kind = esp_random() % 3;
-    if (kind == previous) kind = (kind + 1 + esp_random() % 2) % 3;
+    int kind = esp_random() % PLAY_KINDS;
+    if (kind == previous) kind = (kind + 1 + esp_random() % (PLAY_KINDS - 1)) % PLAY_KINDS;
     previous = kind;
     play_open((uint8_t)kind, reward);
 }
@@ -1072,7 +1229,7 @@ static uint32_t test_reward(uint8_t score, uint8_t kind)
 static bool test_minigames(void)
 {
     bool ok = true;
-    for (uint8_t kind = 0; kind < 3; kind++) {
+    for (uint8_t kind = 0; kind < PLAY_KINDS; kind++) {
         s_test_rewards = 0;
         play_open(kind, test_reward);
         lv_obj_update_layout(s_menu);
@@ -1084,8 +1241,11 @@ static bool test_minigames(void)
              lv_obj_get_style_radius(s_play_bar, 0) == 0 &&
              lv_obj_get_style_radius(s_play_bar, LV_PART_INDICATOR) == 0;
         for (int round = 0; round < PLAY_ROUNDS; round++) {
-            ok = ok && s_play_duration == (kind == 2 ? 620u - round * 45u : 2000u - round * 110u);
-            if (kind == 1) {
+            ok = ok && s_play_duration ==
+                (kind == PLAY_QUICK_TAP ? 620u - round * 45u :
+                 kind == PLAY_POUNCE ? 1400u - round * 110u :
+                 2000u - round * 110u);
+            if (kind == PLAY_COLOR_MATCH) {
                 ok = ok && s_play_length == 1 + round / 3;
                 lv_obj_send_event(s_play_tiles[s_play_answer], LV_EVENT_CLICKED, NULL);
                 ok = ok && s_play_round == round;
@@ -1095,7 +1255,7 @@ static bool test_minigames(void)
                 }
                 ok = ok && !s_play_preview;
             }
-            if (kind == 0) {
+            if (kind == PLAY_BUG_HUNT) {
                 ok = ok && lv_image_get_src(s_play_target) ==
                     assets_image(sprite_prey_index(s_play_bug, false, false, 0));
                 for (int tile = 0; tile < 4; tile++)
@@ -1106,17 +1266,60 @@ static bool test_minigames(void)
                 play_tick(s_play_timer);
                 ok = ok && s_play_answer != old;
             }
-            if (kind == 2 && round != 0) {
+            if (kind == PLAY_QUICK_TAP && round != 0) {
                 for (int i = 0; i < 3 && !s_play_ready; i++) {
                     s_play_deadline = lv_tick_get();
                     play_tick(s_play_timer);
                 }
                 ok = ok && s_play_ready;
             }
-            int answer = kind == 2 ? 0 : s_play_answer;
-            if (round == 0 && kind != 2) answer = (answer + 1) % 4;
+            if (kind == PLAY_WEB_WEAVE) {
+                /* The preview must light every anchor in the stored order and
+                 * then hand control back to the player. */
+                ok = ok && s_play_length >= 2 && s_play_length <= 4;
+                for (int i = 1; i < s_play_length; i++)
+                    ok = ok && s_weave_order[i] != s_weave_order[i - 1];
+                for (int i = 0; i < s_play_length; i++) {
+                    s_play_deadline = lv_tick_get();
+                    play_tick(s_play_timer);
+                }
+                ok = ok && !s_play_preview && s_weave_step == 0;
+                /* Play the sequence correctly, so the round scores. The last
+                 * round finishes the game instead of going pending. */
+                for (int i = 0; i < s_play_length; i++) {
+                    s_play_input_guard = 0;
+                    lv_obj_send_event(s_play_tiles[s_weave_order[i]], LV_EVENT_CLICKED, NULL);
+                }
+                ok = ok && s_play_score == round + 1;
+                ok = ok && (round < PLAY_ROUNDS - 1 ? s_play_pending : !s_play_timer);
+                if (round < PLAY_ROUNDS - 1) {
+                    s_play_deadline = lv_tick_get();
+                    play_tick(s_play_timer);
+                }
+                continue;
+            }
+            if (kind == PLAY_POUNCE) {
+                /* The target must be on screen, inside the panel, and tapping it
+                 * must score. The panel is MENU_HEIGHT tall and the target is
+                 * placed below the prompt and bar, so the bound is the panel
+                 * itself rather than an arbitrary inset. */
+                ok = ok && s_pounce_obj && !lv_obj_is_hidden(s_pounce_obj);
+                ok = ok && s_pounce_size >= 36 && s_pounce_size <= 64;
+                ok = ok && s_pounce_x > 12 && s_pounce_x < MENU_WIDTH - 12;
+                ok = ok && s_pounce_y > 148 && s_pounce_y < MENU_HEIGHT;
+                lv_obj_send_event(s_pounce_obj, LV_EVENT_CLICKED, NULL);
+                ok = ok && s_play_score == round + 1;
+                ok = ok && (round < PLAY_ROUNDS - 1 ? s_play_pending : !s_play_timer);
+                if (round < PLAY_ROUNDS - 1) {
+                    s_play_deadline = lv_tick_get();
+                    play_tick(s_play_timer);
+                }
+                continue;
+            }
+            int answer = kind == PLAY_QUICK_TAP ? 0 : s_play_answer;
+            if (round == 0 && kind != PLAY_QUICK_TAP) answer = (answer + 1) % 4;
             lv_obj_send_event(s_play_tiles[answer], LV_EVENT_CLICKED, NULL);
-            if (kind == 1 && round != 0) {
+            if (kind == PLAY_COLOR_MATCH && round != 0) {
                 for (int i = 1; i < s_play_length; i++) {
                     uint8_t step = s_play_step;
                     s_play_input_guard = lv_tick_get() + 1000;
@@ -1134,7 +1337,12 @@ static bool test_minigames(void)
                 play_tick(s_play_timer);
             }
         }
-        ok = ok && !s_play_timer && s_test_rewards == 1 && s_test_score == PLAY_ROUNDS - 1;
+        /* The three original games deliberately miss round 0, so they finish on
+         * PLAY_ROUNDS - 1. The two new games play every round correctly, so
+         * they finish on a clean sweep. */
+        uint8_t expected = (kind == PLAY_WEB_WEAVE || kind == PLAY_POUNCE)
+            ? PLAY_ROUNDS : PLAY_ROUNDS - 1;
+        ok = ok && !s_play_timer && s_test_rewards == 1 && s_test_score == expected;
         ESP_LOGI("spidarium.menu", "minigame test kind=%u score=%u rewards=%d ok=%d",
                  kind, s_test_score, s_test_rewards, ok);
         lv_obj_send_event(s_backdrop, LV_EVENT_CLICKED, NULL);

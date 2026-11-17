@@ -59,7 +59,9 @@ test('bundled hardware-compiled schema decodes both actual ABI payload sizes', a
     bytes[12] = 83;
     if (size === 3100) {
       bytes[12 + 236] = 1; bytes[12 + 266] = 255;
-      bytes.fill(255,347,350);
+      /* The three favourite bytes moved up by two when play_counts grew from
+       * three entries to five, so the range that marks them "unknown" moves too. */
+      bytes.fill(255,349,352);
       view.setUint32(872,0xffffffff,true);
     }
     const name = actual.fields.find(field => field.name === 'name');

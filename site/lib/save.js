@@ -8,9 +8,9 @@ export const lifeLayout={offset:860,size:2236,minVersion:16,visitor_day:0,season
 const companionLayout = {
   offset:268,size:592,minVersion:15,request_day:0,seen_achievements:4,
   requests:{offset:8,count:2,stride:4,fields:{kind:0,target:1,progress:2,state:3}},
-  treat_counts:{offset:16,count:12},gift_counts:{offset:28,count:36},play_counts:{offset:64,count:3},
-  favorite_treat:67,favorite_gift:68,favorite_play:69,diary_count:70,clock_mode:71,initialized:72,
-  bond_level:73,last_stage:74,was_sick:75,reserved:{offset:76,count:2},padding:{offset:78,count:2},
+  treat_counts:{offset:16,count:12},gift_counts:{offset:28,count:36},play_counts:{offset:64,count:5},
+  favorite_treat:69,favorite_gift:70,favorite_play:71,diary_count:72,clock_mode:73,initialized:74,
+  bond_level:75,last_stage:76,was_sick:77,padding:{offset:78,count:2},
   diary:{offset:80,count:64,stride:8,fields:{day:0,kind:4,value:5,pinned:6,calendar:7}},
 };
 const sameLayout = (a,b) => a && typeof a==='object' && Object.keys(a).length===Object.keys(b).length &&
@@ -155,7 +155,6 @@ export function decodeSave(bytes, schema) {
           start+companionLayout[key].offset+companionLayout[key].count));
       for(const key of ['favorite_treat','favorite_gift','favorite_play','diary_count','clock_mode',
         'initialized','bond_level','last_stage','was_sick'])c[key]=view.getUint8(start+companionLayout[key]);
-      c.reserved=Array.from(bytes.subarray(start+76,start+78));
       c.diary=Array.from({length:64},(_,i)=>({day:view.getUint32(start+80+i*8,true),
         kind:bytes[start+84+i*8],value:bytes[start+85+i*8],pinned:bytes[start+86+i*8],calendar:bytes[start+87+i*8]}));
       if(c.diary_count>64)throw new Error('Invalid companion diary count');
@@ -290,7 +289,6 @@ function readCompanion(bytes,o){
     c[key]=Array.from(bytes.subarray(o+companionLayout[key].offset,o+companionLayout[key].offset+companionLayout[key].count));
   for(const key of ['favorite_treat','favorite_gift','favorite_play','diary_count','clock_mode','initialized','bond_level','last_stage','was_sick'])
     c[key]=bytes[o+companionLayout[key]];
-  c.reserved=Array.from(bytes.subarray(o+76,o+78));
   if(c.diary_count>64)throw new Error('Invalid archived diary');
   c.diary=Array.from({length:c.diary_count},(_,i)=>({day:v.getUint32(o+80+i*8,true),
     kind:bytes[o+84+i*8],value:bytes[o+85+i*8],pinned:bytes[o+86+i*8],calendar:bytes[o+87+i*8]}));
@@ -305,7 +303,6 @@ function writeCompanion(bytes,o,c){
   for(const key of ['treat_counts','gift_counts','play_counts'])bytes.set(c[key],o+companionLayout[key].offset);
   for(const key of ['favorite_treat','favorite_gift','favorite_play','diary_count','clock_mode','initialized','bond_level','last_stage','was_sick'])
     bytes[o+companionLayout[key]]=c[key];
-  if(c.reserved)bytes.set(c.reserved,o+76);
   c.diary.forEach((m,i)=>{v.setUint32(o+80+i*8,m.day,true);
     ['kind','value','pinned','calendar'].forEach((key,j)=>bytes[o+84+i*8+j]=m[key]);});
 }

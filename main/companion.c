@@ -13,7 +13,8 @@
 #include <time.h>
 
 static const char *TAG = "spidarium.companion";
-static const char *const s_games[] = {"Bug Hunt", "Color Match", "Quick Tap"};
+static const char *const s_games[] = {"Bug Hunt", "Color Match", "Quick Tap",
+                                      "Web Weave", "Pounce"};
 static bool s_testing;
 
 void companion_defaults(companion_state_t *state)
@@ -32,7 +33,7 @@ bool companion_valid(const companion_state_t *s)
         s->bond_level > 4 || s->last_stage > 2 || s->was_sick > 1 ||
         (s->favorite_treat != 255 && s->favorite_treat >= 12) ||
         (s->favorite_gift != 255 && s->favorite_gift >= 36) ||
-        (s->favorite_play != 255 && s->favorite_play >= 3)) return false;
+        (s->favorite_play != 255 && s->favorite_play >= 5)) return false;
     if ((s->favorite_treat != 255 && s->treat_counts[s->favorite_treat] < 3) ||
         (s->favorite_gift != 255 && s->gift_counts[s->favorite_gift] < 3) ||
         (s->favorite_play != 255 && s->play_counts[s->favorite_play] < 3)) return false;

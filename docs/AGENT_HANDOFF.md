@@ -13,6 +13,38 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 
 ## Implemented surfaces
 
+- The spider's MIND (`mind.c`) is a rules table, not a state machine. It
+  publishes an intent (`mind_want()`) that `behaviour.c` consults through
+  `act_on_intent()`. **The bridge is the part that matters**: `mind_tick()` ran
+  for months while nothing ever read `mind_want()`, so the brain computed an
+  intent every four seconds and threw it away. If you add a want, add its branch
+  to `act_on_intent()` or it will be inert. The bridge is consulted from IDLE
+  and from a WANDER with no destination -- the second is essential, because a
+  spider that had started wandering never reconsidered.
+  Rules carry three environment columns beyond the four stats: `period` (day
+  period from `life_period_now()`, 255 when there is no clock, which matches no
+  specific period so time-of-day behaviour is absent rather than wrong),
+  `climbable` (a climbable item is placed) and `gift_placed`. A rule whose
+  condition cannot be satisfied simply never fires, so the table degrades
+  cleanly on a fresh tank. `mind_test()` asserts the table is well formed, that
+  survival outranks every comfort rule, and that the dwell timer does not
+  restart when the intent is unchanged.
+  Two details keep it from feeling twitchy: a `MIND_DWELL_MS` (2.5 s) dwell
+  before acting, and the dwell timer restarting only when the INTENT changes,
+  not when the rule that produced it changes -- two rules can both want
+  `explore`, and resetting as they swap would keep the spider from ever acting.
+  `mind_wake()` lets a state change (being fed) be reflected immediately.
+- Five minigames share one round/score/reward framework in `ui_menu.c`:
+  Bug Hunt, Color Match, Quick Tap, Web Weave and Pounce. `PLAY_KINDS` and
+  `k_play_names` are the single source of truth; `play_open()` lays out the
+  tiles and the two spider-themed games hide them. Web Weave lights four
+  anchors in a growing order and the player taps the order back (it never
+  repeats an anchor back to back, because a doubled tap reads as one tap).
+  Pounce places a single tappable target at a random spot that shrinks each
+  round. Both are mirrored in `site/lib/minigames.js`.
+  `companion_state_t.play_counts` is five entries so a favourite game can be
+  discovered for any of them; the two extra bytes came from the former
+  `reserved` tail, which is why the save version had to move to v23.
 - Development v1.1.31/save v18 adds optional training, subtle RTC rhythms and
   weather, visitors/season rewards, real photos and safe generations. See
   [the life-system guide](COMPANION_LIFE.md) for gates, limits and verification
@@ -48,6 +80,14 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
 - A level-locked shop row says "Level N Needed", not "Level N / M Silk". The
   old subtext named the Silk cost, so a player with plenty of Silk could not
   tell why the row was grey.
+- Save v23 grows the companion's `play_counts` from three entries to five, taking
+  the two bytes that were `reserved`. The struct size (592) and every following
+  offset are unchanged, but the MEANING of bytes 76..77 changed, so this had to
+  be a new version: two firmwares both claiming v22 with different layouts would
+  each read the other's save as valid and silently corrupt it. That is exactly
+  what happened during development -- flashing the older firmware over a v22 save
+  reset the pet. v23 accepts v22 and clears the two new counters, which were
+  always written as zero.
 - Save v21 adds `climb_owned` at byte3099, the last v18 reserved byte, so the  payload prefix stays 3,100 bytes and the schema stays 57 fields. It is the
   ownership bitmap for the six large climb structures (decor kinds 68..73);
   `catalogue_owned_high` is full because its high nibble already holds decor

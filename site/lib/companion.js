@@ -13,7 +13,7 @@ function arrayOf(value,size,valid) {
 export function companionDefaults() {
   return {request_day:0,seen_achievements:0,
     requests:Array.from({length:2},()=>({kind:0,target:0,progress:0,state:0})),
-    treat_counts:Array(12).fill(0),gift_counts:Array(36).fill(0),play_counts:Array(3).fill(0),
+    treat_counts:Array(12).fill(0),gift_counts:Array(36).fill(0),play_counts:Array(5).fill(0),
     favorite_treat:255,favorite_gift:255,favorite_play:255,diary_count:0,
     clock_mode:0,initialized:0,bond_level:0,last_stage:0,was_sick:0,reserved:[0,0],diary:[]};
 }
@@ -35,12 +35,13 @@ export function companionValid(c) {
   if (!c || !validInt(c.request_day,0,U32) || !validInt(c.seen_achievements,0,0xfffff) ||
       !validInt(c.clock_mode,0,2) || !validInt(c.initialized,0,1) || !validInt(c.bond_level,0,4) ||
       !validInt(c.last_stage,0,2) || !validInt(c.was_sick,0,1)) return false;
-  for (const [key,size,favorite] of [['treat_counts',12,'favorite_treat'],['gift_counts',36,'favorite_gift'],['play_counts',3,'favorite_play']]) {
+  for (const [key,size,favorite] of [['treat_counts',12,'favorite_treat'],['gift_counts',36,'favorite_gift'],['play_counts',5,'favorite_play']]) {
     if (!arrayOf(c[key],size,v=>validInt(v,0,255)) ||
         !(c[favorite] === 255 || (validInt(c[favorite],0,size-1)&&c[key][c[favorite]]>=3))) return false;
   }
+  /* The two bytes that used to be `reserved` now hold play_counts[3..4], so
+   * there is no reserved array to validate any more. */
   const valid=arrayOf(c.requests,2,validRequest) &&
-    arrayOf(c.reserved,2,v=>validInt(v,0,255)) &&
     Array.isArray(c.diary) && c.diary.length <= 64 && c.diary_count === c.diary.length &&
     arrayOf(c.diary,c.diary_count,validMemory) && c.diary.filter(m=>m.pinned).length <= 8;
   if (!valid) return false;
@@ -138,7 +139,7 @@ export function companionPin(s,index) {
   if(!memory.pinned && c.diary.filter(m=>m.pinned).length>=8) return false;
   memory.pinned=memory.pinned?0:1;return true;
 }
-const PLAY_NAMES=['Bug Hunt','Color Match','Quick Tap'];
+const PLAY_NAMES=['Bug Hunt','Color Match','Quick Tap','Web Weave','Pounce'];
 const REQUEST_ICONS={1:'request_pet',2:'request_play',3:'request_hunt',4:'request_visit',6:'request_clean'};
 const MEMORY_ICONS={1:'memory_treat',2:'memory_place',3:'memory_game',4:'memory_bond',
   5:'memory_growth',6:'memory_recovery',7:'memory_achievement',8:'memory_requests'};

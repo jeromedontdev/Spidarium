@@ -80,21 +80,17 @@
     },
     "play_counts": {
       "offset": 64,
-      "count": 3
+      "count": 5
     },
-    "favorite_treat": 67,
-    "favorite_gift": 68,
-    "favorite_play": 69,
-    "diary_count": 70,
-    "clock_mode": 71,
-    "initialized": 72,
-    "bond_level": 73,
-    "last_stage": 74,
-    "was_sick": 75,
-    "reserved": {
-      "offset": 76,
-      "count": 2
-    },
+    "favorite_treat": 69,
+    "favorite_gift": 70,
+    "favorite_play": 71,
+    "diary_count": 72,
+    "clock_mode": 73,
+    "initialized": 74,
+    "bond_level": 75,
+    "last_stage": 76,
+    "was_sick": 77,
     "padding": {
       "offset": 78,
       "count": 2

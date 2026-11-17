@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LocalProgress, STORAGE_KEY } from '../lib/local-progress.js';
-import { Minigame } from '../lib/minigames.js';
+import { Minigame, GAME_NAMES } from '../lib/minigames.js';
 import { soundSamples } from '../lib/device-audio.js';
 import { readFile } from 'node:fs/promises';
 
@@ -83,6 +83,86 @@ test('moving hunt target keeps the chosen species and enforces deadline', () => 
   assert.equal(game.bugs[game.answer], game.bug);
   game.answerAt(game.answer, 2600);
   assert.equal(game.score, 0);
+});
+
+test('web weave lights a growing order and rejects a wrong strand', () => {
+  /* The spider-themed memory game: four anchors lit in order, tapped back in
+   * order. It must never repeat an anchor back to back, because a doubled tap
+   * reads as one tap and the sequence becomes impossible to follow. */
+  const game = new Minigame(3, 0, () => 0);
+  for (let round = 0; round < 8; round++) {
+    game.round = round; game.startRound(1000);
+    assert.equal(game.length, Math.min(4, 2 + Math.floor(round / 2)));
+    for (let i = 1; i < game.length; i++)
+      assert.notEqual(game.weave[i], game.weave[i - 1], 'no doubled anchor');
+    /* The order is shown before input: startRound leaves the game previewing,
+     * and only the preview ticks clear it. */
+    assert.equal(game.preview, true, 'the order is shown before input');
+    for (let i = 0; i < game.length; i++) game.tick(game.deadline);
+    assert.equal(game.preview, false);
+    assert.equal(game.weaveStep, 0);
+    /* A wrong anchor ends the round with no score. The tap has to land INSIDE
+     * the window, or the round would end on the timeout instead and the anchor
+     * comparison would never be exercised. The last round finishes the game
+     * instead of going pending, so only rounds 0..6 are pending. */
+    const wrong = (game.weave[0] + 1) % 4;
+    game.answerAt(wrong, game.deadline - 1);
+    assert.equal(game.pending, round < 7);
+    assert.equal(game.score, 0);
+    game.deadline = 0; game.tick(0);
+  }
+});
+
+test('web weave scores a correct full sequence', () => {
+  const game = new Minigame(3, 0, () => 0);
+  game.round = 0; game.startRound(1000);
+  for (let i = 0; i < game.length; i++) game.tick(game.deadline);
+  /* Inside the window, so the sequence is what decides the round. */
+  const at = game.deadline - 1;
+  for (let i = 0; i < game.length; i++) {
+    game.inputGuard = 0;
+    game.answerAt(game.weave[i], at);
+  }
+  assert.equal(game.score, 1, 'a full correct sequence scores');
+  assert.equal(game.pending, true, 'round 0 of 8 goes pending, not finished');
+});
+
+test('pounce target stays inside the panel and shrinks each round', () => {
+  /* The spider's own verb: a bug appears and the player taps it in time. */
+  const game = new Minigame(4, 0, () => 0);
+  let previous = Infinity;
+  for (let round = 0; round < 8; round++) {
+    game.round = round; game.startRound(1000);
+    assert.ok(game.pounceSize >= 36 && game.pounceSize <= 64,
+      `size ${game.pounceSize} stays tappable`);
+    assert.ok(game.pounceSize <= previous, 'the target never grows');
+    previous = game.pounceSize;
+    assert.ok(game.pounceX > 12 && game.pounceX < 456 - 12, 'inside the panel horizontally');
+    assert.ok(game.pounceY > 148 && game.pounceY < 480 - 100, 'clear of the prompt and bar');
+    assert.equal(game.ready, true);
+    assert.equal(game.pounce(game.deadline - 1), true);
+    assert.equal(game.score, round + 1, 'an in-time tap scores');
+    game.deadline = 0; game.tick(0);
+  }
+});
+
+test('pounce misses when the window closes', () => {
+  const game = new Minigame(4, 0, () => 0);
+  game.round = 0; game.startRound(1000);
+  const deadline = game.deadline;
+  game.tick(deadline);
+  assert.equal(game.pending, true, 'the round ends on timeout');
+  assert.equal(game.score, 0);
+});
+
+test('all five games are named and reachable', () => {
+  assert.deepEqual(GAME_NAMES, ['Bug Hunt', 'Color Match', 'Quick Tap', 'Web Weave', 'Pounce']);
+  for (let kind = 0; kind < GAME_NAMES.length; kind++) {
+    const game = new Minigame(kind, 0, () => 0);
+    assert.equal(game.kind, kind);
+    assert.equal(typeof game.prompt(['Bug']), 'string');
+  }
+  assert.throws(() => new Minigame(5, 0, () => 0), /Unknown minigame/);
 });
 
 test('brand marks and favicon are vector art, not platform emoji glyphs', async () => {
