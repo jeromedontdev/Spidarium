@@ -44,6 +44,40 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
     same shape from a hash of the time bucket -- the result reads the same and is
     stable under test, which matters because a test that asserts "the spider
     blinks" must not be flaky.
+- **Draw order is proximity-based.** `decor_layer_count_at()` counts only items
+  whose ARTWORK OVERLAPS the one being ordered, because draw order is only
+  visible where two sprites cover the same pixels. Ordering a fern against a rock
+  at the far end of the tank changed nothing the player could see, and offering
+  the control there implied a relationship that did not exist. The gift uses the
+  same rule (`decor_gift_layer_count()`). `decorlayers` on the console reports
+  the per-item counts.
+- **Climb is retired.** The 2.5D lift never read convincingly on the panel: the
+  spider slid up a flat sprite with no perspective change, and the shadow and
+  hitbox both had to be special-cased to hide how wrong it looked. The option is
+  gone; `DECOR_CLIMB` survives in the enum only so old saves parse, and
+  `decor_migrate_paths()` rewrites it to Walk Behind on load. `decor_set_path()`
+  refuses it, so no code path can reintroduce it. The lift maths is still
+  exercised directly by `decor_test()` so it is not silently broken if Climb is
+  ever reinstated.
+- **`art_scale` decouples drawn size from footprint.** `radius` used to drive
+  both the collision footprint and the drawn size, so a bigger-looking prop was
+  necessarily a bigger obstacle -- which is why the early items all read at
+  roughly the same size. `art_scale` is a percentage of the footprint-derived
+  size (100 = historical, 0 = unspecified = 100), so a fern can look lush without
+  becoming harder to walk around and a flower can look delicate without becoming
+  easier to walk through.
+- **Pounces never aim into solid decor.** `clamp_out_of_solid()` in
+  `behaviour.c` pushes the TARGET out of any solid item before the flight starts,
+  so the arc is correct as well as the destination. The landing re-runs the same
+  clamp as a belt-and-braces pass, because decor can be moved mid-flight by a
+  restore and a landing inside an item is the one state the spider cannot walk
+  out of.
+- **Prey graze.** A bug that is not fleeing stops to feed for a moment, then
+  moves on (`PREY_GRAZE_*`). Without it, prey either drift constantly or stand
+  perfectly still, and both read as mechanical. A graze is cancelled the moment
+  the spider gets close, because the flee branch takes over -- so a pause is
+  never a way to get caught standing still. The flutter offset is suppressed
+  while grazing, or a "resting" moth would still slide sideways.
 - The neglect cycle (`terrarium.c`) makes hygiene visible instead of numeric. A
   dropping left alone for `FLY_ATTRACT_MS` (45 s) attracts a fly that orbits it;
   the fly is drawn from the same primitives as the droppings, so it costs no

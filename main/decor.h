@@ -139,9 +139,14 @@ typedef enum {
     DECOR_WALK_OVER = 0,
     DECOR_SOLID = 1,
     DECOR_WALK_BEHIND = 2,
+    /* Retired. Kept so old saves parse; decor_migrate_paths() rewrites it to
+     * Walk Behind on load and decor_set_path() refuses it. */
     DECOR_CLIMB = 3,
     DECOR_PATH_COUNT
 } decor_path_t;
+
+/* How many paths the player can actually choose between. Climb is excluded. */
+#define DECOR_SELECTABLE_PATHS 3
 
 typedef struct {
     uint8_t kind;      /* decor_kind_t */
@@ -158,6 +163,18 @@ typedef struct {
     uint8_t     blocking;    /* default blocking flag */
     const char *sprite;      /* asset name, e.g. "decor_rock_small" */
     uint8_t     climb_height;/* pixels of lift when the spider stands on it */
+    /* Visual size as a percentage of the footprint-derived size.
+     *
+     * `radius` used to drive BOTH the collision footprint and the drawn size,
+     * which meant a bigger-looking prop was necessarily a bigger obstacle. That
+     * coupling is why the early items all read at roughly the same size: to
+     * make a fern look lush you had to make it harder to walk around.
+     *
+     * 100 is the historical size. Below 100 draws smaller than the footprint
+     * (a delicate flower with a generous collision radius), above 100 draws
+     * larger (a tall fern you can still walk close to). 0 is treated as 100 so
+     * a table entry that omits the field keeps the old behaviour. */
+    uint8_t     art_scale;
 } decor_def_t;
 
 /* True for the large climb-structure family, which is authored at
@@ -166,6 +183,11 @@ bool decor_is_climb_structure(uint8_t kind);
 
 /* The definition for a kind. Never NULL for a valid kind. */
 const decor_def_t *decor_def(uint8_t kind);
+
+/* Visual size as a percentage of the footprint-derived size (100 = historical).
+ * Decoupled from `radius` so a prop can look lush without being a bigger
+ * obstacle, or look delicate without being easier to walk through. */
+uint8_t decor_art_scale(uint8_t kind);
 
 /* True if the kind is unlocked at the current level. */
 bool decor_unlocked(uint8_t kind);
@@ -199,20 +221,44 @@ bool decor_move(int slot, int16_t x, int16_t y);
 /* Remove the item in a slot. */
 bool decor_remove(int slot);
 
-/* Cycle Walk Over -> Solid -> Walk Behind -> Climb. */
+/* Cycle Walk Over -> Solid -> Walk Behind.
+ *
+ * Climb is no longer selectable. The 2.5D lift never read convincingly on the
+ * panel, so the option was removed rather than tuned further; DECOR_CLIMB
+ * survives in the enum only so old saves parse. */
 bool decor_toggle_blocking(int slot);
 bool decor_set_path(int slot, uint8_t path);
+
+/* Rewrite legacy Climb items to Walk Behind. Called from the save loader.
+ * Returns how many items were migrated. */
+int decor_migrate_paths(void);
+
+/* --- draw order ---------------------------------------------------------
+ *
+ * Draw order is only visible where two sprites cover the same pixels, so the
+ * layer control counts only items whose ARTWORK OVERLAPS the one being ordered.
+ * Ordering a fern against a rock at the far end of the tank changes nothing the
+ * player can see, and offering the control there implied a relationship that
+ * did not exist.
+ *
+ * `decor_layer_count_at()` is the form the placement UI uses, because a new item
+ * has no slot yet. `decor_layer_count()` takes a slot and derives the same
+ * answer from the item's own position. */
+int decor_layer_count_at(uint8_t path, uint8_t kind, int16_t x, int16_t y,
+                         int exclude_slot);
 int decor_layer_count(uint8_t path, int exclude_slot);
 int decor_layer_index(int slot);
-/* Reorder within the floor/canopy band. Returns the item's new slot, or -1. */
+/* Reorder against the overlapping items in the same band. Returns the item's
+ * new slot, or -1. */
 int decor_set_layer(int slot, int index);
 
 /* --- the gift's layer ---------------------------------------------------
  *
  * The gift is a single item, so it has no siblings to order against. What the
- * player wants is to order it against the DECOR sharing its band, so the gift
- * occupies a position in the same band sequence and the renderer inserts it
- * there. The count includes the gift itself. */
+ * player wants is to order it against the DECOR it actually overlaps, so the
+ * gift occupies a position in that sequence and the renderer inserts it there.
+ * The count includes the gift itself, so "2 / 3" means the gift is second of
+ * the three things it touches. */
 int decor_gift_layer_count(uint8_t path);
 int decor_gift_layer_index(uint8_t path);
 bool decor_gift_set_layer(uint8_t path, int index);

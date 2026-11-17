@@ -522,6 +522,11 @@ bool save_load(void *dst, size_t size)
     decor_item_t *extra = NULL;
     if (!save_load_snapshot(dst, size, &extra)) return false;
     decor_restore_extra(extra);
+    /* Climb is no longer a selectable path, so a tank saved with Climb items
+     * would carry a value the UI cannot express. Rewrite them to Walk Behind,
+     * which is the closest surviving behaviour. */
+    int migrated = decor_migrate_paths();
+    if (migrated) ESP_LOGI(TAG, "migrated %d decor item(s) off the retired Climb path", migrated);
     /* Repair an over-cap Silk balance on load rather than rejecting the save.
      * Older firmware saturated at UINT32_MAX, so a legitimate save can carry a
      * balance in the hundreds of thousands. Refusing it would destroy the

@@ -312,6 +312,22 @@
 #define PREY_FLEE_RADIUS       70.0f
 #define PREY_WANDER_RETARGET_MS 1500u
 
+/* Grazing. A bug that is not fleeing stops to feed for a moment, then moves on.
+ *
+ * Without this, prey either drift constantly or stand perfectly still, and both
+ * read as mechanical. A bug that pauses, feeds, and moves on reads as a creature
+ * with its own business -- which is what makes the tank feel alive while the
+ * spider is asleep and nothing else is happening.
+ *
+ * The pause is short enough that the bug is still catchable: a spider that
+ * closes during a graze gets a free approach, which is a small reward for
+ * patience rather than a way to cheese the hunt. */
+#define PREY_GRAZE_FIRST_MS     3000u   /* before the first pause after spawning */
+#define PREY_GRAZE_MIN_MS       900u
+#define PREY_GRAZE_MAX_MS       2200u
+#define PREY_GRAZE_GAP_MIN_MS   2500u   /* between pauses */
+#define PREY_GRAZE_GAP_MAX_MS   6000u
+
 /* Aggro radius: the distance at which a bug notices the spider and runs.
  *
  * Outside this it goes about its business -- it wanders, feeds, flutters -- and

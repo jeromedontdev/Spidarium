@@ -9,13 +9,16 @@ const source=name=>readFile(new URL(`../../main/${name}`,import.meta.url),'utf8'
 
 test('all 74 native/browser decor entries keep names, prices, levels and footprints in sync',async()=>{
   const text=(await source('decor.c')).split('static const decor_def_t k_decor_kinds')[1].split('};')[0];
-  const rows=[...text.matchAll(/\{\s*"([^"]+)",\s*"[^"]+",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"decor_([^"]+)",\s*(\d+)\s*\}/g)];
+  // The table gained a trailing art_scale column, so the pattern accepts an
+  // optional ninth field and defaults it to 100 (the historical size).
+  const rows=[...text.matchAll(/\{\s*"([^"]+)",\s*"[^"]+",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"decor_([^"]+)",\s*(\d+)\s*(?:,\s*(\d+)\s*)?\}/g)];
   assert.equal(rows.length,74);
   rows.forEach((row,id)=>{
     const item=E.DECOR_KINDS[id];
     assert.deepEqual([item.name,item.cost,item.level,item.radius,item.blocking,item.key],
       [row[1],...row.slice(2,6).map(Number),row[6]],`decor ${id}`);
     assert.equal(item.climb,Number(row[7]),`decor climb ${id}`);
+    assert.equal(item.artScale??100,Number(row[8]??100),`decor art scale ${id}`);
   });
   const themes=await source('theme.c');
   const names=[...themes.split('const theme_def_t k_themes')[1].split('};')[0]

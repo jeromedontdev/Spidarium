@@ -401,10 +401,19 @@ uint8_t game_placement_blocking(void) { return s_place_blocking; }
 int game_placement_layer(void) { return s_place_layer; }
 int game_placement_layers(void)
 {
-    /* A gift is a single item, but it still has a position among the decor
-     * sharing its band, which is what the player is arranging. */
+    /* A gift is a single item, but it still has a position among the decor it
+     * overlaps, which is what the player is arranging. */
     if (g.gift_mode) return decor_gift_layer_count(DECOR_WALK_OVER);
-    return decor_layer_count(s_place_blocking, g_decor_move_slot) + 1;
+    /* Count only the items this one actually overlaps, at the position it is
+     * currently staged at. A new item has no slot yet, so the count comes from
+     * its kind and position rather than from a slot lookup. */
+    uint8_t kind = g_decor_selected;
+    if (g_decor_move_slot >= 0) {
+        const decor_item_t *item = decor_at(g_decor_move_slot);
+        if (item) kind = item->kind;
+    }
+    return decor_layer_count_at(s_place_blocking, kind, s_place_x, s_place_y,
+                                g_decor_move_slot) + 1;
 }
 bool game_placement_existing(void)
 {
@@ -418,21 +427,14 @@ void game_on_placement_blocking(lv_event_t *e)
      * behaviour.c for why the Solid option was removed rather than kept. */
     if (!g_decor_mode) return;
     uint8_t previous = s_place_blocking;
-    /* Cycle only through the paths this kind supports, so a flat prop never
-     * lands on Climb and a climbable one always reaches it. */
-    uint8_t kind = g_decor_selected;
-    if (g_decor_move_slot >= 0) {
-        const decor_item_t *item = decor_at(g_decor_move_slot);
-        if (item) kind = item->kind;
-    }
-    for (int i = 0; i < DECOR_PATH_COUNT; i++) {
-        s_place_blocking = (uint8_t)((s_place_blocking + 1) % DECOR_PATH_COUNT);
-        if (s_place_blocking != DECOR_CLIMB || decor_climbable(kind)) break;
-    }
+    /* Three selectable paths. Climb was removed: the 2.5D lift never read
+     * convincingly, so the large structures are ordinary Walk Behind items. */
+    if (s_place_blocking >= DECOR_SELECTABLE_PATHS) s_place_blocking = DECOR_WALK_OVER;
+    s_place_blocking = (uint8_t)((s_place_blocking + 1) % DECOR_SELECTABLE_PATHS);
     if ((previous == DECOR_WALK_BEHIND) != (s_place_blocking == DECOR_WALK_BEHIND)) {
-        /* Changing band changes how many items the layer is ordered against, so
-         * the staged index has to be re-seeded. */
-        s_place_layer = decor_layer_count(s_place_blocking, g_decor_move_slot);
+        /* Changing band changes which items the layer is ordered against, so
+         * the staged index has to be re-seeded to the top of the new band. */
+        s_place_layer = game_placement_layers() - 1;
     }
     placement_position(s_place_x, s_place_y);
     ui_hud_set_place_mode(true, NULL);
@@ -474,6 +476,12 @@ static void placement_position(int32_t x, int32_t y)
     int top = g_play.top + radius, bottom = g_play.bottom - radius;
     s_place_x = x < left ? left : x > right ? right : x;
     s_place_y = y < top ? top : y > bottom ? bottom : y;
+    /* Moving the item changes which items it overlaps, so the layer count can
+     * change under the player's finger. Clamp the staged index rather than
+     * letting it point past the end of a now-shorter list. */
+    int layers = game_placement_layers();
+    if (s_place_layer >= layers) s_place_layer = layers - 1;
+    if (s_place_layer < 0) s_place_layer = 0;
     terrarium_preview_item(g.gift_mode != 0, kind, g_decor_mode ? g_decor_move_slot : -1,
                            s_place_x, s_place_y, s_place_blocking, s_place_layer);
 }
@@ -1187,7 +1195,9 @@ static void decor_begin_placement(uint8_t kind)
     behaviour_aim_cancel();
     s_place_dragging = false;
     s_place_blocking = def->blocking;
-    s_place_layer = decor_layer_count(s_place_blocking, -1);
+    /* Seed the layer to the top of the band; placement_position() re-seeds it
+     * from the actual staged position, which is what the count depends on. */
+    s_place_layer = 0;
     placement_position(ui.W / 2, ui.H / 2);
     ui_hud_set_place_mode(true, "Slide to position; Done saves");
 }

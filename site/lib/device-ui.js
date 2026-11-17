@@ -1230,8 +1230,7 @@ export class DeviceGame {
       if (image.complete && image.naturalWidth) ctx.drawImage(image, s.gift.x - 32, s.gift.y - 32, 64, 64);
     }
     if(this.placement?.gift){
-      const p=this.placement,size=p.gift?64:E.decorIsClimbStructure(p.kind)?E.DECOR_CLIMB_SPRITE
-        :E.DECOR_KINDS[p.kind].radius*4;
+      const p=this.placement,size=p.gift?64:E.decorExtent(p.kind)*2;
       const image=this.image(p.gift?E.GIFTS[p.kind].asset:E.decorSprite(p.kind));
       if(image.complete&&image.naturalWidth)ctx.drawImage(image,p.x-size/2,p.y-size/2,size,size);
       ctx.strokeStyle='#f5c86b';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2-2,p.y-size/2-2,size+4,size+4);
@@ -1386,8 +1385,7 @@ export class DeviceGame {
       const image=this.image(E.decorSprite(item.kind));
       // Large climb structures are authored at 192x192 and drawn 1:1; props are
       // 64x64 and drawn at their footprint size.
-      const size=E.decorIsClimbStructure(item.kind)?E.DECOR_CLIMB_SPRITE
-        :E.DECOR_KINDS[item.kind].radius*4;
+      const size=E.decorExtent(item.kind)*2;
       if(image.complete&&image.naturalWidth)ctx.drawImage(image,item.x-size/2,item.y-size/2,size,size);
     };
     for(let i=0;i<=slots.length;i++){
@@ -1395,8 +1393,7 @@ export class DeviceGame {
       if(i<slots.length)draw(this.state.decor[slots[i]]);
     }
     if(p&&canopy){
-      const size=E.decorIsClimbStructure(p.kind)?E.DECOR_CLIMB_SPRITE
-        :E.DECOR_KINDS[p.kind].radius*4;
+      const size=E.decorExtent(p.kind)*2;
       ctx.strokeStyle='#f5c86b';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2-2,p.y-size/2-2,size+4,size+4);
     }
   }

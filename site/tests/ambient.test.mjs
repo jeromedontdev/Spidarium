@@ -178,3 +178,40 @@ test('a fly anchors to its dropping rather than drifting', () => {
   assert.equal(a.x, 240);
   assert.equal(a.y, 300);
 });
+
+test('prey graze, so the tank moves while the spider sleeps', () => {
+  // A bug that is not fleeing stops to feed for a moment, then moves on. This
+  // is what makes the tank read as alive when nothing else is happening.
+  const s = E.freshState({ random: () => 0.5 });
+  s.state = E.STATES.SLEEP;
+  s.spider_x = 60; s.spider_y = 60;   // far from the bug, so it never flees
+  assert.equal(E.spawnPrey(s, 0), true);
+  const p = s.prey[0];
+  assert.ok(p.next_graze_at > 0, 'the graze timer was not seeded');
+
+  // Run past the first graze window and confirm the bug actually stops.
+  let stopped = 0, moved = 0, last = { x: p.x, y: p.y };
+  for (let i = 0; i < 400; i++) {
+    E.tick(s, 0.05);
+    const d = Math.hypot(p.x - last.x, p.y - last.y);
+    if (d < 0.01) stopped++; else moved++;
+    last = { x: p.x, y: p.y };
+  }
+  assert.ok(stopped > 0, 'the bug never paused to graze');
+  assert.ok(moved > 0, 'the bug never moved');
+});
+
+test('a grazing bug still flees when the spider closes', () => {
+  // A pause must never be a way to get caught standing still.
+  const s = E.freshState({ random: () => 0.5 });
+  s.state = E.STATES.SLEEP;
+  s.spider_x = 60; s.spider_y = 60;
+  E.spawnPrey(s, 0);
+  const p = s.prey[0];
+  // Force a graze, then put the spider on top of the bug.
+  p.graze_until = s._engine.now_ms + 5000;
+  p.next_graze_at = s._engine.now_ms + 5000;
+  s.spider_x = Math.round(p.x); s.spider_y = Math.round(p.y);
+  E.tick(s, 0.05);
+  assert.equal(p.fleeing, true, 'a grazing bug ignored the spider');
+});

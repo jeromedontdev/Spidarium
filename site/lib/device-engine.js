@@ -21,6 +21,10 @@ export const CONFIG = Object.freeze({
   MOOD_LOW_THRESHOLD:25, FEED_HUNGER_GAIN:15, HUNGER_FULL:95, FEED_MOOD_GAIN:8,
   FEED_HYGIENE_COST:12, CLEAN_XP_MAX:3, CLEAN_SCORE_FULL:24, CLEAN_HYGIENE_SET:100,
   BUG_POOP_MS:150000, POOP_DIRT_SPIDER:12, POOP_DIRT_BUG:6,
+  // Grazing: a bug that is not fleeing stops to feed for a moment, then moves
+  // on. Mirrors PREY_GRAZE_* in main/game_config.h.
+  PREY_GRAZE_FIRST_MS:3000, PREY_GRAZE_MIN_MS:900, PREY_GRAZE_MAX_MS:2200,
+  PREY_GRAZE_GAP_MIN_MS:2500, PREY_GRAZE_GAP_MAX_MS:6000,
   PLAY_MOOD_GAIN:10, PLAY_ENERGY_COST:5,
   PLAY_XP:4, PET_MOOD_GAIN:6, PET_XP:2, EAT_MS:800, SLEEP_MIN_MS:6000,
   PET_RADIUS_PX:56, PET_COOLDOWN_MS:1200, PET_XP_DAILY_MAX:10, PET_REACT_MS:520,
@@ -584,6 +588,10 @@ export function restoreSim(raw,options={}) {
   s.spider_y=round(clamp(Number.isFinite(raw.spider_y)?raw.spider_y:Number.isFinite(raw.y)?raw.y:240,34,446));
   s.spider_heading=Number.isFinite(raw.spider_heading)?wrap(raw.spider_heading):0;
   s._engine.px=s.spider_x;s._engine.py=s.spider_y;
+  // Climb is no longer selectable, so a tank saved with Climb items would carry
+  // a value the UI cannot express. Rewrite them to Walk Behind, the closest
+  // surviving behaviour. Mirrors the decor_migrate_paths() call in save.c.
+  migrateDecorPaths(s);
   syncView(s);
   return s;
 }
@@ -626,6 +634,7 @@ export function spawnPrey(s,id=chooseSpecies(s),wild=false) {
   const direction=random(s)*TAU-PI;
   const p={alive:true,dead:false,fleeing:false,wild,species:id,key:PREY[id],frame:0,
     frame_at:runtime(s).now_ms,gait_distance:0,retarget_at:0,dead_at:0,poop_at:runtime(s).now_ms+C.BUG_POOP_MS,
+    graze_until:0,next_graze_at:runtime(s).now_ms+C.PREY_GRAZE_FIRST_MS,
     wander_dir:direction,heading:direction,x:0,y:0};
   for(let n=0;n<12;n++){p.x=34+roll(s,412);p.y=34+roll(s,412);if(Math.hypot(p.x-s.spider_x,p.y-s.spider_y)>90)break;}
   s.prey[slot]=p;return true;
@@ -816,74 +825,74 @@ export function buyTreat(s,kind){
  * is Walk Over, path1 Solid; players can also select path2 Walk Behind.
  * Order must match decor_kind_t in main/decor.h. */
 export const DECOR_KINDS=Object.freeze([
-  {key:'rock_small',name:'Small Rock',cost:18,level:1,radius:9,blocking:0,climb:6},
-  {key:'rock_large',name:'Large Rock',cost:34,level:2,radius:16,blocking:1,climb:14},
-  {key:'pebbles',name:'Pebbles',cost:14,level:1,radius:8,blocking:0,climb:3},
-  {key:'log',name:'Log',cost:46,level:4,radius:22,blocking:1,climb:16},
-  {key:'bark',name:'Bark Slab',cost:22,level:3,radius:14,blocking:0,climb:7},
-  {key:'fern',name:'Fern',cost:38,level:5,radius:15,blocking:0,climb:0},
-  {key:'moss_clump',name:'Moss Clump',cost:20,level:2,radius:11,blocking:0,climb:4},
-  {key:'succulent',name:'Succulent',cost:52,level:7,radius:14,blocking:1,climb:0},
-  {key:'flower_white',name:'White Flower',cost:26,level:3,radius:8,blocking:0,climb:0},
-  {key:'flower_pink',name:'Pink Flower',cost:30,level:6,radius:8,blocking:0,climb:0},
-  {key:'mushroom',name:'Mushroom',cost:28,level:4,radius:10,blocking:0,climb:5},
-  {key:'shell',name:'Shell',cost:24,level:5,radius:9,blocking:0,climb:4},
-  {key:'crystal',name:'Crystal',cost:68,level:9,radius:12,blocking:1,climb:12},
-  {key:'leaf_pile',name:'Leaf Pile',cost:16,level:1,radius:13,blocking:0,climb:3},
-  {key:'twig',name:'Twig',cost:12,level:1,radius:12,blocking:0,climb:3},
-  {key:'bone',name:'Bone',cost:58,level:8,radius:13,blocking:1,climb:6},
-  {key:'fern_pot',name:'Fern Planter',cost:48,level:6,radius:14,blocking:1,climb:0},
-  {key:'acorn_hide',name:'Acorn Hide',cost:72,level:10,radius:15,blocking:1,climb:10},
-  {key:'driftwood_arch',name:'Driftwood Arch',cost:82,level:12,radius:18,blocking:1,climb:18},
-  {key:'web_hammock',name:'Web Hammock',cost:64,level:8,radius:15,blocking:0,climb:8},
-  {key:'dew_pool',name:'Dew Pool',cost:54,level:7,radius:14,blocking:0,climb:0},
-  {key:'mushroom_pair',name:'Mushroom Pair',cost:62,level:8,radius:13,blocking:0,climb:6},
-  {key:'flower_planter',name:'Flower Planter',cost:68,level:9,radius:15,blocking:1,climb:0},
-  {key:'crystal_cluster',name:'Crystal Cluster',cost:98,level:14,radius:15,blocking:1,climb:16},
-  {key:'shell_cove',name:'Shell Cove',cost:74,level:11,radius:16,blocking:1,climb:8},
-  {key:'twig_ladder',name:'Twig Ladder',cost:46,level:6,radius:13,blocking:0,climb:12},
-  {key:'moss_stone',name:'Mossy Stone',cost:42,level:5,radius:13,blocking:0,climb:8},
-  {key:'seed_pod',name:'Seed Pod',cost:38,level:4,radius:10,blocking:0,climb:4},
-  {key:'silk_tent',name:'Silk Tent',cost:112,level:16,radius:19,blocking:1,climb:14},
-  {key:'leaf_umbrella',name:'Leaf Umbrella',cost:88,level:13,radius:15,blocking:1,climb:0},
-  {key:'bone_arch',name:'Bone Arch',cost:96,level:15,radius:16,blocking:1,climb:16},
-  {key:'fossil',name:'Fossil',cost:58,level:8,radius:12,blocking:0,climb:5},
-  {key:'lantern_cap',name:'Lantern Cap',cost:92,level:14,radius:13,blocking:0,climb:9},
-  {key:'stone_bridge',name:'Stone Bridge',cost:120,level:18,radius:20,blocking:1,climb:18},
-  {key:'fairy_ring',name:'Fairy Ring',cost:44,level:4,radius:17,blocking:0,climb:0},
-  {key:'foxglove_lantern',name:'Foxglove Lantern',cost:58,level:6,radius:12,blocking:1,climb:0},
-  {key:'pixie_door',name:'Pixie Door',cost:70,level:8,radius:14,blocking:1,climb:0},
-  {key:'gargoyle',name:'Gargoyle',cost:78,level:9,radius:15,blocking:1,climb:14},
-  {key:'iron_gate',name:'Iron Gate',cost:84,level:10,radius:19,blocking:1,climb:18},
-  {key:'rose_urn',name:'Rose Urn',cost:54,level:6,radius:12,blocking:1,climb:10},
-  {key:'book_stack',name:'Book Stack',cost:40,level:3,radius:12,blocking:1,climb:8},
-  {key:'globe',name:'Globe',cost:66,level:7,radius:13,blocking:1,climb:0},
-  {key:'quill_desk',name:'Quill Desk',cost:90,level:11,radius:19,blocking:1,climb:14},
-  {key:'tea_cup',name:'Tea Cup',cost:32,level:2,radius:13,blocking:1,climb:7},
-  {key:'spool',name:'Spool',cost:26,level:2,radius:10,blocking:1,climb:6},
-  {key:'thimble',name:'Thimble',cost:30,level:3,radius:10,blocking:1,climb:6},
-  {key:'cauldron',name:'Cauldron',cost:74,level:8,radius:17,blocking:1,climb:12},
-  {key:'broom',name:'Broom',cost:38,level:4,radius:15,blocking:0,climb:3},
-  {key:'potion_rack',name:'Potion Rack',cost:86,level:10,radius:17,blocking:1,climb:14},
-  {key:'amber_fossil',name:'Amber Fossil',cost:58,level:6,radius:12,blocking:0,climb:5},
-  {key:'cycad',name:'Cycad',cost:62,level:7,radius:16,blocking:1,climb:0},
-  {key:'dinosaur_egg',name:'Dinosaur Egg',cost:72,level:9,radius:13,blocking:1,climb:9},
-  {key:'neon_sign',name:'Neon Sign',cost:80,level:9,radius:14,blocking:1,climb:0},
-  {key:'holo_terminal',name:'Holo Terminal',cost:96,level:12,radius:15,blocking:1,climb:12},
-  {key:'cable_coil',name:'Cable Coil',cost:42,level:4,radius:12,blocking:0,climb:4},
-  {key:'moon_rover',name:'Moon Rover',cost:104,level:13,radius:18,blocking:1,climb:12},
-  {key:'solar_array',name:'Solar Array',cost:88,level:10,radius:18,blocking:1,climb:10},
-  {key:'oxygen_pod',name:'Oxygen Pod',cost:92,level:11,radius:14,blocking:1,climb:11},
-  {key:'wizard_tower',name:'Wizard Tower',cost:112,level:14,radius:17,blocking:1,climb:16},
-  {key:'dragon_statue',name:'Dragon Statue',cost:120,level:16,radius:18,blocking:1,climb:16},
-  {key:'treasure_chest',name:'Treasure Chest',cost:98,level:12,radius:15,blocking:1,climb:11},
-  {key:'sun_obelisk',name:'Sun Obelisk',cost:108,level:13,radius:13,blocking:1,climb:13},
-  {key:'glyph_tablet',name:'Glyph Tablet',cost:64,level:7,radius:14,blocking:0,climb:4},
-  {key:'broken_column',name:'Broken Column',cost:76,level:8,radius:15,blocking:1,climb:12},
-  {key:'stone_lantern',name:'Stone Lantern',cost:70,level:6,radius:13,blocking:1,climb:11},
-  {key:'bamboo_fountain',name:'Bamboo Fountain',cost:84,level:9,radius:16,blocking:1,climb:14},
-  {key:'bonsai',name:'Bonsai',cost:94,level:11,radius:16,blocking:1,climb:0},
-  {key:'fairy_bridge',name:'Fairy Bridge',cost:102,level:12,radius:20,blocking:1,climb:16},
+  {key:'rock_small',name:'Small Rock',cost:18,level:1,radius:9,blocking:0,climb:6,artScale:115},
+  {key:'rock_large',name:'Large Rock',cost:34,level:2,radius:16,blocking:1,climb:14,artScale:100},
+  {key:'pebbles',name:'Pebbles',cost:14,level:1,radius:8,blocking:0,climb:3,artScale:85},
+  {key:'log',name:'Log',cost:46,level:4,radius:22,blocking:1,climb:16,artScale:105},
+  {key:'bark',name:'Bark Slab',cost:22,level:3,radius:14,blocking:0,climb:7,artScale:90},
+  {key:'fern',name:'Fern',cost:38,level:5,radius:15,blocking:0,climb:0,artScale:135},
+  {key:'moss_clump',name:'Moss Clump',cost:20,level:2,radius:11,blocking:0,climb:4,artScale:80},
+  {key:'succulent',name:'Succulent',cost:52,level:7,radius:14,blocking:1,climb:0,artScale:110},
+  {key:'flower_white',name:'White Flower',cost:26,level:3,radius:8,blocking:0,climb:0,artScale:75},
+  {key:'flower_pink',name:'Pink Flower',cost:30,level:6,radius:8,blocking:0,climb:0,artScale:75},
+  {key:'mushroom',name:'Mushroom',cost:28,level:4,radius:10,blocking:0,climb:5,artScale:90},
+  {key:'shell',name:'Shell',cost:24,level:5,radius:9,blocking:0,climb:4,artScale:80},
+  {key:'crystal',name:'Crystal',cost:68,level:9,radius:12,blocking:1,climb:12,artScale:120},
+  {key:'leaf_pile',name:'Leaf Pile',cost:16,level:1,radius:13,blocking:0,climb:3,artScale:95},
+  {key:'twig',name:'Twig',cost:12,level:1,radius:12,blocking:0,climb:3,artScale:70},
+  {key:'bone',name:'Bone',cost:58,level:8,radius:13,blocking:1,climb:6,artScale:105},
+  {key:'fern_pot',name:'Fern Planter',cost:48,level:6,radius:14,blocking:1,climb:0,artScale:125},
+  {key:'acorn_hide',name:'Acorn Hide',cost:72,level:10,radius:15,blocking:1,climb:10,artScale:95},
+  {key:'driftwood_arch',name:'Driftwood Arch',cost:82,level:12,radius:18,blocking:1,climb:18,artScale:115},
+  {key:'web_hammock',name:'Web Hammock',cost:64,level:8,radius:15,blocking:0,climb:8,artScale:110},
+  {key:'dew_pool',name:'Dew Pool',cost:54,level:7,radius:14,blocking:0,climb:0,artScale:90},
+  {key:'mushroom_pair',name:'Mushroom Pair',cost:62,level:8,radius:13,blocking:0,climb:6,artScale:100},
+  {key:'flower_planter',name:'Flower Planter',cost:68,level:9,radius:15,blocking:1,climb:0,artScale:120},
+  {key:'crystal_cluster',name:'Crystal Cluster',cost:98,level:14,radius:15,blocking:1,climb:16,artScale:130},
+  {key:'shell_cove',name:'Shell Cove',cost:74,level:11,radius:16,blocking:1,climb:8,artScale:105},
+  {key:'twig_ladder',name:'Twig Ladder',cost:46,level:6,radius:13,blocking:0,climb:12,artScale:100},
+  {key:'moss_stone',name:'Mossy Stone',cost:42,level:5,radius:13,blocking:0,climb:8,artScale:95},
+  {key:'seed_pod',name:'Seed Pod',cost:38,level:4,radius:10,blocking:0,climb:4,artScale:75},
+  {key:'silk_tent',name:'Silk Tent',cost:112,level:16,radius:19,blocking:1,climb:14,artScale:125},
+  {key:'leaf_umbrella',name:'Leaf Umbrella',cost:88,level:13,radius:15,blocking:1,climb:0,artScale:130},
+  {key:'bone_arch',name:'Bone Arch',cost:96,level:15,radius:16,blocking:1,climb:16,artScale:115},
+  {key:'fossil',name:'Fossil',cost:58,level:8,radius:12,blocking:0,climb:5,artScale:90},
+  {key:'lantern_cap',name:'Lantern Cap',cost:92,level:14,radius:13,blocking:0,climb:9,artScale:105},
+  {key:'stone_bridge',name:'Stone Bridge',cost:120,level:18,radius:20,blocking:1,climb:18,artScale:120},
+  {key:'fairy_ring',name:'Fairy Ring',cost:44,level:4,radius:17,blocking:0,climb:0,artScale:110},
+  {key:'foxglove_lantern',name:'Foxglove Lantern',cost:58,level:6,radius:12,blocking:1,climb:0,artScale:95},
+  {key:'pixie_door',name:'Pixie Door',cost:70,level:8,radius:14,blocking:1,climb:0,artScale:90},
+  {key:'gargoyle',name:'Gargoyle',cost:78,level:9,radius:15,blocking:1,climb:14,artScale:110},
+  {key:'iron_gate',name:'Iron Gate',cost:84,level:10,radius:19,blocking:1,climb:18,artScale:120},
+  {key:'rose_urn',name:'Rose Urn',cost:54,level:6,radius:12,blocking:1,climb:10,artScale:95},
+  {key:'book_stack',name:'Book Stack',cost:40,level:3,radius:12,blocking:1,climb:8,artScale:100},
+  {key:'globe',name:'Globe',cost:66,level:7,radius:13,blocking:1,climb:0,artScale:90},
+  {key:'quill_desk',name:'Quill Desk',cost:90,level:11,radius:19,blocking:1,climb:14,artScale:115},
+  {key:'tea_cup',name:'Tea Cup',cost:32,level:2,radius:13,blocking:1,climb:7,artScale:85},
+  {key:'spool',name:'Spool',cost:26,level:2,radius:10,blocking:1,climb:6,artScale:75},
+  {key:'thimble',name:'Thimble',cost:30,level:3,radius:10,blocking:1,climb:6,artScale:70},
+  {key:'cauldron',name:'Cauldron',cost:74,level:8,radius:17,blocking:1,climb:12,artScale:110},
+  {key:'broom',name:'Broom',cost:38,level:4,radius:15,blocking:0,climb:3,artScale:105},
+  {key:'potion_rack',name:'Potion Rack',cost:86,level:10,radius:17,blocking:1,climb:14,artScale:115},
+  {key:'amber_fossil',name:'Amber Fossil',cost:58,level:6,radius:12,blocking:0,climb:5,artScale:90},
+  {key:'cycad',name:'Cycad',cost:62,level:7,radius:16,blocking:1,climb:0,artScale:130},
+  {key:'dinosaur_egg',name:'Dinosaur Egg',cost:72,level:9,radius:13,blocking:1,climb:9,artScale:100},
+  {key:'neon_sign',name:'Neon Sign',cost:80,level:9,radius:14,blocking:1,climb:0,artScale:105},
+  {key:'holo_terminal',name:'Holo Terminal',cost:96,level:12,radius:15,blocking:1,climb:12,artScale:110},
+  {key:'cable_coil',name:'Cable Coil',cost:42,level:4,radius:12,blocking:0,climb:4,artScale:85},
+  {key:'moon_rover',name:'Moon Rover',cost:104,level:13,radius:18,blocking:1,climb:12,artScale:115},
+  {key:'solar_array',name:'Solar Array',cost:88,level:10,radius:18,blocking:1,climb:10,artScale:120},
+  {key:'oxygen_pod',name:'Oxygen Pod',cost:92,level:11,radius:14,blocking:1,climb:11,artScale:100},
+  {key:'wizard_tower',name:'Wizard Tower',cost:112,level:14,radius:17,blocking:1,climb:16,artScale:125},
+  {key:'dragon_statue',name:'Dragon Statue',cost:120,level:16,radius:18,blocking:1,climb:16,artScale:120},
+  {key:'treasure_chest',name:'Treasure Chest',cost:98,level:12,radius:15,blocking:1,climb:11,artScale:105},
+  {key:'sun_obelisk',name:'Sun Obelisk',cost:108,level:13,radius:13,blocking:1,climb:13,artScale:115},
+  {key:'glyph_tablet',name:'Glyph Tablet',cost:64,level:7,radius:14,blocking:0,climb:4,artScale:95},
+  {key:'broken_column',name:'Broken Column',cost:76,level:8,radius:15,blocking:1,climb:12,artScale:110},
+  {key:'stone_lantern',name:'Stone Lantern',cost:70,level:6,radius:13,blocking:1,climb:11,artScale:100},
+  {key:'bamboo_fountain',name:'Bamboo Fountain',cost:84,level:9,radius:16,blocking:1,climb:14,artScale:115},
+  {key:'bonsai',name:'Bonsai',cost:94,level:11,radius:16,blocking:1,climb:0,artScale:125},
+  {key:'fairy_bridge',name:'Fairy Bridge',cost:102,level:12,radius:20,blocking:1,climb:16,artScale:120},
   {key:'climb_branch',name:'Fallen Branch',cost:140,level:15,radius:60,blocking:1,climb:46,big:1},
   {key:'climb_vine',name:'Vine Arch',cost:160,level:17,radius:64,blocking:1,climb:54,big:1},
   {key:'climb_root',name:'Root Bridge',cost:150,level:16,radius:62,blocking:1,climb:50,big:1},
@@ -981,18 +990,29 @@ export function removeDecor(s,slot){
   s.decor[slot]={kind:DECOR_EMPTY,blocking:0,x:0,y:0};
   return true;
 }
+// Climb is retired: the 2.5D lift never read convincingly on the panel, so the
+// option was removed rather than tuned further. Path 3 survives in the enum only
+// so old saves parse; migrateDecorPaths() rewrites it to Walk Behind on load.
+export const DECOR_PATH_NAMES=['Walk Over','Solid','Walk Behind'];
+export const DECOR_SELECTABLE_PATHS=3;
 export function toggleDecorBlocking(s,slot){
   if(slot<0||slot>=s.decor.length||s.decor[slot].kind===DECOR_EMPTY)return false;
-  const climbable=(DECOR_KINDS[s.decor[slot].kind]?.climb??0)>0;
+  // Three selectable paths. Climb was removed: the 2.5D lift never read
+  // convincingly, so the large structures are ordinary Walk Behind items.
   let path=s.decor[slot].blocking;
-  for(let i=0;i<4;i++){
-    path=(path+1)%4;
-    if(path!==3||climbable)break;
-  }
-  s.decor[slot].blocking=path;
+  if(path>=DECOR_SELECTABLE_PATHS)path=0;
+  s.decor[slot].blocking=(path+1)%DECOR_SELECTABLE_PATHS;
   return true;
 }
-export const DECOR_PATH_NAMES=['Walk Over','Solid','Walk Behind','Climb'];
+/** Rewrite legacy Climb items to Walk Behind. Mirrors decor_migrate_paths(). */
+export function migrateDecorPaths(s){
+  let migrated=0;
+  for(const item of s.decor??[]){
+    if(item.kind===DECOR_EMPTY||item.blocking!==3)continue;
+    item.blocking=2;migrated++;
+  }
+  return migrated;
+}
 export const decorCanopy=path=>path===2;
 export const decorClimbable=kind=>(DECOR_KINDS[kind]?.climb??0)>0;
 export const decorClimbHeight=(s,slot)=>{
@@ -1157,25 +1177,76 @@ export function decorPerchCenter(s,x,y){
   const item=decorPerchItem(s,x,y);
   return item?{x:item.x,y:item.y}:null;
 }
-export function decorLayerSlots(s,path,exclude=-1){  return s.decor.flatMap((item,slot)=>slot!==exclude&&item.kind!==DECOR_EMPTY&&
-    decorCanopy(item.blocking)===decorCanopy(path)?[slot]:[]);
+/** Half-extent of an item's ARTWORK on screen, in pixels.
+ *
+ * The same number the renderer uses to size the sprite, so it is the honest
+ * measure of how much of the tank an item covers. A 64x64 source drawn at scale
+ * radius*16 covers 4*radius screen pixels, so its half-extent is 2*radius,
+ * multiplied by the kind's art_scale. Mirrors item_extent() in main/decor.c. */
+export function decorExtent(kind){
+  const d=DECOR_KINDS[kind];
+  if(!d)return 0;
+  if(d.big)return DECOR_CLIMB_SPRITE;
+  return d.radius*2*(d.artScale??100)/100;
+}
+/** True when two items' artwork actually overlaps on screen.
+ *
+ * Draw order is only visible where two sprites cover the same pixels, so
+ * ordering a fern against a rock at the far end of the tank changes nothing the
+ * player can see. Mirrors items_overlap() in main/decor.c. */
+export function decorOverlaps(a,b){
+  const dx=a.x-b.x,dy=a.y-b.y,reach=decorExtent(a.kind)+decorExtent(b.kind);
+  return dx*dx+dy*dy<reach*reach;
+}
+/** Slots in the same band that OVERLAP the reference item.
+ *
+ * `ref` is {kind,x,y} so a not-yet-placed item can be measured too. */
+export function decorLayerSlots(s,path,exclude=-1,ref=null){
+  const base=ref??(exclude>=0&&s.decor[exclude]?.kind!==DECOR_EMPTY?s.decor[exclude]:null);
+  return s.decor.flatMap((item,slot)=>{
+    if(slot===exclude||item.kind===DECOR_EMPTY)return [];
+    if(decorCanopy(item.blocking)!==decorCanopy(path))return [];
+    if(base&&!decorOverlaps(base,item))return [];
+    return [slot];
+  });
+}
+/** The overlapping items in a slot's band, INCLUDING the slot itself, in draw
+ * order (which is array order). This is the list the layer index and the
+ * reorder operate on: excluding the item would make indexOf() return -1 and the
+ * reorder a no-op, and putting it first would pin its index at 0. */
+export function decorLayerOrder(s,slot){
+  const item=s.decor[slot];
+  if(!item||item.kind===DECOR_EMPTY)return [];
+  const others=decorLayerSlots(s,item.blocking,slot);
+  return [...others,slot].sort((a,b)=>a-b);
 }
 export function decorLayerIndex(s,slot){
-  return decorLayerSlots(s,s.decor[slot].blocking).indexOf(slot);
+  return decorLayerOrder(s,slot).indexOf(slot);
 }
 // The gift's layer. The gift is a single item, so it has no siblings to order
-// against; its layer is its position among the DECOR sharing its band, which is
-// what the player is actually arranging. The count includes the gift itself.
+// against; its layer is its position among the DECOR it actually OVERLAPS,
+// which is what the player is arranging. The count includes the gift itself.
 // Mirrors decor_gift_layer_count/index/set_layer in main/decor.c.
+const GIFT_EXTENT=64;
+export function giftLayerSlots(s,path){
+  if(!s.gift?.used)return [];
+  const ref={kind:-1,x:s.gift.x,y:s.gift.y};
+  return s.decor.flatMap((item,slot)=>{
+    if(item.kind===DECOR_EMPTY)return [];
+    if(decorCanopy(item.blocking)!==decorCanopy(path))return [];
+    const dx=ref.x-item.x,dy=ref.y-item.y,reach=GIFT_EXTENT+decorExtent(item.kind);
+    return dx*dx+dy*dy<reach*reach?[slot]:[];
+  });
+}
 export function giftLayerCount(s,path){
-  return decorLayerSlots(s,path).length+1;
+  return giftLayerSlots(s,path).length+1;
 }
 export function giftLayerIndex(s,path){
-  const count=decorLayerSlots(s,path).length;
+  const count=giftLayerSlots(s,path).length;
   return Math.min(Math.max(0,s.gift_layer??0),count);
 }
 export function setGiftLayer(s,path,index){
-  const count=decorLayerSlots(s,path).length;
+  const count=giftLayerSlots(s,path).length;
   if(!Number.isInteger(index)||index<0||index>count)
     return event(s,'rejected',{reason:'invalid gift layer'});
   s.gift_layer=index;
@@ -1184,7 +1255,7 @@ export function setGiftLayer(s,path,index){
 export function setDecorLayer(s,slot,index){
   const item=s.decor[slot];
   if(!item||item.kind===DECOR_EMPTY)return event(s,'rejected',{reason:'missing decor'});
-  const slots=decorLayerSlots(s,item.blocking);
+  const slots=decorLayerOrder(s,slot);
   if(!Number.isInteger(index)||index<0||index>=slots.length)
     return event(s,'rejected',{reason:'invalid decor layer'});
   const items=slots.map(i=>s.decor[i]),from=slots.indexOf(slot);
@@ -1882,9 +1953,22 @@ function preyTick(s,dt){
       step=30*speed*sp.speed_mult*dt;
       if(sp.move==='erratic')p.heading=wrap(p.heading+(random(s)-.5)*.35);
       if(sp.move==='hop')step*=now%900<200?2.2:0;
+      // Grazing: a bug that is not fleeing stops to feed for a moment, then
+      // moves on. This is what makes the tank read as alive while the spider is
+      // asleep. A graze is cancelled the moment the spider gets close, because
+      // the flee branch above takes over. Mirrors the PREY_GRAZE_* block in
+      // main/prey.c.
+      const grazing=now<(p.graze_until??0);
+      if(!grazing&&now>=(p.next_graze_at??0)){
+        const span=C.PREY_GRAZE_MIN_MS+Math.floor(random(s)*(C.PREY_GRAZE_MAX_MS-C.PREY_GRAZE_MIN_MS+1));
+        p.graze_until=now+span;
+        p.next_graze_at=now+span+C.PREY_GRAZE_GAP_MIN_MS+
+          Math.floor(random(s)*(C.PREY_GRAZE_GAP_MAX_MS-C.PREY_GRAZE_GAP_MIN_MS+1));
+      }
+      if(now<(p.graze_until??0))step=0;
     }
     p.x+=Math.cos(p.heading)*step;p.y+=Math.sin(p.heading)*step;
-    if(!p.fleeing&&sp.move==='flutter'){const lateral=Math.sin(now*.006)*14*dt;p.x-=Math.sin(p.heading)*lateral;p.y+=Math.cos(p.heading)*lateral;}
+    if(!p.fleeing&&sp.move==='flutter'&&now>=(p.graze_until??0)){const lateral=Math.sin(now*.006)*14*dt;p.x-=Math.sin(p.heading)*lateral;p.y+=Math.cos(p.heading)*lateral;}
     if(p.x<=34||p.x>=446){p.heading=wrap(PI-p.heading);p.wander_dir=p.heading;}
     if(p.y<=34||p.y>=446){p.heading=wrap(-p.heading);p.wander_dir=p.heading;}
     p.x=clamp(p.x,34,446);p.y=clamp(p.y,34,446);

@@ -466,12 +466,57 @@ void behaviour_note_tap(int32_t x, int32_t y)
     s_tap_heading_valid = true;
 }
 
+/* Push a point out of any solid decor it lands inside.
+ *
+ * A pounce is ballistic, so it can aim at a spot that is inside a solid item.
+ * The walk path refuses those steps, but the landing was written straight into
+ * g.spider_x/y, which is why the spider appeared to stand on top of blocking
+ * decor -- and, worse, could end up wedged with no legal step out.
+ *
+ * Clamping the TARGET rather than only the landing means the spider never flies
+ * into the item in the first place, so the arc reads correctly too. Returns the
+ * adjusted point through the pointers. */
+static void clamp_out_of_solid(int32_t *x, int32_t *y)
+{
+    if (!decor_blocks_point((int16_t)*x, (int16_t)*y)) return;
+
+    int16_t bx, by;
+    float bd;
+    if (!decor_nearest_blocking((int16_t)*x, (int16_t)*y, 200.0f, &bx, &by, &bd)) return;
+
+    float ax = (float)(*x - bx), ay = (float)(*y - by);
+    float ad = sqrtf(ax * ax + ay * ay);
+    if (ad < 1.0f) {
+        /* Dead centre: pick a direction rather than dividing by zero. */
+        ax = 0.0f; ay = -1.0f; ad = 1.0f;
+    }
+
+    /* Land just outside the item's blocking radius, on the side the pounce came
+     * from, so the spider stops at the edge instead of being teleported across
+     * the item. */
+    float r = 0.0f;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *it = decor_at(i);
+        if (!it || it->x != bx || it->y != by) continue;
+        r = decor_block_radius(i);
+        break;
+    }
+    if (r <= 0.0f) r = 16.0f;
+    r += 4.0f;
+
+    *x = (int32_t)((float)bx + ax / ad * r);
+    *y = (int32_t)((float)by + ay / ad * r);
+}
+
 void behaviour_pounce_at_ex(int32_t x, int32_t y, bool by_player)
 {
     if (x < g_play.left) x = g_play.left;
     if (x > g_play.right) x = g_play.right;
     if (y < g_play.top) y = g_play.top;
     if (y > g_play.bottom) y = g_play.bottom;
+    /* Never aim into a solid item. Doing it here rather than only at the
+     * landing means the flight arc is correct as well as the destination. */
+    clamp_out_of_solid(&x, &y);
     s_pounce_tx = x;
     s_pounce_ty = y;
     s_pouncing = true;
@@ -1029,39 +1074,14 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
         }
 
         if ((int32_t)(now_ms - s_pounce_end) >= 0) {
-            /* A pounce is ballistic, so it can land inside a solid item. The
-             * walk path refuses those steps, but the landing was written
-             * straight into g.spider_x/y, which is why the spider appeared to
-             * stand on top of blocking decor. Push the landing back out to the
-             * nearest free point before handing over to prey.c. */
-            int16_t lx = (int16_t)s_pounce_tx, ly = (int16_t)s_pounce_ty;
-            if (decor_blocks_point(lx, ly)) {
-                int16_t bx, by;
-                float bd;
-                if (decor_nearest_blocking(lx, ly, 200.0f, &bx, &by, &bd)) {
-                    float ax = (float)(lx - bx), ay = (float)(ly - by);
-                    float ad = sqrtf(ax * ax + ay * ay);
-                    if (ad < 1.0f) { ax = 0.0f; ay = -1.0f; ad = 1.0f; }
-                    /* Land just outside the item's radius, on the side the
-                     * pounce came from. */
-                    const decor_def_t *def = NULL;
-                    for (int i = 0; i < decor_slot_count(); i++) {
-                        const decor_item_t *it = decor_at(i);
-                        if (it && it->blocking == DECOR_SOLID && it->x == bx && it->y == by) {
-                            def = decor_def(it->kind);
-                            break;
-                        }
-                    }
-                    float r = (float)(def ? def->radius : 16) + 4.0f;
-                    lx = (int16_t)((float)bx + ax / ad * r);
-                    ly = (int16_t)((float)by + ay / ad * r);
-                    ESP_LOGI("spidarium.behaviour",
-                             "pounce landing pushed out of solid decor to (%d,%d)",
-                             (int)lx, (int)ly);
-                }
-            }
-            g.spider_x = lx;
-            g.spider_y = ly;
+            /* The target was already clamped out of solid decor when the
+             * pounce launched, so this is a belt-and-braces pass: decor can be
+             * moved mid-flight by a restore, and a landing inside an item is
+             * the one state the spider cannot walk out of. */
+            int32_t lx = s_pounce_tx, ly = s_pounce_ty;
+            clamp_out_of_solid(&lx, &ly);
+            g.spider_x = (int16_t)lx;
+            g.spider_y = (int16_t)ly;
             behaviour_sync_position();
             s_pouncing = false;
             /* Hand control to prey.c, which resolves the catch. */

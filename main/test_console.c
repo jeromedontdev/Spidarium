@@ -137,6 +137,7 @@ static void cmd_help(void)
     printf("  perch [KIND]         place a small prop under the spider and report the perch\n");
     printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
     printf("  decorreport [SLOT]   report a placed decor object's live geometry\n");
+    printf("  decorlayers          report proximity-based layer counts per item\n");
     printf("  setupdone            finish the naming screen without tapping\n");
     printf("  background [0-%d]    show/set persistent pixel-art background\n", THEME_COUNT - 1);
     printf("  border [0-%d|none]   show/buy/apply a matching enclosure frame\n", THEME_COUNT - 1);
@@ -1426,6 +1427,27 @@ static void run_line(char *line)
         int slot = arg ? atoi(arg) : 0;
         terrarium_decor_report(slot);
         printf("OK decorreport\n");
+    }
+    else if (!strcmp(line, "decorlayers")) {
+        /* Report the proximity-based layer count for every placed item, so the
+         * "layers only between things that touch" rule is observable on
+         * hardware rather than only asserted in a test. */
+        int placed = 0;
+        for (int i = 0; i < decor_slot_count(); i++) {
+            const decor_item_t *item = decor_at(i);
+            if (!item) continue;
+            placed++;
+            printf("DECORLAYERS slot=%d kind=%u pos=(%d,%d) band=%s "
+                   "overlapping=%d index=%d\n",
+                   i, (unsigned)item->kind, (int)item->x, (int)item->y,
+                   item->blocking == DECOR_WALK_BEHIND ? "canopy" : "floor",
+                   decor_layer_count_at(item->blocking, item->kind,
+                                        item->x, item->y, i),
+                   decor_layer_index(i));
+        }
+        printf("DECORLAYERS placed=%d gift_overlapping=%d\n", placed,
+               decor_gift_layer_count(DECOR_WALK_OVER) - 1);
+        printf("OK decorlayers\n");
     }
     else if (!strcmp(line, "setupdone")) {
         if (!game_ui_call(GAME_UI_SETUP_DONE)) printf("ERR setup request failed\n");

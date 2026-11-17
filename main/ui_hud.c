@@ -412,17 +412,16 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_place_front, !layer_row);
     lv_obj_set_hidden(s_place_layer_label, !layer_row);
     if (path_row) {
-        static const char *names[] = {"Walk Over", "Solid", "Walk Behind", "Climb"};
+        static const char *names[] = {"Walk Over", "Solid", "Walk Behind"};
         uint8_t path = game_placement_blocking();
-        if (path >= DECOR_PATH_COUNT) path = DECOR_WALK_OVER;
+        if (path >= DECOR_SELECTABLE_PATHS) path = DECOR_WALK_OVER;
         lv_label_set_text(s_place_path_label, names[path]);
         lv_obj_set_style_bg_color(s_place_path, lv_color_hex(0x2b6a5f), 0);
         /* Walk Behind blocks movement as well as occluding, so the tip has to
          * say both: the spider goes around the item and passes behind its top. */
         static const char *tips[] = {"Spider crosses above this item",
             "Spider steers around this item",
-            "Spider goes around, passes behind the top",
-            "Spider climbs onto this item"};
+            "Spider goes around, passes behind the top"};
         lv_label_set_text(s_hint, tips[path]);
     }
     if (layer_row) {

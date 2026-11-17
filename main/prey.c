@@ -43,6 +43,12 @@ typedef struct {
     int            frame;
     uint32_t       dead_at;
     uint32_t       poop_at;     /* next time this bug leaves a speckle */
+    /* Grazing. A bug that is not fleeing does not walk forever: it stops to feed
+     * for a moment, then moves on. This is what makes the tank read as alive
+     * while the spider is asleep -- without it, prey either drift constantly or
+     * stand perfectly still, and both look mechanical. */
+    uint32_t       graze_until;
+    uint32_t       next_graze_at;
     lv_obj_t      *root;        /* container, positioned at the bug centre */
     lv_obj_t      *sprite;
     int            sprite_index;
@@ -201,6 +207,8 @@ bool prey_spawn_species_ex(prey_species_t species, bool wild)
     p->retarget_at = 0;
     p->dead_at     = 0;
     p->poop_at     = lv_tick_get() + BUG_POOP_MS;
+    p->graze_until = 0;
+    p->next_graze_at = lv_tick_get() + PREY_GRAZE_FIRST_MS + (uint32_t)(rand() % 2000);
     p->wander_dir  = randf() * 2.0f * PI_F - PI_F;
     p->heading     = p->wander_dir;
 
@@ -755,7 +763,26 @@ void prey_tick(uint32_t now_ms, float dt_s)
             float delta = wrap_pi(p->wander_dir - p->heading);
             p->heading = wrap_pi(p->heading + delta * 0.12f);
 
+            /* Grazing. A bug that is not fleeing stops to feed for a moment,
+             * then moves on. This is what makes the tank read as alive while
+             * the spider is asleep: without it, prey either drift constantly or
+             * stand perfectly still, and both look mechanical.
+             *
+             * A graze is cancelled the moment the spider gets close, because
+             * the flee branch above takes over -- so a pause is never a way to
+             * get caught standing still. */
+            bool grazing = (int32_t)(now_ms - p->graze_until) < 0;
+            if (!grazing && (int32_t)(now_ms - p->next_graze_at) >= 0) {
+                uint32_t span = PREY_GRAZE_MIN_MS +
+                    (uint32_t)(rand() % (PREY_GRAZE_MAX_MS - PREY_GRAZE_MIN_MS + 1));
+                p->graze_until = now_ms + span;
+                p->next_graze_at = now_ms + span + PREY_GRAZE_GAP_MIN_MS +
+                    (uint32_t)(rand() % (PREY_GRAZE_GAP_MAX_MS - PREY_GRAZE_GAP_MIN_MS + 1));
+                grazing = true;
+            }
+
             float step = PREY_SPEED * speed_mult * sp->speed_mult * dt_s;
+            if (grazing) step = 0.0f;
 
             switch (sp->move) {
             case MOVE_ERRATIC:
@@ -786,9 +813,11 @@ void prey_tick(uint32_t now_ms, float dt_s)
             p->x += cosf(p->heading) * step;
             p->y += sinf(p->heading) * step;
 
-            if (sp->move == MOVE_FLUTTER) {
+            if (sp->move == MOVE_FLUTTER && !grazing) {
                 /* Flutter: a sinusoidal lateral offset on top of the heading,
-                 * applied perpendicular to travel. */
+                 * applied perpendicular to travel. Suppressed while grazing, or
+                 * a "resting" moth would still slide sideways and the pause
+                 * would not read as a pause. */
                 float lateral = sinf((float)now_ms * MOTH_FLUTTER_HZ)
                               * MOTH_FLUTTER_PX * dt_s;
                 p->x += -sinf(p->heading) * lateral;

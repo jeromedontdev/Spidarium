@@ -11173,3 +11173,90 @@ atmosphere.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Climb,
 Holo Garden gift (kind 34) at (240,300) Walk Over.
+
+## Round 126 - Layers that mean something, and a smaller, calmer tank
+
+### The six requests
+
+1. Layer selection should only exist between items that actually touch.
+2. Remove Climb as a decor option.
+3. You should not be able to jump onto solid items during hunting.
+4. Evaluate the size of the earlier decor items for more variety.
+5. Add token-optimization docs to prevent mindless spend.
+6. Add more ways for the game and environment to feel alive.
+
+### Decisions made
+
+**Layers are proximity-based.** `decor_layer_count_at()` now counts only items
+whose ARTWORK OVERLAPS the one being ordered. Draw order is only visible where
+two sprites cover the same pixels, so ordering a fern against a rock at the far
+end of the tank changed nothing the player could see -- and offering the control
+there implied a relationship that did not exist. The gift uses the same rule.
+Verified on hardware: two rocks at (100,100) and (380,380) both report
+`overlapping=0`; a third at (110,110) makes the first two report `overlapping=1`.
+
+**Climb is retired, not tuned.** The 2.5D lift never read convincingly: the
+spider slid up a flat sprite with no perspective change, and the shadow and
+hitbox both had to be special-cased to hide how wrong it looked. Rather than keep
+tuning a thing that was not working, the option is gone. `DECOR_CLIMB` survives
+in the enum only so old saves parse; `decor_migrate_paths()` rewrites it to Walk
+Behind on load, and `decor_set_path()` refuses it so no code path can
+reintroduce it. The lift maths is still exercised directly by `decor_test()`, so
+it is not silently broken if Climb is ever reinstated.
+
+**Pounces clamp the target, not just the landing.** The old code only pushed the
+landing out of a solid item, which meant the spider still flew into it and could
+end up wedged. `clamp_out_of_solid()` now runs on the TARGET before the flight
+starts, so the arc is correct as well as the destination. The landing re-runs it
+as a belt-and-braces pass.
+
+**`art_scale` decouples drawn size from footprint.** This was the real reason the
+early items all looked the same size: `radius` drove BOTH the collision footprint
+and the drawn size, so making a fern look lush meant making it a bigger obstacle.
+`art_scale` is a percentage of the footprint-derived size, so the fern now draws
+at 135% while keeping its 15 px footprint, and the white flower draws at 75%.
+74 entries were tuned; the large climb structures stay at 100.
+
+**A token budget doc.** `docs/TOKEN_BUDGET.md` exists because the expensive
+resource here is not on the board. Its one rule: never regenerate art to fix a
+code problem. Every art complaint in this project's history turned out to be a
+code bug -- a wrong scale, a mask sampled from the wrong row, a layer parented
+into the wrong band. The doc records those cases with their real cost, sets a
+6-image ceiling per task, and lists the cheap alternatives in order.
+
+**Prey graze.** A bug that is not fleeing stops to feed for a moment, then moves
+on. Without it, prey either drift constantly or stand perfectly still, and both
+read as mechanical. A graze is cancelled the moment the spider gets close,
+because the flee branch takes over -- so a pause is never a way to get caught
+standing still. The flutter offset is suppressed while grazing, or a "resting"
+moth would still slide sideways.
+
+### Evidence
+
+- Build exit 0, zero main warnings. Flash exit 0.
+- `decorlayers` on hardware: two items at opposite ends report `overlapping=0`;
+  a third placed on top of the first makes both report `overlapping=1`.
+- Migration verified on hardware: the saved Driftwood Ramp came back as
+  `band=floor` with `climbat height=0`, i.e. Climb was rewritten to Walk Behind.
+- `art_scale` verified on hardware: the Small Rock now reports `scale=165`
+  (was 144), so the drawn size changed while the footprint did not.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline.
+- Browser suite 296/296, up from 291. New tests cover proximity layers (stacked
+  vs distant items, and the gift), `art_scale` changing extent but not footprint,
+  Climb being unreachable and migrating, and prey grazing (the bug pauses, still
+  moves, and still flees when the spider closes).
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, unchanged.
+
+### Honest boundaries
+
+The tests prove the layer counts, the migration, the art scale and the grazing
+cycle. They do not prove the tank *looks* better on the physical panel -- the
+size variety in particular is a judgement call that wants human eyes, and the
+`art_scale` values are a first pass that may want tuning once seen. The pounce
+clamp is proven by construction and by `hunttest`, not by a scripted
+jump-into-a-rock scenario on hardware.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) now on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).

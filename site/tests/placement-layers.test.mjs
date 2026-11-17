@@ -68,6 +68,54 @@ test('layer reordering crosses the inline/tail boundary and preserves all item r
   assert.deepEqual(state.decor,before);
 });
 
+test('layers only order items whose artwork actually overlaps',()=>{
+  /* Draw order is only visible where two sprites cover the same pixels, so
+   * ordering a fern against a rock at the far end of the tank changes nothing
+   * the player can see. The control must not be offered there. */
+  const s=E.freshState();s.decor_owned=0xffff;s.level=40;
+  E.placeDecor(s,0,200,200);   // Small Rock
+  E.placeDecor(s,0,200,200);   // stacked on it
+  E.placeDecor(s,0,60,60);     // far away
+  assert.equal(E.decorLayerOrder(s,0).length,2,'the two stacked items order together');
+  assert.equal(E.decorLayerOrder(s,2).length,1,'the far item orders against nothing');
+  assert.equal(E.decorLayerIndex(s,2),0);
+  assert.equal(E.setDecorLayer(s,2,1),false,'nothing to reorder against');
+  /* A new item staged on top of the stack counts both; staged far away counts
+   * none. */
+  assert.equal(E.decorLayerSlots(s,0,-1,{kind:0,x:200,y:200}).length,2);
+  assert.equal(E.decorLayerSlots(s,0,-1,{kind:0,x:60,y:60}).length,1);
+});
+
+test('art scale changes the drawn size but not the footprint',()=>{
+  /* A fern can look lush without becoming a bigger obstacle. */
+  const fern=E.DECOR_KINDS.findIndex(d=>d.key==='fern');
+  const flower=E.DECOR_KINDS.findIndex(d=>d.key==='flower_white');
+  assert.ok(E.DECOR_KINDS[fern].artScale>100,'the fern draws larger than its footprint');
+  assert.ok(E.DECOR_KINDS[flower].artScale<100,'the flower draws smaller');
+  assert.equal(E.DECOR_KINDS[fern].radius,15,'the footprint is unchanged');
+  /* decorExtent is the drawn half-extent, so it tracks artScale. */
+  assert.ok(E.decorExtent(fern)>E.DECOR_KINDS[fern].radius*2);
+  assert.ok(E.decorExtent(flower)<E.DECOR_KINDS[flower].radius*2);
+});
+
+test('climb is retired: it cannot be selected and a legacy save migrates',()=>{
+  const s=E.freshState();s.decor_owned=0xffff;s.level=40;
+  E.placeDecor(s,3,240,240);   // Log, which has climb height
+  for(let i=0;i<6;i++){
+    E.toggleDecorBlocking(s,0);
+    assert.ok(s.decor[0].blocking<E.DECOR_SELECTABLE_PATHS,
+      `cycling landed on retired path ${s.decor[0].blocking}`);
+  }
+  /* A save carrying Climb is rewritten to Walk Behind on load. */
+  s.decor[0].blocking=3;
+  assert.equal(E.migrateDecorPaths(s),1);
+  assert.equal(s.decor[0].blocking,2);
+  assert.equal(E.migrateDecorPaths(s),0,'idempotent');
+  /* The path names no longer offer it. */
+  assert.equal(E.DECOR_PATH_NAMES.length,3);
+  assert.ok(!E.DECOR_PATH_NAMES.includes('Climb'));
+});
+
 test('moving stages path, layer and position; Cancel is exact and Done saves once',()=>{
   const {state,ui}=fixture(),before=structuredClone(state.decor);
   ui.beginDecorMove(0);ui.setPlacementPath(2);ui.positionPlacement(180,180);
@@ -427,18 +475,21 @@ const flips=seen.filter((v,i)=>i>0&&v!==seen[i-1]).length;
 assert.ok(flips<=4,`state must not flicker, saw ${flips} flips`);
 });
 
-test('climb is only offered for kinds that have height',()=>{  const {state}=fixture();
+test('climb is retired for every kind, climbable or not',()=>{
+  /* The 2.5D lift never read convincingly on the panel, so the option was
+   * removed rather than tuned further. No kind can reach it now. */
+  const {state}=fixture();
   state.decor[0]={kind:5,blocking:0,x:240,y:240};   /* Fern: flat */
-  state.decor[1]={kind:3,blocking:0,x:200,y:200};   /* Log: climbable */
-  for(let i=0;i<4;i++)E.toggleDecorBlocking(state,0);
-  assert.notEqual(state.decor[0].blocking,3,'a flat prop never reaches Climb');
-  let reached=false;
-  for(let i=0;i<4;i++){
-    E.toggleDecorBlocking(state,1);
-    if(state.decor[1].blocking===3)reached=true;
+  state.decor[1]={kind:3,blocking:0,x:200,y:200};   /* Log: has climb height */
+  for(const slot of [0,1]){
+    for(let i=0;i<6;i++){
+      E.toggleDecorBlocking(state,slot);
+      assert.notEqual(state.decor[slot].blocking,3,
+        `slot ${slot} reached the retired Climb path`);
+      assert.ok(state.decor[slot].blocking<E.DECOR_SELECTABLE_PATHS);
+    }
   }
-  assert.equal(reached,true,'a climbable prop can reach Climb');
-  assert.deepEqual(E.DECOR_PATH_NAMES,['Walk Over','Solid','Walk Behind','Climb']);
+  assert.deepEqual(E.DECOR_PATH_NAMES,['Walk Over','Solid','Walk Behind']);
 });
 
 test('the gift has the same layer control as decor',()=>{
@@ -447,13 +498,16 @@ test('the gift has the same layer control as decor',()=>{
    * actually arranging: a gift behind the log, or in front of it. */
   const {state}=fixture();
   for(const item of state.decor)item.kind=E.DECOR_EMPTY;
-  /* Three floor-band props. */
-  state.decor[0]={kind:3,blocking:0,x:100,y:100};
-  state.decor[1]={kind:5,blocking:0,x:200,y:200};
-  state.decor[2]={kind:6,blocking:0,x:300,y:300};
+  /* Three floor-band props, all overlapping the gift's position. Only items the
+   * gift actually touches are ordered against, so they are stacked rather than
+   * spread across the tank. */
+  state.decor[0]={kind:3,blocking:0,x:240,y:240};
+  state.decor[1]={kind:5,blocking:0,x:250,y:250};
+  state.decor[2]={kind:6,blocking:0,x:230,y:230};
+  state.gift={kind:0,variant:0,used:1,x:240,y:240};
   state.gift_layer=0;
   /* The count includes the gift itself, so three props plus the gift is four. */
-  assert.equal(E.giftLayerCount(state,0),4,'three props plus the gift');
+  assert.equal(E.giftLayerCount(state,0),4,'three overlapping props plus the gift');
   assert.equal(E.giftLayerIndex(state,0),0,'the gift starts at the back');
   assert.equal(E.setGiftLayer(state,0,3),true,'the gift can go to the front');
   assert.equal(state.gift_layer,3);
@@ -463,10 +517,13 @@ test('the gift has the same layer control as decor',()=>{
   state.decor[0].blocking=2;
   assert.equal(E.giftLayerCount(state,2),2,'one canopy prop plus the gift');
   assert.equal(E.giftLayerCount(state,0),3,'two floor props plus the gift');
+  /* A prop at the far end of the tank is NOT ordered against. */
+  state.decor[1]={kind:5,blocking:0,x:60,y:60};
+  assert.equal(E.giftLayerCount(state,0),2,'only the overlapping prop counts');
   /* An out-of-range stored index is clamped rather than trusted, so a save
    * written when more decor existed cannot index past the band. */
   state.gift_layer=99;
-  assert.equal(E.giftLayerIndex(state,0),2,'clamped to the band size');
+  assert.equal(E.giftLayerIndex(state,0),1,'clamped to the overlapping count');
 });
 
 test('the spider is always drawn from directly above',()=>{
@@ -640,11 +697,16 @@ test('the layer row is hidden when there is nothing to order against',()=>{
    * being placed. */
   const {state}=fixture();
   for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  state.gift={kind:0,variant:0,used:1,x:240,y:240};
   state.gift_layer=0;
   assert.equal(E.giftLayerCount(state,0),1,'a lone gift has one layer');
-  /* One floor prop gives the gift something to sit behind or in front of. */
-  state.decor[0]={kind:3,blocking:0,x:100,y:100};
-  assert.equal(E.giftLayerCount(state,0),2,'a prop plus the gift is two layers');
+  /* One overlapping floor prop gives the gift something to sit behind or in
+   * front of. */
+  state.decor[0]={kind:3,blocking:0,x:240,y:240};
+  assert.equal(E.giftLayerCount(state,0),2,'an overlapping prop plus the gift is two layers');
+  /* A prop at the far end of the tank does not. */
+  state.decor[0]={kind:3,blocking:0,x:60,y:60};
+  assert.equal(E.giftLayerCount(state,0),1,'a distant prop is not ordered against');
 });
 
 test('every sprite family shares one pixel density',()=>{

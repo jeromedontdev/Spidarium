@@ -118,7 +118,9 @@ test('serial schema producer emits both automation offsets and minVersion3',asyn
 
 test('decor catalogue matches the native table and every kind is placeable',async()=>{
   const source=(await native('decor.c')).split('k_decor_kinds[DECOR_COUNT] = {')[1].split('};')[0];
-  const rows=[...source.matchAll(/\{\s*"([^"]+)",\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"([^"]+)",\s*(\d+)\s*\}/g)];
+  // The table gained a trailing art_scale column, so the pattern accepts an
+  // optional ninth field and defaults it to 100 (the historical size).
+  const rows=[...source.matchAll(/\{\s*"([^"]+)",\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"([^"]+)",\s*(\d+)\s*(?:,\s*(\d+)\s*)?\}/g)];
   assert.equal(rows.length,DECOR_KINDS.length);
   rows.forEach((row,id)=>{
     const d=DECOR_KINDS[id];
@@ -129,6 +131,7 @@ test('decor catalogue matches the native table and every kind is placeable',asyn
     assert.equal(d.blocking,Number(row[6]),`blocking ${id}`);
     assert.equal(d.key,row[7].replace('decor_',''),`key ${id}`);
     assert.equal(d.climb,Number(row[8]),`climb height ${id}`);
+    assert.equal(d.artScale??100,Number(row[9]??100),`art scale ${id}`);
     assert.equal(decorSprite(id),`decoritem_${d.key}`,`sprite ${id}`);
   });
 });

@@ -25,6 +25,7 @@
 - [Art refinement handoff (16-bit SNES era)](ART_HANDOFF_SNES.md).
 - [Asset inventory](ASSETS_INVENTORY.md).
 - [Asset maintenance](../assets/README.md).
+- [Token budget — how to stop mindless spend](TOKEN_BUDGET.md).
 
 ## Verification
 

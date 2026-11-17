@@ -387,7 +387,11 @@ void terrarium_refresh_decor(void)
          * 1:1 from a 192x192 source gave them half the density of everything
          * else, which made their pixels look visibly smaller. */
         bool big = decor_is_climb_structure(item->kind);
+        /* art_scale decouples the drawn size from the collision footprint, so a
+         * fern can look lush without becoming a bigger obstacle. 100 is the
+         * historical size, so an entry that omits the field is unchanged. */
         int32_t scale = big ? 512 : (def ? (int32_t)def->radius * 16 : 256);
+        if (!big) scale = scale * (int32_t)decor_art_scale(item->kind) / 100;
         if (scale < 64) scale = 64;
         int32_t half = big ? DECOR_CLIMB_SPRITE / 2 : 32;
         lv_image_set_src(obj, image);
@@ -500,8 +504,10 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     }
     lv_image_set_src(s_preview_image, image);
     bool big = !gift && decor_is_climb_structure(kind);
-    lv_image_set_scale(s_preview_image,
-                       gift ? 512 : big ? 512 : decor_def(kind)->radius * 16);
+    int32_t preview_scale = gift ? 512 : big ? 512 : decor_def(kind)->radius * 16;
+    if (!gift && !big) preview_scale = preview_scale * (int32_t)decor_art_scale(kind) / 100;
+    if (preview_scale < 64) preview_scale = 64;
+    lv_image_set_scale(s_preview_image, preview_scale);
     lv_image_set_antialias(s_preview_image, false);
     lv_obj_set_pos(s_preview_image, x - image->header.w / 2, y - image->header.h / 2);
     lv_obj_set_hidden(s_preview_image, false);

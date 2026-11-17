@@ -25,89 +25,100 @@ static const char *TAG = "spidarium.decor";
 /* Shop order. Costs are tuned against the treat prices (12..80 Silk) so decor
  * is a long-term sink rather than something you buy out in one session. */
 static const decor_def_t k_decor_kinds[DECOR_COUNT] = {
-    { "Small Rock", "spider walks over it", 18, 1, 9, 0, "decor_rock_small", 6 },
-    { "Large Rock", "spider walks around it", 34, 2, 16, 1, "decor_rock_large", 14 },
-    { "Pebbles", "spider walks over it", 14, 1, 8, 0, "decor_pebbles", 3 },
-    { "Log", "spider walks around it", 46, 4, 22, 1, "decor_log", 16 },
-    { "Bark Slab", "spider walks over it", 22, 3, 14, 0, "decor_bark", 7 },
-    { "Fern", "spider walks over it", 38, 5, 15, 0, "decor_fern", 0 },
-    { "Moss Clump", "spider walks over it", 20, 2, 11, 0, "decor_moss_clump", 4 },
-    { "Succulent", "spider walks around it", 52, 7, 14, 1, "decor_succulent", 0 },
-    { "White Flower", "spider walks over it", 26, 3, 8, 0, "decor_flower_white", 0 },
-    { "Pink Flower", "spider walks over it", 30, 6, 8, 0, "decor_flower_pink", 0 },
-    { "Mushroom", "spider walks over it", 28, 4, 10, 0, "decor_mushroom", 5 },
-    { "Shell", "spider walks over it", 24, 5, 9, 0, "decor_shell", 4 },
-    { "Crystal", "spider walks around it", 68, 9, 12, 1, "decor_crystal", 12 },
-    { "Leaf Pile", "spider walks over it", 16, 1, 13, 0, "decor_leaf_pile", 3 },
-    { "Twig", "spider walks over it", 12, 1, 12, 0, "decor_twig", 3 },
-    { "Bone", "spider walks around it", 58, 8, 13, 1, "decor_bone", 6 },
-    { "Fern Planter", "spider walks around it", 48, 6, 14, 1, "decor_fern_pot", 0 },
-    { "Acorn Hide", "spider shelters inside", 72, 10, 15, 1, "decor_acorn_hide", 10 },
-    { "Driftwood Arch", "spider walks around it", 82, 12, 18, 1, "decor_driftwood_arch", 18 },
-    { "Web Hammock", "spider walks over it", 64, 8, 15, 0, "decor_web_hammock", 8 },
-    { "Dew Pool", "spider walks over it", 54, 7, 14, 0, "decor_dew_pool", 0 },
-    { "Mushroom Pair", "spider walks over it", 62, 8, 13, 0, "decor_mushroom_pair", 6 },
-    { "Flower Planter", "spider walks around it", 68, 9, 15, 1, "decor_flower_planter", 0 },
-    { "Crystal Cluster", "spider walks around it", 98, 14, 15, 1, "decor_crystal_cluster", 16 },
-    { "Shell Cove", "spider shelters inside", 74, 11, 16, 1, "decor_shell_cove", 8 },
-    { "Twig Ladder", "spider walks over it", 46, 6, 13, 0, "decor_twig_ladder", 12 },
-    { "Mossy Stone", "spider walks over it", 42, 5, 13, 0, "decor_moss_stone", 8 },
-    { "Seed Pod", "spider walks over it", 38, 4, 10, 0, "decor_seed_pod", 4 },
-    { "Silk Tent", "spider shelters inside", 112, 16, 19, 1, "decor_silk_tent", 14 },
-    { "Leaf Umbrella", "spider walks around it", 88, 13, 15, 1, "decor_leaf_umbrella", 0 },
-    { "Bone Arch", "spider walks around it", 96, 15, 16, 1, "decor_bone_arch", 16 },
-    { "Fossil", "spider walks over it", 58, 8, 12, 0, "decor_fossil", 5 },
-    { "Lantern Cap", "spider walks over it", 92, 14, 13, 0, "decor_lantern_cap", 9 },
-    { "Stone Bridge", "spider walks around it", 120, 18, 20, 1, "decor_stone_bridge", 18 },
-    { "Fairy Ring", "woodland fairy / walk over", 44, 4, 17, 0, "decor_fairy_ring", 0 },
-    { "Foxglove Lantern", "woodland fairy / walk around", 58, 6, 12, 1, "decor_foxglove_lantern", 0 },
-    { "Pixie Door", "woodland fairy / walk around", 70, 8, 14, 1, "decor_pixie_door", 0 },
-    { "Gargoyle", "gothic / walk around", 78, 9, 15, 1, "decor_gargoyle", 14 },
-    { "Iron Gate", "gothic / walk around", 84, 10, 19, 1, "decor_iron_gate", 18 },
-    { "Rose Urn", "gothic / walk around", 54, 6, 12, 1, "decor_rose_urn", 10 },
-    { "Book Stack", "academia / walk around", 40, 3, 12, 1, "decor_book_stack", 8 },
-    { "Globe", "academia / walk around", 66, 7, 13, 1, "decor_globe", 0 },
-    { "Quill Desk", "academia / walk around", 90, 11, 19, 1, "decor_quill_desk", 14 },
-    { "Tea Cup", "household / walk around", 32, 2, 13, 1, "decor_tea_cup", 7 },
-    { "Spool", "household / walk around", 26, 2, 10, 1, "decor_spool", 6 },
-    { "Thimble", "household / walk around", 30, 3, 10, 1, "decor_thimble", 6 },
-    { "Cauldron", "witchy / walk around", 74, 8, 17, 1, "decor_cauldron", 12 },
-    { "Broom", "witchy / walk over", 38, 4, 15, 0, "decor_broom", 3 },
-    { "Potion Rack", "witchy / walk around", 86, 10, 17, 1, "decor_potion_rack", 14 },
-    { "Amber Fossil", "prehistoric / walk over", 58, 6, 12, 0, "decor_amber_fossil", 5 },
-    { "Cycad", "prehistoric / walk around", 62, 7, 16, 1, "decor_cycad", 0 },
-    { "Dinosaur Egg", "prehistoric / walk around", 72, 9, 13, 1, "decor_dinosaur_egg", 9 },
-    { "Neon Sign", "cyberpunk / walk around", 80, 9, 14, 1, "decor_neon_sign", 0 },
-    { "Holo Terminal", "cyberpunk / walk around", 96, 12, 15, 1, "decor_holo_terminal", 12 },
-    { "Cable Coil", "cyberpunk / walk over", 42, 4, 12, 0, "decor_cable_coil", 4 },
-    { "Moon Rover", "sci-fi / walk around", 104, 13, 18, 1, "decor_moon_rover", 12 },
-    { "Solar Array", "sci-fi / walk around", 88, 10, 18, 1, "decor_solar_array", 10 },
-    { "Oxygen Pod", "sci-fi / walk around", 92, 11, 14, 1, "decor_oxygen_pod", 11 },
-    { "Wizard Tower", "fantasy / walk around", 112, 14, 17, 1, "decor_wizard_tower", 16 },
-    { "Dragon Statue", "fantasy / walk around", 120, 16, 18, 1, "decor_dragon_statue", 16 },
-    { "Treasure Chest", "fantasy / walk around", 98, 12, 15, 1, "decor_treasure_chest", 11 },
-    { "Sun Obelisk", "lost civilization / walk around", 108, 13, 13, 1, "decor_sun_obelisk", 13 },
-    { "Glyph Tablet", "lost civilization / walk over", 64, 7, 14, 0, "decor_glyph_tablet", 4 },
-    { "Broken Column", "lost civilization / walk around", 76, 8, 15, 1, "decor_broken_column", 12 },
-    { "Stone Lantern", "Japanese zen / walk around", 70, 6, 13, 1, "decor_stone_lantern", 11 },
-    { "Bamboo Fountain", "Japanese zen / walk around", 84, 9, 16, 1, "decor_bamboo_fountain", 14 },
-    { "Bonsai", "Japanese zen / walk around", 94, 11, 16, 1, "decor_bonsai", 0 },
-    { "Fairy Bridge", "woodland fairy / walk around", 102, 12, 20, 1, "decor_fairy_bridge", 16 },
+    { "Small Rock", "spider walks over it", 18, 1, 9, 0, "decor_rock_small", 6 , 115 },
+    { "Large Rock", "spider walks around it", 34, 2, 16, 1, "decor_rock_large", 14 , 100 },
+    { "Pebbles", "spider walks over it", 14, 1, 8, 0, "decor_pebbles", 3 , 85 },
+    { "Log", "spider walks around it", 46, 4, 22, 1, "decor_log", 16 , 105 },
+    { "Bark Slab", "spider walks over it", 22, 3, 14, 0, "decor_bark", 7 , 90 },
+    { "Fern", "spider walks over it", 38, 5, 15, 0, "decor_fern", 0 , 135 },
+    { "Moss Clump", "spider walks over it", 20, 2, 11, 0, "decor_moss_clump", 4 , 80 },
+    { "Succulent", "spider walks around it", 52, 7, 14, 1, "decor_succulent", 0 , 110 },
+    { "White Flower", "spider walks over it", 26, 3, 8, 0, "decor_flower_white", 0 , 75 },
+    { "Pink Flower", "spider walks over it", 30, 6, 8, 0, "decor_flower_pink", 0 , 75 },
+    { "Mushroom", "spider walks over it", 28, 4, 10, 0, "decor_mushroom", 5 , 90 },
+    { "Shell", "spider walks over it", 24, 5, 9, 0, "decor_shell", 4 , 80 },
+    { "Crystal", "spider walks around it", 68, 9, 12, 1, "decor_crystal", 12 , 120 },
+    { "Leaf Pile", "spider walks over it", 16, 1, 13, 0, "decor_leaf_pile", 3 , 95 },
+    { "Twig", "spider walks over it", 12, 1, 12, 0, "decor_twig", 3 , 70 },
+    { "Bone", "spider walks around it", 58, 8, 13, 1, "decor_bone", 6 , 105 },
+    { "Fern Planter", "spider walks around it", 48, 6, 14, 1, "decor_fern_pot", 0 , 125 },
+    { "Acorn Hide", "spider shelters inside", 72, 10, 15, 1, "decor_acorn_hide", 10 , 95 },
+    { "Driftwood Arch", "spider walks around it", 82, 12, 18, 1, "decor_driftwood_arch", 18 , 115 },
+    { "Web Hammock", "spider walks over it", 64, 8, 15, 0, "decor_web_hammock", 8 , 110 },
+    { "Dew Pool", "spider walks over it", 54, 7, 14, 0, "decor_dew_pool", 0 , 90 },
+    { "Mushroom Pair", "spider walks over it", 62, 8, 13, 0, "decor_mushroom_pair", 6 , 100 },
+    { "Flower Planter", "spider walks around it", 68, 9, 15, 1, "decor_flower_planter", 0 , 120 },
+    { "Crystal Cluster", "spider walks around it", 98, 14, 15, 1, "decor_crystal_cluster", 16 , 130 },
+    { "Shell Cove", "spider shelters inside", 74, 11, 16, 1, "decor_shell_cove", 8 , 105 },
+    { "Twig Ladder", "spider walks over it", 46, 6, 13, 0, "decor_twig_ladder", 12 , 100 },
+    { "Mossy Stone", "spider walks over it", 42, 5, 13, 0, "decor_moss_stone", 8 , 95 },
+    { "Seed Pod", "spider walks over it", 38, 4, 10, 0, "decor_seed_pod", 4 , 75 },
+    { "Silk Tent", "spider shelters inside", 112, 16, 19, 1, "decor_silk_tent", 14 , 125 },
+    { "Leaf Umbrella", "spider walks around it", 88, 13, 15, 1, "decor_leaf_umbrella", 0 , 130 },
+    { "Bone Arch", "spider walks around it", 96, 15, 16, 1, "decor_bone_arch", 16 , 115 },
+    { "Fossil", "spider walks over it", 58, 8, 12, 0, "decor_fossil", 5 , 90 },
+    { "Lantern Cap", "spider walks over it", 92, 14, 13, 0, "decor_lantern_cap", 9 , 105 },
+    { "Stone Bridge", "spider walks around it", 120, 18, 20, 1, "decor_stone_bridge", 18 , 120 },
+    { "Fairy Ring", "woodland fairy / walk over", 44, 4, 17, 0, "decor_fairy_ring", 0 , 110 },
+    { "Foxglove Lantern", "woodland fairy / walk around", 58, 6, 12, 1, "decor_foxglove_lantern", 0 , 95 },
+    { "Pixie Door", "woodland fairy / walk around", 70, 8, 14, 1, "decor_pixie_door", 0 , 90 },
+    { "Gargoyle", "gothic / walk around", 78, 9, 15, 1, "decor_gargoyle", 14 , 110 },
+    { "Iron Gate", "gothic / walk around", 84, 10, 19, 1, "decor_iron_gate", 18 , 120 },
+    { "Rose Urn", "gothic / walk around", 54, 6, 12, 1, "decor_rose_urn", 10 , 95 },
+    { "Book Stack", "academia / walk around", 40, 3, 12, 1, "decor_book_stack", 8 , 100 },
+    { "Globe", "academia / walk around", 66, 7, 13, 1, "decor_globe", 0 , 90 },
+    { "Quill Desk", "academia / walk around", 90, 11, 19, 1, "decor_quill_desk", 14 , 115 },
+    { "Tea Cup", "household / walk around", 32, 2, 13, 1, "decor_tea_cup", 7 , 85 },
+    { "Spool", "household / walk around", 26, 2, 10, 1, "decor_spool", 6 , 75 },
+    { "Thimble", "household / walk around", 30, 3, 10, 1, "decor_thimble", 6 , 70 },
+    { "Cauldron", "witchy / walk around", 74, 8, 17, 1, "decor_cauldron", 12 , 110 },
+    { "Broom", "witchy / walk over", 38, 4, 15, 0, "decor_broom", 3 , 105 },
+    { "Potion Rack", "witchy / walk around", 86, 10, 17, 1, "decor_potion_rack", 14 , 115 },
+    { "Amber Fossil", "prehistoric / walk over", 58, 6, 12, 0, "decor_amber_fossil", 5 , 90 },
+    { "Cycad", "prehistoric / walk around", 62, 7, 16, 1, "decor_cycad", 0 , 130 },
+    { "Dinosaur Egg", "prehistoric / walk around", 72, 9, 13, 1, "decor_dinosaur_egg", 9 , 100 },
+    { "Neon Sign", "cyberpunk / walk around", 80, 9, 14, 1, "decor_neon_sign", 0 , 105 },
+    { "Holo Terminal", "cyberpunk / walk around", 96, 12, 15, 1, "decor_holo_terminal", 12 , 110 },
+    { "Cable Coil", "cyberpunk / walk over", 42, 4, 12, 0, "decor_cable_coil", 4 , 85 },
+    { "Moon Rover", "sci-fi / walk around", 104, 13, 18, 1, "decor_moon_rover", 12 , 115 },
+    { "Solar Array", "sci-fi / walk around", 88, 10, 18, 1, "decor_solar_array", 10 , 120 },
+    { "Oxygen Pod", "sci-fi / walk around", 92, 11, 14, 1, "decor_oxygen_pod", 11 , 100 },
+    { "Wizard Tower", "fantasy / walk around", 112, 14, 17, 1, "decor_wizard_tower", 16 , 125 },
+    { "Dragon Statue", "fantasy / walk around", 120, 16, 18, 1, "decor_dragon_statue", 16 , 120 },
+    { "Treasure Chest", "fantasy / walk around", 98, 12, 15, 1, "decor_treasure_chest", 11 , 105 },
+    { "Sun Obelisk", "lost civilization / walk around", 108, 13, 13, 1, "decor_sun_obelisk", 13 , 115 },
+    { "Glyph Tablet", "lost civilization / walk over", 64, 7, 14, 0, "decor_glyph_tablet", 4 , 95 },
+    { "Broken Column", "lost civilization / walk around", 76, 8, 15, 1, "decor_broken_column", 12 , 110 },
+    { "Stone Lantern", "Japanese zen / walk around", 70, 6, 13, 1, "decor_stone_lantern", 11 , 100 },
+    { "Bamboo Fountain", "Japanese zen / walk around", 84, 9, 16, 1, "decor_bamboo_fountain", 14 , 115 },
+    { "Bonsai", "Japanese zen / walk around", 94, 11, 16, 1, "decor_bonsai", 0 , 125 },
+    { "Fairy Bridge", "woodland fairy / walk around", 102, 12, 20, 1, "decor_fairy_bridge", 16 , 120 },
     /* Large climb structures. The radius is the footprint the spider must be
      * inside to be lifted, and the height is the lift at the centre. These are
      * authored at 192x192 and drawn 1:1, so a radius of 60 is a structure that
      * spans a quarter of the tank rather than a prop the spider hops onto. */
-    { "Fallen Branch", "spider climbs the whole length", 140, 15, 60, 1, "decor_climb_branch", 46 },
-    { "Vine Arch", "spider climbs the whole length", 160, 17, 64, 1, "decor_climb_vine", 54 },
-    { "Root Bridge", "spider climbs the whole length", 150, 16, 62, 1, "decor_climb_root", 50 },
-    { "Ivy Column", "spider climbs the whole length", 132, 14, 52, 1, "decor_climb_ivy", 58 },
-    { "Mossy Boulder", "spider climbs the whole length", 124, 13, 56, 1, "decor_climb_boulder", 40 },
-    { "Driftwood Ramp", "spider climbs the whole length", 170, 18, 66, 1, "decor_climb_driftwood", 62 },
+    { "Fallen Branch", "spider climbs the whole length", 140, 15, 60, 1, "decor_climb_branch", 46 , 100 },
+    { "Vine Arch", "spider climbs the whole length", 160, 17, 64, 1, "decor_climb_vine", 54 , 100 },
+    { "Root Bridge", "spider climbs the whole length", 150, 16, 62, 1, "decor_climb_root", 50 , 100 },
+    { "Ivy Column", "spider climbs the whole length", 132, 14, 52, 1, "decor_climb_ivy", 58 , 100 },
+    { "Mossy Boulder", "spider climbs the whole length", 124, 13, 56, 1, "decor_climb_boulder", 40 , 100 },
+    { "Driftwood Ramp", "spider climbs the whole length", 170, 18, 66, 1, "decor_climb_driftwood", 62 , 100 },
 };
 
 const decor_def_t *decor_def(uint8_t kind)
 {
     return kind < DECOR_COUNT ? &k_decor_kinds[kind] : NULL;
+}
+
+/* Visual size as a percentage of the footprint-derived size.
+ *
+ * 0 means "not specified", which keeps the historical 100 so a table entry that
+ * omits the field behaves exactly as before. */
+uint8_t decor_art_scale(uint8_t kind)
+{
+    const decor_def_t *def = decor_def(kind);
+    if (!def || def->art_scale == 0) return 100;
+    return def->art_scale;
 }
 
 bool decor_unlocked(uint8_t kind)
@@ -273,13 +284,10 @@ bool decor_toggle_blocking(int slot)
 {
     decor_item_t *item = slot_at(slot);
     if (!item || item->kind == 0xFF) return false;
-    /* Cycle through the paths this kind actually supports, so a flat prop never
-     * lands on Climb and a climbable one always reaches it. */
     uint8_t path = item->blocking;
-    for (int i = 0; i < DECOR_PATH_COUNT; i++) {
-        path = (uint8_t)((path + 1) % DECOR_PATH_COUNT);
-        if (path != DECOR_CLIMB || decor_climbable(item->kind)) break;
-    }
+    /* A legacy Climb item cycles out to Walk Over rather than getting stuck. */
+    if (path >= DECOR_SELECTABLE_PATHS) path = DECOR_WALK_OVER;
+    path = (uint8_t)((path + 1) % DECOR_SELECTABLE_PATHS);
     return decor_set_path(slot, path);
 }
 
@@ -290,15 +298,35 @@ bool decor_set_path(int slot, uint8_t path)
         ESP_LOGW(TAG, "path rejected: slot=%d path=%u", slot, path);
         return false;
     }
-    /* Climbing needs something to climb. Refuse the path on a flat prop rather
-     * than silently drawing the spider at zero lift and confusing the player. */
-    if (path == DECOR_CLIMB && !decor_climbable(item->kind)) {
-        ESP_LOGW(TAG, "path rejected: slot=%d kind=%u is not climbable", slot, item->kind);
+    if (path == DECOR_CLIMB) {
+        /* Not selectable any more. Refuse it here rather than at every call
+         * site, so no code path can reintroduce it by accident. */
+        ESP_LOGW(TAG, "path rejected: slot=%d Climb is no longer selectable", slot);
         return false;
     }
     item->blocking = path;
     ESP_LOGI(TAG, "slot %d blocking=%u", slot, item->blocking);
     return true;
+}
+
+/* Rewrite any legacy Climb item to Walk Behind.
+ *
+ * Walk Behind is the closest surviving behaviour: the spider goes around the
+ * item and passes behind its top, which is what the large structures were
+ * always doing visually. Called from the save loader so a tank saved with Climb
+ * items does not keep a path the UI can no longer express. */
+int decor_migrate_paths(void)
+{
+    int migrated = 0;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        decor_item_t *item = slot_at(i);
+        if (!item || item->kind == 0xFF) continue;
+        if (item->blocking != DECOR_CLIMB) continue;
+        item->blocking = DECOR_WALK_BEHIND;
+        migrated++;
+        ESP_LOGI(TAG, "slot %d migrated from Climb to Walk Behind", i);
+    }
+    return migrated;
 }
 
 /* --- climbing (2.5D) --------------------------------------------------- */
@@ -684,12 +712,88 @@ static bool same_band(uint8_t a, uint8_t b)
 {
     return (a == DECOR_WALK_BEHIND) == (b == DECOR_WALK_BEHIND);
 }
-int decor_layer_count(uint8_t path, int exclude_slot)
+
+/* Half-extent of an item's ARTWORK on screen, in pixels.
+ *
+ * This is the same number the renderer uses to size the sprite, so it is the
+ * honest measure of how much of the tank an item covers. A 64x64 source drawn
+ * at scale radius*16 covers 4*radius screen pixels, so its half-extent is
+ * 2*radius. The large climb structures are drawn at 2x from a 96x96 source, so
+ * their half-extent is DECOR_CLIMB_EXTENT. */
+static float item_extent(uint8_t kind)
+{
+    const decor_def_t *def = decor_def(kind);
+    if (!def) return 0.0f;
+    if (decor_is_climb_structure(kind)) return (float)DECOR_CLIMB_EXTENT;
+    /* The drawn size, not the footprint: overlap is about pixels on screen. */
+    return (float)def->radius * 2.0f * decor_art_scale(kind) / 100.0f;
+}
+
+/* True when two items' artwork actually overlaps on screen.
+ *
+ * This is the whole point of the layer control: draw order is only visible
+ * where two sprites cover the same pixels. Ordering a fern against a rock at the
+ * far end of the tank changes nothing the player can see, so offering the
+ * control there was noise -- it implied a relationship that did not exist. */
+static bool items_overlap(uint8_t kind_a, int16_t ax, int16_t ay,
+                          uint8_t kind_b, int16_t bx, int16_t by)
+{
+    float dx = (float)(ax - bx);
+    float dy = (float)(ay - by);
+    float reach = item_extent(kind_a) + item_extent(kind_b);
+    return dx * dx + dy * dy < reach * reach;
+}
+
+/* How many items share this item's band AND overlap it on screen.
+ *
+ * `exclude_slot` is the item being ordered, so it does not count itself. Pass
+ * -1 when the item is not placed yet (a new placement), in which case every
+ * overlapping item counts. */
+int decor_layer_count_at(uint8_t path, uint8_t kind, int16_t x, int16_t y,
+                         int exclude_slot)
 {
     int count = 0;
     for (int i = 0; i < decor_slot_count(); i++) {
         const decor_item_t *item = decor_at(i);
-        if (item && i != exclude_slot && same_band(item->blocking, path)) count++;
+        if (!item || i == exclude_slot) continue;
+        if (!same_band(item->blocking, path)) continue;
+        if (!items_overlap(kind, x, y, item->kind, item->x, item->y)) continue;
+        count++;
+    }
+    return count;
+}
+
+/* Position of this item among the overlapping items in its band, 0-based.
+ *
+ * Only overlapping items are counted, so "1 / 2" means "the second of the two
+ * things this one actually touches". */
+int decor_layer_index_at(uint8_t path, uint8_t kind, int16_t x, int16_t y,
+                         int exclude_slot)
+{
+    int index = 0;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        if (i == exclude_slot) continue;
+        const decor_item_t *other = decor_at(i);
+        if (!other) continue;
+        if (!same_band(other->blocking, path)) continue;
+        if (!items_overlap(kind, x, y, other->kind, other->x, other->y)) continue;
+        /* A new item (exclude_slot < 0) is appended, so it sits after every
+         * overlapping item and its index is the count. */
+        if (exclude_slot < 0 || i < exclude_slot) index++;
+    }
+    return index;
+}
+
+int decor_layer_count(uint8_t path, int exclude_slot)
+{
+    const decor_item_t *item = exclude_slot >= 0 ? decor_at(exclude_slot) : NULL;
+    if (item) return decor_layer_count_at(path, item->kind, item->x, item->y, exclude_slot);
+    /* No reference item: fall back to the whole band. Only used by callers that
+     * genuinely want the band size rather than an ordering. */
+    int count = 0;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *other = decor_at(i);
+        if (other && i != exclude_slot && same_band(other->blocking, path)) count++;
     }
     return count;
 }
@@ -698,30 +802,38 @@ int decor_layer_index(int slot)
 {
     const decor_item_t *item = decor_at(slot);
     if (!item) return -1;
-    int index = 0;
-    for (int i = 0; i < slot; i++) {
-        const decor_item_t *other = decor_at(i);
-        if (other && same_band(item->blocking, other->blocking)) index++;
-    }
-    return index;
+    return decor_layer_index_at(item->blocking, item->kind, item->x, item->y, slot);
 }
 
 int decor_set_layer(int slot, int index)
 {
     const decor_item_t *item = decor_at(slot);
-    if (!item || index < 0 || index >= decor_layer_count(item->blocking, -1)) {
-        ESP_LOGW(TAG, "layer rejected: slot=%d index=%d", slot, index);
+    if (!item) return -1;
+    /* decor_layer_count_at() counts the OTHER overlapping items, so the item's
+     * own valid positions are 0..count inclusive. Using `index >= count` here
+     * rejected the last position, which made "send to front" a no-op whenever
+     * the item was already second-to-last. */
+    int others = decor_layer_count_at(item->blocking, item->kind, item->x, item->y, slot);
+    if (index < 0 || index > others) {
+        ESP_LOGW(TAG, "layer rejected: slot=%d index=%d others=%d", slot, index, others);
         return -1;
     }
-    int current = decor_layer_index(slot);
+    int current = decor_layer_index_at(item->blocking, item->kind, item->x, item->y, slot);
     while (current != index) {
         int step = current < index ? 1 : -1;
+        /* Walk to the next item this one actually overlaps. Swapping past a
+         * non-overlapping item would change that item's order for no visible
+         * reason, and the bubble swap preserves the relative order of
+         * everything it passes, so skipping them is safe. */
         int next = slot + step;
         while (next >= 0 && next < decor_slot_count()) {
             const decor_item_t *other = decor_at(next);
-            if (other && same_band(item->blocking, other->blocking)) break;
+            if (other && same_band(item->blocking, other->blocking) &&
+                items_overlap(item->kind, item->x, item->y, other->kind, other->x, other->y))
+                break;
             next += step;
         }
+        if (next < 0 || next >= decor_slot_count()) break;
         decor_item_t swap = *slot_at(next);
         *slot_at(next) = *slot_at(slot);
         *slot_at(slot) = swap;
@@ -742,14 +854,32 @@ int decor_set_layer(int slot, int index)
  *
  * The count includes the gift itself, so "3 / 4" means the gift is third of
  * four things in that band. */
+/* The gift's own artwork is 64x64 drawn at 2x, so its half-extent is 64. */
+#define GIFT_EXTENT 64.0f
+
+/* How many decor items the gift actually overlaps, plus the gift itself.
+ *
+ * A gift at one end of the tank and a log at the other have no visible
+ * relationship, so offering "1 / 2" there was meaningless. Only overlapping
+ * items are ordered against. */
 int decor_gift_layer_count(uint8_t path)
 {
-    return decor_layer_count(path, -1) + 1;
+    if (!g.gift.used) return 1;
+    int count = 0;
+    for (int i = 0; i < decor_slot_count(); i++) {
+        const decor_item_t *item = decor_at(i);
+        if (!item || !same_band(item->blocking, path)) continue;
+        float dx = (float)(g.gift.x - item->x);
+        float dy = (float)(g.gift.y - item->y);
+        float reach = GIFT_EXTENT + item_extent(item->kind);
+        if (dx * dx + dy * dy < reach * reach) count++;
+    }
+    return count + 1;
 }
 
 int decor_gift_layer_index(uint8_t path)
 {
-    int count = decor_layer_count(path, -1);
+    int count = decor_gift_layer_count(path) - 1;
     int index = g.gift_layer;
     if (index > count) index = count;
     return index;
@@ -757,7 +887,7 @@ int decor_gift_layer_index(uint8_t path)
 
 bool decor_gift_set_layer(uint8_t path, int index)
 {
-    int count = decor_layer_count(path, -1);
+    int count = decor_gift_layer_count(path) - 1;
     if (index < 0 || index > count) {
         ESP_LOGW(TAG, "gift layer rejected: index=%d count=%d", index, count);
         return false;
@@ -994,18 +1124,53 @@ bool decor_test(void)
      * item sits, since b covers (200,200). */
     ok = ok && decor_at(a)->blocking == DECOR_WALK_OVER;
     ok = ok && !decor_blocks_point(200 + (int16_t)decor_block_radius(b) + 4, 200);
-    ok = ok && decor_hit_test(200, 200) == b && decor_layer_count(0, -1) == 2;
+    ok = ok && decor_hit_test(200, 200) == b;
+    /* --- layers are proximity-based --------------------------------------
+     * Draw order is only visible where two sprites cover the same pixels, so
+     * the layer control counts only items whose artwork OVERLAPS. All three of
+     * a, b and c sit at (200,200), so they all overlap and the floor band holds
+     * two of them (a and c). */
+    ok = ok && decor_layer_count(0, -1) == 2;
     ok = ok && decor_layer_count(2, -1) == 1 && decor_layer_index(c) == 1;
     int reordered = decor_set_layer(c, 0);
     ok = ok && reordered == a && decor_layer_index(reordered) == 0;
     ok = ok && decor_at(b)->blocking == DECOR_WALK_BEHIND && decor_hit_test(200, 200) == b;
-    /* Path 3 is Climb. A Small Rock has height, so it is allowed; an
-     * out-of-range path is not. */
-    ok = ok && decor_set_path(a, DECOR_CLIMB) && decor_at(a)->blocking == DECOR_CLIMB;
+
+    /* An item at the far end of the tank is NOT ordered against. This is the
+     * whole point: "there's no need to set the layers for two items at
+     * completely separate ends of the screen". */
+    int far = decor_place(DECOR_ROCK_SMALL, 60, 60);
+    ok = ok && far >= 0;
+    ok = ok && decor_layer_count_at(DECOR_WALK_OVER, DECOR_ROCK_SMALL, 60, 60, far) == 0;
+    ok = ok && decor_layer_index(far) == 0;
+    /* ...and it cannot be reordered against anything, because there is nothing
+     * it touches. */
+    ok = ok && decor_set_layer(far, 1) < 0;
+    ok = ok && decor_remove(far);
+
+    /* A new item staged on top of an existing one counts it. */
+    ok = ok && decor_layer_count_at(DECOR_WALK_OVER, DECOR_ROCK_SMALL, 200, 200, -1) == 2;
+    /* A new item staged far away counts nothing. */
+    ok = ok && decor_layer_count_at(DECOR_WALK_OVER, DECOR_ROCK_SMALL, 60, 60, -1) == 0;
+
+    /* Climb is retired: it cannot be selected, and an out-of-range path is
+     * still refused. */
+    ok = ok && !decor_set_path(a, DECOR_CLIMB);
+    ok = ok && decor_at(a)->blocking != DECOR_CLIMB;
     ok = ok && !decor_set_path(a, DECOR_PATH_COUNT);
     ok = ok && decor_set_path(a, DECOR_WALK_OVER);
     ok = ok && decor_set_layer(a, -1) < 0;
     ok = ok && decor_set_layer(a, 2) < 0 && decor_layer_index(a) == 0;
+
+    /* --- art_scale decouples drawn size from footprint -------------------
+     * A prop can look lush without becoming a bigger obstacle. 100 is the
+     * historical size, and an entry that omits the field reads as 100. */
+    ok = ok && decor_art_scale(DECOR_FERN) > 100;      /* lush, same footprint */
+    ok = ok && decor_art_scale(DECOR_FLOWER_WHITE) < 100; /* delicate */
+    ok = ok && decor_art_scale(DECOR_ROCK_LARGE) == 100;
+    /* The footprint is unchanged by the art scale: a fern is still as easy to
+     * walk over as it was. */
+    ok = ok && k_decor_kinds[DECOR_FERN].radius == 15;
     ok = ok && decor_set_path(b, DECOR_SOLID) && decor_blocks_point(200, 200);
     ok = ok && decor_set_layer(b, 2) >= 0;
 
@@ -1024,8 +1189,44 @@ bool decor_test(void)
     int log = decor_place(DECOR_LOG, 240, 240);
     ok = ok && log >= 0 && decor_climbable(DECOR_LOG);
     ok = ok && !decor_climbable(DECOR_FERN);
-    ok = ok && decor_climb_height(log) == 0;   /* still Walk Over */
-    ok = ok && decor_set_path(log, DECOR_CLIMB);
+
+    /* --- Climb is retired ------------------------------------------------
+     * The 2.5D lift never read convincingly on the panel, so the option was
+     * removed rather than tuned further. The machinery below still exists (the
+     * lift maths is exercised directly), but no path can reach it: the player
+     * cannot select Climb, and a save carrying it is migrated on load. */
+    ok = ok && !decor_set_path(log, DECOR_CLIMB);
+    ok = ok && decor_at(log)->blocking != DECOR_CLIMB;
+    ok = ok && decor_climb_height(log) == 0;
+
+    /* Cycling never lands on Climb, for a climbable kind or a flat one. */
+    for (int i = 0; i < DECOR_PATH_COUNT * 2; i++) {
+        decor_toggle_blocking(log);
+        ok = ok && decor_at(log)->blocking != DECOR_CLIMB;
+        ok = ok && decor_at(log)->blocking < DECOR_SELECTABLE_PATHS;
+    }
+    int fern = decor_place(DECOR_FERN, 120, 120);
+    ok = ok && fern >= 0;
+    if (fern >= 0) {
+        ok = ok && !decor_set_path(fern, DECOR_CLIMB);
+        for (int i = 0; i < DECOR_PATH_COUNT * 2; i++) {
+            decor_toggle_blocking(fern);
+            ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
+        }
+    }
+
+    /* A legacy Climb item is rewritten to Walk Behind on load, which is the
+     * closest surviving behaviour: the spider goes around it and passes behind
+     * its top. */
+    slot_at(log)->blocking = DECOR_CLIMB;
+    ok = ok && decor_migrate_paths() == 1;
+    ok = ok && decor_at(log)->blocking == DECOR_WALK_BEHIND;
+    ok = ok && decor_migrate_paths() == 0;   /* idempotent */
+
+    /* The lift maths is still correct, so the machinery is not silently
+     * broken if Climb is ever reinstated. Driven directly rather than through
+     * a path, because no path can reach it now. */
+    slot_at(log)->blocking = DECOR_CLIMB;
     ok = ok && decor_climb_height(log) == k_decor_kinds[DECOR_LOG].climb_height;
     int climb_slot = -1;
     ok = ok && decor_climb_at(240, 240, &climb_slot) == k_decor_kinds[DECOR_LOG].climb_height;
@@ -1033,29 +1234,9 @@ bool decor_test(void)
     ok = ok && decor_climb_at(240, 240 + k_decor_kinds[DECOR_LOG].radius + 6, NULL) == 0;
     /* The tallest overlapping item wins. */
     int bridge = decor_place(DECOR_STONE_BRIDGE, 240, 240);
-    ok = ok && bridge >= 0 && decor_set_path(bridge, DECOR_CLIMB);
+    ok = ok && bridge >= 0;
+    if (bridge >= 0) slot_at(bridge)->blocking = DECOR_CLIMB;
     ok = ok && decor_climb_at(240, 240, NULL) == k_decor_kinds[DECOR_STONE_BRIDGE].climb_height;
-    /* A flat prop refuses Climb rather than silently drawing zero lift.
-     *
-     * Guarded anyway: decor_place() returns -1 on any rejection and
-     * decor_at(-1) is NULL, so an unguarded dereference turns a failed
-     * assertion into a LoadProhibited that takes the whole test down. */
-    int fern = decor_place(DECOR_FERN, 120, 120);
-    ok = ok && fern >= 0;
-    if (fern >= 0) {
-        ok = ok && !decor_set_path(fern, DECOR_CLIMB);
-        ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
-        /* Cycling skips Climb for a flat prop. */
-        for (int i = 0; i < DECOR_PATH_COUNT; i++) decor_toggle_blocking(fern);
-        ok = ok && decor_at(fern)->blocking != DECOR_CLIMB;
-    }
-    /* Cycling reaches Climb for a climbable one. */
-    bool reached = false;
-    for (int i = 0; i < DECOR_PATH_COUNT; i++) {
-        decor_toggle_blocking(log);
-        if (decor_at(log)->blocking == DECOR_CLIMB) reached = true;
-    }
-    ok = ok && reached;
     /* The ramp settles on the target and resets cleanly. */
     decor_climb_reset();
     ok = ok && decor_climb_lift(240, 240, 1000) == k_decor_kinds[DECOR_STONE_BRIDGE].climb_height;
@@ -1074,7 +1255,8 @@ bool decor_test(void)
     ok = ok && !decor_is_climb_structure(DECOR_LOG);
     ok = ok && !decor_is_climb_structure(DECOR_FAIRY_BRIDGE);
     int big = decor_place(DECOR_CLIMB_DRIFTWOOD, 240, 240);
-    ok = ok && big >= 0 && decor_set_path(big, DECOR_CLIMB);
+    ok = ok && big >= 0;
+    if (big >= 0) slot_at(big)->blocking = DECOR_CLIMB;
     uint8_t full = k_decor_kinds[DECOR_CLIMB_DRIFTWOOD].climb_height;
     /* The ramp spans the ARTWORK, not the collision footprint: the sprite is
      * DECOR_CLIMB_SPRITE square drawn at 2x, so its half-extent is
@@ -1110,7 +1292,8 @@ bool decor_test(void)
     ok = ok && decor_climb_at(240 + extent + 2, 240, NULL) == 0;
     /* A prop still snaps: no gradient across its footprint. */
     int flat = decor_place(DECOR_LOG, 120, 120);
-    ok = ok && flat >= 0 && decor_set_path(flat, DECOR_CLIMB);
+    ok = ok && flat >= 0;
+    if (flat >= 0) slot_at(flat)->blocking = DECOR_CLIMB;
     uint8_t log_h = k_decor_kinds[DECOR_LOG].climb_height;
     ok = ok && decor_climb_at(120, 120, NULL) == log_h;
     ok = ok && decor_climb_at(120 + k_decor_kinds[DECOR_LOG].radius - 1, 120, NULL) == log_h;
