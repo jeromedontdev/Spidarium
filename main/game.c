@@ -652,13 +652,13 @@ enum {
     MENU_SPECIES,
     MENU_ABOUT,
     MENU_POWER,
+    MENU_POWER_SLEEP,
     MENU_DISPLAY,
     MENU_DAILY,
     MENU_SHOP,
     MENU_DECOR,
     MENU_DECOR_ITEM,
     MENU_GIFT_ITEM,
-    MENU_POWER_CONFIRM,
     MENU_SOUNDTRACK,
     MENU_BORDERS,
     MENU_WIFI_SCAN,
@@ -740,6 +740,35 @@ void game_cancel_pending_tap(void)
     cancel_enclosure_tap();
 }
 
+/* The enclosure light, as a tint and an opacity.
+ *
+ * The old version was a single dark rectangle at 12-24/255 opacity, which is a
+ * 5-9% wash -- invisible on a 480x480 AMOLED in daylight, and the reason the
+ * "day and night" setting appeared to do nothing. It also only ever darkened,
+ * so every period looked the same, just slightly dimmer.
+ *
+ * This version changes COLOUR as well as opacity, so the tank reads as a
+ * different time of day rather than as a slightly dirty screen:
+ *
+ *   morning    warm gold, very light
+ *   afternoon  neutral, none at all
+ *   evening    amber, moderate
+ *   night      deep blue, strong
+ *
+ * The opacities are chosen to be clearly visible without hiding the artwork:
+ * night is 96/255, which is a real blue hour rather than a blackout. */
+typedef struct {
+    uint32_t colour;
+    uint8_t  opa;
+} light_tint_t;
+
+static const light_tint_t k_light_tints[4] = {
+    { 0xffd9a0, 26 },   /* morning: warm gold */
+    { 0x000000, 0  },   /* afternoon: no tint */
+    { 0xff9a4d, 54 },   /* evening: amber */
+    { 0x1a2f6b, 96 },   /* night: deep blue */
+};
+
 static void apply_enclosure_lights(void)
 {
     if (s_light_overlay) lv_obj_set_hidden(s_light_overlay, !g.lights_dimmed);
@@ -752,6 +781,27 @@ static void tick_enclosure_lights(void)
 {
     if (!s_light_overlay || !g.lights_dimmed) return;
     lv_obj_set_style_bg_opa(s_light_overlay, ambient_light_opa(), 0);
+}
+
+/* The day/night tint. Separate from the manual dim: this is the clock, that is
+ * the player's switch. Both can be on at once, which is why they are two
+ * overlays rather than one. */
+static void apply_daylight_tint(uint8_t period, bool available)
+{
+    if (!s_daylight_overlay) return;
+    if (!available || !g.life.daynight) {
+        lv_obj_set_hidden(s_daylight_overlay, true);
+        return;
+    }
+    if (period > 3) period = 1;
+    const light_tint_t *tint = &k_light_tints[period];
+    if (!tint->opa) {
+        lv_obj_set_hidden(s_daylight_overlay, true);
+        return;
+    }
+    lv_obj_set_style_bg_color(s_daylight_overlay, lv_color_hex(tint->colour), 0);
+    lv_obj_set_style_bg_opa(s_daylight_overlay, tint->opa, 0);
+    lv_obj_set_hidden(s_daylight_overlay, false);
 }
 
 static void delayed_pet(lv_timer_t *timer)
@@ -779,6 +829,7 @@ static char s_wifi_message[80];
 
 static void back_to_wifi(void) { menu_open(MENU_WIFI); }
 static void back_to_settings(void) { menu_open(MENU_SETTINGS); }
+static void back_to_power(void) { menu_open(MENU_POWER); }
 static void back_to_sound(void) { menu_open(MENU_SOUND); ui_menu_set_page(1); }
 static void back_to_about(void) { menu_open(MENU_ABOUT); }
 static void back_to_ota(void) { menu_open(MENU_OTA); }
@@ -1403,8 +1454,7 @@ static void on_power_pick(uint8_t id)
     case 3: g.screen_timeout = (g.screen_timeout + 1) % 5; break;
     case 4: g.deep_sleep_after = (g.deep_sleep_after + 1) % 5; break;
     case 5: g.rtc_wake = (g.rtc_wake + 1) % 3; break;
-    case 6: menu_open(MENU_POWER_CONFIRM); return;
-    case 7:
+    case 6:
         if (!power_request_deep_sleep(g.rtc_wake == 0 ? 900 : g.rtc_wake == 1 ? 3600 : 21600))
             ui_hud_bubble("Sleep Rejected; Worker Busy", 0xf5c86b, 2200);
         else ui_menu_close();
@@ -1412,8 +1462,9 @@ static void on_power_pick(uint8_t id)
     default: break;
     }
     game_save_now();
-    menu_open(MENU_POWER);
-    if (id >= 4) ui_menu_set_page(1);
+    /* Stay in whichever page the row belongs to, so changing the wake interval
+     * does not bounce the player back to the top of the battery menu. */
+    menu_open(id >= 4 ? MENU_POWER_SLEEP : MENU_POWER);
 }
 
 static void on_display_pick(uint8_t id)
@@ -1875,7 +1926,7 @@ static void menu_open(int which)
         items[0] = (ui_menu_item_t){ "WiFi", "Networks and Time Sync", true, false, true, 0 };
         items[1] = (ui_menu_item_t){ "SD Card", "Back Up and Restore", true, false, true, 1 };
         items[2] = (ui_menu_item_t){ "About", "Version and Hardware", true, false, true, 2 };
-        items[3] = (ui_menu_item_t){ "Battery", "Charge and Runtime", true, false, true, 3 };
+        items[3] = (ui_menu_item_t){ "Battery", "Charge, Runtime and Sleep", true, false, true, 3 };
         items[4] = (ui_menu_item_t){ "Display", "Brightness and Rotation", true, false, true, 4 };
         items[5] = (ui_menu_item_t){ "Sound", "Volume and Mute", true, false, true, 5 };
         items[6] = (ui_menu_item_t){ "Auto Feed", "Wild Prey and Unattended Hunting",
@@ -1894,6 +1945,16 @@ static void menu_open(int which)
         break;
     }
     case MENU_POWER: {
+        /* Two groups, in the order a player actually thinks about them:
+         *
+         *   1. What the battery is doing right now (read-only).
+         *   2. How the screen behaves (the settings people come here to change).
+         *
+         * Deep sleep used to sit in the same list as the timeout, which made it
+         * look like another display preference rather than a separate mode that
+         * stops the pet until it wakes. It now has its own submenu, and the
+         * confusing "Automatic Sleep" row (which only ever described RTC mode)
+         * is gone -- the mode row already says "RTC Sleep". */
         static char status[80], runtime[48];
         power_status(status, sizeof status);
         power_runtime_text(runtime, sizeof runtime);
@@ -1901,21 +1962,26 @@ static void menu_open(int which)
         items[1] = (ui_menu_item_t){ "Runtime", runtime, false, false, false, 0 };
         items[2] = (ui_menu_item_t){ "Power Mode", power_mode_name(g.power_mode), true, false, false, 2 };
         items[3] = (ui_menu_item_t){ "Screen Timeout", power_timeout_name(g.screen_timeout), true, false, false, 3 };
-        items[4] = (ui_menu_item_t){ "Deep Sleep After", power_delay_name(g.deep_sleep_after), true, false, false, 4 };
-        items[5] = (ui_menu_item_t){ "RTC Wake Interval", power_wake_name(g.rtc_wake), true, false, false, 5 };
-        items[6] = (ui_menu_item_t){ "Deep Sleep Now", "Save Then Sleep / Right Button Wakes", !net_busy(), false, true, 6 };
-        items[7] = (ui_menu_item_t){ "Automatic Sleep", "RTC Mode Only / Battery, Not USB", false, false, false, 8 };
-        ui_menu_open("Battery", items, 8, on_power_pick);
+        items[4] = (ui_menu_item_t){ "Deep Sleep", power_delay_name(g.deep_sleep_after), true, false, true, 4 };
+        ui_menu_open("Battery", items, 5, on_power_pick);
         ui_menu_set_back(back_to_settings);
         break;
     }
-    case MENU_POWER_CONFIRM:
-        items[0] = (ui_menu_item_t){ "Save and Sleep", power_wake_name(g.rtc_wake), true, false, false, 7 };
-        items[1] = (ui_menu_item_t){ "Wake With Right Button", "Touch Is Off / Timer Also Wakes", false, false, false, 8 };
-        items[2] = (ui_menu_item_t){ "Pet Ages While Asleep", "RTC Catch-Up on Wake / No Radio", false, false, false, 9 };
-        ui_menu_open("Deep Sleep?", items, 3, on_power_pick);
-        ui_menu_set_back(back_to_settings);
+    case MENU_POWER_SLEEP: {
+        /* Everything about actually stopping, in one place, with the
+         * consequence spelled out on each row. */
+        items[0] = (ui_menu_item_t){ "Sleep After Idle", power_delay_name(g.deep_sleep_after),
+                                     true, false, false, 4 };
+        items[1] = (ui_menu_item_t){ "Wake Interval", power_wake_name(g.rtc_wake),
+                                     true, false, false, 5 };
+        items[2] = (ui_menu_item_t){ "Sleep Now", "Saves First / Right Button Wakes",
+                                     !net_busy(), false, true, 6 };
+        items[3] = (ui_menu_item_t){ "Pet Ages While Asleep", "RTC Catch-Up on Wake / No Radio",
+                                     false, false, false, 8 };
+        ui_menu_open("Deep Sleep", items, 4, on_power_pick);
+        ui_menu_set_back(back_to_power);
         break;
+    }
     case MENU_DISPLAY: {
         /* The slider row's readout is derived from its value by refresh_page(). */
         items[0] = (ui_menu_item_t){ "Brightness", NULL, true, false, false, 0 };
@@ -3784,12 +3850,13 @@ static void life_visual_tick(uint32_t now)
     static uint8_t last_activity = 255;
     if ((int32_t)(now - next_clock) >= 0) {
         next_clock = now + 1000u;
-        time_t epoch = time(NULL);
-        clock = life_clock(epoch > 0 && (uint64_t)epoch <= UINT32_MAX ? (uint32_t)epoch : 0);
-        lv_opa_t shade = g.life.daynight && clock.available ?
-                         clock.period == 3 ? 24 : clock.period == 2 ? 12 : 0 : 0;
-        lv_obj_set_style_bg_opa(s_daylight_overlay, shade, 0);
-        lv_obj_set_hidden(s_daylight_overlay, !shade);
+        /* Read the clock through life_clock_now() rather than time(NULL), so a
+         * console override (and the test harness) drives the tint and the shafts
+         * as well as the mind. Calling time(NULL) here meant `rtcset` changed
+         * what the brain saw but not what the screen showed. */
+        clock = life_clock_now();
+        apply_daylight_tint(clock.period, clock.available);
+        ambient_shafts_set_period(clock.available ? clock.period : 255);
         lv_obj_set_hidden(s_visitor, !clock.visitor);
         if (clock.available && last_activity != clock.activity) {
             last_activity = clock.activity;

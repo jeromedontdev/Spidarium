@@ -78,6 +78,35 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   the spider gets close, because the flee branch takes over -- so a pause is
   never a way to get caught standing still. The flutter offset is suppressed
   while grazing, or a "resting" moth would still slide sideways.
+- **The day/night tint is visible.** The old version was a single dark rectangle
+  at 12-24/255 opacity -- a 5-9% wash, invisible on a 480x480 AMOLED in daylight,
+  and the reason the "day and night" setting appeared to do nothing. It also only
+  ever darkened, so every period looked the same, just slightly dimmer.
+  `k_light_tints[]` in `game.c` now changes COLOUR as well as opacity: morning is
+  warm gold at 26/255, afternoon is untinted, evening is amber at 54, night is
+  deep blue at 96. The tank reads as a different time of day rather than as a
+  slightly dirty screen.
+- **Light shafts** (`ambient_shafts_*` in `ambient.c`) are two wide, very
+  transparent bands drifting diagonally across the tank, tinted per day period.
+  The eye reads moving light as depth even when nothing else moves, which is what
+  makes a static background read as a lit space rather than a picture. Each shaft
+  is one rotated LVGL object created once; only its position changes.
+- **`life_clock_now()` is the single clock read.** `life_visual_tick()` used to
+  call `time(NULL)` directly while the mind used `life_period_now()`, so `rtcset`
+  changed what the brain saw but not what the screen showed. Everything that
+  reacts to the time of day now goes through `life_clock_now()`, and
+  `life_clock_override()` lets the console (`dayperiod EPOCH`) drive the tint and
+  the shafts at a chosen time.
+- **Screen dimming is a courtesy for a screen about to switch off, not a separate
+  power feature.** `brightness_policy()` used to fall back to a flat 60 s dim
+  whenever the timeout was "Never", so choosing Never still dimmed the panel after
+  a minute -- the exact opposite of what the setting says. With no timeout there
+  is nothing to dim towards, so there is no dim.
+- **The Battery menu is two groups.** What the battery is doing now (read-only),
+  then how the screen behaves. Deep sleep moved to its own submenu because it is a
+  separate mode that stops the pet, not another display preference, and the
+  confusing "Automatic Sleep" row (which only ever described RTC mode) is gone --
+  the mode row already says "RTC Sleep".
 - The neglect cycle (`terrarium.c`) makes hygiene visible instead of numeric. A
   dropping left alone for `FLY_ATTRACT_MS` (45 s) attracts a fly that orbits it;
   the fly is drawn from the same primitives as the droppings, so it costs no

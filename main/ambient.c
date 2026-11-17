@@ -94,7 +94,8 @@ void ambient_init(void)
     }
     s_ready = true;
     ambient_retint();
-    ESP_LOGI(TAG, "ambient life ready: %d motes", AMBIENT_MOTES);
+    ambient_shafts_init();
+    ESP_LOGI(TAG, "ambient life ready: %d motes, %d shafts", AMBIENT_MOTES, AMBIENT_SHAFTS);
 }
 
 void ambient_retint(void)
@@ -109,12 +110,44 @@ void ambient_retint(void)
     }
 }
 
+/* --- light shafts -------------------------------------------------------
+ *
+ * Two wide, very transparent bands drifting diagonally across the tank. The eye
+ * reads moving light as depth even when nothing else moves, which is what makes
+ * a static background read as a lit space rather than a picture.
+ *
+ * Each shaft is a tall thin rectangle rotated by LVGL. Rotation is a transform,
+ * so it costs no extra objects and no per-frame allocation -- the object is
+ * created once and only its position changes. */
+typedef struct {
+    lv_obj_t *obj;
+    float phase;      /* 0..1 position across the sweep */
+    float speed;      /* sweeps per second */
+    int32_t width;
+} shaft_t;
+
+static shaft_t s_shafts[AMBIENT_SHAFTS];
+static uint8_t s_shaft_period = 255;
+static bool s_shafts_ready;
+
+/* Per-period tint and strength. Morning and evening are warm and visible;
+ * afternoon is neutral and faint; night is cool and dim, because a lit window
+ * at night should not look like noon. */
+static const struct { uint32_t colour; uint8_t opa; } k_shaft_tints[4] = {
+    { 0xffe0b0, 26 },   /* morning */
+    { 0xfff4e0, 14 },   /* afternoon */
+    { 0xffb070, 30 },   /* evening */
+    { 0x8fa8e0, 18 },   /* night */
+};
+
 void ambient_set_visible(bool visible)
 {
     if (s_visible == visible) return;
     s_visible = visible;
     for (int i = 0; i < AMBIENT_MOTES; i++)
         if (s_motes[i].obj) lv_obj_set_hidden(s_motes[i].obj, !visible);
+    for (int i = 0; i < AMBIENT_SHAFTS; i++)
+        if (s_shafts[i].obj) lv_obj_set_hidden(s_shafts[i].obj, !visible);
 }
 
 void ambient_tick(uint32_t now_ms)
@@ -162,6 +195,23 @@ void ambient_tick(uint32_t now_ms)
         s_glance_dir = (esp_random() & 1u) ? 1.0f : -1.0f;
     }
     if ((int32_t)(now_ms - s_glance_until) >= 0) s_glance_dir = 0.0f;
+
+    /* Light shafts sweep slowly across the tank. The sweep is wide enough that
+     * a shaft is off-screen for part of its cycle, which is what makes the
+     * light feel like it is coming from somewhere rather than sliding back and
+     * forth. */
+    if (s_visible && dt > 0.0f) {
+        for (int i = 0; i < AMBIENT_SHAFTS; i++) {
+            shaft_t *s = &s_shafts[i];
+            if (!s->obj) continue;
+            s->phase += s->speed * dt;
+            if (s->phase > 1.0f) s->phase -= 1.0f;
+            /* Travel from fully off the left edge to fully off the right. */
+            int32_t span = ui.W + s->width * 2;
+            int32_t x = (int32_t)(s->phase * (float)span) - s->width;
+            lv_obj_set_pos(s->obj, x, -ui.H / 2);
+        }
+    }
 }
 
 float ambient_breath(void)
@@ -193,6 +243,58 @@ uint8_t ambient_light_opa(void)
     if (v < 0) v = 0;
     if (v > 255) v = 255;
     return (uint8_t)v;
+}
+
+void ambient_shafts_init(void)
+{
+    if (s_shafts_ready) return;
+    lv_obj_t *parent = ui.bg_canvas ? lv_obj_get_parent(ui.bg_canvas) : NULL;
+    for (int i = 0; i < AMBIENT_SHAFTS; i++) {
+        shaft_t *s = &s_shafts[i];
+        s->obj = lv_obj_create(parent);
+        if (!s->obj) {
+            ESP_LOGW(TAG, "shaft %d could not be created", i);
+            continue;
+        }
+        lv_obj_remove_style_all(s->obj);
+        s->width = 70 + i * 46;
+        lv_obj_set_size(s->obj, s->width, ui.H * 2);
+        lv_obj_set_style_radius(s->obj, 0, 0);
+        lv_obj_set_style_bg_opa(s->obj, LV_OPA_TRANSP, 0);
+        lv_obj_set_clickable(s->obj, false);
+        lv_obj_set_scrollable(s->obj, false);
+        /* A slight lean, so the two shafts are not parallel. */
+        lv_obj_set_style_transform_rotation(s->obj, i ? 140 : 200, 0);
+        s->phase = i ? 0.55f : 0.15f;
+        s->speed = i ? 0.011f : 0.017f;
+    }
+    s_shafts_ready = true;
+    ambient_shafts_set_period(255);
+}
+
+void ambient_shafts_set_period(uint8_t period)
+{
+    if (period == s_shaft_period) return;
+    s_shaft_period = period;
+    /* No clock, or a period we do not know: use the neutral afternoon tint
+     * rather than switching the effect off, so a tank without an RTC still has
+     * light in it. */
+    unsigned idx = period < 4 ? period : 1;
+    for (int i = 0; i < AMBIENT_SHAFTS; i++) {
+        if (!s_shafts[i].obj) continue;
+        lv_obj_set_style_bg_color(s_shafts[i].obj, lv_color_hex(k_shaft_tints[idx].colour), 0);
+        lv_obj_set_style_bg_opa(s_shafts[i].obj, k_shaft_tints[idx].opa, 0);
+    }
+}
+
+void ambient_shafts_report(void)
+{
+    int live = 0;
+    for (int i = 0; i < AMBIENT_SHAFTS; i++) if (s_shafts[i].obj) live++;
+    printf("SHAFTS count=%d live=%d period=%u opa=%u\n",
+           AMBIENT_SHAFTS, live, (unsigned)s_shaft_period,
+           (unsigned)(s_shaft_period < 4 ? k_shaft_tints[s_shaft_period].opa
+                                         : k_shaft_tints[1].opa));
 }
 
 void ambient_report(void)

@@ -104,6 +104,22 @@ static life_clock_t current_clock(void)
         now > 0 && (uint64_t)now <= UINT32_MAX ? (uint32_t)now : 0);
 }
 
+life_clock_t life_clock_now(void)
+{
+    return current_clock();
+}
+
+/* Force the clock for a console probe or a test. `epoch` of 0 clears the
+ * override and returns to the real RTC. This exists because the RTC and the
+ * system clock are separate: `rtcset` changes what the brain reads but not what
+ * time(NULL) returns, so without an override the tint and the shafts could not
+ * be exercised at a chosen time of day. */
+void life_clock_override(uint32_t epoch)
+{
+    s_testing = epoch != 0;
+    s_test_epoch = epoch;
+}
+
 uint8_t life_period_now(void)
 {
     life_clock_t c = current_clock();

@@ -61,6 +61,28 @@ float ambient_glance(void);
  * screen is flickering. */
 uint8_t ambient_light_opa(void);
 
+/* --- light shafts -------------------------------------------------------
+ *
+ * Two soft diagonal bands of light that drift slowly across the tank, as if the
+ * enclosure were lit from a window. This is the cheapest way to make a static
+ * background read as a lit space rather than a picture: the eye reads moving
+ * light as depth even when nothing else moves.
+ *
+ * They are drawn as wide, very transparent rectangles rotated by the theme's
+ * own highlight colour, so they cost no art and pick up the palette for free.
+ * The count is fixed and the objects are created once. */
+#define AMBIENT_SHAFTS 2
+
+/* Create the shaft objects. Call once, after the terrarium exists. */
+void ambient_shafts_init(void);
+
+/* Set the shaft tint and strength for a day period. `period` is 0..3, or 255
+ * when there is no clock. Called when the period changes, not per frame. */
+void ambient_shafts_set_period(uint8_t period);
+
+/* Report the shaft state, for the console and the tests. */
+void ambient_shafts_report(void);
+
 /* Report the ambient state, for the console and the tests. */
 void ambient_report(void);
 

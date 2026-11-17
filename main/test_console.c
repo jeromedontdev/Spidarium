@@ -40,6 +40,7 @@
 #include "decor.h"
 #include "game.h"
 #include "game_config.h"
+#include "life.h"
 #include "meminfo.h"
 #include "mind.h"
 #include "needs.h"
@@ -129,6 +130,7 @@ static void cmd_help(void)
     printf("  mindtest             mind rule table and intent stability\n");
     printf("  ambienttest          ambient motes and idle-life ranges\n");
     printf("  ambient              report the live ambient state\n");
+    printf("  dayperiod [EPOCH]    force the clock to test the day/night tint\n");
     printf("  mind                 report the live intent and day period\n");
     printf("  preytest             eight level gates, restore pet level\n");
     printf("  decortest            place every decor kind, verify the layer\n");
@@ -1284,7 +1286,26 @@ static void run_line(char *line)
     }
     else if (!strcmp(line, "ambient")) {
         ambient_report();
+        ambient_shafts_report();
         printf("OK ambient\n");
+    }
+    else if (!strcmp(line, "dayperiod")) {
+        /* Force the clock so the tint and the shafts can be exercised at a
+         * chosen time of day. `dayperiod` with no argument clears the override.
+         * The RTC and the system clock are separate, so `rtcset` alone does not
+         * move the tint. */
+        if (!arg) {
+            life_clock_override(0);
+            printf("DAYPERIOD override=cleared\n");
+        } else {
+            uint32_t epoch = (uint32_t)strtoul(arg, NULL, 10);
+            life_clock_override(epoch);
+            life_clock_t c = life_clock_now();
+            printf("DAYPERIOD override=%lu available=%d period=%u phase=%s\n",
+                   (unsigned long)epoch, c.available ? 1 : 0, (unsigned)c.period,
+                   life_phase_name(c.period));
+        }
+        printf("OK dayperiod\n");
     }
     else if (!strcmp(line, "preytest")) {
         if (!game_ui_call(GAME_UI_TEST_PREY)) printf("ERR prey test request or assertion failed\n");

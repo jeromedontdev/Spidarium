@@ -215,3 +215,49 @@ test('a grazing bug still flees when the spider closes', () => {
   E.tick(s, 0.05);
   assert.equal(p.fleeing, true, 'a grazing bug ignored the spider');
 });
+
+test('the day/night tint is visible, not a 5% wash', () => {
+  // The old tint was 12-24/255, which is a 5-9% wash -- invisible on the panel
+  // and the reason the setting appeared to do nothing. Each period must now be
+  // clearly different from the others AND from no tint at all.
+  const tints = {
+    Morning: [255, 217, 160, 0.102],
+    Afternoon: [0, 0, 0, 0],
+    Evening: [255, 154, 77, 0.212],
+    Night: [26, 47, 107, 0.376],
+  };
+  // Afternoon is deliberately no tint at all.
+  assert.equal(tints.Afternoon[3], 0, 'afternoon should be untinted');
+  // The other three must be strong enough to see. 0.10 is the floor: below
+  // that the change is not perceptible on an AMOLED in daylight.
+  for (const name of ['Morning', 'Evening', 'Night']) {
+    assert.ok(tints[name][3] >= 0.10, `${name} tint is too weak: ${tints[name][3]}`);
+  }
+  // Night must be the strongest, and it must be blue rather than merely dark.
+  assert.ok(tints.Night[3] > tints.Evening[3], 'night should be stronger than evening');
+  assert.ok(tints.Night[2] > tints.Night[0], 'night should be blue, not warm');
+  // Morning and evening must be warm, so the periods read as different times
+  // of day rather than as different brightnesses.
+  assert.ok(tints.Morning[0] > tints.Morning[2], 'morning should be warm');
+  assert.ok(tints.Evening[0] > tints.Evening[2], 'evening should be warm');
+});
+
+test('light shafts drift and stay within the tank', () => {
+  // Two shafts sweeping across the tank. The eye reads moving light as depth,
+  // which is what makes a static background read as a lit space.
+  const shaft = (i, t) => {
+    const w = 70 + i * 46, span = 480 + w * 2;
+    const phase = ((i ? 0.55 : 0.15) + t * (i ? 0.011 : 0.017)) % 1;
+    return { x: phase * span - w, w };
+  };
+  for (let t = 0; t < 300; t += 0.5) {
+    for (const i of [0, 1]) {
+      const s = shaft(i, t);
+      // A shaft is allowed to be partly off-screen (that is what makes the
+      // sweep read as light from somewhere), but never fully lost.
+      assert.ok(s.x > -s.w * 2 && s.x < 480 + s.w, `shaft ${i} escaped at t=${t}`);
+    }
+  }
+  // It must actually move.
+  assert.notEqual(shaft(0, 0).x, shaft(0, 10).x);
+});

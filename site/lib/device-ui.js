@@ -544,18 +544,29 @@ export class DeviceGame {
         row('Storage', null, 'Browser Files / Device SD Requires Hardware'),
       ]; break;
       case 'Battery': rows = [
+        // Two groups, in the order a player actually thinks about them: what
+        // the battery is doing now, then how the screen behaves. Deep sleep has
+        // its own submenu because it is a separate mode that stops the pet, not
+        // another display preference. Mirrors MENU_POWER in game.c.
         row('Battery', null, 'Hardware Telemetry Unavailable'),
         row('Runtime', null, this.runtimeText()),
         ...[
           ['Power Mode','power_mode',POWER_MODES],
           ['Screen Timeout','screen_timeout',SCREEN_TIMEOUTS],
-          ['Deep Sleep After','deep_sleep_after',SLEEP_DELAYS],
-          ['RTC Wake Interval','rtc_wake',RTC_WAKES],
         ].map(([label,key,values]) => row(label, () => {
           this.state[key]=(this.state[key]+1)%values.length;this.persist();this.open('Battery',page);
         }, `${values[this.state[key]]} / Device Preference`)),
-        row('Deep Sleep Now', null, 'Device Only / Right Button Wakes'),
-        row('Automatic Sleep', null, 'RTC Mode / Battery Only; Browser Stays Awake'),
+        row('Deep Sleep', () => this.open('Deep Sleep',0), 'Sleep After Idle and Wake Interval', { submenu: true }),
+      ]; break;
+      case 'Deep Sleep': rows = [
+        ...[
+          ['Sleep After Idle','deep_sleep_after',SLEEP_DELAYS],
+          ['Wake Interval','rtc_wake',RTC_WAKES],
+        ].map(([label,key,values]) => row(label, () => {
+          this.state[key]=(this.state[key]+1)%values.length;this.persist();this.open('Deep Sleep',page);
+        }, `${values[this.state[key]]} / Device Preference`)),
+        row('Sleep Now', null, 'Device Only / Right Button Wakes'),
+        row('Pet Ages While Asleep', null, 'RTC Catch-Up on Wake / No Radio'),
       ]; break;
       case 'Help Guide': rows=HELP_TOPICS.map((topic,index)=>row(topic.name,()=>{
         this.close();this.modal=this.panel(topic.name,()=>this.open('Help Guide',Math.floor(index/4)));
@@ -608,6 +619,7 @@ export class DeviceGame {
     else if (['Daily','Treats','Your Spider','Today','Diary','Training','Photo Album','Calendar'].includes(name)) this.open('Menu');
     else if (name.startsWith('Trick ')) this.open('Training');
     else if (name === 'Decor Item') this.open('Decor');
+    else if (name === 'Deep Sleep') this.open('Battery');
     else this.open(['Backgrounds', 'Borders', 'Achievements', 'Prey Species', 'Decor', 'Settings'].includes(name) ? 'Menu' : 'Settings');
   }
   generationConfirm(kind, index=0, step=1) {
@@ -1357,9 +1369,32 @@ export class DeviceGame {
     const s=this.state,c=E.lifeCalendar(),ctx=this.ctx;
     if(!c.reliable || !s.life)return;
     if(s.life.daynight) {
-      ctx.fillStyle=({Morning:'rgba(255,215,145,0.035)',Afternoon:'rgba(255,235,180,0.02)',
-        Evening:'rgba(105,65,112,0.075)',Night:'rgba(10,20,55,0.12)'})[c.phase];
+      // The tint changes COLOUR as well as opacity, so the tank reads as a
+      // different time of day rather than as a slightly dirty screen. The old
+      // values were a 2-12% wash, which was invisible on the panel and is why
+      // the setting appeared to do nothing. Mirrors k_light_tints in game.c.
+      ctx.fillStyle=({Morning:'rgba(255,217,160,0.102)',Afternoon:'rgba(0,0,0,0)',
+        Evening:'rgba(255,154,77,0.212)',Night:'rgba(26,47,107,0.376)'})[c.phase];
       ctx.fillRect(0,0,480,480);
+    }
+    // Light shafts: two soft diagonal bands drifting across the tank. The eye
+    // reads moving light as depth even when nothing else moves, which is what
+    // makes a static background read as a lit space. Mirrors ambient_shafts_*.
+    if(s.life.daynight) {
+      const tint=({Morning:[255,224,176,0.102],Afternoon:[255,244,224,0.055],
+        Evening:[255,176,112,0.118],Night:[143,168,224,0.071]})[c.phase];
+      const t=(s.now_ms??0)/1000;
+      for(let i=0;i<2;i++){
+        const w=70+i*46, span=480+w*2;
+        const phase=((i?0.55:0.15)+t*(i?0.011:0.017))%1;
+        const x=phase*span-w;
+        ctx.save();
+        ctx.translate(x+w/2,240);
+        ctx.rotate((i?140:200)/1000);
+        ctx.fillStyle=`rgba(${tint[0]},${tint[1]},${tint[2]},${tint[3]})`;
+        ctx.fillRect(-w/2,-480,w,960);
+        ctx.restore();
+      }
     }
     if(!s.life.weather)return;
     const time=(s.now_ms??0)/1000;

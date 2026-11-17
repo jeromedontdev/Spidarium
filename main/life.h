@@ -36,6 +36,13 @@ _Static_assert(offsetof(life_pet_t, progress) == 736, "archive progress ABI chan
 void life_defaults(life_state_t *state);
 bool life_valid(const life_state_t *state);
 life_clock_t life_clock(uint32_t epoch);
+/* The clock as the game should read it: the RTC when it is set, the console
+ * override when one is active, or an unavailable clock. Everything that reacts
+ * to the time of day goes through this, so a single override drives the mind,
+ * the tint and the light shafts together. */
+life_clock_t life_clock_now(void);
+/* Force the clock for a console probe or a test. 0 clears the override. */
+void life_clock_override(uint32_t epoch);
 /* The current day period (0 morning, 1 afternoon, 2 evening, 3 night), or 255
  * when the clock is unavailable. The spider's mind uses this so its behaviour
  * follows the real day rather than only the stat thresholds. */

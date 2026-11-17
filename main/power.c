@@ -224,7 +224,17 @@ static int brightness_policy(unsigned sample, uint32_t idle, int normal,
     if (valid && present && !usb && percent <= 10) return 5;
     if (mode && !usb && normal > (mode == 1 ? 35 : 20))
         normal = mode == 1 ? 35 : 20;
-    uint32_t dim = timeout && timeout / 2 < 60000 ? timeout / 2 : 60000;
+
+    /* Dimming is a courtesy for a screen that is about to switch off, not a
+     * separate power feature.
+     *
+     * It used to fall back to a flat 60 s whenever the timeout was "Never",
+     * which meant choosing Never still dimmed the panel after a minute -- the
+     * exact opposite of what the setting says. With no timeout there is nothing
+     * to dim towards, so there is no dim. */
+    if (!timeout) return normal;
+
+    uint32_t dim = timeout / 2 < 60000 ? timeout / 2 : 60000;
     if (idle >= dim) return normal < 15 ? normal : 15;
     return normal;
 }
@@ -381,8 +391,15 @@ bool power_test(void)
         brightness_policy(0, 0, 50, 0, 3) == 50 &&
         brightness_policy(0, 0, 50, 1, 0) == 35 &&
         brightness_policy(0, 0, 50, 2, 0) == 20 &&
-        brightness_policy(0, 30000, 50, 0, 0) == 0 &&
-        brightness_policy(0, 300000, 50, 0, 4) == 15;
+        /* "Never" means never: no timeout, so no dim and no blank. This used to
+         * fall back to a flat 60 s dim, which dimmed the panel even though the
+         * setting said it would not. */
+        brightness_policy(0, 30000, 50, 0, 4) == 50 &&
+        brightness_policy(0, 300000, 50, 0, 4) == 50 &&
+        brightness_policy(0, 3600000, 50, 0, 4) == 50 &&
+        /* A real timeout still dims at half its length and blanks at the end. */
+        brightness_policy(0, 15000, 50, 0, 0) == 15 &&
+        brightness_policy(0, 30000, 50, 0, 0) == 0;
 }
 
 /* ------------------------------------------------------------------ */

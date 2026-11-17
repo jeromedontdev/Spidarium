@@ -11260,3 +11260,116 @@ jump-into-a-rock scenario on hardware.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) now on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+## Round 127 - Dimming that obeys the setting, and light you can actually see
+
+### The four requests
+
+1. Power mode balanced, no screen timeout, but the display still dims.
+2. The battery settings are confusing and need streamlining.
+3. Not really seeing any lighting changes.
+4. More environmental changes to make it feel alive.
+
+### The dimming bug
+
+`brightness_policy()` computed its dim threshold as:
+
+```c
+uint32_t dim = timeout && timeout / 2 < 60000 ? timeout / 2 : 60000;
+```
+
+With the timeout set to "Never", `timeout` is 0, so the first branch is false and
+`dim` falls back to **60000 ms**. The panel therefore dimmed after a minute even
+though the setting said it would not -- the exact opposite of what "Never" means.
+The fix is to return early when there is no timeout: with nothing to dim towards,
+there is no dim.
+
+This is a good example of a fallback that looks defensive and is actually wrong.
+`timeout && ...` reads as "guard against zero", but the `: 60000` arm then
+*substitutes* a value for the zero case instead of skipping it.
+
+### The lighting that was not visible
+
+The day/night tint was a single dark rectangle at 12-24/255 opacity. That is a
+5-9% wash -- invisible on a 480x480 AMOLED in daylight, and the reason the
+setting appeared to do nothing. It also only ever darkened, so every period
+looked the same, just slightly dimmer.
+
+`k_light_tints[]` now changes COLOUR as well as opacity:
+
+| Period | Colour | Opacity |
+|---|---|---|
+| Morning | warm gold `0xffd9a0` | 26/255 |
+| Afternoon | none | 0 |
+| Evening | amber `0xff9a4d` | 54/255 |
+| Night | deep blue `0x1a2f6b` | 96/255 |
+
+Night at 96/255 is a real blue hour rather than a blackout, and morning and
+evening are warm while night is cool, so the periods read as different times of
+day rather than as different brightnesses.
+
+### A second clock bug, found while verifying
+
+`life_visual_tick()` called `time(NULL)` directly, while the mind used
+`life_period_now()`. The RTC and the system clock are separate, so `rtcset`
+changed what the brain saw but **not** what the screen showed. Everything that
+reacts to the time of day now goes through `life_clock_now()`, and
+`life_clock_override()` lets the console drive it: `dayperiod EPOCH`.
+
+Without this the tint could not be verified at all -- my first attempt to test it
+with `rtcset` showed `period=1` for every time of day, which looked like the tint
+was broken when the real problem was that the probe was reading a different clock
+than the renderer.
+
+### Streamlined battery menu
+
+The old menu mixed six settings and two actions in one list, with "Deep Sleep
+After" sitting next to "Screen Timeout" as if they were the same kind of thing,
+and an "Automatic Sleep" row that only ever described RTC mode.
+
+It is now two groups, in the order a player thinks about them:
+
+- **Battery** -- charge, runtime, power mode, screen timeout, and a Deep Sleep
+  row that opens a submenu.
+- **Deep Sleep** -- sleep after idle, wake interval, sleep now, and the
+  consequence spelled out ("Pet Ages While Asleep").
+
+The "Automatic Sleep" row is gone; the mode row already says "RTC Sleep".
+
+### More environment
+
+**Light shafts.** Two wide, very transparent bands drifting diagonally across the
+tank, tinted per day period. The eye reads moving light as depth even when
+nothing else moves, which is what makes a static background read as a lit space
+rather than a picture. Each shaft is one rotated LVGL object created once; only
+its position changes, so there is no per-frame allocation.
+
+### Evidence
+
+- Build exit 0, zero main warnings. Flash exit 0.
+- `dayperiod` on hardware drives all four periods:
+  morning `period=0 opa=26`, afternoon `period=1 opa=14`,
+  evening `period=2 opa=30`, night `period=3 opa=18`.
+- `ambient` reports `SHAFTS count=2 live=2`, so both shafts exist.
+- `power_test()` now asserts that "Never" never dims: at 30 s, 300 s and 3600 s
+  idle the brightness stays at the normal value, while a real 30 s timeout still
+  dims at 15 s and blanks at 30 s.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline.
+- Browser suite 298/298, up from 296. New tests assert the tint is at least 10%
+  opacity for the three visible periods, that night is the strongest and is blue
+  rather than merely dark, that morning and evening are warm, and that the shafts
+  drift without escaping the tank.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, unchanged.
+
+### Honest boundaries
+
+The tests prove the tint values are strong enough to be perceptible and that the
+shafts move, but they cannot prove the tank *looks* right on the panel -- that
+needs human eyes, and the shaft opacity in particular is a judgement call that
+may want tuning. The dimming fix is proven by the policy assertions, not by
+watching a real panel for an hour with the timeout set to Never.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).
