@@ -1293,8 +1293,22 @@ export function decorBlockRadius(s,slot){
   if(!item||item.kind===DECOR_EMPTY)return 0;
   const d=DECOR_KINDS[item.kind];
   if(!d)return 0;
-  if(item.blocking!==2)return d.radius;
-  return decorIsClimbStructure(item.kind)?DECOR_CLIMB_EXTENT:d.radius*2;
+  // Both blocking paths block against the artwork, so the berth the steering
+  // uses has to be the same number decorBlocksPoint() tests.
+  return decorArtExtent(item.kind);
+}
+/** Half-extent of an item's ARTWORK on screen, in pixels.
+ *
+ * This is the same number the renderer uses to size the sprite, so it is the
+ * honest measure of how much of the tank an item covers. A 64x64 source drawn
+ * at scale radius*16 covers 4*radius screen pixels, so its half-extent is
+ * 2*radius. art_scale then scales the sprite without touching the footprint, so
+ * it has to be applied here or a scaled-up prop blocks less than it covers. */
+export function decorArtExtent(kind){
+  const d=DECOR_KINDS[kind];
+  if(!d)return 0;
+  if(decorIsClimbStructure(kind))return DECOR_CLIMB_EXTENT;
+  return d.radius*2*(d.artScale??100)/100;
 }
 /** True when a point is inside a blocking item's footprint. */
 export function decorBlocksPoint(s,x,y){
@@ -1312,7 +1326,11 @@ export function decorBlocksPoint(s,x,y){
       if(!climbSpanAt(item.kind,x,y,item.x,item.y))continue;
       return true;
     }
-    const r=item.blocking===2?d.radius*2:d.radius;
+    // Block against the ARTWORK, not the collision footprint. `radius` is the
+    // steering footprint and is deliberately smaller than the sprite: a crystal
+    // has radius 12 but is drawn 57 px wide, so blocking only 12 px from the
+    // centre let the spider walk straight over the visible crystal.
+    const r=decorArtExtent(item.kind);
     if(dx*dx+dy*dy>r*r)continue;
     return true;
   }

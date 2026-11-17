@@ -11617,3 +11617,98 @@ budget in mind.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+## Round 131 -- More ambient life, and three real bugs
+
+### What was asked
+
+"Add more dust motes and a lot more web. Increase the decor particles I cant see
+them at all. Layers don't kick in until an item is moved with another item, then
+you click done, then you click to move it again. Make arrows at top on the decor
+movement to also scroll between items. I made this crystal solid but the spider
+is still walking over it."
+
+### Decisions made
+
+**Counts raised, because the first pass was invisible.** 8 motes -> 16, 3 spores
+-> 6, 2 strands -> 6, particle pool 16 -> 48. The strands were also moved from
+the two top corners to evenly spaced along the top edge: with six strands,
+corner-only placement left the middle of the tank bare and read as two
+decorations rather than as a web.
+
+**The particle pool size was the wrong thing to economise.** The objects are
+created once and only moved, so the count is nearly free; the spawn cadence is
+what controls how alive the tank feels. Cadence went from ~380 ms to ~135 ms, and
+particles got bigger (2-3 px instead of 1-2) and more opaque (200/255 instead of
+153). The size is now pushed per-particle in `ambient_present()` -- it was fixed
+at 2x2 at creation, so the per-style sizes were being ignored entirely.
+
+**Both blocking paths now block against the ARTWORK.** This is the crystal bug.
+`radius` is the steering footprint and is deliberately smaller than the sprite: a
+crystal has radius 12 but is drawn 57 px wide, so SOLID blocked only 12 px from
+the centre and the spider walked over the visible crystal. Worse, SOLID blocked
+*less* than WALK_BEHIND, which already used the artwork -- so the "more solid"
+option was the weaker one. `decor_art_extent()` is now the single measure used by
+`decor_blocks_point()`, `decor_block_radius()` and the steering berth, and it
+applies `art_scale`, which scales the sprite without touching the footprint.
+
+**The layer row now refreshes as the item is dragged.** `placement_position()`
+calls a new `ui_hud_placement_changed()`. The layer count depends on which items
+the item currently overlaps, and that changes under the player's finger; without
+the refresh the row only updated on a button press, so the control appeared dead
+until Done was pressed and the item picked up again -- exactly the reported
+symptom.
+
+**The layer control is duplicated at the top of the screen.** Same callbacks, so
+the two rows cannot disagree. While dragging, the hand is over the tank and the
+bottom row is awkward to reach.
+
+### A pre-existing test bug found on the way
+
+`decortest` had been failing for the whole climb family and nobody noticed,
+because it is not part of `run_tests.py`. Two causes:
+
+1. `terrarium_decor_test()` asserted every sprite's top-left is `item - 32`. A
+   prop is 64x64 so that is right, but a large climb structure is
+   `DECOR_CLIMB_SPRITE` square, so its top-left is `item - 48`. The assertion was
+   wrong for three kinds.
+2. The climb family has its own ownership bitmask (`g.climb_owned`), separate
+   from the two decor masks, and `decortest` never set it -- so the last three
+   kinds could not be placed at all.
+
+Both fixed. `decortest` now passes three runs in a row.
+
+### Evidence
+
+- Build exit 0, zero main warnings. Flash exit 0.
+- `ambienttest` -> `AMBIENT ok=1`, three consecutive runs.
+- `ambient` -> `motes=16 inside=16 spores=6 strands=6 particles=48 live=N`.
+- `decortest` -> `OK decortest placed=74 slots=12`, three consecutive runs.
+- Crystal blocking probed on hardware with `blockat`: blocks at dx=0, 10, 20, 26
+  and not at 34, against a drawn half-extent of 28.8. Before the fix it stopped
+  blocking at 12.
+- The spider was observed being pushed out of a newly-solid crystal:
+  `spider was inside blocking decor; moved to (242,211)`.
+- Panel screenshots confirm six strands spanning the tank, motes, and particles.
+- `rendercost` -> `avg_us=3063` of a 33,333 us budget, up ~300 us from 2748.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline
+  (both failures are `uitest` with `hud=0 backgrounds=0 pointer=0`).
+- Browser suite 305/305, up from 304. New test asserts a solid crystal blocks its
+  whole visible sprite and not well outside it; the strand test now asserts the
+  strands span the tank rather than sitting in two corners.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `mem` -> `largest=63488`, unchanged.
+
+### Honest boundaries
+
+The layer-row refresh and the top arrows are UI changes that the tests cannot
+reach -- they need a finger on the panel. The refresh is proven by construction
+(the call is in the drag path) and the arrows share the bottom row's callbacks,
+but "does it feel right while dragging" is unverified.
+
+The crystal fix is proven by the `blockat` probe and by the spider being pushed
+out, which is the actual reported symptom.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).

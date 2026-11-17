@@ -485,6 +485,14 @@ static void placement_position(int32_t x, int32_t y)
     if (s_place_layer < 0) s_place_layer = 0;
     terrarium_preview_item(g.gift_mode != 0, kind, g_decor_mode ? g_decor_move_slot : -1,
                            s_place_x, s_place_y, s_place_blocking, s_place_layer);
+    /* Refresh the layer row as the item moves.
+     *
+     * Without this the row only updated when a button was pressed, so dragging
+     * an item onto another one left the count showing the OLD overlap -- the
+     * layer control appeared to do nothing until you pressed Done and started
+     * moving again, which is exactly the "layers don't kick in until an item is
+     * moved with another item" report. */
+    ui_hud_placement_changed();
 }
 
 void game_on_placement_cancel(lv_event_t *e)
@@ -3192,6 +3200,7 @@ static void ui_service_request(void)
         memcpy(saved, g.decor, sizeof saved);
         uint32_t extra_count = g.decor_extra_count, extra_owned = g.decor_owned_extra;
         uint8_t high_owned = g.catalogue_owned_high;
+        uint8_t climb_owned = g.climb_owned;
         decor_item_t *extra = decor_detach_extra();
         uint32_t owned = g.decor_owned;
         uint32_t silk = g.silk;
@@ -3200,22 +3209,36 @@ static void ui_service_request(void)
         g.decor_owned = 0xFFFFFFFFu;
         g.decor_owned_extra = 0xFFFFFFFFu;
         g.catalogue_owned_high |= 0xF0;
+        /* The climb family has its own ownership bitmask, separate from the two
+         * decor masks. Without this the last three kinds cannot be placed and
+         * the test fails on them rather than on anything it is checking. */
+        g.climb_owned = 0xFF;
         g.level = 20;
         g.silk = 100000;
         bool ok = true;
         for (int i = 0; i < DECOR_COUNT; i++) {
             int slot = decor_place((uint8_t)i, (int16_t)(60 + i * 30),
                                    (int16_t)(120 + (i % 3) * 90));
-            ok = ok && slot >= 0;
+            if (slot < 0) {
+                ESP_LOGE(TAG, "decortest: place kind %d failed", i);
+                ok = false;
+            }
         }
         terrarium_refresh_decor();
-        ok = ok && terrarium_test();
-        memcpy(g.decor, saved, sizeof saved);
+        if (!terrarium_test()) {
+            ESP_LOGE(TAG, "decortest: terrarium_test failed");
+            ok = false;
+        }
+        if (!terrarium_decor_test()) {
+            ESP_LOGE(TAG, "decortest: terrarium_decor_test failed");
+            ok = false;
+        }        memcpy(g.decor, saved, sizeof saved);
         decor_restore_extra(extra);
         g.decor_extra_count = extra_count;
         g.decor_owned_extra = extra_owned;
         g.catalogue_owned_high = high_owned;
         g.decor_owned = owned;
+        g.climb_owned = climb_owned;
         g.silk = silk;
         g.level = level;
         terrarium_refresh_decor();

@@ -927,8 +927,13 @@ int decor_hit_test(int16_t x, int16_t y)
  * behind above it" report. */
 static float decor_art_extent(const decor_item_t *item, const decor_def_t *def)
 {
-    return decor_is_climb_structure(item->kind)
-        ? (float)DECOR_CLIMB_EXTENT : (float)def->radius * 2.0f;
+    if (decor_is_climb_structure(item->kind)) return (float)DECOR_CLIMB_EXTENT;
+    /* A prop's sprite is 64x64 drawn at LVGL scale radius*16, which is
+     * radius/16 of 1:1, so it covers 4*radius screen pixels and its half-extent
+     * is 2*radius. art_scale then scales the sprite without touching the
+     * footprint, so it has to be applied here or a scaled-up prop blocks less
+     * than it covers. */
+    return (float)def->radius * 2.0f * (float)decor_art_scale(item->kind) / 100.0f;
 }
 
 /* True when the item's path stops the spider walking through it.
@@ -949,8 +954,9 @@ float decor_block_radius(int slot)
     if (!item) return 0.0f;
     const decor_def_t *def = decor_def(item->kind);
     if (!def) return 0.0f;
-    return (item->blocking == DECOR_WALK_BEHIND)
-        ? decor_art_extent(item, def) : (float)def->radius;
+    /* Both blocking paths now block against the artwork, so the berth the
+     * steering uses has to be the same number decor_blocks_point() tests. */
+    return decor_art_extent(item, def);
 }
 
 bool decor_blocks_point(int16_t x, int16_t y)
@@ -972,8 +978,18 @@ bool decor_blocks_point(int16_t x, int16_t y)
             if (!climb_on_art(item, x, y)) continue;
             return true;
         }
-        float r = (item->blocking == DECOR_WALK_BEHIND)
-            ? decor_art_extent(item, def) : (float)def->radius;
+        /* Block against the ARTWORK, not the collision footprint.
+         *
+         * `radius` is the steering footprint, and it is deliberately smaller
+         * than the sprite: a crystal has radius 12 but is drawn 57 px wide, so
+         * blocking only 12 px from the centre let the spider walk straight over
+         * the visible crystal. That is the "I made this crystal solid but the
+         * spider is still walking over it" report.
+         *
+         * art_scale makes the gap worse, not better -- it scales the sprite
+         * without touching the footprint -- so the drawn extent is the only
+         * honest measure of what the player sees as solid. */
+        float r = decor_art_extent(item, def);
         if (dx * dx + dy * dy > r * r) continue;
         return true;
     }
@@ -1067,7 +1083,16 @@ bool decor_test(void)
     ok = ok && decor_toggle_blocking(slot);
     ok = ok && decor_at(slot)->blocking == 1;
     ok = ok && decor_blocks_point(100, 100);
-    ok = ok && !decor_blocks_point(100 + k_decor_kinds[DECOR_ROCK_SMALL].radius + 4, 100);
+    /* Solid blocks the ARTWORK, not the collision footprint. A prop is drawn
+     * 2*radius*artScale wide, so blocking only `radius` let the spider walk over
+     * the visible sprite -- the "I made this crystal solid but the spider is
+     * still walking over it" report. */
+    {
+        float extent = (float)k_decor_kinds[DECOR_ROCK_SMALL].radius * 2.0f *
+                       (float)decor_art_scale(DECOR_ROCK_SMALL) / 100.0f;
+        ok = ok && decor_blocks_point(100 + (int16_t)extent - 2, 100);
+        ok = ok && !decor_blocks_point(100 + (int16_t)extent + 6, 100);
+    }
 
     /* Nearest-blocking reports it, and only within range. */
     int16_t nx = 0, ny = 0;
@@ -1302,7 +1327,7 @@ bool decor_test(void)
     g.level = 40;
     g.silk = 100000;
     for (int i = 32; i < DECOR_COUNT; i++)
-        ok = decor_buy(i) && decor_owned(i) && ok;
+        ok = ok && decor_buy(i) && decor_owned(i);
     g.catalogue_owned_high = high_owned;
     g.climb_owned = climb_owned;
     g.silk = silk; g.decor_owned = owned; g.level = level;

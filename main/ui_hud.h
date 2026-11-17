@@ -23,6 +23,14 @@ void ui_hud_set_gift_mode(bool on);
 /* Shared placement controls. Passing NULL keeps the current hint text. */
 void ui_hud_set_place_mode(bool on, const char *hint);
 
+/* Re-read the staged placement state and refresh the layer row.
+ *
+ * Called as the item is dragged, because the layer count depends on which items
+ * the item currently overlaps -- and that changes under the player's finger.
+ * Without this the row only updated on a button press, so the control appeared
+ * dead until Done was pressed and the item picked up again. */
+void ui_hud_placement_changed(void);
+
 /* Gift picker uses the six-tile catalogue grid. Picking enters placement. */
 void ui_hud_gift_menu_show(void);
 void ui_hud_gift_menu_hide(void);

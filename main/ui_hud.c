@@ -26,6 +26,10 @@ static lv_obj_t *s_stats[NUM_STATS], *s_values[NUM_STATS], *s_bars[NUM_STATS];
 static lv_obj_t *s_level, *s_progress, *s_resources, *s_hint, *s_bubble, *s_bubble_label;
 static lv_obj_t *s_care_button, *s_care_label, *s_place_done, *s_place_cancel;
 static lv_obj_t *s_place_away, *s_place_path, *s_place_path_label, *s_place_back, *s_place_front, *s_place_layer_label;
+/* The same layer control, duplicated at the top of the screen. While dragging an
+ * item the player's hand is over the tank, so the bottom row is awkward to
+ * reach; the top arrows sit where the hand already is. */
+static lv_obj_t *s_place_top_back, *s_place_top_front, *s_place_top_label;
 static lv_obj_t *s_layer;
 static lv_obj_t *s_identity, *s_battery, *s_battery_fill, *s_battery_text, *s_charge;
 static uint32_t s_battery_key = UINT32_MAX;
@@ -33,11 +37,12 @@ static uint32_t s_bubble_until, s_last_refresh;
 static bool s_top_visible, s_bot_visible;
 void ui_hud_capture_hide(bool hidden)
 {
-    static bool was_hidden[12];
+    static bool was_hidden[15];
     lv_obj_t *objects[] = {s_layer, s_battery, s_care_button, s_bubble, s_place_done, s_place_cancel,
                           s_place_away, s_place_path, s_place_back, s_place_front,
-                          s_place_layer_label, s_hint};
-    for (unsigned i = 0; i < 12; i++) {
+                          s_place_layer_label, s_hint,
+                          s_place_top_back, s_place_top_front, s_place_top_label};
+    for (unsigned i = 0; i < 15; i++) {
         if (hidden) was_hidden[i] = lv_obj_is_hidden(objects[i]);
         lv_obj_set_hidden(objects[i], hidden || was_hidden[i]);
     }
@@ -353,6 +358,19 @@ void ui_hud_init(lv_obj_t *parent)
     lv_obj_set_pos(s_place_layer_label, 276, 364);
     lv_obj_set_style_text_align(s_place_layer_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_hidden(s_place_layer_label, true);
+    /* The same layer control at the top of the screen. While dragging an item
+     * the hand is over the tank, so the bottom row is awkward to reach; these
+     * sit where the hand already is. Same callbacks, so the two rows can never
+     * disagree. */
+    s_place_top_back = place_action(parent, 132, 12, 56, LV_SYMBOL_LEFT, game_on_placement_layer, -1);
+    s_place_top_front = place_action(parent, 292, 12, 56, LV_SYMBOL_RIGHT, game_on_placement_layer, 1);
+    s_place_top_label = make_label(parent, "", &lv_font_montserrat_12, COL_TEXT);
+    lv_obj_set_size(s_place_top_label, 100, 40);
+    lv_obj_set_pos(s_place_top_label, 190, 20);
+    lv_obj_set_style_text_align(s_place_top_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_hidden(s_place_top_label, true);
+    lv_obj_set_hidden(s_place_top_back, true);
+    lv_obj_set_hidden(s_place_top_front, true);
     lv_obj_set_hidden(s_place_away, true);
     lv_obj_set_hidden(s_place_done, true);
     lv_obj_set_hidden(s_place_cancel, true);
@@ -411,6 +429,12 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_place_back, !layer_row);
     lv_obj_set_hidden(s_place_front, !layer_row);
     lv_obj_set_hidden(s_place_layer_label, !layer_row);
+    /* The top arrows are the same control as the bottom layer row, placed where
+     * the player's hand already is while dragging. Both are shown together so
+     * the row is reachable without moving off the item. */
+    lv_obj_set_hidden(s_place_top_back, !layer_row);
+    lv_obj_set_hidden(s_place_top_front, !layer_row);
+    lv_obj_set_hidden(s_place_top_label, !layer_row);
     if (path_row) {
         static const char *names[] = {"Walk Over", "Solid", "Walk Behind"};
         uint8_t path = game_placement_blocking();
@@ -424,18 +448,33 @@ void ui_hud_set_place_mode(bool on, const char *hint)
             "Spider goes around, passes behind the top"};
         lv_label_set_text(s_hint, tips[path]);
     }
-    if (layer_row) {
-        uint8_t path = game_placement_blocking();
-        lv_obj_set_state(s_place_back, LV_STATE_DISABLED, game_placement_layer() == 0);
-        lv_obj_set_state(s_place_front, LV_STATE_DISABLED,
-            game_placement_layer() >= game_placement_layers() - 1);
-        lv_label_set_text_fmt(s_place_layer_label, "%s\n%d / %d",
-            path == DECOR_WALK_BEHIND ? "Canopy" : "Floor",
-            game_placement_layer() + 1, game_placement_layers());
-    }
+    ui_hud_placement_changed();
     /* Keep the hint just above the control rows, which are pinned to the bottom
      * of the screen so the tank above them stays clear. */
     lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -124);
+}
+
+void ui_hud_placement_changed(void)
+{
+    if (!g_decor_mode && !g.gift_mode) return;
+    bool layer_row = game_placement_layers() > 1;
+    lv_obj_set_hidden(s_place_back, !layer_row);
+    lv_obj_set_hidden(s_place_front, !layer_row);
+    lv_obj_set_hidden(s_place_layer_label, !layer_row);
+    lv_obj_set_hidden(s_place_top_back, !layer_row);
+    lv_obj_set_hidden(s_place_top_front, !layer_row);
+    lv_obj_set_hidden(s_place_top_label, !layer_row);
+    if (!layer_row) return;
+    uint8_t path = game_placement_blocking();
+    int layer = game_placement_layer();
+    int layers = game_placement_layers();
+    lv_obj_set_state(s_place_back, LV_STATE_DISABLED, layer == 0);
+    lv_obj_set_state(s_place_front, LV_STATE_DISABLED, layer >= layers - 1);
+    lv_obj_set_state(s_place_top_back, LV_STATE_DISABLED, layer == 0);
+    lv_obj_set_state(s_place_top_front, LV_STATE_DISABLED, layer >= layers - 1);
+    const char *band = path == DECOR_WALK_BEHIND ? "Canopy" : "Floor";
+    lv_label_set_text_fmt(s_place_layer_label, "%s\n%d / %d", band, layer + 1, layers);
+    lv_label_set_text_fmt(s_place_top_label, "%s %d / %d", band, layer + 1, layers);
 }
 
 void ui_hud_set_top(bool on)

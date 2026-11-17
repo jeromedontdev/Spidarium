@@ -177,15 +177,22 @@ bool terrarium_decor_test(void)
         }
         const decor_def_t *def = decor_def(item->kind);
         bool visible = def && !lv_obj_is_hidden(obj);
-        bool placed = lv_obj_get_x(obj) == item->x - 32 &&
-                      lv_obj_get_y(obj) == item->y - 32;
+        /* A prop's sprite is 64x64 centred on the item, so its top-left is
+         * item - 32. A large climb structure is DECOR_CLIMB_SPRITE square, so
+         * its top-left is item - DECOR_CLIMB_SPRITE/2. Asserting -32 for every
+         * item made this test fail for the whole climb family, which is why it
+         * was never a reliable check. */
+        int32_t half = decor_is_climb_structure(item->kind)
+            ? DECOR_CLIMB_SPRITE / 2 : 32;
+        bool placed = lv_obj_get_x(obj) == item->x - half &&
+                      lv_obj_get_y(obj) == item->y - half;
         bool sourced = lv_image_get_src(obj) ==
                        assets_image(sprite_decor_item_index(item->kind));
         if (!visible || !placed || !sourced)
             ESP_LOGW("spidarium.tank",
                      "decor slot %d kind=%u visible=%d placed=%d(%d,%d vs %d,%d) sourced=%d",
                      i, item->kind, visible, placed, (int)lv_obj_get_x(obj),
-                     (int)lv_obj_get_y(obj), item->x - 32, item->y - 32, sourced);
+                     (int)lv_obj_get_y(obj), item->x - half, item->y - half, sourced);
         bool canopy = decor_canopy_now(item);
         bool ordered = lv_obj_get_parent(obj) == (canopy ? s_canopy_layer : s_decor_layer);
         for (int j = i - 1; j >= 0; j--) {

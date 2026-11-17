@@ -97,21 +97,35 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   The lesson is that a full-screen lighting effect is the wrong shape for this
   budget. Aliveness comes from many small things that move independently.
 - **Aliveness is four cheap layers, not one expensive effect.** Dust motes
-  (8 small squares rising with a sway), spores (3 larger, slower specks crossing
-  the tank on both axes), web strands (2 thin lines anchored in the top corners,
+  (16 small squares rising with a sway), spores (6 larger, slower specks crossing
+  the tank on both axes), web strands (6 thin lines anchored along the top edge,
   pivoting rather than translating), and decor/gift particles. Each is a handful
   of LVGL objects created once and moved; nothing is allocated per frame.
   The two air layers use different palette columns (`dust` and `web`) so they
   read as depth rather than as one noisy field.
+  The counts are deliberately generous. The first pass used 8 motes, 3 spores,
+  2 strands and a 16-particle pool, and the effect was invisible on the panel --
+  two strands read as two decorations rather than as a web, and with a dozen
+  items placed each one got a particle roughly once every four seconds.
 - **Decor and gift particles are a FIXED POOL, not one emitter per item.** The
   tank can hold twelve decor slots plus a gift, and per-item emitters would make
   the cost scale with how much the player has bought -- the worst possible
-  property for a frame budget. `AMBIENT_PARTICLES` (16) objects are created once
+  property for a frame budget. `AMBIENT_PARTICLES` (48) objects are created once
   and reassigned to whichever items are on screen, so the cost is constant
   whether the tank is empty or full. The emitter style is derived from the item's
   own kind (`ambient_emit_for_decor`), so nothing has to be authored per decor
   entry and no artwork is needed: a particle is a small tinted dot. That is what
   makes it cheap in both compute and tokens.
+  The pool size is the wrong place to economise -- the objects are created once
+  and only moved. The spawn cadence is the lever that controls how alive the tank
+  feels, and it is a few float writes per spawn.
+- **Both blocking paths block against the ARTWORK, not the collision footprint.**
+  `radius` is the steering footprint and is deliberately smaller than the sprite:
+  a crystal has radius 12 but is drawn 57 px wide, so blocking only 12 px from
+  the centre let the spider walk straight over the visible crystal. `art_scale`
+  makes the gap worse, not better, because it scales the sprite without touching
+  the footprint. `decor_art_extent()` is now the single measure used by
+  `decor_blocks_point()`, `decor_block_radius()` and the steering berth.
 - **`ambient_simulate()` is pure and `ambient_present()` touches LVGL.** The
   split is not tidiness. The self-test runs on the console task, and calling
   `lv_*` from there corrupts LVGL's state -- that was a real crash, not a
@@ -121,6 +135,13 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   during a console command, so without `s_emit_suspended` the live tick spawns
   particles between the test's reset and its count. That race made the test pass
   once and then fail on every subsequent run.
+- **The placement layer row refreshes as the item is dragged.**
+  `placement_position()` calls `ui_hud_placement_changed()`, because the layer
+  count depends on which items the item currently overlaps and that changes under
+  the player's finger. Without it the row only updated on a button press, so the
+  control appeared dead until Done was pressed and the item picked up again.
+  The same control is duplicated at the top of the screen, where the hand already
+  is while dragging.
 - **`life_clock_now()` is the single clock read.** `life_visual_tick()` used to
   call `time(NULL)` directly while the mind used `life_period_now()`, so `rtcset`
   changed what the brain saw but not what the screen showed. Everything that

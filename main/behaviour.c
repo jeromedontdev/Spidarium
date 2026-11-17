@@ -286,11 +286,10 @@ static float decor_avoidance(float heading)
     if (!def) return 0.0f;
 
     /* Distance from the edge the spider is actually blocked at, not the centre.
-     * Walk Behind blocks against the whole artwork, so measuring from the small
+     * Both paths block against the artwork now, so measuring from the small
      * collision radius would let the spider walk into the sprite before it
      * started turning. */
-    float block_r = (item->blocking == DECOR_WALK_BEHIND)
-        ? decor_block_radius(slot) : (float)def->radius;
+    float block_r = decor_block_radius(slot);
     float edge = d - block_r;
     if (edge > DECOR_AVOID_MARGIN) return 0.0f;
 

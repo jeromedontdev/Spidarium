@@ -160,7 +160,14 @@ test('decor purchase, placement, blocking and hit testing behave like the device
   assert.equal(toggleDecorBlocking(s,slot),true);
   assert.equal(s.decor[slot].blocking,1);
   assert.equal(decorBlocksPoint(s,100,100),true);
-  assert.equal(decorBlocksPoint(s,100+DECOR_KINDS[0].radius+4,100),false);
+  // Solid blocks the ARTWORK, not the collision footprint: a prop is drawn
+  // 2*radius*artScale wide, so blocking only `radius` let the spider walk over
+  // the visible sprite.
+  const solidExtent=DECOR_KINDS[0].radius*2*(DECOR_KINDS[0].artScale??100)/100;
+  assert.equal(decorBlocksPoint(s,100+solidExtent-2,100),true,
+    'Solid blocks inside the visible sprite');
+  assert.equal(decorBlocksPoint(s,100+solidExtent+6,100),false,
+    'Solid does not block outside the visible sprite');
 
   const near=decorNearestBlocking(s,110,100,60);
   assert.ok(near);assert.equal(near.x,100);assert.equal(near.y,100);

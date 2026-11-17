@@ -290,8 +290,13 @@ test('web strands are anchored in the tank and actually pivot', () => {
   }
   // A strand whose angle never changes is a static line drawn over the art.
   assert.ok(a.some((t, i) => t.angle !== b[i].angle), 'strands never pivot');
-  // One in each corner, so the tank is framed rather than one-sided.
-  assert.ok(a[0].ax < 240 && a[1].ax > 240, 'strands are not in opposite corners');
+  // Spread across the width rather than clustered in the corners: with six
+  // strands, corner-only placement left the middle of the tank bare.
+  const xs = a.map(t => t.ax).sort((p, q) => p - q);
+  assert.ok(xs[0] < 120 && xs[xs.length - 1] > 360, 'strands do not span the tank');
+  assert.ok(xs[xs.length - 1] - xs[0] > 300, 'strands are clustered, not spread');
+  // Alternating lean, so they do not all fall the same way.
+  assert.ok(a.some(t => t.angle > 1.5) && a.some(t => t.angle < 1.5), 'strands all lean one way');
 });
 
 test('decor and gift particles use a fixed pool, not one emitter per item', () => {

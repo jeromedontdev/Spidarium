@@ -633,30 +633,57 @@ test('a visit completes with the gift walked over',()=>{
   assert.ok(arrived,'the visit must complete');
 });
 
-test('walk behind blocks decor against the whole artwork',()=>{
-  /* The same rule that makes Walk Behind read on a gift applies to decor: the
-   * spider must not stand on the item's lower half. Blocking only the small
-   * collision footprint let it walk over the bottom of the sprite and then pop
-   * behind the top. */
+test('both blocking paths block against the whole artwork',()=>{
+  /* The spider must not stand on an item's lower half, and it must not walk over
+   * a solid item either. Blocking only the small collision footprint let it walk
+   * over the bottom of the sprite and then pop behind the top -- and, for Solid,
+   * let it walk straight over a crystal that is drawn 57 px wide but only
+   * blocked 12 px from its centre. */
   const {state}=fixture();
   for(const item of state.decor)item.kind=E.DECOR_EMPTY;
-  /* A prop: 64x64 drawn at radius*16, so its screen half-extent is 2*radius. */
+  /* A prop: 64x64 drawn at radius*16*artScale, so its screen half-extent is
+   * 2*radius*artScale. */
   state.decor[0]={kind:3,blocking:2,x:240,y:240};
   const def=E.DECOR_KINDS[3];
   const extent=E.decorBlockRadius(state,0);
   assert.ok(extent>def.radius,
-    `Walk Behind blocks the artwork, not the footprint (${extent} vs ${def.radius})`);
-  assert.ok(Math.abs(extent-def.radius*2)<1e-9,
-    'a prop sprite covers 2*radius screen pixels each way');
-  /* Solid still blocks only its collision footprint. */
+    `blocking uses the artwork, not the footprint (${extent} vs ${def.radius})`);
+  assert.ok(Math.abs(extent-def.radius*2*(def.artScale??100)/100)<1e-9,
+    'a prop sprite covers 2*radius*artScale screen pixels each way');
+  /* Solid blocks the same artwork. This is the crystal bug: radius 12 but drawn
+   * 57 px wide, so a footprint-only test let the spider walk over it. */
   state.decor[0].blocking=1;
-  assert.ok(Math.abs(E.decorBlockRadius(state,0)-def.radius)<1e-9,
-    'Solid blocks its footprint');
+  assert.ok(Math.abs(E.decorBlockRadius(state,0)-extent)<1e-9,
+    'Solid blocks the artwork too');
+  assert.equal(E.decorBlocksPoint(state,240+def.radius+4,240),true,
+    'Solid blocks past its collision footprint');
   /* Walk Over and Climb do not block at all. */
   state.decor[0].blocking=0;
   assert.equal(E.decorBlocksPoint(state,240,240),false,'Walk Over does not block');
   state.decor[0].blocking=3;
   assert.equal(E.decorBlocksPoint(state,240,240),false,'Climb does not block');
+});
+
+test('a solid crystal blocks its whole visible sprite',()=>{
+  /* The reported bug: "I made this crystal solid but the spider is still walking
+   * over it." The crystal has radius 12 but artScale 120, so it is drawn 57 px
+   * wide -- and a footprint-only test blocked just 12 px from the centre. */
+  const {state}=fixture();
+  for(const item of state.decor)item.kind=E.DECOR_EMPTY;
+  const kind=E.DECOR_KINDS.findIndex(d=>d.key==='crystal');
+  assert.ok(kind>=0,'the crystal kind exists');
+  state.decor[0]={kind,blocking:1,x:240,y:240};
+  const def=E.DECOR_KINDS[kind];
+  const drawnHalf=def.radius*2*(def.artScale??100)/100;
+  assert.ok(drawnHalf>def.radius*2,
+    `the crystal is drawn wider than its footprint (${drawnHalf} vs ${def.radius*2})`);
+  /* Every point inside the visible sprite must block. */
+  for(const [dx,dy] of [[0,0],[drawnHalf-2,0],[-drawnHalf+2,0],[0,drawnHalf-2],[0,-drawnHalf+2]])
+    assert.equal(E.decorBlocksPoint(state,240+dx,240+dy),true,
+      `solid crystal must block at ${dx},${dy}`);
+  /* And just outside it must not, or the spider would refuse to approach. */
+  assert.equal(E.decorBlocksPoint(state,240+drawnHalf+6,240),false,
+    'solid crystal must not block well outside its sprite');
 });
 
 test('walk behind blocks a structure only where its artwork is',()=>{

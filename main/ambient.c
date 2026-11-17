@@ -173,7 +173,10 @@ void ambient_init(void)
         lv_obj_set_size(p->obj, p->size, p->size);
     }
 
-    /* Strands hang from the top corners, where a real web would start. */
+    /* Strands hang from the top edge and the upper corners, where a real web
+     * would start. Spread across the width rather than clustered in the two
+     * corners: with six strands, corner-only placement left the middle of the
+     * tank bare and read as two decorations rather than as a web. */
     for (int i = 0; i < AMBIENT_STRANDS; i++) {
         strand_t *s = &s_strands[i];
         s->obj = lv_obj_create(ui.bg_canvas ? lv_obj_get_parent(ui.bg_canvas) : NULL);
@@ -186,13 +189,15 @@ void ambient_init(void)
         lv_obj_set_style_radius(s->obj, 0, 0);
         lv_obj_set_clickable(s->obj, false);
         lv_obj_set_scrollable(s->obj, false);
-        /* One in each top corner, so the tank is framed rather than one-sided.
-         * Inset well past the border: anchored at the playfield edge the strand
-         * was drawn underneath the frame and could not be seen at all. */
-        s->ax = i == 0 ? g_play.left + 26 : g_play.right - 26;
-        s->ay = g_play.top + 18;
-        s->length = 34.0f + (float)(esp_random() % 30);
-        s->base_angle = (i == 0 ? 1.0f : 2.14f);   /* down-right / down-left */
+        /* Evenly spaced across the playfield, inset past the border. Anchored at
+         * the playfield edge the strand was drawn underneath the frame and could
+         * not be seen at all. */
+        int32_t span = g_play.right - g_play.left;
+        s->ax = g_play.left + 26 + (int32_t)((int64_t)span - 52) * i / (AMBIENT_STRANDS - 1);
+        s->ay = g_play.top + 14 + (int32_t)(esp_random() % 10);
+        s->length = 30.0f + (float)(esp_random() % 46);
+        /* Alternate the lean so the strands do not all fall the same way. */
+        s->base_angle = (i & 1) ? 2.14f : 1.0f;
         s->sway_phase = (float)(esp_random() % 628) / 100.0f;
         s->sway_rate = 0.25f + (float)(esp_random() % 100) / 100.0f * 0.35f;
         s->sway_amp = 0.10f + (float)(esp_random() % 100) / 100.0f * 0.10f;
@@ -378,14 +383,14 @@ static void particle_spawn(ambient_emit_t style, int32_t x, int32_t y)
         p->vx = ((float)(esp_random() % 100) / 100.0f - 0.5f) * 6.0f;
         p->vy = -(4.0f + (float)(esp_random() % 100) / 100.0f * 5.0f);
         p->life_max = 2.4f + (float)(esp_random() % 100) / 100.0f * 1.6f;
-        p->size = (uint8_t)(2 + esp_random() % 2);
+        p->size = (uint8_t)(3 + esp_random() % 2);
         break;
     case AMBIENT_EMIT_GLINT:
         /* Barely moves; it is a flash, not a drift. */
         p->vx = 0.0f;
         p->vy = -(1.0f + (float)(esp_random() % 100) / 100.0f * 2.0f);
         p->life_max = 0.5f + (float)(esp_random() % 100) / 100.0f * 0.5f;
-        p->size = (uint8_t)(2 + esp_random() % 2);
+        p->size = (uint8_t)(3 + esp_random() % 2);
         break;
     case AMBIENT_EMIT_DUST:
     default:
@@ -393,19 +398,24 @@ static void particle_spawn(ambient_emit_t style, int32_t x, int32_t y)
         p->vx = ((float)(esp_random() % 100) / 100.0f - 0.5f) * 3.0f;
         p->vy = 2.0f + (float)(esp_random() % 100) / 100.0f * 3.0f;
         p->life_max = 2.0f + (float)(esp_random() % 100) / 100.0f * 2.0f;
-        p->size = (uint8_t)(1 + esp_random() % 2);
+        p->size = (uint8_t)(2 + esp_random() % 2);
         break;
     }
     p->life = p->life_max;
 }
 
 /* Spawn particles for whatever is on screen. Called on a slow cadence, not per
- * frame: the pool is small and the effect is meant to be occasional. */
+ * frame: the pool is small and the effect is meant to be occasional.
+ *
+ * The cadence is the lever that controls how alive the tank feels, and it is
+ * cheap to turn: a spawn is a few float writes, not an allocation. The first
+ * pass spawned every ~380 ms and was invisible with a dozen items placed,
+ * because each item only got a particle once every few seconds. */
 static void particles_emit(uint32_t now_ms)
 {
     if (s_emit_suspended) return;
     if ((int32_t)(now_ms - s_next_spawn) < 0) return;
-    s_next_spawn = now_ms + 260u + esp_random() % 240u;
+    s_next_spawn = now_ms + 90u + esp_random() % 90u;
 
     /* Walk the placed decor and the gift, spawning at most one particle per
      * call. One at a time keeps the pool from being consumed in a burst and
@@ -594,10 +604,13 @@ static void ambient_present(void)
             continue;
         }
         lv_obj_set_hidden(p->obj, false);
+        /* The size is per-particle, so it has to be pushed here rather than set
+         * once at creation. A fixed 2x2 was too small to notice. */
+        lv_obj_set_size(p->obj, p->size, p->size);
         /* Fade out over the last third of the life, so a particle never pops
          * out of existence. */
         float frac = p->life / p->life_max;
-        uint8_t opa = (uint8_t)(frac > 0.34f ? 153 : (int)(153.0f * frac / 0.34f));
+        uint8_t opa = (uint8_t)(frac > 0.34f ? 200 : (int)(200.0f * frac / 0.34f));
         lv_obj_set_style_bg_opa(p->obj, opa, 0);
         lv_obj_set_pos(p->obj, (int32_t)lroundf(p->x), (int32_t)lroundf(p->y));
     }

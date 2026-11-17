@@ -21,19 +21,18 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* How many dust motes drift at once. Eight is enough to read as "there is air
- * in here" without costing a measurable amount of the frame budget. */
-#define AMBIENT_MOTES 8
+/* How many dust motes drift at once. Sixteen reads as air with real depth; the
+ * original eight was sparse enough to look like a few stray pixels. */
+#define AMBIENT_MOTES 16
 
 /* How many drifting spores/pollen specks ride the air alongside the dust. These
  * are larger and slower than the motes and drift sideways as well as up, so the
  * air reads as having two layers rather than one uniform field. */
-#define AMBIENT_SPORES 3
+#define AMBIENT_SPORES 6
 
-/* How many web strands sway in the corners. A strand is a thin line anchored at
- * one end, so it pivots rather than translating -- which is what makes it read
- * as something hanging rather than something sliding. */
-#define AMBIENT_STRANDS 2
+/* How many web strands hang in the tank. Six is enough to read as a neglected
+ * corner of an enclosure rather than as two stray lines. */
+#define AMBIENT_STRANDS 6
 
 /* How many decor/gift particles exist at once.
  *
@@ -43,10 +42,12 @@
  * budget. Instead a small pool is reassigned to whichever items are on screen,
  * so the cost is constant whether the tank is empty or full.
  *
- * Sixteen is enough that a couple of items each get a few specks, which is all
- * that is needed: the effect is meant to say "this thing is alive", not to be a
- * fireworks display. */
-#define AMBIENT_PARTICLES 16
+ * 48 is deliberately generous. The first pass used 16 and the effect was
+ * invisible: with a dozen items placed, each one got a particle roughly once
+ * every four seconds, which reads as nothing at all. The pool is cheap because
+ * the objects are created once and only moved, so the count is the wrong place
+ * to economise -- the spawn cadence is. */
+#define AMBIENT_PARTICLES 48
 
 /* There are no light shafts.
  *

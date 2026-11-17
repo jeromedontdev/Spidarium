@@ -64,10 +64,10 @@ export function lightOpaAt(nowMs) {
   return Math.max(0, Math.min(255, v));
 }
 
-/* Dust motes. Eight small squares drifting upward with a sideways sway. The
+/* Dust motes. Sixteen small squares drifting upward with a sideways sway. The
  * device moves real LVGL objects; here they are just positions, drawn by the
  * caller. `bounds` is the playfield in tank pixels. */
-export const MOTE_COUNT = 8;
+export const MOTE_COUNT = 16;
 
 /* The theme's `dust` column, in BACKGROUNDS order. The device tints its motes
  * from theme->dust, which was defined in the theme table and never used
@@ -125,7 +125,7 @@ export function motesAt(nowMs, bounds) {
  * device moves real LVGL objects; here they are positions. Larger and rounder
  * than the motes so the two layers are distinguishable at a glance rather than
  * reading as one noisy field. */
-export const SPORE_COUNT = 3;
+export const SPORE_COUNT = 6;
 
 export function sporesAt(nowMs, bounds) {
   const { left, top, right, bottom } = bounds;
@@ -149,19 +149,24 @@ export function sporesAt(nowMs, bounds) {
 /* Web strands: a thin line anchored at one end, pivoting slowly. A strand that
  * translated would read as a sliding stick; pivoting reads as something hanging
  * and catching the air. Returns the anchor and the current angle in radians. */
-export const STRAND_COUNT = 2;
+export const STRAND_COUNT = 6;
 
 export function strandsAt(nowMs, bounds) {
   const { left, top, right } = bounds;
   const out = [];
+  const span = Math.max(1, right - left);
   for (let i = 0; i < STRAND_COUNT; i++) {
     const seed = i * 173 + 23;
-    const length = 34 + hash(seed + 1) * 30;
-    const baseAngle = i === 0 ? 1.0 : 2.14;      /* down-right / down-left */
+    const length = 30 + hash(seed + 1) * 46;
+    /* Alternate the lean so the strands do not all fall the same way. */
+    const baseAngle = i % 2 ? 2.14 : 1.0;
     const swayRate = 0.25 + hash(seed + 2) * 0.35;
     const swayAmp = 0.10 + hash(seed + 3) * 0.10;
-    const ax = i === 0 ? left + 6 : right - 6;
-    const ay = top + 4;
+    /* Evenly spaced across the playfield, inset past the border. Anchored at the
+     * playfield edge the strand is drawn underneath the frame and cannot be
+     * seen at all. */
+    const ax = left + 26 + Math.round((span - 52) * i / (STRAND_COUNT - 1));
+    const ay = top + 14 + Math.floor(hash(seed + 5) * 10);
     const angle = baseAngle + Math.sin((nowMs / 1000) * swayRate + hash(seed + 4) * 6.28) * swayAmp;
     out.push({ ax, ay, length, angle });
   }
@@ -179,7 +184,7 @@ export function strandsAt(nowMs, bounds) {
  * per decor entry and no artwork is needed -- a particle is a small tinted dot.
  * That is what makes this cheap in both compute and tokens.
  */
-export const PARTICLE_COUNT = 16;
+export const PARTICLE_COUNT = 48;
 
 export const EMIT = { NONE: 0, SPORE: 1, GLINT: 2, DUST: 3 };
 
@@ -238,7 +243,7 @@ export function particlesAt(nowMs, items) {
      * fountain. */
     const seed = i * 211 + 37;
     const life = 2.0 + hash(seed + 1) * 1.6;          /* seconds */
-    const gap = 0.6 + hash(seed + 2) * 1.4;           /* seconds idle */
+    const gap = 0.15 + hash(seed + 2) * 0.35;         /* seconds idle */
     const period = life + gap;
     const phase = hash(seed) * period;
     const cycle = Math.floor((nowMs / 1000 + phase) / period);
@@ -254,7 +259,7 @@ export function particlesAt(nowMs, items) {
     out.push({
       x: Math.round(emitter.x + jitterX + (hash(seed + cycle + 4) - 0.5) * 6 * t),
       y: Math.round(emitter.y + jitterY + rise * travel),
-      size: emitter.style === EMIT.DUST ? 1 : 2,
+      size: emitter.style === EMIT.DUST ? 2 : 3,
       /* Fade over the last third of the life, so a particle never pops out of
        * existence. Mirrors the device's opacity ramp. */
       alpha: t > 0.66 ? (1 - t) / 0.34 : 1,
