@@ -240,6 +240,12 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   `game_placement_item_label()` supplies the "name / n of m" caption and returns
   false when there is nothing to cycle, which is what hides the row for a new
   item or a gift.
+  The stepping lives in `placement_step_item(int step)` rather than in the event
+  handler, because `lv_event_get_user_data(NULL)` returns NULL -- calling the
+  handler with a NULL event always steps by zero, which is exactly what made the
+  first version of the test fail. `test_placement_item_selector()` drives the
+  helper directly and reports its own `selector=` flag in `uitest`, so a failure
+  there is not masked by the pre-existing `pointer=0` baseline.
 - **`life_clock_now()` is the single clock read.** `life_visual_tick()` used to
   call `time(NULL)` directly while the mind used `life_period_now()`, so `rtcset`
   changed what the brain saw but not what the screen showed. Everything that

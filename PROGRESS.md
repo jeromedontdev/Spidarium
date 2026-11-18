@@ -11944,6 +11944,13 @@ a value that was correct in isolation but wrong where it was used.
   rounds its sub-pixel position each tick and an idle spider can drift one pixel.
 - `on_daily_pick()` was still keyed on ids 0/1 while the rows carry ids 3 and
   4..6, so tapping Check In did nothing. It now matches the ids the rows emit.
+- The item selector had no test of its own. The assertions I first added lived
+  inside `test_furniture_pointer()`, whose pre-existing `pointer=0` baseline
+  masked them -- `decor=1` looked like proof when it was not.
+  `test_placement_item_selector()` is now standalone with its own `selector=`
+  flag. The stepping logic also moved out of `game_on_placement_item()` into
+  `placement_step_item(int step)`, because `lv_event_get_user_data(NULL)`
+  returns NULL and calling the handler with a NULL event always stepped by zero.
 
 ### Evidence
 
@@ -11958,6 +11965,7 @@ LOOP ok=5 failed=0 largest_drift=0
 DECORTEST placed=74 slots=12
 run_tests.py COM7                 passed=50 failed=2
 uitest                            hud=0 pointer=0, every other flag 1
+                                  (selector=1, decor=1, companion=1)
 stability_check.py COM7 40        VERDICT: PASS, FAULTS/ERRORS: 0
 site: node --test tests/*.test.mjs  309/309
 ```
