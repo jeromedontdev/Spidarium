@@ -12341,3 +12341,135 @@ Cumulative effect of Rounds 136 + 137:
   inherent to a hand-drawn canvas sprite and was not reduced this round.
 - Physical touch feel and the on-panel appearance of the resized spiderling still
   need a human look; the artwork was verified from a captured framebuffer.
+
+## Round 138 -- The decor selector, the layer row, and per-style particles
+
+Three reports, all of them a control or an effect that was present but not doing
+what it looked like it was doing.
+
+### 1. "You removed the decor selection arrows"
+
+The arrows were never removed. `game_placement_item_label()` returned **false
+when `total < 2`**, on the theory that a single placed item has nothing to cycle
+to -- and the caller hides the arrows, the caption and the whole row on a false
+return. So a tank holding one prop looked exactly like a build with the control
+deleted, which is what the report said.
+
+The label now returns false only when there is no placed item to name (a new
+placement, or a gift). With one item it returns "Driftwood Ramp / 1 / 1" and the
+arrows are shown **disabled**. A disabled arrow also had to be made to LOOK
+disabled: `place_action()` dimmed the fill and the border but the glyph is a text
+label and kept its full-brightness colour, so the arrow still read as live. It
+now gets `0x64717b` in `LV_STATE_DISABLED`.
+
+### 2. "Layer selection arrows again are usable even though there is no overlapping item"
+
+`ui_hud_set_place_mode()` and `ui_hud_placement_changed()` both tested
+`game_placement_layers() >= 1`. That function returns `count + 1`, so it is
+**always** at least 1 and the test was a tautology -- the layer row was shown
+unconditionally. The `>= 1` was introduced in `4201e7a` to stop the row vanishing
+when an item was dragged a few pixels out of contact, but it over-corrected into
+"always on".
+
+Both sites now test `> 1`, i.e. at least one item genuinely overlaps in the same
+band. `items_overlap()` was checked and is not over-reporting: a small rock's
+artwork half-extent is `2 * 9 * 115/100 = 20.7` px, so two rocks 100 px apart do
+not touch, and `decorlayers` on the real board reports `overlapping=0` for the
+single placed item.
+
+### 3. "Decor items all have the same color and pattern particle effect"
+
+`ambient_retint()` tinted **all 48 particles** with `brighten(t->dust, 55)` and
+`ambient_init()` created every one of them as a `LV_RADIUS_CIRCLE`. The `style`
+field was stored per particle and never read for colour or shape, so a fern's
+spore, a crystal's glint and a rock's dust were the same dot at three speeds.
+
+Colour and shape are now per STYLE, pushed from `ambient_present()` only when a
+slot is recycled for a different emitter (`last_style` cache, so a spawn costs no
+colour work and the dirty-check discipline is preserved):
+
+| style | colour | radius | size | motion |
+|---|---|---|---|---|
+| SPORE | pale green `0xb9e7be` | circle | 5-7 px | drifts up and sideways |
+| GLINT | warm near-white `0xf7f1d6` | square | 3-4 px | barely moves, short life |
+| DUST | warm grey `0xa7b0a5` | 2 px soft | 4-5 px | settles downward |
+
+Deriving the hue purely from the palette was **not enough**: several themes have
+a `web` and a `dust` that are both cool blue-greys, and the first attempt
+produced `0xe9ecf1` vs `0xeaf1f2` -- indistinguishable. The theme now supplies
+the base and a fixed per-style tint is mixed in, so the families separate on
+every background while still shifting with the theme.
+
+`mix_rgb()` had to use **signed** channel deltas. `b` is often darker than `a`,
+and `br - ar` in `uint32_t` wraps to ~4.29e9, which overflowed the packed result
+and produced `0x5eefffe6` -- a colour with bits above 24. Caught by the new
+`AMBIENTSTYLE` report line, not by the self-test.
+
+### Decisions made
+
+- **Show the selector and disable its arrows, rather than hide the row.** Hiding
+  a control because it currently has nothing to do reads as a missing feature;
+  a disabled control reads as a state. The same reasoning was applied to the
+  layer row in the opposite direction: there the row is genuinely meaningless
+  without an overlap, so it is hidden rather than disabled.
+- **Keep the layer row's visibility tied to real overlap, not to band
+  membership.** Draw order is only visible where two sprites cover the same
+  pixels. The earlier "row vanishes" complaint is answered by the row appearing
+  the instant a drag brings the item into contact, which the new test asserts in
+  both directions.
+- **Per-style colour and shape, not per-item.** The point is that the tank reads
+  as alive, not that every prop has a bespoke effect. Three families is enough to
+  separate plants from minerals from stone, and it costs no new artwork.
+- **Cache the pushed style per particle.** `ambient_present()` runs at 10 Hz over
+  48 objects; pushing colour and radius unconditionally would invalidate every
+  live particle every present and undo the dirty-check work that keeps the
+  ambient layer off the frame budget.
+
+### Evidence
+
+Build exit 0, zero main warnings. Flash exit 0.
+
+```
+run_tests.py COM7                 passed=50 failed=2  (documented hud=0 pointer=0 baseline)
+uitest                            selector=1  (placement item selector: PASS)
+ambienttest                       AMBIENT ok=1
+ambient                           AMBIENTSTYLE spore=6 glint=3 dust=2
+                                  color_spore=0xb9e7be color_glint=0xf7f1d6 color_dust=0xa7b0a5
+                                  radius_spore=32767 radius_glint=0 radius_dust=2
+render 500                        largest_drift=0 per_tick_us=32999
+scanloop 5                        ok=5 failed=0 largest_drift=0
+mem                               internal=108483 largest=63488 dma=100751 psram=1613900
+stability_check.py COM7 40        VERDICT: PASS, FAULTS/ERRORS: 0
+site: node --test tests/*.test.mjs  309/309
+```
+
+Steady-state `rendercost` (30 s window, no console traffic):
+
+```
+RENDERCOST ticks=710 avg_us=2433 budget_us=33333
+RENDERSPREAD gap_max_us=94012 gap_last_us=32996 over_2x=53
+REFRESH count=819 avg_us=25157 max_us=87796 flush=7458 px=13111208 px_avg=16008
+INVALIDATE count=41670 px=45107428 px_max=36480 full=0
+REFRSPLIT draw_us=21498 xfer_us=2562 prep_us=1049
+```
+
+23.7 Hz, `full=0`, `px_avg` 16.0k -- no regression against Round 137's 23.2 Hz /
+15.1k. The per-style colour work is once per spawn, so it does not appear here.
+
+Visual verification from captured framebuffers:
+
+- `decor begin 0` with one item: selector reads "Driftwood Ramp / 1 / 1", both
+  arrows dimmed, layer row absent.
+- Two overlapping items: selector reads "1 / 2" with live arrows, layer row
+  appears as "Floor / 1 / 2" with live arrows.
+- Fern + crystal + rock placed together: pale-green round spores on the fern, a
+  warm near-white square glint on the crystal, a soft grey dust blob on the rock.
+
+### Known remaining
+
+- The disabled-arrow colour is a hard-coded grey rather than a theme value. The
+  placement overlay is already theme-independent (it uses `COL_PANEL` and
+  `COL_TEXT`), so this is consistent, but it is a magic number.
+- `AMBIENTSTYLE` reports the colour and radius the code WOULD use, not what is
+  currently pushed to each object. A per-particle dump would be needed to catch a
+  cache that never invalidates; the visual capture is the evidence for now.

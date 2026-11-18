@@ -105,6 +105,11 @@ typedef struct {
     int32_t last_x, last_y;
     uint8_t last_opa;
     uint8_t last_size;
+    /* The style whose colour and shape were last pushed to LVGL, or -1 when
+     * nothing has been pushed yet. Colour and shape are per-STYLE, not per
+     * particle, so they only need re-pushing when a slot is recycled for a
+     * different emitter -- which is once per spawn at most. */
+    int8_t last_style;
     /* Whether the object is currently hidden. Tracked separately from last_opa
      * because 0xFF is used as the "force a re-push" sentinel: overloading the
      * two meant a particle that activated after ambient_set_visible() was never
@@ -356,6 +361,7 @@ void ambient_init(void)
         p->active = false;
         p->hidden = true;
         p->last_opa = 0;
+        p->last_style = -1;
     }
 
     s_ready = true;
@@ -508,18 +514,20 @@ static void particle_spawn(ambient_emit_t style, int32_t x, int32_t y)
 
     switch (style) {
     case AMBIENT_EMIT_SPORE:
-        /* Drifts up and sideways, slowly. */
+        /* Drifts up and sideways, slowly. The largest of the three: pollen is a
+         * soft blob, and a bigger dot is what makes it read as organic. */
         p->vx = ((float)(esp_random() % 100) / 100.0f - 0.5f) * 6.0f;
         p->vy = -(4.0f + (float)(esp_random() % 100) / 100.0f * 5.0f);
         p->life_max = 2.4f + (float)(esp_random() % 100) / 100.0f * 1.6f;
-        p->size = (uint8_t)(4 + esp_random() % 3);
+        p->size = (uint8_t)(5 + esp_random() % 3);
         break;
     case AMBIENT_EMIT_GLINT:
-        /* Barely moves; it is a flash, not a drift. */
+        /* Barely moves; it is a flash, not a drift. Small and hard-edged, so it
+         * reads as a specular point rather than as a floating speck. */
         p->vx = 0.0f;
         p->vy = -(1.0f + (float)(esp_random() % 100) / 100.0f * 2.0f);
         p->life_max = 0.5f + (float)(esp_random() % 100) / 100.0f * 0.5f;
-        p->size = (uint8_t)(4 + esp_random() % 3);
+        p->size = (uint8_t)(3 + esp_random() % 2);
         break;
     case AMBIENT_EMIT_DUST:
     default:
@@ -527,7 +535,7 @@ static void particle_spawn(ambient_emit_t style, int32_t x, int32_t y)
         p->vx = ((float)(esp_random() % 100) / 100.0f - 0.5f) * 3.0f;
         p->vy = 2.0f + (float)(esp_random() % 100) / 100.0f * 3.0f;
         p->life_max = 2.0f + (float)(esp_random() % 100) / 100.0f * 2.0f;
-        p->size = (uint8_t)(3 + esp_random() % 3);
+        p->size = (uint8_t)(4 + esp_random() % 2);
         break;
     }
     p->life = p->life_max;
@@ -536,6 +544,9 @@ static void particle_spawn(ambient_emit_t style, int32_t x, int32_t y)
      * would make the first comparison a no-op and the particle would spend its
      * whole life at 60/255 -- invisible on a mid-tone substrate. */
     p->last_opa = 0;
+    /* The slot may have been recycled from a different emitter, so the colour
+     * and shape have to be re-pushed. -1 is the "nothing pushed" sentinel. */
+    p->last_style = -1;
 }
 
 /* Spawn particles for whatever is on screen. Called on a slow cadence, not per
@@ -595,6 +606,77 @@ static uint32_t brighten(uint32_t rgb, int percent)
     return (r << 16) | (g << 8) | b;
 }
 
+/* Linear blend of two RGB values, `percent` of the way from a to b.
+ *
+ * The channel deltas are SIGNED: `b` is often darker than `a`, and computing
+ * `br - ar` in uint32_t wraps to ~4.29e9, which then overflows the packed
+ * result and produces a colour with bits above 24. */
+static uint32_t mix_rgb(uint32_t a, uint32_t b, int percent)
+{
+    int ar = (int)((a >> 16) & 0xFF), ag = (int)((a >> 8) & 0xFF), ab = (int)(a & 0xFF);
+    int br = (int)((b >> 16) & 0xFF), bg = (int)((b >> 8) & 0xFF), bb = (int)(b & 0xFF);
+    int r = ar + (br - ar) * percent / 100;
+    int g = ag + (bg - ag) * percent / 100;
+    int bl = ab + (bb - ab) * percent / 100;
+    if (r < 0) r = 0; else if (r > 255) r = 255;
+    if (g < 0) g = 0; else if (g > 255) g = 255;
+    if (bl < 0) bl = 0; else if (bl > 255) bl = 255;
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)bl;
+}
+
+/* The colour of a particle, by emitter style.
+ *
+ * Every particle used to be tinted with the same brightened `dust`, so a fern's
+ * spore, a crystal's glint and a rock's dust were indistinguishable -- the
+ * "decor items all have the same color and pattern particle effect" report. The
+ * three families now differ in BOTH hue and shape, which is what makes them read
+ * as three different effects rather than one effect at three speeds:
+ *
+ *   SPORE  pale green, round        -- pollen lifting off a plant
+ *   GLINT  warm near-white, hard    -- a highlight catching a facet
+ *   DUST   warm grey, square        -- grit settling out of the air
+ *
+ * The theme supplies the BASE and a fixed per-style tint is mixed in. Deriving
+ * the hue purely from the palette was not enough: several themes have a `web`
+ * and a `dust` that are both cool blue-greys, so the spore and the glint came
+ * out within a few units of each other (0xe9ecf1 vs 0xeaf1f2 on the default
+ * theme). Mixing a fixed tint guarantees the three families separate on every
+ * background while still shifting with the theme. */
+static uint32_t particle_color(ambient_emit_t style)
+{
+    const theme_def_t *t = theme_current();
+    uint32_t dust = t ? t->dust : 0xb9a888;
+    uint32_t web = t ? t->web : 0x6f7f74;
+    switch (style) {
+    case AMBIENT_EMIT_SPORE:
+        /* Pollen: the near-silhouette tone pulled toward a pale leaf green. */
+        return mix_rgb(brighten(web, 70), 0x9fe8a0, 62);
+    case AMBIENT_EMIT_GLINT:
+        /* A specular flash: almost white, with just enough warmth to read as a
+         * highlight rather than as a white pixel. */
+        return mix_rgb(brighten(dust, 80), 0xfff4d0, 78);
+    case AMBIENT_EMIT_DUST:
+    default:
+        /* Grit: the theme's own dust, only lightly lifted, pulled toward a warm
+         * sand so it stays clearly duller and browner than the other two. */
+        return mix_rgb(brighten(dust, 25), 0xc9b79a, 55);
+    }
+}
+
+/* The corner radius of a particle, by emitter style. LV_RADIUS_CIRCLE is a
+ * circle, 0 is a square, and a small value is a soft-edged blob. Shape is the
+ * second half of "same pattern": three families that differ only in speed still
+ * read as one effect. */
+static int32_t particle_radius(ambient_emit_t style)
+{
+    switch (style) {
+    case AMBIENT_EMIT_SPORE: return LV_RADIUS_CIRCLE;  /* round pollen */
+    case AMBIENT_EMIT_GLINT: return 0;                 /* hard square facet */
+    case AMBIENT_EMIT_DUST:
+    default:                 return 2;                 /* soft-edged grit */
+    }
+}
+
 void ambient_retint(void)
 {
     const theme_def_t *t = theme_current();
@@ -615,12 +697,13 @@ void ambient_retint(void)
         if (!s_strands[i].obj) continue;
         lv_obj_set_style_bg_color(s_strands[i].obj, lv_color_hex(t->web), 0);
     }
-    /* Particles take the theme's dust colour, brightened so a 3-5 px dot reads
-     * against the substrate. They are tinted once here rather than per spawn, so
-     * a spawn costs no colour work. */
+    /* Particles are tinted per STYLE, not once for the whole pool: see
+     * particle_color(). A theme change therefore has to invalidate the cached
+     * style on every slot so the next present re-pushes the new palette. Doing
+     * it here rather than per spawn keeps a spawn free of colour work. */
     for (int i = 0; i < AMBIENT_PARTICLES; i++) {
         if (!s_particles[i].obj) continue;
-        lv_obj_set_style_bg_color(s_particles[i].obj, lv_color_hex(brighten(t->dust, 55)), 0);
+        s_particles[i].last_style = -1;
     }
 }
 
@@ -835,6 +918,16 @@ static void ambient_present(void)
             p->hidden = false;
             lv_obj_set_hidden(p->obj, false);
         }
+        /* Colour and shape are per-STYLE, so they are pushed only when the slot
+         * has been recycled for a different emitter -- at most once per spawn.
+         * Pushing them every frame would invalidate the object for no visible
+         * change and cost the frame budget the ambient layer already fights
+         * for. */
+        if (p->last_style != (int8_t)p->style) {
+            p->last_style = (int8_t)p->style;
+            lv_obj_set_style_bg_color(p->obj, lv_color_hex(particle_color(p->style)), 0);
+            lv_obj_set_style_radius(p->obj, particle_radius(p->style), 0);
+        }
         /* The size is per-particle, so it has to be pushed rather than set once
          * at creation -- but only when it changes, which is once per spawn. */
         if (p->size != p->last_size) {
@@ -957,8 +1050,16 @@ void ambient_report(void)
         if (m->y >= (float)g_play.top && m->y <= (float)g_play.bottom) inside++;
     }
     int live = 0;
-    for (int i = 0; i < AMBIENT_PARTICLES; i++)
-        if (s_particles[i].active) live++;
+    int live_spore = 0, live_glint = 0, live_dust = 0;
+    for (int i = 0; i < AMBIENT_PARTICLES; i++) {
+        if (!s_particles[i].active) continue;
+        live++;
+        switch (s_particles[i].style) {
+        case AMBIENT_EMIT_SPORE: live_spore++; break;
+        case AMBIENT_EMIT_GLINT: live_glint++; break;
+        default:                 live_dust++;  break;
+        }
+    }
     printf("AMBIENT motes=%d inside=%d visible=%d dust=0x%06lx breath=%.3f "
            "blink=%.2f glance=%.0f light=%u spores=%d strands=%d particles=%d live=%d "
            "present_ms=%d\n",
@@ -968,6 +1069,19 @@ void ambient_report(void)
            (double)ambient_glance(), (unsigned)ambient_light_opa(),
            AMBIENT_SPORES, AMBIENT_STRANDS, AMBIENT_PARTICLES, live,
            AMBIENT_PRESENT_MS);
+    /* The three emitter families must be distinguishable on hardware, not only
+     * in the self-test: a report that only counted live particles would look
+     * identical whether or not the per-style colour and shape work. */
+    printf("AMBIENTSTYLE spore=%d glint=%d dust=%d "
+           "color_spore=0x%06lx color_glint=0x%06lx color_dust=0x%06lx "
+           "radius_spore=%d radius_glint=%d radius_dust=%d\n",
+           live_spore, live_glint, live_dust,
+           (unsigned long)particle_color(AMBIENT_EMIT_SPORE),
+           (unsigned long)particle_color(AMBIENT_EMIT_GLINT),
+           (unsigned long)particle_color(AMBIENT_EMIT_DUST),
+           (int)particle_radius(AMBIENT_EMIT_SPORE),
+           (int)particle_radius(AMBIENT_EMIT_GLINT),
+           (int)particle_radius(AMBIENT_EMIT_DUST));
 }
 
 bool ambient_test(void)
@@ -1159,6 +1273,25 @@ bool ambient_test(void)
     CHECK(ambient_emit_for_decor(DECOR_CRYSTAL) == AMBIENT_EMIT_GLINT);
     CHECK(ambient_emit_for_decor(DECOR_ROCK_SMALL) == AMBIENT_EMIT_DUST);
     CHECK(ambient_emit_for_gift(0) == AMBIENT_EMIT_GLINT);
+
+    /* The three families must differ in BOTH colour and shape.
+     *
+     * Every particle used to be tinted with the same brightened `dust` and
+     * created as a circle, so a fern's spore, a crystal's glint and a rock's
+     * dust were indistinguishable -- the "decor items all have the same color
+     * and pattern particle effect" report. Asserting only that the colours are
+     * non-zero would pass with three identical values, so the check is that all
+     * three differ from each other. */
+    {
+        uint32_t spore = particle_color(AMBIENT_EMIT_SPORE);
+        uint32_t glint = particle_color(AMBIENT_EMIT_GLINT);
+        uint32_t dust = particle_color(AMBIENT_EMIT_DUST);
+        CHECK(spore != glint && glint != dust && spore != dust);
+        int32_t r_spore = particle_radius(AMBIENT_EMIT_SPORE);
+        int32_t r_glint = particle_radius(AMBIENT_EMIT_GLINT);
+        int32_t r_dust = particle_radius(AMBIENT_EMIT_DUST);
+        CHECK(r_spore != r_glint && r_glint != r_dust && r_spore != r_dust);
+    }
 
     /* A spawn must produce a live particle that then expires. A particle that
      * never dies would leak the pool; one that dies instantly would never be

@@ -472,8 +472,13 @@ void game_on_placement_layer(lv_event_t *e);
 void game_on_placement_item(lv_event_t *e);
 bool game_placement_existing(void);
 /* Which placed item is being moved, as "name  n / total", for the top selector.
- * Returns false when there is nothing to cycle (a new item, or a gift). */
+ * Returns false only when there is no placed item to name (a new item, or a
+ * gift). A single placed item still returns true; the arrows are disabled
+ * instead of the whole row disappearing. */
 bool game_placement_item_label(char *buf, size_t len);
+/* How many decor items are placed. The top selector disables its arrows when
+ * this is below 2, because there is nothing to step to. */
+int game_placement_item_total(void);
 
 /* WiFi menu actions, marshalled from menu callbacks onto the LVGL task. */
 void game_ui_start_wifi_scan(void);

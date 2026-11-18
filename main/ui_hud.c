@@ -179,6 +179,10 @@ static lv_obj_t *place_action(lv_obj_t *parent, int x, int y, int w,
     lv_obj_set_style_bg_opa(obj, LV_OPA_50, LV_STATE_PRESSED);
     lv_obj_t *label = lv_obj_get_child(obj, -1);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    /* A disabled arrow has to LOOK disabled. The base style dims the fill and
+     * the border, but the glyph is a text label and kept its full-brightness
+     * colour, so an arrow with nothing to step to still read as live. */
+    lv_obj_set_style_text_color(label, lv_color_hex(0x64717b), LV_STATE_DISABLED);
     lv_obj_center(label);
     lv_obj_remove_event_cb(obj, cb);
     lv_obj_add_event_cb(obj, cb, LV_EVENT_CLICKED, (void *)value);
@@ -436,14 +440,15 @@ void ui_hud_set_place_mode(bool on, const char *hint)
      * walked over. Its layer orders it against the decor sharing its band,
      * which is what the player is actually arranging.
      *
-     * The layer row is shown whenever the item is in a band that has ANY other
-     * item, not only when it currently overlaps one. Hiding it at "1 / 1" made
-     * the control appear to vanish: the player moved an item a few pixels out of
-     * contact and the whole row disappeared, which read as a bug rather than as
-     * "there is nothing to order against". The arrows are disabled at the ends
-     * of the range, so a single-item band still shows a truthful "1 / 1". */
+     * The layer row is shown only when the item ACTUALLY overlaps something in
+     * its band. Draw order is only visible where two sprites cover the same
+     * pixels, so offering the control against an item at the far end of the tank
+     * implied a relationship that did not exist -- the "layer arrows are usable
+     * even though there is no overlapping item, just another item on the screen"
+     * report. The row appears the moment a drag brings the item into contact and
+     * goes away when it leaves, which is honest: there is nothing to order. */
     bool path_row = on && g_decor_mode;
-    bool layer_row = on && (g_decor_mode || g.gift_mode) && game_placement_layers() >= 1;
+    bool layer_row = on && (g_decor_mode || g.gift_mode) && game_placement_layers() > 1;
     lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
     lv_obj_set_hidden(s_place_path, !path_row);
     lv_obj_set_hidden(s_place_back, !layer_row);
@@ -480,18 +485,27 @@ void ui_hud_set_place_mode(bool on, const char *hint)
 void ui_hud_placement_changed(void)
 {
     if (!g_decor_mode && !g.gift_mode) return;
-    /* Always visible while placing: see the note in ui_hud_set_place_mode(). */
-    bool layer_row = game_placement_layers() >= 1;
+    /* Only when the item actually overlaps something: see the note in
+     * ui_hud_set_place_mode(). */
+    bool layer_row = game_placement_layers() > 1;
     lv_obj_set_hidden(s_place_back, !layer_row);
     lv_obj_set_hidden(s_place_front, !layer_row);
     lv_obj_set_hidden(s_place_layer_label, !layer_row);
-    /* The top arrows step between the placed items, not between layers. */
+    /* The top arrows step between the placed items, not between layers. They
+     * stay visible with a single item placed and are DISABLED at "1 / 1", so the
+     * control does not appear to have been removed when the tank holds one prop.
+     * See game_placement_item_label(). */
     char item_label[48];
     bool item_row = game_placement_item_label(item_label, sizeof item_label);
     lv_obj_set_hidden(s_place_top_back, !item_row);
     lv_obj_set_hidden(s_place_top_front, !item_row);
     lv_obj_set_hidden(s_place_top_label, !item_row);
-    if (item_row) lv_label_set_text(s_place_top_label, item_label);
+    if (item_row) {
+        lv_label_set_text(s_place_top_label, item_label);
+        bool single = game_placement_item_total() < 2;
+        lv_obj_set_state(s_place_top_back, LV_STATE_DISABLED, single);
+        lv_obj_set_state(s_place_top_front, LV_STATE_DISABLED, single);
+    }
     if (!layer_row) return;
     uint8_t path = game_placement_blocking();
     int layer = game_placement_layer();
@@ -500,6 +514,24 @@ void ui_hud_placement_changed(void)
     lv_obj_set_state(s_place_front, LV_STATE_DISABLED, layer >= layers - 1);
     const char *band = path == DECOR_WALK_BEHIND ? "Canopy" : "Floor";
     lv_label_set_text_fmt(s_place_layer_label, "%s\n%d / %d", band, layer + 1, layers);
+}
+
+void ui_hud_placement_selector_state(bool *visible, bool *enabled)
+{
+    if (visible) *visible = !lv_obj_is_hidden(s_place_top_back);
+    if (enabled) {
+        *enabled = !lv_obj_has_state(s_place_top_back, LV_STATE_DISABLED) &&
+                   !lv_obj_has_state(s_place_top_front, LV_STATE_DISABLED);
+    }
+}
+
+void ui_hud_placement_layer_state(bool *visible, bool *enabled)
+{
+    if (visible) *visible = !lv_obj_is_hidden(s_place_back);
+    if (enabled) {
+        *enabled = !lv_obj_has_state(s_place_back, LV_STATE_DISABLED) ||
+                   !lv_obj_has_state(s_place_front, LV_STATE_DISABLED);
+    }
 }
 
 void ui_hud_set_top(bool on)

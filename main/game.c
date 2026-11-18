@@ -428,8 +428,26 @@ bool game_placement_existing(void)
     return (g_decor_mode && g_decor_move_slot >= 0) || (g.gift_mode && s_gift_moving);
 }
 
+/* How many decor items are placed. The top selector uses this to decide whether
+ * its arrows can do anything, which is a different question from whether the
+ * selector itself should be shown. */
+int game_placement_item_total(void)
+{
+    int slots = decor_slot_count();
+    int total = 0;
+    for (int i = 0; i < slots; i++) if (decor_at(i)) total++;
+    return total;
+}
+
 /* Which placed item is being moved, as "name  n / total", for the top selector.
- * Returns false when there is nothing to cycle (a new item, or a gift). */
+ * Returns false only when there is no placed item to name (a new item, or a
+ * gift).
+ *
+ * This used to also return false when `total < 2`, on the theory that a single
+ * item has nothing to cycle to. That hid the whole selector -- arrows, caption
+ * and all -- whenever the tank held one prop, which read as the control having
+ * been removed. The arrows are now shown and DISABLED at "1 / 1" instead, so the
+ * control is always where the player expects it and its state is honest. */
 bool game_placement_item_label(char *buf, size_t len)
 {
     if (!buf || len == 0) return false;
@@ -443,7 +461,7 @@ bool game_placement_item_label(char *buf, size_t len)
         if (i == g_decor_move_slot) index = total;
     }
     const decor_item_t *item = decor_at(g_decor_move_slot);
-    if (!item || total < 2) return false;
+    if (!item) return false;
     const decor_def_t *def = decor_def(item->kind);
     snprintf(buf, len, "%s\n%d / %d", def ? def->name : "Decor", index, total);
     return true;
@@ -2983,16 +3001,93 @@ static bool test_placement_item_selector(void)
     /* decor_place() refuses an unowned kind, and the surrounding uitest may have
      * reset ownership, so grant the cheapest kind explicitly. */
     g.decor_owned |= 1u << DECOR_ROCK_SMALL;
+
+    bool ok = true;
+
+    /* A SINGLE placed item must still show the selector, with its arrows
+     * disabled.
+     *
+     * The label used to return false when `total < 2`, which hid the arrows, the
+     * caption and all -- so a tank holding one prop looked like the control had
+     * been removed. The row is now always present while moving an existing item
+     * and the arrows carry the "nothing to step to" state instead. */
+    {
+        int only = decor_place(DECOR_ROCK_SMALL, 200, 150);
+        terrarium_refresh_decor();
+        decor_begin_move(only);
+        char one[48];
+        bool shown = game_placement_item_label(one, sizeof one);
+        if (!shown || !strstr(one, "1 / 1")) {
+            ESP_LOGE(TAG, "selector: single item did not show \"1 / 1\" (shown=%d label=\"%s\")",
+                     shown, one);
+            ok = false;
+        }
+        if (game_placement_item_total() != 1) {
+            ESP_LOGE(TAG, "selector: single item total=%d", game_placement_item_total());
+            ok = false;
+        }
+        bool sel_visible = false, sel_enabled = true;
+        ui_hud_placement_selector_state(&sel_visible, &sel_enabled);
+        if (!sel_visible) {
+            ESP_LOGE(TAG, "selector: arrows hidden with a single item placed");
+            ok = false;
+        }
+        if (sel_enabled) {
+            ESP_LOGE(TAG, "selector: arrows enabled with nothing to step to");
+            ok = false;
+        }
+        game_on_placement_cancel(NULL);
+        decor_clear();
+    }
+
     int first = decor_place(DECOR_ROCK_SMALL, 120, 150);
     decor_place(DECOR_ROCK_SMALL, 220, 150);
     decor_place(DECOR_ROCK_SMALL, 320, 150);
     terrarium_refresh_decor();
 
     char label[48];
-    bool ok = first >= 0 && decor_placed_count() == 3;
+    ok = ok && first >= 0 && decor_placed_count() == 3;
     decor_begin_move(first);
     ok = ok && game_placement_item_label(label, sizeof label) &&
          strstr(label, "1 / 3") != NULL;
+    /* With three items placed the selector arrows must be live. */
+    {
+        bool sel_visible = false, sel_enabled = false;
+        ui_hud_placement_selector_state(&sel_visible, &sel_enabled);
+        if (!sel_visible || !sel_enabled) {
+            ESP_LOGE(TAG, "selector: arrows not live with 3 items (visible=%d enabled=%d)",
+                     sel_visible, sel_enabled);
+            ok = false;
+        }
+    }
+    /* The layer row must be HIDDEN here: the three rocks are 100 px apart and a
+     * small rock's artwork half-extent is 2*9*115/100 = 20.7 px, so their reach
+     * is 41 px and they do not touch. Offering the layer control against an item
+     * at the far end of the tank was the "layer arrows are usable even though
+     * there is no overlapping item" report. */
+    {
+        bool layer_visible = true;
+        ui_hud_placement_layer_state(&layer_visible, NULL);
+        if (layer_visible) {
+            ESP_LOGE(TAG, "selector: layer row shown with no overlapping item");
+            ok = false;
+        }
+    }
+    /* Drag the first rock onto the second: now they overlap and the row must
+     * appear. This is the other half of the rule -- the control has to be there
+     * the moment there IS something to order against. */
+    {
+        int16_t second_x = decor_at(1)->x, second_y = decor_at(1)->y;
+        placement_position(second_x + 4, second_y);
+        bool layer_visible = false;
+        ui_hud_placement_layer_state(&layer_visible, NULL);
+        if (!layer_visible) {
+            ESP_LOGE(TAG, "selector: layer row hidden while overlapping another item");
+            ok = false;
+        }
+        /* Put it back so the rest of the test sees the original layout. */
+        placement_position(decor_at(first)->x, decor_at(first)->y);
+    }
     /* Step forward twice: first -> second -> third. */
     placement_step_item(1);
     ok = ok && g_decor_move_slot == 1 &&

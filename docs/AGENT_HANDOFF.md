@@ -978,6 +978,36 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   33.8 -> 21.9 ms, tick rate 20.5 -> 23.5 Hz, dropped frames 257 -> 62 per
   window. **Do not reintroduce a transform on the canvas** -- and if a new
   animated object needs scaling, scale its geometry, not the widget.
+- **A placement control's visibility must mean something, and its disabled state
+  must be visible.** Two opposite mistakes have both been reported as bugs:
+  - The top item selector was HIDDEN when only one item was placed, because
+    `game_placement_item_label()` returned false for `total < 2`. A control that
+    disappears because it currently has nothing to do reads as a missing
+    feature. It is now always shown while moving an existing item, with its
+    arrows DISABLED at "1 / 1".
+  - The bottom layer row was SHOWN unconditionally, because the test was
+    `game_placement_layers() >= 1` and that function returns `count + 1`, so the
+    test was a tautology. Draw order is only visible where two sprites cover the
+    same pixels, so the row is now hidden unless something genuinely overlaps
+    (`> 1`).
+
+  The rule: hide a control only when it is meaningless in that state, and
+  otherwise disable it. And a disabled arrow must LOOK disabled -- `place_action()`
+  dims the fill and border, but the glyph is a text label and needs its own
+  `LV_STATE_DISABLED` colour or it still reads as live.
+- **Ambient particles are per-STYLE, not per-pool.** `ambient_retint()` used to
+  tint all 48 particles with one colour and `ambient_init()` created them all as
+  circles, so every decor item shed the same dot. Colour and radius now come from
+  `particle_color()` / `particle_radius()` by emitter family, pushed from
+  `ambient_present()` only when a slot is recycled for a different style
+  (`last_style` cache). Two traps:
+  - Deriving the hue purely from the theme palette is not enough. Several themes
+    have a `web` and a `dust` that are both cool blue-greys, and the first
+    attempt produced `0xe9ecf1` vs `0xeaf1f2`. Mix a fixed per-style tint into
+    the theme base.
+  - `mix_rgb()` must use SIGNED channel deltas. `b` is often darker than `a`, and
+    `br - ar` in `uint32_t` wraps to ~4.29e9, overflowing the packed result into
+    a colour with bits above 24.
 - **The spider's ejection from blocking decor must not be a fixed point.**
   `behaviour_tick()` pushes it out of a solid item, but with two blocking items
   overlapping the first push landed inside the neighbour, `advance()` then

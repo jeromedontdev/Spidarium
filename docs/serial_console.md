@@ -602,6 +602,53 @@ layer has the item but the renderer was never refreshed. `decor place` and
 `decor move` refresh the layer themselves; a direct `decor_place()` call from a
 new console command must call `terrarium_refresh_decor()` too.
 
+### `decorlayers`
+
+Prints, for every placed item, its band, how many items in that band it actually
+OVERLAPS on screen, and its 0-based index among them. This is the observable form
+of the "layers only between things that touch" rule.
+
+`overlapping=0` means the layer control is hidden for that item, because draw
+order is only visible where two sprites cover the same pixels. Overlap is a
+circle test on the drawn artwork half-extent (`2 * radius * art_scale / 100` for
+a prop, `DECOR_CLIMB_EXTENT` for a large structure), not on the collision
+footprint -- so a scaled-up fern counts as overlapping more than its `radius`
+suggests.
+
+Use it to check the two failure modes that have been reported:
+
+- `overlapping=0` while the placement overlay still shows the layer row means the
+  `> 1` visibility test in `ui_hud_set_place_mode()` has regressed to `>= 1`,
+  which is always true because the count is `overlapping + 1`.
+- `overlapping>0` for two items at opposite ends of the tank means
+  `item_extent()` is over-reporting and the reach needs checking against the
+  sprite's real drawn size.
+
+### `ambient`
+
+Reports the live ambient state: mote count and how many are inside the playfield,
+visibility, the theme's `dust` colour, the breathing/blink/glance phases, the
+enclosure light opacity, and the pool sizes.
+
+The second line, `AMBIENTSTYLE`, is the per-emitter report:
+
+```
+AMBIENTSTYLE spore=6 glint=3 dust=2 color_spore=0xb9e7be color_glint=0xf7f1d6
+             color_dust=0xa7b0a5 radius_spore=32767 radius_glint=0 radius_dust=2
+```
+
+`spore`/`glint`/`dust` are how many live particles of each family are on screen.
+The `color_*` and `radius_*` values are what the code WOULD push for each family
+(`radius_spore=32767` is `LV_RADIUS_CIRCLE`). They are reported rather than read
+back from the objects, so this line proves the three families are configured
+differently but not that a given object has been re-pushed -- use a screenshot
+for that.
+
+The three families must differ in both colour and shape. If `color_spore` and
+`color_glint` come out within a few units of each other, the theme's `web` and
+`dust` are too similar and the fixed per-style tint in `particle_color()` has
+been weakened.
+
 ### `climb [N]`, `climbhere [big]`
 
 `climb` reports the live 2.5D state at the spider's position: the climb height
