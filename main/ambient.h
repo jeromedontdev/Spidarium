@@ -49,6 +49,15 @@
  * to economise -- the spawn cadence is. */
 #define AMBIENT_PARTICLES 48
 
+/* How often the ambient layer is pushed to LVGL, in milliseconds.
+ *
+ * The simulation runs on every render tick; only the present is throttled. The
+ * cost of an ambient object is not its CPU time but the dirty rectangle it adds,
+ * and these objects are scattered across the whole tank -- so at 30 Hz the layer
+ * was costing about 4.5 Hz of frame rate. Dust drifts at 4-12 px/s, so at 10 Hz
+ * it still advances less than a pixel per update and looks identical. */
+#define AMBIENT_PRESENT_MS 100
+
 /* There are no light shafts.
  *
  * They were tried three ways and removed. Rotated LVGL rectangles were software

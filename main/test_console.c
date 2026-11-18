@@ -1298,7 +1298,20 @@ static void run_line(char *line)
         else printf("OK ambienttest\n");
     }
     else if (!strcmp(line, "ambient")) {
-        ambient_report();
+        /* `ambient off` / `ambient on` toggles the whole ambient layer. This is
+         * the A/B lever for the frame budget: the ambient objects are cheap to
+         * simulate but each one is a dirty rectangle, and the flush area is what
+         * actually costs. Without a toggle there is no way to attribute a
+         * slowdown to the layer rather than to the game. */
+        if (arg && !strcmp(arg, "off")) {
+            ambient_set_visible(false);
+            printf("AMBIENT visible=0\n");
+        } else if (arg && !strcmp(arg, "on")) {
+            ambient_set_visible(true);
+            printf("AMBIENT visible=1\n");
+        } else {
+            ambient_report();
+        }
         printf("OK ambient\n");
     }
     else if (!strcmp(line, "rendercost")) {

@@ -11767,3 +11767,109 @@ and whether the strands are the right length, needs eyes on the panel.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+## Round 133 -- Dynamic web strands, and the ambient frame-rate regression
+
+### What was asked
+
+"It would be nice if web strands were dynamic, showing up randomly. It seems like
+the spider is moving a little slower now, can we optimize somehow?"
+
+### Decisions made
+
+**The slowdown was mine, and it was not CPU.** `ambient_present()` pushed every
+ambient object to LVGL on every render tick. The cost of an ambient object is not
+its simulation (a few float writes) but the DIRTY RECTANGLE it adds, and these
+objects are scattered across the whole tank -- so the flush had to cover most of
+the screen every frame. Measured with the new `ambient off` toggle: the layer was
+costing about 4.5 Hz of frame rate.
+
+Three fixes, in order of impact:
+
+1. **Throttle the present, not the simulation.** `AMBIENT_PRESENT_MS 100` pushes
+   the layer at 10 Hz while `ambient_simulate()` still runs every tick. Dust
+   drifts at 4-12 px/s, so at 10 Hz it still advances less than a pixel per
+   update -- identical to the eye, a third of the invalidations. This alone made
+   ambient ON indistinguishable from ambient OFF (383 vs 398 ticks).
+2. **Dirty-check every setter.** Motes, spores, strands and particles now cache
+   their last integer position, opacity and size, and only call LVGL when the
+   value actually changed. A mote moves a fraction of a pixel per tick, so most
+   ticks are now free. Inactive particles are hidden once rather than every tick.
+3. **The full-screen dim overlay was being re-set every frame.**
+   `tick_enclosure_lights()` called `lv_obj_set_style_bg_opa()` on a 480x480
+   overlay unconditionally. That is the single most expensive invalidation in the
+   app. It now only pushes when the opacity step changes. The weather specks got
+   the same treatment (12 setters per frame, throttled to 10 Hz).
+
+Also removed the identity transform from the spider canvas: LVGL takes a slower
+path for any object with a transform set, and an adult spider is the common case.
+`lv_obj_remove_local_style_prop()` clears it so the canvas blits directly.
+
+**Dynamic strands.** Each strand now has a life of 20-70 s, fades in over 1.5 s,
+hangs, and fades out over 2.5 s before respawning. The anchor is deliberately NOT
+re-randomised on respawn -- `web_anchors_init()` runs once and the per-zone
+anchors are fixed for the boot. A respawn that picked a fresh point would dissolve
+the clusters back into scattered lines, which is the bug round 132 fixed.
+
+`strand_spawn()` was made pure (no `lv_*`) because it is now called from
+`ambient_simulate()`, which the console task runs during the self-test. Touching
+LVGL from there is the Guru Meditation crash from round 130. The object is
+updated by `ambient_present()` when it sees the `dirty` flag.
+
+### Two flaky tests found and fixed
+
+Both were pre-existing assertions that happened to pass on the boot they were
+written on:
+
+- The spore check demanded `|vx| >= 0.5` for EVERY spore, but `vx` is drawn from
+  -5..+5, so any individual spore can legitimately land near zero. It failed on
+  roughly half of all boots. Now checks the field: at least half the spores must
+  be crossing.
+- The strand angle-spread check measured the CURRENT six strands. Now that
+  strands respawn with fresh random angles, a single draw can land in a narrow
+  band by chance (~1.6%). It now samples the generator instead, which is the
+  property that actually matters.
+
+`ambient_test()` also gained `fail_at` reporting on every assertion, not just the
+`CHECK` macro. A bare `ok=0` was useless on hardware -- the test is long and the
+failure is always one specific range check.
+
+### Evidence
+
+- `ambienttest` -> `ok=1` **15 times in a row** (was 1-in-10 flaky before the two
+  test fixes).
+- `rendercost` A/B with the new `ambient off` toggle:
+  - before: ON `ticks=325`, OFF `ticks=414` (ambient cost ~4.5 Hz)
+  - after: ON `ticks=383`, OFF `ticks=398` (ambient is now free)
+- Render callback: `avg_us` 3470 (baseline commit) -> 2787-3095. The per-section
+  breakdown (`RENDERSECT`) shows `spider=~2050 ambient=~950 terrarium=8 hud=~50`.
+- `run_tests.py COM7` -> `SUMMARY passed=50 failed=2`, the documented baseline.
+- `stability_check.py COM7 40` -> `VERDICT: PASS`, `FAULTS/ERRORS: 0`.
+- `render 500` -> `largest_drift=0`. `scanloop 5` -> `ok=5 failed=0
+  largest_drift=0`. `decortest` -> `placed=74 slots=12`. `mem` ->
+  `largest=63488`, unchanged.
+- Browser suite 306/306, including a new test that asserts strands fade in,
+  expire, respawn, and keep their anchors across three minutes of simulated time.
+- Two panel screenshots 45 s apart: 4,931 of 230,560 pixels differ, and the
+  strands are visibly different shapes at the same anchors.
+
+### Honest boundaries
+
+**The 15 Hz render tick is pre-existing, not a regression.** I stashed my work,
+built and flashed commit `1073241`, and measured `ticks=377/381` over 25 s --
+the same ~15 Hz. So the tick ceiling is not something this round introduced, and
+it is not something this round fixed. The render callback is only ~3 ms of a
+66 ms cycle; the other 63 ms is LVGL's own flush. A full 480x480 RGB565 refresh
+over QSPI is in that ballpark, which suggests the screen is being largely
+redrawn each frame. That is the next thing to investigate, and it needs its own
+round -- it is a display-pipeline question, not an ambient one.
+
+What this round does establish is that the ambient layer is no longer part of
+the problem: ON and OFF now measure the same.
+
+Whether the fade envelope reads well on the panel is a judgement call. The
+timings (1.5 s in, 2.5 s out, 20-70 s life) were chosen so a strand is never
+seen to pop, but they have not been watched for a full cycle by a human.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).

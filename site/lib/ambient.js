@@ -154,7 +154,13 @@ export function sporesAt(nowMs, bounds) {
  * web; jittering each strand independently produces scattered lines rather than
  * a web. What actually reads as a web is several strands leaving the SAME point
  * at different angles, so the anchors are chosen first and each strand is
- * assigned to one of them exactly. */
+ * assigned to one of them exactly.
+ *
+ * Strands are also DYNAMIC: each one is spun, hangs for a while, fades out, and
+ * is replaced by a new strand at the same anchor. The web therefore builds up
+ * and breaks down over a session instead of being a fixed decoration. The anchor
+ * is deliberately NOT re-randomised on respawn -- that would dissolve the
+ * clusters back into scattered lines. */
 export const STRAND_COUNT = 6;
 
 /* Anchor zones, as fractions of the playfield. The corners get more strands than
@@ -165,6 +171,10 @@ const WEB_ZONES = [
   [0.34, 0.03],   /* upper left-of-centre */
 ];
 
+/* Fade envelope, in seconds. Matches the firmware: 1.5 s in, hold, 2.5 s out. */
+const STRAND_FADE_IN = 1.5;
+const STRAND_FADE_OUT = 2.5;
+
 export function strandsAt(nowMs, bounds) {
   const { left, top, right, bottom } = bounds;
   const out = [];
@@ -172,7 +182,9 @@ export function strandsAt(nowMs, bounds) {
   const spanY = Math.max(1, bottom - top);
 
   /* One anchor per zone, jittered once so the clusters are not at fixed
-   * positions between loads. */
+   * positions between loads. These are FIXED for the life of the page: a strand
+   * respawns into the same anchor, so the web keeps its shape as individual
+   * strands come and go. */
   const anchors = WEB_ZONES.map((z, i) => {
     const seed = i * 401 + 7;
     let ax = left + 20 + Math.round(z[0] * (spanX - 40)) + Math.round(hash(seed) * 30) - 15;
@@ -182,23 +194,40 @@ export function strandsAt(nowMs, bounds) {
     return [ax, ay];
   });
 
+  const t = nowMs / 1000;
+
   for (let i = 0; i < STRAND_COUNT; i++) {
     const seed = i * 173 + 23;
     /* Round-robin across the anchors, so every cluster gets at least one. */
     const [ax, ay] = anchors[i % anchors.length];
-    /* Length and angle are independent and both wide. A web has short
-     * cross-strands and long anchor lines at every angle from near-vertical to
-     * near-horizontal; giving every strand the same two angles is what made it
-     * read as a pattern. */
-    const length = 18 + hash(seed + 3) * 62;
-    const baseAngle = 0.35 + hash(seed + 4) * 2.44;
+
+    /* Each strand runs its own cycle: a life of 20-70 s, offset so the whole web
+     * never vanishes at once. The cycle index is derived from the clock, which
+     * keeps this a pure function of time -- no state to carry between frames. */
+    const lifeMax = 20 + hash(seed + 9) * 50;
+    const phase = hash(seed + 10) * lifeMax;
+    const cyclePos = (t + phase) % lifeMax;
+    const cycle = Math.floor((t + phase) / lifeMax);
+
+    /* Per-cycle random values, so a respawned strand is a different strand. */
+    const cs = seed + cycle * 977;
+    const length = 18 + hash(cs + 3) * 62;
+    const baseAngle = 0.35 + hash(cs + 4) * 2.44;
     /* Sway rates spread wide so the strands never move in step. */
-    const swayRate = 0.12 + hash(seed + 5) * 0.55;
-    const swayAmp = 0.05 + hash(seed + 6) * 0.16;
-    const angle = baseAngle + Math.sin((nowMs / 1000) * swayRate + hash(seed + 7) * 6.28) * swayAmp;
+    const swayRate = 0.12 + hash(cs + 5) * 0.55;
+    const swayAmp = 0.05 + hash(cs + 6) * 0.16;
+    const angle = baseAngle + Math.sin(t * swayRate + hash(cs + 7) * 6.28) * swayAmp;
     /* Opacity varies per strand: a web is denser where more silk crosses. */
-    const alpha = (40 + Math.floor(hash(seed + 8) * 60)) / 255;
-    out.push({ ax, ay, length, angle, alpha });
+    const peak = (40 + Math.floor(hash(cs + 8) * 60)) / 255;
+
+    /* Fade in at the start of the cycle, out at the end, so a strand never pops
+     * into or out of existence. */
+    let fade = 1;
+    if (cyclePos < STRAND_FADE_IN) fade = cyclePos / STRAND_FADE_IN;
+    else if (lifeMax - cyclePos < STRAND_FADE_OUT) fade = (lifeMax - cyclePos) / STRAND_FADE_OUT;
+    fade = Math.max(0, Math.min(1, fade));
+
+    out.push({ ax, ay, length, angle, alpha: peak * fade });
   }
   return out;
 }

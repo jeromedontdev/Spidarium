@@ -726,6 +726,10 @@ static album_image_t s_album_loaded;
  * timer period and cannot see the difference. */
 static uint32_t s_render_us_total;
 static uint32_t s_render_ticks;
+/* Per-section accumulators, so a regression can be attributed to a subsystem
+ * instead of guessed at. Only the sections that have ever been suspected of
+ * costing too much are instrumented; the rest are the remainder. */
+static uint32_t s_sec_ambient_us, s_sec_terrarium_us, s_sec_spider_us, s_sec_hud_us;
 void game_diary_removed(unsigned slot)
 {
     if (s_open_menu != MENU_MEMORY || s_memory_slot == 255) return;
@@ -794,7 +798,15 @@ static void apply_enclosure_lights(void)
 static void tick_enclosure_lights(void)
 {
     if (!s_light_overlay || !g.lights_dimmed) return;
-    lv_obj_set_style_bg_opa(s_light_overlay, ambient_light_opa(), 0);
+    /* The overlay covers the WHOLE tank, so a redundant setter here invalidates
+     * the entire screen -- the most expensive invalidation in the app. The
+     * opacity is a slow sine, so it only changes by one step every few frames;
+     * pushing it unconditionally was costing most of the frame rate. */
+    static uint8_t s_last_opa = 0xFF;
+    uint8_t opa = ambient_light_opa();
+    if (opa == s_last_opa) return;
+    s_last_opa = opa;
+    lv_obj_set_style_bg_opa(s_light_overlay, opa, 0);
 }
 
 /* The day/night tint. Separate from the manual dim: this is the clock, that is
@@ -3894,12 +3906,20 @@ static void life_visual_tick(uint32_t now)
             }
         }
     }
-    for (unsigned i = 0; i < 6; i++) {
-        bool visible = clock.available && g.life.weather;
-        lv_obj_set_hidden(s_weather[i], !visible);
-        if (visible) {
-            int y = 40 + (int)((now / (clock.season == 0 ? 120u : 75u) + i * 59u) % (ui.H - 80));
-            lv_obj_set_pos(s_weather[i], i & 1 ? ui.W - 14 : 10, y);
+    /* Weather specks. Six objects, each getting a hidden flag and a position --
+     * twelve setters per frame, and each one is a dirty rectangle. They drift
+     * slowly enough that 10 Hz is indistinguishable from 30 Hz, so the whole
+     * block is throttled rather than pushed every tick. */
+    static uint32_t next_weather;
+    if (next_weather == 0 || (int32_t)(now - next_weather) >= 0) {
+        next_weather = now + 100u;
+        for (unsigned i = 0; i < 6; i++) {
+            bool visible = clock.available && g.life.weather;
+            lv_obj_set_hidden(s_weather[i], !visible);
+            if (visible) {
+                int y = 40 + (int)((now / (clock.season == 0 ? 120u : 75u) + i * 59u) % (ui.H - 80));
+                lv_obj_set_pos(s_weather[i], i & 1 ? ui.W - 14 : 10, y);
+            }
         }
     }
     if (!next_expression) next_expression = now + 45000u;
@@ -3920,12 +3940,23 @@ void game_render_cost_report(void)
 {
     uint32_t ticks = s_render_ticks;
     uint32_t total = s_render_us_total;
+    uint32_t terr = s_sec_terrarium_us, amb = s_sec_ambient_us;
+    uint32_t spid = s_sec_spider_us, hud = s_sec_hud_us;
     s_render_ticks = 0;
     s_render_us_total = 0;
+    s_sec_terrarium_us = s_sec_ambient_us = s_sec_spider_us = s_sec_hud_us = 0;
     printf("RENDERCOST ticks=%lu avg_us=%lu budget_us=%d\n",
            (unsigned long)ticks,
            (unsigned long)(ticks ? total / ticks : 0),
            1000000 / RENDER_HZ);
+    /* Per-section averages. `other` is the remainder: life_visual_tick, the
+     * enclosure lights, the depth sorts and the timer overhead. */
+    if (ticks) {
+        printf("RENDERSECT terrarium=%lu ambient=%lu spider=%lu hud=%lu other=%ld\n",
+               (unsigned long)(terr / ticks), (unsigned long)(amb / ticks),
+               (unsigned long)(spid / ticks), (unsigned long)(hud / ticks),
+               (long)(total / ticks) - (long)((terr + amb + spid + hud) / ticks));
+    }
 }
 
 void game_tick_render(lv_timer_t *timer)
@@ -4048,15 +4079,24 @@ void game_tick_render(lv_timer_t *timer)
     now = lv_tick_get();
     int64_t render_start = esp_timer_get_time();
     life_visual_tick(now);
+    int64_t t0 = esp_timer_get_time();
     terrarium_tick(now);
+    int64_t t1 = esp_timer_get_time();
     ambient_tick(now);
+    int64_t t2 = esp_timer_get_time();
     tick_enclosure_lights();
     terrarium_decor_depth();
     terrarium_gift_depth();
     cspider_render(now);
     spider_render(now);   /* aim visuals only */
     prey_render(now);
+    int64_t t3 = esp_timer_get_time();
     ui_hud_tick(now);
+    int64_t t4 = esp_timer_get_time();
+    s_sec_terrarium_us += (uint32_t)(t1 - t0);
+    s_sec_ambient_us += (uint32_t)(t2 - t1);
+    s_sec_spider_us += (uint32_t)(t3 - t2);
+    s_sec_hud_us += (uint32_t)(t4 - t3);
     /* Accumulate the real cost of a render tick, so a regression shows up as a
      * number rather than as "the movement feels choppy". The 30 Hz timer gives
      * 33,333 us per tick; anything approaching that is a stutter. */

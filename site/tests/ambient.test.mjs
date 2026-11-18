@@ -287,7 +287,7 @@ test('web strands radiate from shared anchors, not evenly spaced', () => {
     assert.ok(t.ax >= bounds.left && t.ax <= bounds.right, `strand anchor out of tank: ${t.ax}`);
     assert.ok(t.ay >= bounds.top && t.ay <= bounds.bottom, `strand anchor out of tank: ${t.ay}`);
     assert.ok(t.length >= 15 && t.length <= 85, `strand length out of range: ${t.length}`);
-    assert.ok(t.alpha > 0 && t.alpha <= 0.4, `strand alpha out of range: ${t.alpha}`);
+    assert.ok(t.alpha >= 0 && t.alpha <= 0.4, `strand alpha out of range: ${t.alpha}`);
   }
   // A strand whose angle never changes is a static line drawn over the art.
   assert.ok(a.some((t, i) => t.angle !== b[i].angle), 'strands never pivot');
@@ -316,6 +316,48 @@ test('web strands radiate from shared anchors, not evenly spaced', () => {
   // And lengths must differ, or every strand is the same stick.
   const lengths = a.map(t => t.length);
   assert.ok(Math.max(...lengths) - Math.min(...lengths) > 20, 'strand lengths are too uniform');
+});
+
+test('web strands are dynamic: they fade in, expire and respawn at the same anchor', () => {
+  const bounds = { left: 8, top: 8, right: 472, bottom: 472 };
+
+  // Sample a long window. A web that never changes is a decoration, not a
+  // living thing, so over a couple of minutes the set of strands must change.
+  const seen = new Set();
+  let sawFadeIn = false;
+  let sawFadeOut = false;
+  let sawFull = false;
+  for (let t = 0; t < 180000; t += 500) {
+    for (const s of strandsAt(t, bounds)) {
+      seen.add(`${s.ax},${s.ay},${s.length.toFixed(1)},${s.angle.toFixed(2)}`);
+      if (s.alpha > 0 && s.alpha < 0.15) sawFadeIn = true;
+      if (s.alpha > 0.3) sawFull = true;
+    }
+  }
+  assert.ok(seen.size > STRAND_COUNT * 3,
+    `strands never change over three minutes (only ${seen.size} distinct)`);
+  assert.ok(sawFull, 'no strand ever reaches full opacity');
+  assert.ok(sawFadeIn, 'strands pop in at full opacity instead of fading');
+
+  // The fade-out must reach (essentially) zero before the strand is replaced, so
+  // nothing pops out of existence. Sampled at 100 ms, so the exact zero at the
+  // cycle boundary is not hit -- "visually gone" is the property that matters.
+  const lifeMax = 20; // lower bound of the 20-70 s range
+  let minAlpha = 1;
+  for (let t = 0; t < lifeMax * 1000; t += 100) {
+    for (const s of strandsAt(t, bounds)) minAlpha = Math.min(minAlpha, s.alpha);
+  }
+  assert.ok(minAlpha < 0.02, `strands never fade out (min alpha ${minAlpha})`);
+
+  // Anchors must be STABLE across respawns. A respawn that picked a fresh
+  // random point would dissolve the clusters back into scattered lines.
+  const anchorsAt = t => new Set(strandsAt(t, bounds).map(s => `${s.ax},${s.ay}`));
+  const first = anchorsAt(0);
+  for (let t = 0; t < 180000; t += 3000) {
+    const now = anchorsAt(t);
+    assert.deepEqual([...now].sort(), [...first].sort(),
+      `anchors moved at t=${t}, so the web dissolved`);
+  }
 });
 
 test('decor and gift particles use a fixed pool, not one emitter per item', () => {

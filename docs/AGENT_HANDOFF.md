@@ -98,7 +98,7 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   budget. Aliveness comes from many small things that move independently.
 - **Aliveness is four cheap layers, not one expensive effect.** Dust motes
   (16 small squares rising with a sway), spores (6 larger, slower specks crossing
-  the tank on both axes), web strands (6 thin lines anchored along the top edge,
+  the tank on both axes), web strands (6 thin lines radiating from shared anchors,
   pivoting rather than translating), and decor/gift particles. Each is a handful
   of LVGL objects created once and moved; nothing is allocated per frame.
   The two air layers use different palette columns (`dust` and `web`) so they
@@ -107,6 +107,37 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   2 strands and a 16-particle pool, and the effect was invisible on the panel --
   two strands read as two decorations rather than as a web, and with a dozen
   items placed each one got a particle roughly once every four seconds.
+- **The cost of an ambient object is its DIRTY RECTANGLE, not its CPU time.**
+  This is the single most important thing to know before adding another layer.
+  `ambient_present()` used to push every object to LVGL on every render tick.
+  Simulating a mote is a few float writes, but moving it adds a dirty rectangle,
+  and these objects are scattered across the whole tank -- so the flush had to
+  cover most of the screen every frame. Measured with the `ambient off` console
+  toggle, the layer was costing about 4.5 Hz of frame rate.
+  Three rules follow, and all three are load-bearing:
+  1. **Throttle the present, not the simulation.** `AMBIENT_PRESENT_MS` (100)
+     pushes the layer at 10 Hz while `ambient_simulate()` still runs every tick.
+     Dust drifts at 4-12 px/s, so at 10 Hz it still advances less than a pixel
+     per update -- identical to the eye, a third of the invalidations.
+  2. **Dirty-check every setter.** Motes, spores, strands and particles cache
+     their last integer position, opacity and size and only call LVGL when the
+     value changed. A mote moves a fraction of a pixel per tick, so most ticks
+     are now free. Inactive particles are hidden once, not every tick.
+  3. **Never re-set a full-screen overlay per frame.** `tick_enclosure_lights()`
+     called `lv_obj_set_style_bg_opa()` on a 480x480 overlay unconditionally;
+     that is the most expensive invalidation in the app. It now only pushes when
+     the opacity step changes. The weather specks got the same treatment.
+  `ambient off` / `ambient on` exists so this can be A/B measured rather than
+  guessed at. Use it before and after any change to the layer.
+- **Web strands are dynamic, and the anchors are not.** Each strand has a life of
+  20-70 s, fades in over 1.5 s, hangs, and fades out over 2.5 s before respawning.
+  `web_anchors_init()` runs ONCE and the per-zone anchors are fixed for the boot;
+  a respawn re-randomises the angle, length and opacity but keeps the anchor.
+  Re-randomising the anchor would dissolve the clusters back into scattered
+  lines, which is exactly the bug that made the web read as "too robotic".
+  `strand_spawn()` is therefore pure (no `lv_*`) -- it is called from
+  `ambient_simulate()`, which the console task runs during the self-test. The
+  object is updated by `ambient_present()` when it sees the `dirty` flag.
 - **Decor and gift particles are a FIXED POOL, not one emitter per item.** The
   tank can hold twelve decor slots plus a gift, and per-item emitters would make
   the cost scale with how much the player has bought -- the worst possible
@@ -119,6 +150,16 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   The pool size is the wrong place to economise -- the objects are created once
   and only moved. The spawn cadence is the lever that controls how alive the tank
   feels, and it is a few float writes per spawn.
+- **The render tick runs at ~15 Hz, and that is PRE-EXISTING.** Do not chase it
+  as an ambient regression. Measured on commit `1073241` with the ambient work
+  stashed: `rendercost` -> `ticks=377/381` over 25 s, the same ~15 Hz. The render
+  callback is only ~3 ms of a 66 ms cycle; the other 63 ms is LVGL's own flush.
+  A full 480x480 RGB565 refresh over QSPI is in that ballpark, which suggests the
+  screen is being largely redrawn each frame. That is a display-pipeline question
+  and needs its own round.
+  `rendercost` now also prints `RENDERSECT`, a per-section breakdown
+  (`terrarium` / `ambient` / `spider` / `hud` / `other`), so a regression can be
+  attributed instead of guessed at. The spider render dominates at ~2050 us.
 - **Both blocking paths block against the ARTWORK, not the collision footprint.**
   `radius` is the steering footprint and is deliberately smaller than the sprite:
   a crystal has radius 12 but is drawn 57 px wide, so blocking only 12 px from

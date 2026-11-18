@@ -1051,17 +1051,51 @@ void cspider_render(uint32_t now_ms)
      * Centre the canvas on the spider, then scale it by life stage so a
      * spiderling reads as small and an adult as full size. The canvas is a
      * fixed 96x96 buffer; scaling the widget keeps the pixel art crisp and
-     * costs nothing per frame. */
-    lv_obj_set_pos(s_canvas, g.spider_x - CANVAS_CX, g.spider_y - CANVAS_CY + lift);
-    lv_obj_set_style_transform_pivot_x(s_canvas, CANVAS_CX, 0);
-    lv_obj_set_style_transform_pivot_y(s_canvas, CANVAS_CY, 0);
-    lv_obj_set_style_transform_scale_x(s_canvas, stage_scale_256(), 0);
-    lv_obj_set_style_transform_scale_y(s_canvas, stage_scale_256(), 0);
-
+     * costs nothing per frame.
+     *
+     * Every setter below invalidates the object, and the canvas is 96x96 -- so
+     * a redundant call is not free, it is a full re-blend of the sprite. The
+     * pivot, the scale and the opacity are constant for a given life stage, so
+     * they are only pushed when they actually change. That was five wasted
+     * invalidations per frame. */
+    static int32_t s_last_x = 0x7fffffff, s_last_y = 0x7fffffff;
+    static int32_t s_last_scale = -1;
+    static bool s_last_opa_cover;
+    int32_t px = g.spider_x - CANVAS_CX;
+    int32_t py = g.spider_y - CANVAS_CY + lift;
+    if (px != s_last_x || py != s_last_y) {
+        s_last_x = px;
+        s_last_y = py;
+        lv_obj_set_pos(s_canvas, px, py);
+    }
+    int32_t scale = stage_scale_256();
+    if (scale != s_last_scale) {
+        s_last_scale = scale;
+        if (scale == 256) {
+            /* Identity scale: REMOVE the transform rather than setting it to
+             * 256. LVGL takes a different, much slower path for any object with
+             * a transform set -- it cannot use the plain blit -- and an adult
+             * spider is the common case. Clearing the transform lets the canvas
+             * blit directly, which is the difference between a full-screen
+             * software transform every frame and a 96x96 copy. */
+            lv_obj_remove_local_style_prop(s_canvas, LV_STYLE_TRANSFORM_SCALE_X, 0);
+            lv_obj_remove_local_style_prop(s_canvas, LV_STYLE_TRANSFORM_SCALE_Y, 0);
+            lv_obj_remove_local_style_prop(s_canvas, LV_STYLE_TRANSFORM_PIVOT_X, 0);
+            lv_obj_remove_local_style_prop(s_canvas, LV_STYLE_TRANSFORM_PIVOT_Y, 0);
+        } else {
+            lv_obj_set_style_transform_pivot_x(s_canvas, CANVAS_CX, 0);
+            lv_obj_set_style_transform_pivot_y(s_canvas, CANVAS_CY, 0);
+            lv_obj_set_style_transform_scale_x(s_canvas, scale, 0);
+            lv_obj_set_style_transform_scale_y(s_canvas, scale, 0);
+        }
+    }
     /* The canvas is always fully opaque. Sickness is expressed by the palette
      * (see sick_aware), not by widget opacity: a translucent spider let the
      * pale ground textures show through and read as a rendering bug. */
-    lv_obj_set_style_opa(s_canvas, LV_OPA_COVER, 0);
+    if (!s_last_opa_cover) {
+        s_last_opa_cover = true;
+        lv_obj_set_style_opa(s_canvas, LV_OPA_COVER, 0);
+    }
 
     /* Tell LVGL the buffer and position changed. There is no layer to finish:
      * the pixels were written directly, so this is just an invalidate. It runs
