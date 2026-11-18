@@ -937,12 +937,36 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   rubber-band. `behaviour_sync_position()` collapses the window so a teleport
   (restore, respawn, test harness) is not drawn as a slide. `gait_update()` reads
   the interpolated position, so the leg phase smooths out with it.
-- **The render tick is not the frame-rate bottleneck; LVGL's flush is.**
-  `rendercost` reports `RENDERCOST` (tick work), `RENDERSECT` (per-section) and
-  `RENDERSPREAD` (`gap_max_us`, `gap_last_us`, `over_2x`). Measured on hardware:
-  tick work is 3.1-4.1 ms against a 33,333 us budget, but the gap between
-  consecutive tick starts is ~118 ms. The remaining ~115 ms is LVGL's own
-  transfer, outside the tick. Do not "optimise" the tick to chase this.
+  This only does anything while the render tick actually runs faster than the
+  logic tick. It was a no-op for a while because the render tick was stuck at
+  8.9 Hz (see the next bullet); it works now that the refresh is fixed.
+- **The frame-rate bottleneck was LVGL's invalidation buffer, not the tick and
+  not the flush.** `LV_INV_BUF_SIZE` defaults to 32 dirty rectangles per frame.
+  When a frame produces more, `lv_refr.c` throws the whole list away and redraws
+  the ENTIRE screen (`if(disp->inv_p >= LV_INV_BUF_SIZE) { disp->inv_p = 0;
+  tmp_area_p = &scr_area; }`). This tank invalidates ~100 areas per frame (16
+  motes + 6 spores + 18 strands + 48 particles + decor + spider), so every frame
+  was a full 480x480 software redraw. Measured before the fix: 170k px dirty per
+  refresh, 76 ms of draw time, 8.9 Hz. `main/CMakeLists.txt` now compiles LVGL
+  with `-DLV_INV_BUF_SIZE=128` (2 KB of BSS); the same measurement after is 15k
+  px dirty, 29 ms draw, 30 Hz with `over_2x=0`. **Do not remove that define** --
+  it is the single largest performance lever in the project.
+- **`rendercost` is the regression detector for the above.** It reports
+  `RENDERCOST` (tick work), `RENDERSECT` (per-section), `RENDERSPREAD`
+  (`gap_max_us`, `gap_last_us`, `over_2x`), `REFRESH` (`px_avg` is the dirty
+  area per frame -- 230,400 means the whole screen), `INVALIDATE` (`full` counts
+  full-screen invalidations), `REFRSPLIT` (`draw_us` / `xfer_us` / `prep_us`) and
+  `INVTAG` (which subsystem issued the dirty pixels). A healthy steady-state
+  window is `px_avg` ~15k, `full=0`, `gap_last_us` ~33,000, `over_2x=0`.
+  `INVTAG boot` with `full=11` is normal: those are the one-time boot
+  invalidations, and they only appear in the first window after a reset.
+- **Full-screen overlays must cache their applied state.** `apply_daylight_tint()`
+  used to push colour, opacity and visibility onto a 480x480 overlay once a
+  second regardless of whether anything changed, which alone dirtied 8.5M px per
+  measurement window (35% of all drawn pixels). It now caches the applied tint
+  index and returns early when unchanged. Any new full-screen overlay needs the
+  same treatment: one redundant setter on a full-screen object costs a
+  full-screen blend.
 - **The spider's ejection from blocking decor must not be a fixed point.**
   `behaviour_tick()` pushes it out of a solid item, but with two blocking items
   overlapping the first push landed inside the neighbour, `advance()` then

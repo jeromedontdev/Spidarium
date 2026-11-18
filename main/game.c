@@ -800,6 +800,14 @@ static uint32_t s_frame_gap_last_us;
  * instead of guessed at. Only the sections that have ever been suspected of
  * costing too much are instrumented; the rest are the remainder. */
 static uint32_t s_sec_ambient_us, s_sec_terrarium_us, s_sec_spider_us, s_sec_hud_us;
+/* Flush accounting. The render tick's own cost says nothing about the frame
+ * rate: LVGL's refresh runs inside lv_timer_handler(), outside the tick, and it
+ * is the refresh that decides how often the panel is actually updated. These
+ * count refreshes and the pixels pushed, so "the frame rate is 9 Hz" can be
+ * attributed to either too many dirty pixels or a slow transfer. */
+static uint32_t s_refresh_count, s_flush_pixels, s_flush_max_pixels, s_flush_calls;
+static uint32_t s_refresh_us_total, s_refresh_us_max;
+static int64_t  s_refresh_start_us;
 void game_diary_removed(unsigned slot)
 {
     if (s_open_menu != MENU_MEMORY || s_memory_slot == 255) return;
@@ -881,20 +889,30 @@ static void tick_enclosure_lights(void)
 
 /* The day/night tint. Separate from the manual dim: this is the clock, that is
  * the player's switch. Both can be on at once, which is why they are two
- * overlays rather than one. */
+ * overlays rather than one.
+ *
+ * This overlay covers the whole tank, so every setter here dirties all 230,400
+ * pixels. It used to be pushed unconditionally once a second, which alone cost
+ * a third of the frame budget for a tint that changes four times a day. The
+ * applied state is cached and only a real change touches the object. */
 static void apply_daylight_tint(uint8_t period, bool available)
 {
     if (!s_daylight_overlay) return;
+    static int s_applied = -1;   /* -1 = never applied, 0..3 = tint index */
+    int want;
     if (!available || !g.life.daynight) {
+        want = -1;
+    } else {
+        if (period > 3) period = 1;
+        want = k_light_tints[period].opa ? (int)period : -1;
+    }
+    if (want == s_applied) return;
+    s_applied = want;
+    if (want < 0) {
         lv_obj_set_hidden(s_daylight_overlay, true);
         return;
     }
-    if (period > 3) period = 1;
-    const light_tint_t *tint = &k_light_tints[period];
-    if (!tint->opa) {
-        lv_obj_set_hidden(s_daylight_overlay, true);
-        return;
-    }
+    const light_tint_t *tint = &k_light_tints[want];
     lv_obj_set_style_bg_color(s_daylight_overlay, lv_color_hex(tint->colour), 0);
     lv_obj_set_style_bg_opa(s_daylight_overlay, tint->opa, 0);
     lv_obj_set_hidden(s_daylight_overlay, false);
@@ -4184,6 +4202,176 @@ static void life_visual_tick(uint32_t now)
     }
 }
 
+/* LVGL refresh instrumentation.
+ *
+ * The render tick is only part of a frame. lv_timer_handler() runs the refresh
+ * after the timers, and the refresh is where the panel transfer happens, so the
+ * interval between two render ticks is really "tick work + refresh work". These
+ * callbacks measure the refresh half directly: how long it took, how many
+ * flushes it issued, and how many pixels those flushes covered.
+ *
+ * This instrumentation found the real cause of the "frame skip": LVGL keeps at
+ * most LV_INV_BUF_SIZE dirty rectangles per frame, and when a frame produces
+ * more it discards the whole list and redraws the ENTIRE screen (see the
+ * `inv_p >= LV_INV_BUF_SIZE` branch in lv_refr.c). The tank invalidates ~100
+ * areas per frame, so every frame was a full 480x480 software redraw: 76 ms of
+ * draw time, which capped the game at 8.9 Hz. Raising the buffer to 128 in
+ * main/CMakeLists.txt dropped the dirty area from 170k px to 15k px per frame
+ * and restored 30 Hz. Keep these counters: they are the only way to see that
+ * regression coming back. */
+/* Every invalidation LVGL accepts, before it is merged into the refresh set.
+ * This is the number that explains a slow refresh: the flush area is the union
+ * of these, so a single full-screen invalidation per frame makes every frame a
+ * full-screen transfer no matter how little actually changed. */
+static uint32_t s_inv_count, s_inv_pixels, s_inv_max_pixels, s_inv_full;
+/* Draw vs transfer. A refresh is "render the dirty area into the buffer" then
+ * "push the buffer to the panel". They have completely different fixes -- fewer
+ * dirty pixels versus a faster bus -- so they are timed separately. */
+static uint32_t s_draw_us_total, s_xfer_us_total, s_prep_us_total;
+static int64_t  s_render_start_us, s_flush_start_us, s_last_flush_end_us;
+
+static void on_refresh_start(lv_event_t *event)
+{
+    (void)event;
+    s_refresh_start_us = esp_timer_get_time();
+}
+
+/* LV_EVENT_RENDER_START fires once per refresh, immediately before the dirty
+ * areas are drawn into the draw buffer. The gap between it and the first flush
+ * is the software draw cost. */
+static void on_render_start(lv_event_t *event)
+{
+    (void)event;
+    s_render_start_us = esp_timer_get_time();
+    /* Clear the previous refresh's last-flush stamp. The final FLUSH_FINISH of a
+     * refresh can arrive AFTER REFR_READY (the transfer is asynchronous), so
+     * without this the first band of the next refresh measured its draw time
+     * from that stale stamp and swallowed the whole inter-refresh gap -- which
+     * made "draw" look like 31 ms when it was really the idle time between
+     * frames. */
+    s_last_flush_end_us = 0;
+    /* REFR_START -> RENDER_START is the prep phase: lv_obj_update_layout() over
+     * every layer, lv_refr_join_area() and refr_sync_areas(). It is neither draw
+     * nor transfer, so it is invisible in both of those timers. */
+    if (s_refresh_start_us) {
+        s_prep_us_total += (uint32_t)(s_render_start_us - s_refresh_start_us);
+    }
+}
+
+static void on_refresh_ready(lv_event_t *event)
+{
+    (void)event;
+    if (!s_refresh_start_us) return;
+    uint32_t us = (uint32_t)(esp_timer_get_time() - s_refresh_start_us);
+    s_refresh_start_us = 0;
+    s_last_flush_end_us = 0;
+    s_render_start_us = 0;
+    s_flush_start_us = 0;
+    s_refresh_count++;
+    s_refresh_us_total += us;
+    if (us > s_refresh_us_max) s_refresh_us_max = us;
+}
+
+static void on_flush_start(lv_event_t *event)
+{
+    const lv_area_t *area = lv_event_get_param(event);
+    if (!area) return;
+    uint32_t pixels = (uint32_t)lv_area_get_size(area);
+    s_flush_calls++;
+    s_flush_pixels += pixels;
+    if (pixels > s_flush_max_pixels) s_flush_max_pixels = pixels;
+    /* Draw time is everything that is NOT transfer. In partial render mode the
+     * refresh alternates draw-band / flush-band, so the draw cost of bands 2..N
+     * happens between the previous FLUSH_FINISH and this FLUSH_START. Timing
+     * only REFR_START -> first FLUSH_START measured band 1 and hid the rest. */
+    int64_t now = esp_timer_get_time();
+    if (s_last_flush_end_us) {
+        s_draw_us_total += (uint32_t)(now - s_last_flush_end_us);
+    } else if (s_render_start_us) {
+        s_draw_us_total += (uint32_t)(now - s_render_start_us);
+    }
+    s_render_start_us = 0;
+    s_flush_start_us = now;
+}
+
+/* LV_EVENT_FLUSH_FINISH fires when the panel transfer for one area completed,
+ * so the gap from FLUSH_START is the bus time for that area. */
+static void on_flush_finish(lv_event_t *event)
+{
+    (void)event;
+    if (!s_flush_start_us) return;
+    int64_t now = esp_timer_get_time();
+    s_xfer_us_total += (uint32_t)(now - s_flush_start_us);
+    s_flush_start_us = 0;
+    s_last_flush_end_us = now;
+}
+
+/* Every invalidation LVGL accepts, before it is merged into the refresh set.
+ * This is the number that explains a slow refresh: the flush area is the union
+ * of these, so a single full-screen invalidation per frame makes every frame a
+ * full-screen transfer no matter how little actually changed. */
+static uint32_t s_inv_count, s_inv_pixels, s_inv_max_pixels, s_inv_full;
+/* Which subsystem was running when the invalidation happened. LVGL sends
+ * INVALIDATE_AREA on the *display*, so the event carries no object pointer --
+ * the only way to attribute a full-screen dirty rect is to stamp the caller. */
+static const char *s_inv_tag = "boot";
+static uint32_t s_inv_tag_px[8];
+static uint32_t s_inv_tag_full[8];
+static uint32_t s_inv_tag_gap[8];
+static const char *s_inv_tag_name[8];
+static int s_inv_tag_count;
+
+static void inv_tag(const char *name)
+{
+    s_inv_tag = name;
+}
+
+static void inv_tag_account(uint32_t pixels, bool full)
+{
+    for (int i = 0; i < s_inv_tag_count; i++) {
+        if (s_inv_tag_name[i] == s_inv_tag) {
+            s_inv_tag_px[i] += pixels;
+            if (full) s_inv_tag_full[i]++;
+            return;
+        }
+    }
+    if (s_inv_tag_count < 8) {
+        s_inv_tag_name[s_inv_tag_count] = s_inv_tag;
+        s_inv_tag_px[s_inv_tag_count] = pixels;
+        s_inv_tag_full[s_inv_tag_count] = full ? 1 : 0;
+        s_inv_tag_count++;
+    }
+}
+
+/* Count a long frame gap against the subsystem that ran last. Same slot table as
+ * the invalidation accounting, so one `INVTAG` line reports both. */
+static void inv_tag_gap(void)
+{
+    for (int i = 0; i < s_inv_tag_count; i++) {
+        if (s_inv_tag_name[i] == s_inv_tag) {
+            s_inv_tag_gap[i]++;
+            return;
+        }
+    }
+    if (s_inv_tag_count < 8) {
+        s_inv_tag_name[s_inv_tag_count] = s_inv_tag;
+        s_inv_tag_gap[s_inv_tag_count] = 1;
+        s_inv_tag_count++;
+    }
+}
+
+static void on_invalidate_area(lv_event_t *event)
+{
+    const lv_area_t *area = lv_event_get_param(event);
+    if (!area) return;
+    uint32_t pixels = (uint32_t)lv_area_get_size(area);
+    s_inv_count++;
+    s_inv_pixels += pixels;
+    if (pixels > s_inv_max_pixels) s_inv_max_pixels = pixels;
+    if (pixels >= (uint32_t)(ui.W * ui.H)) s_inv_full++;
+    inv_tag_account(pixels, pixels >= (uint32_t)(ui.W * ui.H));
+}
+
 /* Report and reset the render-tick cost. Called from the console so a
  * performance regression is a number rather than a feeling. */
 void game_render_cost_report(void)
@@ -4194,11 +4382,22 @@ void game_render_cost_report(void)
     uint32_t spid = s_sec_spider_us, hud = s_sec_hud_us;
     uint32_t gap_max = s_frame_gap_max_us, gap_over = s_frame_gap_over;
     uint32_t gap_last = s_frame_gap_last_us;
+    uint32_t refreshes = s_refresh_count, flush_calls = s_flush_calls;
+    uint32_t flush_px = s_flush_pixels, flush_max = s_flush_max_pixels;
+    uint32_t refr_us = s_refresh_us_total, refr_max = s_refresh_us_max;
+    uint32_t inv_count = s_inv_count, inv_px = s_inv_pixels;
+    uint32_t inv_max = s_inv_max_pixels, inv_full = s_inv_full;
+    uint32_t draw_us = s_draw_us_total, xfer_us = s_xfer_us_total;
+    uint32_t prep_us = s_prep_us_total;
     s_render_ticks = 0;
     s_render_us_total = 0;
     s_sec_terrarium_us = s_sec_ambient_us = s_sec_spider_us = s_sec_hud_us = 0;
     s_frame_gap_max_us = 0;
     s_frame_gap_over = 0;
+    s_refresh_count = s_flush_pixels = s_flush_max_pixels = s_flush_calls = 0;
+    s_refresh_us_total = s_refresh_us_max = 0;
+    s_inv_count = s_inv_pixels = s_inv_max_pixels = s_inv_full = 0;
+    s_draw_us_total = s_xfer_us_total = s_prep_us_total = 0;
     printf("RENDERCOST ticks=%lu avg_us=%lu budget_us=%d\n",
            (unsigned long)ticks,
            (unsigned long)(ticks ? total / ticks : 0),
@@ -4207,6 +4406,33 @@ void game_render_cost_report(void)
      * intervals longer than two timer periods -- each one is a visible skip. */
     printf("RENDERSPREAD gap_max_us=%lu gap_last_us=%lu over_2x=%lu\n",
            (unsigned long)gap_max, (unsigned long)gap_last, (unsigned long)gap_over);
+    /* The refresh half. `px` is the total flushed area, so px/refresh is the
+     * average dirty area per frame: 230,400 means the whole screen every time. */
+    printf("REFRESH count=%lu avg_us=%lu max_us=%lu flush=%lu px=%lu px_max=%lu px_avg=%lu\n",
+           (unsigned long)refreshes,
+           (unsigned long)(refreshes ? refr_us / refreshes : 0),
+           (unsigned long)refr_max,
+           (unsigned long)flush_calls,
+           (unsigned long)flush_px,
+           (unsigned long)flush_max,
+           (unsigned long)(refreshes ? flush_px / refreshes : 0));
+    printf("INVALIDATE count=%lu px=%lu px_max=%lu full=%lu\n",
+           (unsigned long)inv_count, (unsigned long)inv_px,
+           (unsigned long)inv_max, (unsigned long)inv_full);
+    printf("REFRSPLIT draw_us=%lu xfer_us=%lu prep_us=%lu\n",
+           (unsigned long)(refreshes ? draw_us / refreshes : 0),
+           (unsigned long)(refreshes ? xfer_us / refreshes : 0),
+           (unsigned long)(refreshes ? prep_us / refreshes : 0));
+    for (int i = 0; i < s_inv_tag_count; i++) {
+        printf("INVTAG %s px=%lu full=%lu gap=%lu\n", s_inv_tag_name[i],
+               (unsigned long)s_inv_tag_px[i],
+               (unsigned long)s_inv_tag_full[i],
+               (unsigned long)s_inv_tag_gap[i]);
+    }
+    memset(s_inv_tag_px, 0, sizeof s_inv_tag_px);
+    memset(s_inv_tag_full, 0, sizeof s_inv_tag_full);
+    memset(s_inv_tag_gap, 0, sizeof s_inv_tag_gap);
+    s_inv_tag_count = 0;
     /* Per-section averages. `other` is the remainder: life_visual_tick, the
      * enclosure lights, the depth sorts and the timer overhead. */
     if (ticks) {
@@ -4219,6 +4445,7 @@ void game_render_cost_report(void)
 
 void game_tick_render(lv_timer_t *timer)
 {
+    inv_tag("boot");
     power_tick();
     static bool save_failure_shown;
     if (!save_busy() && !save_last_ok() && !save_failure_shown) {
@@ -4326,6 +4553,7 @@ void game_tick_render(lv_timer_t *timer)
 
     if (s_paused || save_restore_pending() || power_sleep_pending() || power_sleeping() || net_busy() || ui_menu_visible() || ui_hud_chrome_visible() ||
         lv_screen_active() != ui.screen) {
+        inv_tag("chrome");
         if (!s_paused && !net_busy() && !ui_menu_visible() &&
             lv_screen_active() == ui.screen) ui_hud_tick(now);
         return;
@@ -4336,21 +4564,28 @@ void game_tick_render(lv_timer_t *timer)
      * unsigned value and expires the object on the very tick it was made. */
     now = lv_tick_get();
     int64_t render_start = esp_timer_get_time();
+    inv_tag("life");
     life_visual_tick(now);
     int64_t t0 = esp_timer_get_time();
+    inv_tag("terrarium");
     terrarium_tick(now);
     int64_t t1 = esp_timer_get_time();
+    inv_tag("ambient");
     ambient_tick(now);
     int64_t t2 = esp_timer_get_time();
+    inv_tag("lights");
     tick_enclosure_lights();
     terrarium_decor_depth();
     terrarium_gift_depth();
+    inv_tag("spider");
     cspider_render(now);
     spider_render(now);   /* aim visuals only */
     prey_render(now);
     int64_t t3 = esp_timer_get_time();
+    inv_tag("hud");
     ui_hud_tick(now);
     int64_t t4 = esp_timer_get_time();
+    inv_tag("idle");
     s_sec_terrarium_us += (uint32_t)(t1 - t0);
     s_sec_ambient_us += (uint32_t)(t2 - t1);
     s_sec_spider_us += (uint32_t)(t3 - t2);
@@ -4371,7 +4606,14 @@ void game_tick_render(lv_timer_t *timer)
             uint32_t gap = (uint32_t)(render_start - s_prev_start);
             s_frame_gap_last_us = gap;
             if (gap > s_frame_gap_max_us) s_frame_gap_max_us = gap;
-            if (gap > (uint32_t)(2 * RENDER_PERIOD_MS * 1000)) s_frame_gap_over++;
+            if (gap > (uint32_t)(2 * RENDER_PERIOD_MS * 1000)) {
+                s_frame_gap_over++;
+                /* Attribute the gap to the subsystem that ran last. Logging here
+                 * would perturb the very thing being measured (a UART write from
+                 * the LVGL task costs milliseconds), so the counts are reported
+                 * by `rendercost` instead. */
+                inv_tag_gap();
+            }
         }
         s_prev_start = render_start;
     }
@@ -4554,6 +4796,18 @@ void game_init(void)
 
     s_logic_timer  = lv_timer_create(game_tick_logic,  LOGIC_PERIOD_MS,  NULL);
     s_render_timer = lv_timer_create(game_tick_render, RENDER_PERIOD_MS, NULL);
+
+    /* Refresh instrumentation. Registered on the active display so the numbers
+     * come from LVGL itself rather than from a guess about the timer period. */
+    lv_display_t *disp = lv_display_get_default();
+    if (disp) {
+        lv_display_add_event_cb(disp, on_refresh_start, LV_EVENT_REFR_START, NULL);
+        lv_display_add_event_cb(disp, on_refresh_ready, LV_EVENT_REFR_READY, NULL);
+        lv_display_add_event_cb(disp, on_flush_start, LV_EVENT_FLUSH_START, NULL);
+        lv_display_add_event_cb(disp, on_invalidate_area, LV_EVENT_INVALIDATE_AREA, NULL);
+        lv_display_add_event_cb(disp, on_render_start, LV_EVENT_RENDER_START, NULL);
+        lv_display_add_event_cb(disp, on_flush_finish, LV_EVENT_FLUSH_FINISH, NULL);
+    }
 
     /* A brand-new spider needs a name and a colour before the tank opens. */
     if (ui_setup_needed()) {

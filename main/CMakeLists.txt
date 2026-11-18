@@ -42,6 +42,16 @@ idf_component_register(
 idf_component_get_property(LVGL_LIB lvgl__lvgl COMPONENT_LIB)
 target_compile_options(${LVGL_LIB} PRIVATE -DLV_LVGL_H_INCLUDE_SIMPLE)
 
+# LVGL keeps at most LV_INV_BUF_SIZE dirty rectangles per frame (default 32).
+# When a frame produces more, lv_refr.c throws the whole list away and redraws
+# the ENTIRE screen -- see the `inv_p >= LV_INV_BUF_SIZE` branch in lv_refr.c.
+# This tank invalidates ~100 areas per frame (16 motes + 6 spores + 18 strands +
+# 48 particles + decor + spider), so every frame overflowed and paid for a full
+# 480x480 software redraw: 76 ms of draw time, which capped the game at ~9 Hz.
+# 128 rectangles costs 128 * sizeof(lv_area_t) = 2 KB of BSS and lets the
+# refresh draw only what actually changed.
+target_compile_options(${LVGL_LIB} PRIVATE -DLV_INV_BUF_SIZE=128)
+
 # Silence printf-style warnings that LVGL's printf formatting triggers
 target_compile_options(${LVGL_LIB} PRIVATE -Wno-format)
 

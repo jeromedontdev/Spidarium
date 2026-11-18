@@ -314,6 +314,51 @@ timeout for this real frame-paced check.
 
 ---
 
+### `rendercost`
+
+Reports and resets the frame-rate counters. This is the regression detector for
+the whole render path; run it after any change that touches LVGL objects, the
+ambient layer, or the overlays.
+
+```
+RENDERCOST ticks=5 avg_us=2561 budget_us=33333
+RENDERSPREAD gap_max_us=91242 gap_last_us=32998 over_2x=1
+REFRESH count=5 avg_us=35240 max_us=79501 flush=47 px=64128 px_max=11088 px_avg=12825
+INVALIDATE count=211 px=199768 px_max=11088 full=0
+REFRSPLIT draw_us=27680 xfer_us=2537 prep_us=1087
+INVTAG ambient px=55388 full=0
+INVTAG spider px=66528 full=0
+INVTAG idle px=45932 full=0
+INVTAG hud px=20368 full=0
+RENDERSECT terrarium=9 ambient=945 spider=1759 hud=35 other=12
+OK rendercost
+```
+
+| line | meaning |
+|---|---|
+| `RENDERCOST` | render-tick work. `budget_us` is one `RENDER_HZ` period. |
+| `RENDERSPREAD` | gap between consecutive tick starts. `over_2x` counts gaps longer than two periods -- each is a visible skip. |
+| `REFRESH` | LVGL refreshes. `px_avg` is the dirty area per frame; 230,400 means the whole screen every time. |
+| `INVALIDATE` | dirty rectangles LVGL accepted. `full` counts full-screen ones. |
+| `REFRSPLIT` | `draw_us` software render, `xfer_us` panel transfer, `prep_us` layout/area-join. |
+| `INVTAG` | which subsystem issued the dirty pixels, and how many of its invalidations were full-screen. |
+| `RENDERSECT` | per-section tick cost; `other` is the remainder. |
+
+A healthy steady-state window is `px_avg` around 15,000, `full=0`,
+`gap_last_us` around 33,000 and `over_2x=0`.
+
+`INVTAG boot full=11` in the first window after a reset is normal: those are the
+one-time boot invalidations. Later windows report `full=0`.
+
+**If `px_avg` climbs toward 230,400, check `LV_INV_BUF_SIZE` first.** LVGL keeps
+at most that many dirty rectangles per frame (default 32) and, when a frame
+produces more, discards the whole list and redraws the entire screen. This tank
+invalidates about 100 areas per frame, so the default overflowed on every frame
+and capped the game at 8.9 Hz. `main/CMakeLists.txt` compiles LVGL with
+`-DLV_INV_BUF_SIZE=128`; removing that define brings the bug straight back.
+
+---
+
 ### `spider`
 
 Prints the spider's position, heading, state, colour and sickness.

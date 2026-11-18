@@ -12017,12 +12017,20 @@ been there since the renderer was split from the logic tick.
   so a late frame cannot overshoot past the committed position and rubber-band.
   `behaviour_sync_position()` collapses the window, so a teleport (restore,
   respawn, test harness) is not drawn as a slide.
+  **Correction (Round 136):** this was only half the story, and on its own it did
+  nothing. The render tick was actually running at 8.9 Hz, slower than the 20 Hz
+  logic tick, so `alpha` clamped to 1 on every frame and the interpolation was a
+  no-op. The real cause was LVGL's invalidation buffer overflowing; see Round 136.
+  The interpolation is correct and now does its job, but it was not the fix.
 - **The render tick is NOT the bottleneck, and the instrumentation now says so.**
   `rendercost` gained `RENDERSPREAD gap_max_us / gap_last_us / over_2x`. Measured
   on hardware: tick work is 3.1-4.1 ms against a 33,333 us budget, but the gap
   between consecutive tick starts is 118 ms and `over_2x` counts most of them.
   The remaining ~115 ms is LVGL's own flush, which is pre-existing and outside
   the tick. Recording it stops the next round from re-deriving this.
+  **Correction (Round 136):** the ~115 ms was not the flush either. It was the
+  software DRAW of a full-screen dirty area, caused by `LV_INV_BUF_SIZE`
+  overflow. See Round 136.
 - **Cycling items left every item stepped away from invisible.** The preview
   hides the real object so only the draggable copy shows, but
   `terrarium_preview_item()` changed `s_preview_slot` without unhiding the old
@@ -12131,3 +12139,105 @@ middle row.
 - The overlay was verified from a captured framebuffer, not by touching the
   panel. Physical touch targets, drag feel and the transparency over a bright
   background still need a human look.
+
+## Round 136 -- The real frame-rate bug: LVGL's invalidation buffer overflow
+
+Round 135 blamed the "frame skip" on a 20 Hz logic / 30 Hz render beat and added
+interpolation to `behaviour_pos()`. Post-commit verification showed that theory
+was wrong: the render tick was running at **8.9 Hz**, slower than the logic tick,
+so `alpha` clamped to 1 on every frame and the interpolation did nothing. This
+round found the actual cause and fixed it. Frame rate went from 8.9 Hz to 30 Hz.
+
+### Decisions made
+
+- **`LV_INV_BUF_SIZE` overflow was the whole problem.** LVGL keeps at most
+  `LV_INV_BUF_SIZE` dirty rectangles per frame, default 32. When a frame produces
+  more, `lv_refr.c` discards the entire list and redraws the whole screen:
+  `if(disp->inv_p >= LV_INV_BUF_SIZE) { disp->inv_p = 0; tmp_area_p = &scr_area; }`.
+  This tank invalidates ~100 areas per frame (16 motes + 6 spores + 18 strands +
+  48 particles + decor + spider), so **every** frame overflowed and paid for a
+  full 480x480 software redraw. `main/CMakeLists.txt` now compiles LVGL with
+  `-DLV_INV_BUF_SIZE=128` (2 KB of BSS). This is the single largest performance
+  lever in the project; do not remove it.
+- **Measured before and after, same board, same scene:**
+
+  | metric | before | after |
+  |---|---|---|
+  | render tick rate | 8.9 Hz | 30.0 Hz |
+  | dirty area per refresh (`px_avg`) | 170,394 px | 14,853 px |
+  | refresh duration (`avg_us`) | 84,398 us | 32,542 us |
+  | draw time per refresh | 75,948 us | 29,137 us |
+  | full-screen invalidations (`full`) | 48 | 12 (all boot-time) |
+  | `gap_last_us` | 107,000 | 32,994 |
+  | `over_2x` (steady state) | 78 | 0 |
+
+- **`apply_daylight_tint()` was dirtying a third of the screen for nothing.** It
+  pushed colour, opacity and visibility onto a 480x480 overlay once a second
+  whether or not anything had changed. `INVTAG` attributed 8.5M px per window to
+  it -- 35% of all drawn pixels. It now caches the applied tint index and returns
+  early when unchanged; the same tag now reports 230,400 px (one real change).
+  Any new full-screen overlay needs the same caching.
+- **The instrumentation had to be fixed before it could be trusted.** The first
+  `REFRSPLIT` implementation timed only `REFR_START -> first FLUSH_START`, which
+  measured band 1 of a multi-band refresh and reported 7 ms of draw. Worse, the
+  final `FLUSH_FINISH` of a refresh can arrive *after* `REFR_READY` (the transfer
+  is asynchronous), so the next refresh's first band measured its draw time from
+  a stale stamp and swallowed the whole inter-refresh gap -- reporting 31 ms of
+  "draw" that was really idle time. Draw is now accumulated between
+  `FLUSH_FINISH` and the next `FLUSH_START`, and the stamp is cleared on
+  `RENDER_START`. Only then did the 76 ms figure appear.
+- **`INVTAG` attributes invalidations by caller, not by object.** LVGL sends
+  `INVALIDATE_AREA` on the *display*, so `lv_event_get_target()` is the display
+  and carries no object pointer. Two attempts to read an object from it produced
+  garbage coordinates. The working approach is a `inv_tag("name")` stamp set
+  before each subsystem call in `game_tick_render()`, accumulated per tag. This is
+  what identified `life` (the daylight overlay) as the top offender.
+- **`INVTAG boot full=11` is normal and not a bug.** Those are the one-time boot
+  invalidations. They appear only in the first measurement window after a reset;
+  subsequent windows report `full=0`. Do not chase them.
+- **The `behaviour_pos()` interpolation is kept.** It was correct but inert while
+  the render tick was slower than the logic tick. Now that rendering runs at
+  30 Hz against 20 Hz logic it does what it was written to do. Round 135's
+  reasoning about *why* it helps is sound; only its claim to be the fix was wrong.
+
+### Evidence
+
+```
+Build exit 0, zero main warnings. Flash exit 0.
+MEM cmd internal=141139 largest=63488 dma=133407 psram=1526216
+RENDER ticks=500 largest_drift=0 per_tick_us=32992
+LOOP ok=5 failed=0 largest_drift=0
+run_tests.py COM7                 passed=50 failed=2  (documented hud=0 pointer=0 baseline)
+uitest                            placement item selector: PASS
+stability_check.py COM7 40        VERDICT: PASS, FAULTS/ERRORS: 0
+site: node --test tests/*.test.mjs  309/309
+```
+
+Steady-state `rendercost` after the fix (three consecutive windows):
+
+```
+RENDERCOST ticks=5 avg_us=2561 budget_us=33333
+RENDERSPREAD gap_max_us=91242 gap_last_us=32998 over_2x=1
+REFRESH count=5 avg_us=35240 max_us=79501 flush=47 px=64128 px_max=11088 px_avg=12825
+INVALIDATE count=211 px=199768 px_max=11088 full=0
+REFRSPLIT draw_us=27680 xfer_us=2537 prep_us=1087
+INVTAG ambient px=55388 full=0
+INVTAG spider px=66528 full=0
+INVTAG idle px=45932 full=0
+INVTAG hud px=20368 full=0
+```
+
+### Known remaining
+
+- `gap_max_us` still spikes to 90-160 ms occasionally (`over_2x` 0-1 in steady
+  state, but 35 in the first window after boot). The steady-state cadence is a
+  clean 33 ms; the spikes are one-off events (menu rebuild, save, audio start)
+  rather than a periodic beat. Not chased further this round.
+- `draw_us` is still 27-29 ms per refresh for ~14k px, which is ~2 us/px -- far
+  slower than the 0.43 us/px measured for a full-screen redraw. The per-band
+  fixed overhead (buffer setup, `compact_stride_to_packed()`,
+  `lv_draw_sw_rgb565_swap()`) dominates at small areas. Raising `.buffer_height`
+  from 50 would reduce the band count and this overhead, but it trades internal
+  DMA memory and `largest` is already at 63,488 against a 51,200 floor.
+- The overlay and placement UI were verified from a captured framebuffer, not by
+  touching the panel. Physical touch feel still needs a human look.
