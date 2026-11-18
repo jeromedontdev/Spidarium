@@ -435,7 +435,16 @@ typedef enum {
     DECOR_EDIT_STATUS, DECOR_EDIT_CLEAR, DECOR_EDIT_PLACE, DECOR_EDIT_MOVE, DECOR_EDIT_BLOCK,
     /* Enter the interactive placement overlay on an existing slot, so the
      * console can drive and screenshot the same UI the player sees. */
-    DECOR_EDIT_BEGIN
+    DECOR_EDIT_BEGIN,
+    /* Step the top item selector by `value` (+1 / -1), so the console can drive
+     * the same ring the arrows walk -- including onto and off the gift. */
+    DECOR_EDIT_STEP,
+    /* Step the bottom layer control by `value` (+1 / -1), so the console can
+     * verify that ordering decor against the gift actually reorders it. */
+    DECOR_EDIT_LAYER,
+    /* Commit the staged placement through the real Done path, so the console can
+     * verify that a staged layer change is actually applied. */
+    DECOR_EDIT_DONE
 } decor_edit_t;
 bool game_ui_decor_edit(decor_edit_t operation, int value, int x, int y, int *count);
 const lv_draw_buf_t *game_screen_capture(void);

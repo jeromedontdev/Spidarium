@@ -248,6 +248,11 @@ int decor_layer_count_at(uint8_t path, uint8_t kind, int16_t x, int16_t y,
                          int exclude_slot);
 int decor_layer_count(uint8_t path, int exclude_slot);
 int decor_layer_index(int slot);
+/* Position of a decor item among the overlapping items in its band, counting the
+ * placed gift as one of them. This is what the layer control displays and what
+ * decor_set_layer() targets, so the range the arrows step through matches the
+ * count that decides whether the row is shown at all. */
+int decor_layer_index_with_gift(int slot);
 /* Reorder against the overlapping items in the same band. Returns the item's
  * new slot, or -1. */
 int decor_set_layer(int slot, int index);

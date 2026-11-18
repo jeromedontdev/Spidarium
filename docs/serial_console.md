@@ -588,6 +588,40 @@ To screenshot the overlay, use `screenshot menu` after `decor begin SLOT`:
 `screenshot playfield` deliberately hides the HUD chrome, so it captures the
 tank without the controls.
 
+Three subcommands drive the overlay's own controls, so the ring and the reorder
+are verifiable on hardware rather than only in a self-test. They call the same
+handlers the buttons do, so they cannot diverge from the UI:
+
+- `decor step 1|-1` steps the TOP item selector. The ring is the placed decor in
+  slot order followed by the gift, so stepping forward from the last decor item
+  lands on the gift and stepping again wraps to the first decor item. The mode
+  flags switch with the selection, so the label reads e.g. `Holo Garden 2 / 2`
+  while the gift is staged.
+- `decor layer 1|-1` steps the BOTTOM layer control. It stages the change; the
+  reorder is committed by `decor done`. It returns `ERR` at the ends of the
+  range, which is the same state the arrows show as disabled.
+- `decor done` commits through the real Done handler, so a staged layer change
+  is actually applied.
+
+A worked example, ordering a rock against a gift at the same position:
+
+```
+decor clear
+giftplace 34 240 300
+decor place 0 240 300
+decor begin 0
+decorlayers        -> slot=0 ... overlapping=1 index=1
+giftreport         -> layer=0 gift_index=11 decor_index=12
+decor layer -1     -> OK
+decor done         -> OK
+decorlayers        -> slot=0 ... overlapping=1 index=0
+giftreport         -> layer=1 gift_index=13 decor_index=12
+```
+
+The gift's render index moving from 11 to 13 is the proof that it is now drawn
+in front of the rock. `decorlayers` reports the gift-aware index, so it always
+agrees with the on-screen "n / m".
+
 Kinds 68..73 are the large climb structures (branch, vine, root, ivy, boulder,
 driftwood). They are authored 192x192 and drawn 1:1, and their lift ramps from
 zero at the footprint rim to full height at the centre. Their ownership is
@@ -615,7 +649,13 @@ a prop, `DECOR_CLIMB_EXTENT` for a large structure), not on the collision
 footprint -- so a scaled-up fern counts as overlapping more than its `radius`
 suggests.
 
-Use it to check the two failure modes that have been reported:
+The GIFT counts as an overlapping item in the floor band, in both directions: a
+decor item dropped on the gift reports `overlapping=1`, and the trailing
+`gift_overlapping=N` line reports the same relationship from the gift's side.
+The `index` is the gift-aware ordering (`decor_layer_index_with_gift()`), which
+is what the layer control displays and what `decor_set_layer()` targets.
+
+Use it to check the three failure modes that have been reported:
 
 - `overlapping=0` while the placement overlay still shows the layer row means the
   `> 1` visibility test in `ui_hud_set_place_mode()` has regressed to `>= 1`,
@@ -623,6 +663,9 @@ Use it to check the two failure modes that have been reported:
 - `overlapping>0` for two items at opposite ends of the tank means
   `item_extent()` is over-reporting and the reach needs checking against the
   sprite's real drawn size.
+- `overlapping=0` for a decor item sitting exactly on the gift means
+  `decor_layer_count_at()` has stopped counting the gift, which makes the layer
+  row vanish for that pair.
 
 ### `ambient`
 

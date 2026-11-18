@@ -995,6 +995,32 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   otherwise disable it. And a disabled arrow must LOOK disabled -- `place_action()`
   dims the fill and border, but the glyph is a text label and needs its own
   `LV_STATE_DISABLED` colour or it still reads as live.
+- **The gift is a first-class member of the layer system, in BOTH directions.**
+  `decor_gift_layer_count()` counted decor from the gift's side while
+  `decor_layer_count_at()` ignored the gift, so a rock dropped exactly on the
+  gift reported `overlapping=0` and the layer row never appeared. Both now see
+  each other via `gift_overlaps_point()`.
+
+  Counting it is not enough on its own: the gift is not a decor slot, so the
+  decor's slot-swap order cannot move it -- the renderer inserts it at
+  `g.gift_layer` among the floor decor. `decor_set_layer()` therefore falls back
+  to moving `g.gift_layer` when the slot order cannot reach the requested
+  position and the item overlaps the gift. Without that the row would appear and
+  the arrows would be dead, which is the same "visible but useless control"
+  failure this area keeps regressing into. `decor_layer_index_with_gift()` is the
+  combined ordering, and it is what both the label and `decorlayers` report.
+- **The top selector ring includes the gift.** It is a placed object the player
+  can move, and the selector is the one control that switches WHICH object is
+  being moved. `placement_step_item()` walks the placed decor in slot order
+  followed by the gift, and switches `g_decor_mode` / `g.gift_mode` as it goes --
+  those flags drive the commit path, the preview kind and the "always walked
+  over" rule, so they must follow the selection rather than being fixed for the
+  whole edit.
+- **`game_placement_layer()` returns the STAGED index, not the live one.** The
+  arrows only write `s_place_layer`; Done commits. Reading the live index made
+  the arrows look dead: pressing one changed the staged value, the label re-read
+  the live value, and nothing moved until Done. The staged value is seeded from
+  the live index whenever the selection or the band changes.
 - **Ambient particles are per-STYLE, not per-pool.** `ambient_retint()` used to
   tint all 48 particles with one colour and `ambient_init()` created them all as
   circles, so every decor item shed the same dot. Colour and radius now come from

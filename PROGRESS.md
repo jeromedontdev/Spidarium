@@ -12473,3 +12473,135 @@ Visual verification from captured framebuffers:
 - `AMBIENTSTYLE` reports the colour and radius the code WOULD use, not what is
   currently pushed to each object. A per-particle dump would be needed to catch a
   cache that never invalidates; the visual capture is the evidence for now.
+
+## Round 139 -- The gift joins the layer system, and the selector reaches it
+
+Two reports, both about the gift being a second-class citizen in the placement
+overlay.
+
+### 1. "Layer selection arrows are completely missing now, they should show when decor or gift items touch"
+
+Round 138 tightened the layer row to `game_placement_layers() > 1`, which is
+correct -- but the count it tests was **one-way**. `decor_gift_layer_count()`
+counted decor from the gift's side, while `decor_layer_count_at()` ignored the
+gift entirely. So a rock dropped exactly on the gift reported `overlapping=0`,
+the row never appeared, and the two could not be ordered.
+
+`decor_layer_count_at()` now counts the gift via a new `gift_overlaps_point()`,
+so both directions see each other. Verified on hardware: a rock at (240,300) on
+a gift at (240,300) went from `overlapping=0` to `overlapping=1`.
+
+Making the count honest was only half the fix. The gift is not a decor slot, so
+the decor's slot-swap order cannot move it -- the renderer inserts the gift at
+`g.gift_layer` among the floor decor. Without more, the row would appear and the
+arrows would be dead whenever the gift was the only thing in contact, which is
+the same "visible but useless control" failure this area keeps regressing into.
+So:
+
+- `decor_layer_index_with_gift()` reports the combined ordering (decor index,
+  plus one when the gift is drawn behind this item).
+- `decor_set_layer()` falls back to moving `g.gift_layer` when the slot order
+  cannot reach the requested position and the item overlaps the gift.
+- `decorlayers` now reports the gift-aware index, so the console agrees with the
+  on-screen "n / m".
+
+Verified end to end: staging the front position and pressing Done moved
+`index 1 -> 0`, `gift_layer 0 -> 1`, and the gift's render index `11 -> 13`
+(in front of the rock).
+
+### 2. "The decor selection arrows should also cycle through gifts"
+
+The ring was the placed decor only, so the gift was the one object you could not
+reach from the overlay -- you had to cancel out to the menu and pick "Move"
+there. `placement_step_item()` now walks the placed decor in slot order followed
+by the gift, and switches the mode flags as it goes: `g.gift_mode` drives the
+commit path, the preview kind and the "always walked over" rule, so it has to
+follow the selection rather than being fixed for the whole edit.
+
+`game_placement_item_label()` names the gift too, so the selector reads
+"Holo Garden 2 / 2" while the gift is staged. `game_placement_item_total()`
+includes it, so the arrows are correctly live with one decor item plus a gift.
+
+### A third bug found while verifying
+
+`game_placement_layer()` returned the LIVE index while the arrows only wrote the
+STAGED `s_place_layer`. Pressing an arrow changed the staged value, the label
+re-read the live value, and nothing moved on screen until Done -- the arrows
+looked dead. It now returns the staged value, which is seeded from the live
+index whenever the selection or the band changes.
+
+### Decisions made
+
+- **The gift counts as an overlapping item in both directions.** The alternative
+  was to keep the relationship one-way and hide the row for decor touching a
+  gift, but that is exactly the report. Draw order between a rock and a gift on
+  the same pixels is a real, visible relationship, so both sides must see it.
+- **Move the gift rather than renumber the decor.** The gift's insertion point
+  is the only knob that can place it relative to a decor item, so the decor's
+  layer control drives `g.gift_layer` when the slot order cannot reach the
+  target. The alternative -- giving the gift a slot -- would have changed the
+  save format for a cosmetic ordering.
+- **The selector ring includes the gift.** It is a placed object the player can
+  move, and the selector is the one control that switches WHICH object is being
+  moved. Leaving it out made the gift unreachable from the overlay.
+- **Display the staged layer, not the live one.** The arrows stage and Done
+  commits, so the label has to show the staged value or the control reads as
+  dead. This was a pre-existing bug that only became visible once the gift made
+  the range non-trivial.
+- **Console hooks for the new controls** (`decor step`, `decor layer`,
+  `decor done`) so the ring and the reorder are drivable and screenshotable on
+  hardware rather than only asserted in a self-test.
+
+### Evidence
+
+Build exit 0, zero main warnings. Flash exit 0.
+
+```
+run_tests.py COM7                 passed=50 failed=2  (documented hud=0 pointer=0 baseline)
+uitest                            selector=1  (placement item selector: PASS)
+render 500                        largest_drift=0 per_tick_us=33007
+scanloop 5                        ok=5 failed=0 largest_drift=0
+mem                               internal=141219 largest=63488 dma=133487 psram=1611824
+stability_check.py COM7 40        VERDICT: PASS, FAULTS/ERRORS: 0
+site: node --test tests/*.test.mjs  309/309
+```
+
+Steady-state `rendercost` (30 s window, no console traffic):
+
+```
+RENDERCOST ticks=752 avg_us=2493 budget_us=33333
+RENDERSPREAD gap_max_us=93015 gap_last_us=32995 over_2x=36
+REFRESH count=912 avg_us=20569 max_us=87364 flush=7245 px=14828576 px_avg=16259
+INVALIDATE count=46923 px=58441512 px_max=15876 full=0
+REFRSPLIT draw_us=17489 xfer_us=2045 prep_us=1034
+```
+
+25.1 Hz, `full=0`, `px_avg` 16.3k -- no regression against Round 138's 23.7 Hz /
+16.0k.
+
+Hardware verification of the two reports:
+
+```
+# decor on gift, before the fix
+DECORLAYERS slot=0 kind=0 pos=(240,300) band=floor overlapping=0 index=0
+# after
+DECORLAYERS slot=0 kind=0 pos=(240,300) band=floor overlapping=1 index=1
+
+# selector stepping onto the gift
+screenshot menu -> "Holo Garden / 2 / 2", path row hidden, layer row "Floor 1 / 2"
+
+# layer reorder against the gift, committed through Done
+start   index=1  gift_layer=0  gift_index=11  decor_index=12
+after   index=0  gift_layer=1  gift_index=13  decor_index=12
+```
+
+### Known remaining
+
+- The gift's layer is a single index among the floor decor, so ordering it
+  against a CANOPY item is not offered. That is correct -- the gift is always
+  walked over and lives in the floor band -- but it means a canopy item dropped
+  on the gift shows no layer row. The row is honest about there being nothing to
+  order, which is the rule from Round 138.
+- `decor step` / `decor layer` / `decor done` are console-only test hooks. They
+  drive the real handlers, so they cannot diverge from the UI, but they are not
+  part of the player-facing surface.

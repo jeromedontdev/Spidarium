@@ -446,7 +446,13 @@ void ui_hud_set_place_mode(bool on, const char *hint)
      * implied a relationship that did not exist -- the "layer arrows are usable
      * even though there is no overlapping item, just another item on the screen"
      * report. The row appears the moment a drag brings the item into contact and
-     * goes away when it leaves, which is honest: there is nothing to order. */
+     * goes away when it leaves, which is honest: there is nothing to order.
+     *
+     * The gift counts as an overlapping item in both directions, so a decor item
+     * dropped on the gift gets the row and a gift dropped on decor gets it too.
+     * Before that the relationship was one-way and the row never appeared for
+     * decor touching a gift -- the "layer selection arrows are completely
+     * missing" report. */
     bool path_row = on && g_decor_mode;
     bool layer_row = on && (g_decor_mode || g.gift_mode) && game_placement_layers() > 1;
     lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
@@ -491,7 +497,7 @@ void ui_hud_placement_changed(void)
     lv_obj_set_hidden(s_place_back, !layer_row);
     lv_obj_set_hidden(s_place_front, !layer_row);
     lv_obj_set_hidden(s_place_layer_label, !layer_row);
-    /* The top arrows step between the placed items, not between layers. They
+    /* The top arrows step between the placed objects, not between layers. They
      * stay visible with a single item placed and are DISABLED at "1 / 1", so the
      * control does not appear to have been removed when the tank holds one prop.
      * See game_placement_item_label(). */
@@ -505,8 +511,7 @@ void ui_hud_placement_changed(void)
         bool single = game_placement_item_total() < 2;
         lv_obj_set_state(s_place_top_back, LV_STATE_DISABLED, single);
         lv_obj_set_state(s_place_top_front, LV_STATE_DISABLED, single);
-    }
-    if (!layer_row) return;
+    }    if (!layer_row) return;
     uint8_t path = game_placement_blocking();
     int layer = game_placement_layer();
     int layers = game_placement_layers();

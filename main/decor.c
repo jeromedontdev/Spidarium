@@ -11,6 +11,7 @@
 
 #include "game.h"
 #include "save.h"
+#include "terrarium.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include <math.h>
@@ -744,11 +745,61 @@ static bool items_overlap(uint8_t kind_a, int16_t ax, int16_t ay,
     return dx * dx + dy * dy < reach * reach;
 }
 
+/* The gift's own artwork is 64x64 drawn at 2x, so its half-extent is 64. */
+#define GIFT_EXTENT 64.0f
+
+/* True when the placed gift's artwork overlaps a hypothetical item of `kind`
+ * centred at (x, y) in the given band.
+ *
+ * The gift is always in the floor band, so a canopy item never overlaps it.
+ * GIFT_EXTENT is the gift's own artwork half-extent (64x64 drawn at 2x). */
+static bool gift_overlaps_point(uint8_t path, uint8_t kind, int16_t x, int16_t y)
+{
+    if (!g.gift.used) return false;
+    if (!same_band(g.gift_path, path)) return false;
+    float dx = (float)(x - g.gift.x);
+    float dy = (float)(y - g.gift.y);
+    float reach = GIFT_EXTENT + item_extent(kind);
+    return dx * dx + dy * dy < reach * reach;
+}
+
+/* True when the placed gift is drawn BEHIND the decor item at `slot`.
+ *
+ * The renderer inserts the gift at `g.gift_layer` among the floor decor in slot
+ * order, so the gift is behind an item when its insertion point is at or before
+ * that item's own position in the floor sequence. Canopy items are never
+ * ordered against the gift, so this is false for them.
+ *
+ * This is the static band test, not the renderer's dynamic `decor_canopy_now()`
+ * (which also depends on the spider's y). The layer control is about the
+ * arrangement the player is setting, not about where the spider happens to be
+ * standing, so the static band is the right question here. */
+static bool gift_behind_decor(int slot)
+{
+    if (!g.gift.used) return false;
+    const decor_item_t *item = decor_at(slot);
+    if (!item || item->blocking == DECOR_WALK_BEHIND) return false;
+    int floor_pos = 0;
+    for (int i = 0; i < slot; i++) {
+        const decor_item_t *other = decor_at(i);
+        if (other && other->blocking != DECOR_WALK_BEHIND) floor_pos++;
+    }
+    return g.gift_layer <= floor_pos;
+}
+
 /* How many items share this item's band AND overlap it on screen.
  *
  * `exclude_slot` is the item being ordered, so it does not count itself. Pass
  * -1 when the item is not placed yet (a new placement), in which case every
- * overlapping item counts. */
+ * overlapping item counts.
+ *
+ * The GIFT counts as an overlapping item. It is a placed object in the floor
+ * band that the player can order decor against, and `decor_gift_layer_count()`
+ * has always counted decor from the gift's side. Leaving it out here made the
+ * relationship one-way: a rock dropped exactly on the gift reported
+ * `overlapping=0`, so the layer row never appeared and the player could not
+ * order the two -- the "layer selection arrows are completely missing" report.
+ * Both directions now see each other. */
 int decor_layer_count_at(uint8_t path, uint8_t kind, int16_t x, int16_t y,
                          int exclude_slot)
 {
@@ -760,13 +811,18 @@ int decor_layer_count_at(uint8_t path, uint8_t kind, int16_t x, int16_t y,
         if (!items_overlap(kind, x, y, item->kind, item->x, item->y)) continue;
         count++;
     }
+    if (gift_overlaps_point(path, kind, x, y)) count++;
     return count;
 }
 
 /* Position of this item among the overlapping items in its band, 0-based.
  *
  * Only overlapping items are counted, so "1 / 2" means "the second of the two
- * things this one actually touches". */
+ * things this one actually touches".
+ *
+ * The gift participates, mirroring decor_layer_count_at(). It is always the
+ * LAST item in the band sequence -- the renderer inserts it at its own index
+ * among the decor -- so a decor item that overlaps the gift sits before it. */
 int decor_layer_index_at(uint8_t path, uint8_t kind, int16_t x, int16_t y,
                          int exclude_slot)
 {
@@ -781,6 +837,26 @@ int decor_layer_index_at(uint8_t path, uint8_t kind, int16_t x, int16_t y,
          * overlapping item and its index is the count. */
         if (exclude_slot < 0 || i < exclude_slot) index++;
     }
+    /* The gift is ordered after the decor, so it never shifts a decor item's
+     * index. It is counted here only so the range matches the count. */
+    return index;
+}
+
+/* Position of a decor item among the overlapping items in its band, counting
+ * the gift as one of them.
+ *
+ * `decor_layer_index_at()` cannot see the gift because the gift is not a slot.
+ * The layer control needs the combined ordering, so this wraps it: the decor
+ * index is the base, and the gift adds one position when it is drawn behind
+ * this item. */
+int decor_layer_index_with_gift(int slot)
+{
+    const decor_item_t *item = decor_at(slot);
+    if (!item) return -1;
+    int index = decor_layer_index_at(item->blocking, item->kind, item->x, item->y, slot);
+    if (gift_overlaps_point(item->blocking, item->kind, item->x, item->y) &&
+        gift_behind_decor(slot))
+        index++;
     return index;
 }
 
@@ -818,7 +894,7 @@ int decor_set_layer(int slot, int index)
         ESP_LOGW(TAG, "layer rejected: slot=%d index=%d others=%d", slot, index, others);
         return -1;
     }
-    int current = decor_layer_index_at(item->blocking, item->kind, item->x, item->y, slot);
+    int current = decor_layer_index_with_gift(slot);
     while (current != index) {
         int step = current < index ? 1 : -1;
         /* Walk to the next item this one actually overlaps. Swapping past a
@@ -839,7 +915,31 @@ int decor_set_layer(int slot, int index)
         *slot_at(slot) = swap;
         slot = next;
         item = decor_at(slot);
-        current += step;
+        current = decor_layer_index_with_gift(slot);
+    }
+    /* The gift is the one item the decor's slot order cannot move: the renderer
+     * inserts it at g.gift_layer among the floor decor, so the gift's own index
+     * is the only knob. When the decor overlaps the gift, the remaining
+     * positions are therefore reached by moving the GIFT instead.
+     *
+     * Without this the layer row would appear (the count includes the gift) but
+     * the arrows would do nothing whenever the gift was the only thing in
+     * contact -- a visible but dead control, which is the failure mode this
+     * whole area keeps regressing into. */
+    if (current != index && gift_overlaps_point(item->blocking, item->kind,
+                                                item->x, item->y)) {
+        /* index > current means "in front of the gift", so the gift goes behind
+         * this item; index < current means the opposite. */
+        int gift_target = index > current ? 0 : 1;
+        if (g.gift_layer != gift_target) {
+            g.gift_layer = (uint8_t)gift_target;
+            terrarium_refresh_gift();
+        }
+    } else if (current != index) {
+        /* The item cannot reach the requested position: it overlaps nothing that
+         * the slot order can move, and it does not touch the gift. Log it rather
+         * than silently leaving the control looking dead. */
+        ESP_LOGW(TAG, "layer unreachable: slot=%d current=%d index=%d", slot, current, index);
     }
     return slot;
 }
@@ -854,8 +954,6 @@ int decor_set_layer(int slot, int index)
  *
  * The count includes the gift itself, so "3 / 4" means the gift is third of
  * four things in that band. */
-/* The gift's own artwork is 64x64 drawn at 2x, so its half-extent is 64. */
-#define GIFT_EXTENT 64.0f
 
 /* How many decor items the gift actually overlaps, plus the gift itself.
  *

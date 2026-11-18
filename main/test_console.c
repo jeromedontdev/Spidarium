@@ -139,7 +139,8 @@ static void cmd_help(void)
     printf("  climb [N]            report the live climb lift; N pins it for testing\n");
     printf("  climbhere [big]      place a climbable item under the spider and climb it\n");
     printf("  perch [KIND]         place a small prop under the spider and report the perch\n");
-    printf("  decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]  inspect or edit placed decor\n");
+    printf("  decor [place K X Y|move S X Y|begin SLOT|step 1|-1|block SLOT|item SLOT|clear]\n");
+    printf("                       inspect or edit placed decor; step drives the item selector\n");
     printf("  decorreport [SLOT]   report a placed decor object's live geometry\n");
     printf("  decorlayers          report proximity-based layer counts per item\n");
     printf("  setupdone            finish the naming screen without tapping\n");
@@ -961,6 +962,40 @@ static void cmd_decor(const char *arg)
         printf("OK decor begin slot=%d\n", slot);
         return;
     }
+    if (!strncmp(arg, "step ", 5)) {
+        int step = atoi(arg + 5);
+        if (step != 1 && step != -1) {
+            printf("ERR usage: decor step 1|-1\n");
+            return;
+        }
+        if (!game_ui_decor_edit(DECOR_EDIT_STEP, step, 0, 0, NULL)) {
+            printf("ERR decor step: not in placement mode\n");
+            return;
+        }
+        printf("OK decor step %d\n", step);
+        return;
+    }
+    if (!strncmp(arg, "layer ", 6)) {
+        int step = atoi(arg + 6);
+        if (step != 1 && step != -1) {
+            printf("ERR usage: decor layer 1|-1\n");
+            return;
+        }
+        if (!game_ui_decor_edit(DECOR_EDIT_LAYER, step, 0, 0, NULL)) {
+            printf("ERR decor layer: not in placement mode\n");
+            return;
+        }
+        printf("OK decor layer %d\n", step);
+        return;
+    }
+    if (!strncmp(arg, "done", 4)) {
+        if (!game_ui_decor_edit(DECOR_EDIT_DONE, 0, 0, 0, NULL)) {
+            printf("ERR decor done: not in placement mode\n");
+            return;
+        }
+        printf("OK decor done\n");
+        return;
+    }
     if (!strncmp(arg, "block ", 6)) {
         int slot = atoi(arg + 6);
         if (!game_ui_decor_edit(DECOR_EDIT_BLOCK, slot, 0, 0, NULL)) {
@@ -985,7 +1020,7 @@ static void cmd_decor(const char *arg)
         printf("OK decor place kind=%d slot=%d\n", kind, slot);
         return;
     }
-    printf("ERR usage: decor [place K X Y|move S X Y|begin SLOT|block SLOT|item SLOT|clear]\n");
+    printf("ERR usage: decor [place K X Y|move S X Y|begin SLOT|step 1|-1|block SLOT|item SLOT|clear]\n");
 }
 
 static void cmd_play(void)
@@ -1519,7 +1554,11 @@ static void run_line(char *line)
                    item->blocking == DECOR_WALK_BEHIND ? "canopy" : "floor",
                    decor_layer_count_at(item->blocking, item->kind,
                                         item->x, item->y, i),
-                   decor_layer_index(i));
+                   /* The gift-aware index, because that is what the layer
+                    * control displays and what decor_set_layer() targets. The
+                    * plain decor_layer_index() cannot see the gift, so reporting
+                    * it here would disagree with the on-screen "n / m". */
+                   decor_layer_index_with_gift(i));
         }
         printf("DECORLAYERS placed=%d gift_overlapping=%d\n", placed,
                decor_gift_layer_count(DECOR_WALK_OVER) - 1);

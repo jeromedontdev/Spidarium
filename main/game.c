@@ -406,7 +406,18 @@ static int s_place_layer;
 static void placement_position(int32_t x, int32_t y);
 
 uint8_t game_placement_blocking(void) { return s_place_blocking; }
-int game_placement_layer(void) { return s_place_layer; }
+int game_placement_layer(void)
+{
+    /* The STAGED index, not the live one.
+     *
+     * The layer arrows only write s_place_layer; the reorder is committed by
+     * Done. Reading the live index here made the arrows appear dead: pressing
+     * one changed the staged value, the label re-read the live value, and
+     * nothing moved on screen until Done was pressed. The staged value is seeded
+     * from the live index whenever the selection or the band changes, so it is
+     * the right thing to display. */
+    return s_place_layer;
+}
 int game_placement_layers(void)
 {
     /* A gift is a single item, but it still has a position among the decor it
@@ -428,37 +439,54 @@ bool game_placement_existing(void)
     return (g_decor_mode && g_decor_move_slot >= 0) || (g.gift_mode && s_gift_moving);
 }
 
-/* How many decor items are placed. The top selector uses this to decide whether
- * its arrows can do anything, which is a different question from whether the
- * selector itself should be shown. */
+/* How many things the top selector can step through: every placed decor item
+ * plus the gift, if one is placed.
+ *
+ * The gift is included because it is a placed object the player can move, and
+ * reaching it used to mean cancelling out to the menu and picking "Move" there.
+ * The selector is the one control that switches WHICH item is being moved, so
+ * leaving the gift out of it made the gift the only object you could not reach
+ * from the overlay. */
 int game_placement_item_total(void)
 {
     int slots = decor_slot_count();
     int total = 0;
     for (int i = 0; i < slots; i++) if (decor_at(i)) total++;
+    if (g.gift.used) total++;
     return total;
 }
 
 /* Which placed item is being moved, as "name  n / total", for the top selector.
- * Returns false only when there is no placed item to name (a new item, or a
- * gift).
+ * Returns false only when there is no placed item to name (a new placement).
  *
  * This used to also return false when `total < 2`, on the theory that a single
  * item has nothing to cycle to. That hid the whole selector -- arrows, caption
  * and all -- whenever the tank held one prop, which read as the control having
  * been removed. The arrows are now shown and DISABLED at "1 / 1" instead, so the
- * control is always where the player expects it and its state is honest. */
+ * control is always where the player expects it and its state is honest.
+ *
+ * The gift is named too, so the selector reads "Holo Garden 3 / 4" while the
+ * gift is the staged item. */
 bool game_placement_item_label(char *buf, size_t len)
 {
     if (!buf || len == 0) return false;
     buf[0] = '\0';
-    if (!g_decor_mode || g_decor_move_slot < 0) return false;
+    if (!g_decor_mode && !g.gift_mode) return false;
     int slots = decor_slot_count();
     int total = 0, index = 0;
     for (int i = 0; i < slots; i++) {
         if (!decor_at(i)) continue;
         total++;
-        if (i == g_decor_move_slot) index = total;
+        if (g_decor_mode && i == g_decor_move_slot) index = total;
+    }
+    if (g.gift.used) {
+        total++;
+        if (g.gift_mode) index = total;
+    }
+    if (index == 0) return false;
+    if (g.gift_mode) {
+        snprintf(buf, len, "%s\n%d / %d", gift_kind_name(g.gift_selected), index, total);
+        return true;
     }
     const decor_item_t *item = decor_at(g_decor_move_slot);
     if (!item) return false;
@@ -491,40 +519,87 @@ void game_on_placement_layer(lv_event_t *e)
 {
     if (!g_decor_mode && !g.gift_mode) return;
     int step = (int)(intptr_t)lv_event_get_user_data(e);
-    int next = s_place_layer + step;
+    /* The staged index is the DISPLAYED index, which for decor counts the gift.
+     * Seed it from the live value rather than trusting s_place_layer, which is
+     * only written by this handler and by the band change. */
+    int current = game_placement_layer();
+    int next = current + step;
     if (next < 0 || next >= game_placement_layers()) return;
     s_place_layer = next;
     placement_position(s_place_x, s_place_y);
     ui_hud_set_place_mode(true, NULL);
 }
 
-/* Step the item being moved to the previous/next placed decor item.
+/* Step the item being moved to the previous/next placed object.
  *
  * The top arrows used to be a second copy of the layer control, which was
  * redundant: the bottom row already does that, and the player had no way to
  * switch to a different item without cancelling out to the menu and starting
- * again. Cycling the selection is the thing that was actually missing. */
+ * again. Cycling the selection is the thing that was actually missing.
+ *
+ * The ring is the placed decor in slot order followed by the gift, so the gift
+ * is reachable from the overlay like any other object. Stepping onto the gift
+ * switches the mode flags: `g.gift_mode` drives the commit path, the preview
+ * kind and the "always walked over" rule, so it has to follow the selection
+ * rather than being fixed for the whole edit. */
 static void placement_step_item(int step)
 {
-    if (!g_decor_mode || g_decor_move_slot < 0 || step == 0) return;
+    if ((!g_decor_mode && !g.gift_mode) || step == 0) return;
     int slots = decor_slot_count();
-    if (slots <= 0) return;
-    /* Walk to the next occupied slot in the requested direction, wrapping. A
-     * full lap with no other item placed leaves the selection where it was. */
-    int slot = g_decor_move_slot;
-    for (int i = 0; i < slots; i++) {
-        slot = (slot + step + slots) % slots;
-        if (slot == g_decor_move_slot) break;
-        if (!decor_at(slot)) continue;
-        g_decor_move_slot = slot;
-        s_place_blocking = decor_at(slot)->blocking;
-        s_place_layer = decor_layer_index(slot);
-        g_decor_selected = decor_at(slot)->kind;
+    int total = game_placement_item_total();
+    if (total < 2) return;
+
+    /* Build the ring as a flat index: 0..slots-1 are decor slots (occupied ones
+     * only), and `slots` is the gift. Walking the flat index keeps the wrap
+     * arithmetic in one place. */
+    int ring[64];
+    int ring_len = 0;
+    for (int i = 0; i < slots && ring_len < 63; i++)
+        if (decor_at(i)) ring[ring_len++] = i;
+    int gift_pos = -1;
+    if (g.gift.used && ring_len < 63) {
+        gift_pos = ring_len;
+        ring[ring_len++] = slots;   /* sentinel: the gift */
+    }
+    if (ring_len < 2) return;
+
+    int current = -1;
+    for (int i = 0; i < ring_len; i++) {
+        if (g.gift_mode && ring[i] == slots) { current = i; break; }
+        if (g_decor_mode && ring[i] == g_decor_move_slot) { current = i; break; }
+    }
+    if (current < 0) return;
+
+    int next = (current + step + ring_len) % ring_len;
+    if (next == current) return;
+
+    if (ring[next] == slots) {
+        /* Switch to the gift. */
+        g_decor_mode = 0;
+        g_decor_move_slot = -1;
+        g.gift_mode = 1;
+        s_gift_moving = true;
+        g.gift_selected = g.gift.kind;
+        s_place_blocking = DECOR_WALK_OVER;
+        s_place_layer = decor_gift_layer_index(s_place_blocking);
         s_place_dragging = false;
-        placement_position(decor_at(slot)->x, decor_at(slot)->y);
+        placement_position(g.gift.x, g.gift.y);
         ui_hud_set_place_mode(true, "Slide to move; Done saves");
         return;
     }
+
+    /* Switch to a decor item. */
+    int slot = ring[next];
+    g.gift_mode = 0;
+    s_gift_moving = false;
+    g_decor_mode = 1;
+    g_decor_move_slot = slot;
+    s_place_blocking = decor_at(slot)->blocking;
+    s_place_layer = decor_layer_index_with_gift(slot);
+    g_decor_selected = decor_at(slot)->kind;
+    s_place_dragging = false;
+    placement_position(decor_at(slot)->x, decor_at(slot)->y);
+    ui_hud_set_place_mode(true, "Slide to move; Done saves");
 }
 
 void game_on_placement_item(lv_event_t *e)
@@ -1395,7 +1470,7 @@ static void decor_begin_move(int slot)
     }
     g_decor_move_slot = slot;
     s_place_blocking = decor_at(slot)->blocking;
-    s_place_layer = decor_layer_index(slot);
+    s_place_layer = decor_layer_index_with_gift(slot);
     g_decor_selected = decor_at(slot)->kind;
     g_decor_mode = 1;
     ui_menu_close();
@@ -2748,7 +2823,7 @@ static void test_pointer_read(lv_indev_t *indev, lv_indev_data_t *data)
 
 bool game_ui_decor_edit(decor_edit_t operation, int value, int x, int y, int *count)
 {
-    if (s_ui_req != GAME_UI_NONE || (unsigned)operation > DECOR_EDIT_BEGIN ||
+    if (s_ui_req != GAME_UI_NONE || (unsigned)operation > DECOR_EDIT_DONE ||
         x < INT16_MIN || x > INT16_MAX || y < INT16_MIN || y > INT16_MAX) {
         ESP_LOGE(TAG, "decor edit request rejected: busy or invalid input");
         return false;
@@ -3010,8 +3085,17 @@ static bool test_placement_item_selector(void)
      * The label used to return false when `total < 2`, which hid the arrows, the
      * caption and all -- so a tank holding one prop looked like the control had
      * been removed. The row is now always present while moving an existing item
-     * and the arrows carry the "nothing to step to" state instead. */
+     * and the arrows carry the "nothing to step to" state instead.
+     *
+     * The gift is cleared for this block: it counts as a placed object now, so
+     * leaving the board's gift in place would make the total 2 and the arrows
+     * legitimately live. */
     {
+        gift_t saved_gift = g.gift;
+        uint8_t saved_layer = g.gift_layer;
+        g.gift.used = 0;
+        terrarium_refresh_gift();
+
         int only = decor_place(DECOR_ROCK_SMALL, 200, 150);
         terrarium_refresh_decor();
         decor_begin_move(only);
@@ -3038,6 +3122,9 @@ static bool test_placement_item_selector(void)
         }
         game_on_placement_cancel(NULL);
         decor_clear();
+        g.gift = saved_gift;
+        g.gift_layer = saved_layer;
+        terrarium_refresh_gift();
     }
 
     int first = decor_place(DECOR_ROCK_SMALL, 120, 150);
@@ -3046,10 +3133,21 @@ static bool test_placement_item_selector(void)
     terrarium_refresh_decor();
 
     char label[48];
-    ok = ok && first >= 0 && decor_placed_count() == 3;
+    if (first < 0 || decor_placed_count() != 3) {
+        ESP_LOGE(TAG, "selector: setup failed first=%d placed=%d", first, decor_placed_count());
+        ok = false;
+    }
+    /* The gift is cleared for the decor-only blocks below, so "1 / 3" is the
+     * whole ring. The gift's own behaviour is tested separately. */
+    gift_t saved_gift = g.gift;
+    uint8_t saved_gift_layer = g.gift_layer;
+    g.gift.used = 0;
+    terrarium_refresh_gift();
     decor_begin_move(first);
-    ok = ok && game_placement_item_label(label, sizeof label) &&
-         strstr(label, "1 / 3") != NULL;
+    if (!game_placement_item_label(label, sizeof label) || !strstr(label, "1 / 3")) {
+        ESP_LOGE(TAG, "selector: initial label = \"%s\", expected \"1 / 3\"", label);
+        ok = false;
+    }
     /* With three items placed the selector arrows must be live. */
     {
         bool sel_visible = false, sel_enabled = false;
@@ -3088,22 +3186,153 @@ static bool test_placement_item_selector(void)
         /* Put it back so the rest of the test sees the original layout. */
         placement_position(decor_at(first)->x, decor_at(first)->y);
     }
+    /* A DECOR item dropped on the GIFT must get the layer row.
+     *
+     * decor_layer_count_at() used to ignore the gift entirely while
+     * decor_gift_layer_count() counted decor, so the relationship was one-way: a
+     * rock sitting exactly on the gift reported overlapping=0, the row never
+     * appeared, and the two could not be ordered -- the "layer selection arrows
+     * are completely missing" report. Both directions must now see each other. */
+    {
+        g.gift.used = 1;
+        g.gift.kind = 0;
+        g.gift.x = decor_at(first)->x;
+        g.gift.y = decor_at(first)->y;
+        g.gift_path = DECOR_WALK_OVER;
+        g.gift_layer = 0;
+        placement_position(decor_at(first)->x, decor_at(first)->y);
+        bool layer_visible = false;
+        ui_hud_placement_layer_state(&layer_visible, NULL);
+        if (!layer_visible) {
+            ESP_LOGE(TAG, "selector: layer row hidden for decor overlapping the gift");
+            ok = false;
+        }
+        /* The count must include the gift, so the range is 2 not 1. */
+        if (game_placement_layers() < 2) {
+            ESP_LOGE(TAG, "selector: gift not counted in the decor layer range (%d)",
+                     game_placement_layers());
+            ok = false;
+        }
+        /* And the arrows must actually DO something. The decor's slot order
+         * cannot move the gift, so reaching the far end has to move the GIFT's
+         * own index -- otherwise the row would appear but the arrows would be
+         * dead whenever the gift was the only thing in contact. */
+        int layers = game_placement_layers();
+        /* Target the end the item is NOT already at, or the reorder is a no-op
+         * and the assertion below would pass without proving anything. */
+        int target = decor_layer_index_with_gift(g_decor_move_slot) == 0 ? layers - 1 : 0;
+        int gift_before = g.gift_layer;
+        decor_set_layer(g_decor_move_slot, target);
+        int reached = decor_layer_index_with_gift(g_decor_move_slot);
+        if (reached != target) {
+            ESP_LOGE(TAG, "selector: layer arrow did not reach %d (at %d)",
+                     target, reached);
+            ok = false;
+        }
+        if (g.gift_layer == gift_before) {
+            ESP_LOGE(TAG, "selector: ordering decor against the gift did not move the gift "
+                     "(layer still %d)", g.gift_layer);
+            ok = false;
+        }
+        /* Clear the gift again: the decor-only stepping below expects a
+         * three-item ring, and the board's real gift is restored at the end. */
+        g.gift.used = 0;
+        g.gift_layer = 0;
+        terrarium_refresh_gift();
+        placement_position(decor_at(first)->x, decor_at(first)->y);
+    }
+    /* The selector must CYCLE THROUGH THE GIFT.
+     *
+     * The gift is a placed object the player can move, and reaching it used to
+     * mean cancelling out to the menu. The ring is the placed decor in slot
+     * order followed by the gift, so stepping forward from the last decor item
+     * lands on the gift and stepping again wraps to the first decor item. */
+    {
+        g.gift.used = 1;
+        g.gift.kind = 0;
+        g.gift.x = 240;
+        g.gift.y = 300;
+        g.gift_path = DECOR_WALK_OVER;
+        g.gift_layer = 0;
+        terrarium_refresh_gift();
+
+        /* Three decor + one gift = four things to step through. */
+        if (game_placement_item_total() != 4) {
+            ESP_LOGE(TAG, "selector: total with gift = %d, expected 4",
+                     game_placement_item_total());
+            ok = false;
+        }
+        /* From the last decor item, forward lands on the gift. */
+        g_decor_move_slot = 2;
+        g_decor_mode = 1;
+        g.gift_mode = 0;
+        placement_step_item(1);
+        if (!g.gift_mode || g_decor_mode) {
+            ESP_LOGE(TAG, "selector: stepping past the last decor did not select the gift "
+                     "(gift_mode=%d decor_mode=%d)", g.gift_mode, g_decor_mode);
+            ok = false;
+        }
+        if (!game_placement_item_label(label, sizeof label) || !strstr(label, "4 / 4")) {
+            ESP_LOGE(TAG, "selector: gift label = \"%s\", expected \"4 / 4\"", label);
+            ok = false;
+        }
+        /* And forward again wraps back to the first decor item. */
+        placement_step_item(1);
+        if (g.gift_mode || !g_decor_mode || g_decor_move_slot != first) {
+            ESP_LOGE(TAG, "selector: stepping past the gift did not wrap to the first decor "
+                     "(gift_mode=%d decor_mode=%d slot=%d)",
+                     g.gift_mode, g_decor_mode, g_decor_move_slot);
+            ok = false;
+        }
+        /* Backwards from the first decor item lands on the gift. */
+        placement_step_item(-1);
+        if (!g.gift_mode) {
+            ESP_LOGE(TAG, "selector: stepping back from the first decor did not select the gift");
+            ok = false;
+        }
+        g.gift.used = 0;
+        g.gift_layer = 0;
+        terrarium_refresh_gift();
+        g.gift_mode = 0;
+        g_decor_mode = 1;
+        g_decor_move_slot = first;
+        placement_position(decor_at(first)->x, decor_at(first)->y);
+    }
     /* Step forward twice: first -> second -> third. */
     placement_step_item(1);
-    ok = ok && g_decor_move_slot == 1 &&
-         game_placement_item_label(label, sizeof label) && strstr(label, "2 / 3");
+    if (g_decor_move_slot != 1 || !game_placement_item_label(label, sizeof label) ||
+        !strstr(label, "2 / 3")) {
+        ESP_LOGE(TAG, "selector: after step 1 slot=%d label=\"%s\", expected slot 1 \"2 / 3\"",
+                 g_decor_move_slot, label);
+        ok = false;
+    }
     placement_step_item(1);
-    ok = ok && g_decor_move_slot == 2 &&
-         game_placement_item_label(label, sizeof label) && strstr(label, "3 / 3");
+    if (g_decor_move_slot != 2 || !game_placement_item_label(label, sizeof label) ||
+        !strstr(label, "3 / 3")) {
+        ESP_LOGE(TAG, "selector: after step 2 slot=%d label=\"%s\", expected slot 2 \"3 / 3\"",
+                 g_decor_move_slot, label);
+        ok = false;
+    }
     /* And wrap back to the first. */
     placement_step_item(1);
-    ok = ok && g_decor_move_slot == first;
+    if (g_decor_move_slot != first) {
+        ESP_LOGE(TAG, "selector: wrap forward landed on %d, expected %d",
+                 g_decor_move_slot, first);
+        ok = false;
+    }
     /* The staged position follows the selection, so the preview is over the
      * newly selected item rather than the old one. */
-    ok = ok && s_place_x == decor_at(first)->x && s_place_y == decor_at(first)->y;
+    if (s_place_x != decor_at(first)->x || s_place_y != decor_at(first)->y) {
+        ESP_LOGE(TAG, "selector: staged pos (%d,%d) != item pos (%d,%d)",
+                 s_place_x, s_place_y, decor_at(first)->x, decor_at(first)->y);
+        ok = false;
+    }
     /* Stepping backwards from the first wraps to the last. */
     placement_step_item(-1);
-    ok = ok && g_decor_move_slot == 2;
+    if (g_decor_move_slot != 2) {
+        ESP_LOGE(TAG, "selector: wrap backward landed on %d, expected 2", g_decor_move_slot);
+        ok = false;
+    }
     /* Every item except the staged one must still be VISIBLE.
      *
      * The preview hides the real object so only the draggable copy shows. It
@@ -3129,7 +3358,10 @@ static bool test_placement_item_selector(void)
     /* A new item has no slot to cycle, so the row is hidden. */
     game_on_placement_cancel(NULL);
     decor_begin_placement(0);
-    ok = ok && !game_placement_item_label(label, sizeof label);
+    if (game_placement_item_label(label, sizeof label)) {
+        ESP_LOGE(TAG, "selector: a new placement still showed a label \"%s\"", label);
+        ok = false;
+    }
     game_on_placement_cancel(NULL);
 
     /* A TAP must not move the item; only a drag may.
@@ -3534,13 +3766,40 @@ static void ui_service_request(void)
             ok = decor_at(value) != NULL;
             if (ok) decor_begin_move(value);
             break;
+        case DECOR_EDIT_STEP:
+            /* Drive the top item selector exactly as the arrows do, so the
+             * console can screenshot the ring including the gift. */
+            ok = (g_decor_mode || g.gift_mode) && (value == 1 || value == -1);
+            if (ok) placement_step_item(value);
+            break;
+        case DECOR_EDIT_LAYER:
+            /* Drive the bottom layer control exactly as its arrows do. */
+            ok = (g_decor_mode || g.gift_mode) && (value == 1 || value == -1);
+            if (ok) {
+                int next = game_placement_layer() + value;
+                ok = next >= 0 && next < game_placement_layers();
+                if (ok) {
+                    s_place_layer = next;
+                    placement_position(s_place_x, s_place_y);
+                    ui_hud_set_place_mode(true, NULL);
+                }
+            }
+            break;
+        case DECOR_EDIT_DONE:
+            /* Commit through the real Done handler. */
+            ok = g_decor_mode || g.gift_mode;
+            if (ok) game_on_placement_done(NULL);
+            break;
         }
         if (s_decor_edit.operation != DECOR_EDIT_PLACE) s_decor_edit.count = decor_placed_count();
         /* BEGIN opens the overlay and must not save or rebuild: the item is
          * staged, not committed, and a refresh would unhide it under the
          * preview. */
         if (ok && s_decor_edit.operation != DECOR_EDIT_STATUS &&
-            s_decor_edit.operation != DECOR_EDIT_BEGIN) {
+            s_decor_edit.operation != DECOR_EDIT_BEGIN &&
+            s_decor_edit.operation != DECOR_EDIT_STEP &&
+            s_decor_edit.operation != DECOR_EDIT_LAYER &&
+            s_decor_edit.operation != DECOR_EDIT_DONE) {
             terrarium_refresh_decor();
             ok = game_save_now();
         }
