@@ -12241,3 +12241,103 @@ INVTAG hud px=20368 full=0
   DMA memory and `largest` is already at 63,488 against a 51,200 floor.
 - The overlay and placement UI were verified from a captured framebuffer, not by
   touching the panel. Physical touch feel still needs a human look.
+
+## Round 137 -- The second frame-rate bug: the canvas transform
+
+Round 136 fixed the invalidation-buffer overflow and took the game from 8.9 Hz to
+30 Hz. A clean 60-second measurement with no console traffic then showed the real
+steady state was **20.5 Hz with 21% of frames dropped** (`over_2x=257` over 1231
+ticks), and the refresh was 33.2 ms against a 33.3 ms budget -- exactly at the
+edge, so any jitter dropped a frame. This round found the remaining cost.
+
+### Decisions made
+
+- **The life-stage scale was an LVGL transform on the canvas, and that was the
+  single most expensive thing in the frame.** `stage_scale_256()` returned 192 /
+  224 / 256 and the render pushed it with
+  `lv_obj_set_style_transform_scale_x/y`. LVGL cannot blit a transformed image,
+  so it took the per-pixel software transform path over the whole 96x160 canvas
+  every frame. A spiderling (stage 0) is the common case, so this was paying the
+  transform cost almost always.
+- **Measured by forcing scale 256 for every stage** (a one-line temporary change,
+  reverted): draw 29.8 -> 20.5 ms, refresh 33.8 -> 23.9 ms. That is a 9 ms/frame
+  tax purely from the transform, and it is what put the refresh on the budget
+  boundary.
+- **The fix bakes the scale into the primitives instead.** `s_stage_scale` is a
+  float multiplier; `stage_px()` scales every radius and stroke width;
+  `to_canvas()` multiplies the offset from the pivot. The canvas is drawn at full
+  size and the creature is simply drawn smaller, so there is no transform and the
+  blit is a plain copy. The pivot is `CANVAS_CX/CY` either way, so the spider
+  shrinks around the same point and the position math is unchanged.
+- **Verified the artwork is unchanged.** Captured the 96x160 canvas at stage 0
+  before and after: the spiderling renders at 75% with intact anatomy (eyes,
+  pupils, fangs, fuzz rim, legs, contact shadow). At adult stage `stage_px()` is
+  the identity, so adult rendering is bit-identical to before.
+- **Two draw units vs one is within noise, so the original was kept.**
+  `CONFIG_LV_DRAW_SW_DRAW_UNIT_CNT` was A/B'd at 1 and 2 with the transform gone:
+  1 unit gave 18.6 ms draw / 23.5 Hz, 2 units gave 19.1-20.4 ms / 23.0-23.4 Hz.
+  The difference is smaller than run-to-run variance, so the shipped value (2)
+  was left alone rather than churned.
+- **Audio and ambient were ruled out as causes of the residual hitch.** A/B with
+  music disabled and volume 0: 69 vs 53 dropped frames -- no effect. Ambient off
+  saves only 1.8 ms of refresh. The remaining `gap_max_us` spikes (~90-100 ms)
+  are one-off events, not a periodic beat.
+
+### Evidence
+
+```
+Build exit 0, zero main warnings. Flash exit 0.
+MEM cmd internal=141179 largest=63488 dma=133447 psram=1613712
+RENDER ticks=500 largest_drift=0 per_tick_us=33001
+LOOP ok=5 failed=0 largest_drift=0
+run_tests.py COM7                 passed=50 failed=2  (documented hud=0 pointer=0 baseline)
+uitest                            placement item selector: PASS
+gaittest                          cadence=20/30/60 repeated=100 front_poses=10240
+hunttest                          restored=1
+stability_check.py COM7 40        VERDICT: PASS, FAULTS/ERRORS: 0
+site: node --test tests/*.test.mjs  309/309
+```
+
+Steady state, three consecutive 30-second windows with no console traffic:
+
+```
+W0 RENDERCOST ticks=677 avg_us=2581 budget_us=33333
+W0 RENDERSPREAD gap_max_us=98008 gap_last_us=32995 over_2x=48
+W0 REFRESH count=853 avg_us=24222 max_us=92248 flush=7690 px=13036336 px_avg=15282
+W0 REFRSPLIT draw_us=20572 xfer_us=2536 prep_us=1054
+W1 RENDERCOST ticks=697 avg_us=2446 budget_us=33333
+W1 RENDERSPREAD gap_max_us=99001 gap_last_us=61012 over_2x=38
+W1 REFRESH count=891 avg_us=22403 max_us=93402 flush=7410 px=13183204 px_avg=14795
+W1 REFRSPLIT draw_us=19048 xfer_us=2350 prep_us=985
+W2 RENDERCOST ticks=695 avg_us=2477 budget_us=33333
+W2 RENDERSPREAD gap_max_us=94011 gap_last_us=32993 over_2x=40
+W2 REFRESH count=858 avg_us=23583 max_us=89130 flush=7415 px=13099240 px_avg=15267
+W2 REFRSPLIT draw_us=20066 xfer_us=2470 prep_us=993
+```
+
+Cumulative effect of Rounds 136 + 137:
+
+| metric | Round 135 | Round 136 | Round 137 |
+|---|---|---|---|
+| render tick rate | 8.9 Hz | 20.5 Hz | **23.2 Hz** |
+| dirty area per refresh | 170,394 px | 12,630 px | 15,100 px |
+| refresh duration | 84,398 us | 33,234 us | **23,400 us** |
+| draw time per refresh | 75,948 us | 29,213 us | **19,900 us** |
+| dropped frames per window | 78 | 257 | **40** |
+
+### Known remaining
+
+- The tick rate is 23.2 Hz rather than the 30 Hz `RENDER_HZ` target. The refresh
+  is 23.4 ms and the tick work is 2.5 ms, so ~26 ms of the 33.3 ms budget is
+  spent; the remaining gap is the adapter task's own scheduling. Reaching a true
+  30 Hz needs the refresh under ~20 ms, which means either a taller draw buffer
+  (fewer flush bands, but it costs internal DMA memory and `largest` is 63,488
+  against a 51,200 floor) or fewer dirty pixels per frame.
+- `gap_max_us` still spikes to ~90-100 ms occasionally. These are one-off events
+  (menu rebuild, save, audio start), not a periodic beat; audio and ambient were
+  both A/B'd and ruled out.
+- The spider canvas is 63% of all drawn pixels (46.7M of 74M per window) for a
+  96x160 sprite. It is invalidated every frame because the gait animates. That is
+  inherent to a hand-drawn canvas sprite and was not reduced this round.
+- Physical touch feel and the on-panel appearance of the resized spiderling still
+  need a human look; the artwork was verified from a captured framebuffer.

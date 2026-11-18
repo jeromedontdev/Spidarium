@@ -357,6 +357,13 @@ invalidates about 100 areas per frame, so the default overflowed on every frame
 and capped the game at 8.9 Hz. `main/CMakeLists.txt` compiles LVGL with
 `-DLV_INV_BUF_SIZE=128`; removing that define brings the bug straight back.
 
+**If `draw_us` is high relative to `px_avg`, look for an LVGL transform.** A
+transformed object cannot be blitted, so LVGL takes the per-pixel software
+transform path over the whole object every frame. The spider canvas used to carry
+the life-stage scale as `transform_scale_x/y`, which cost 9 ms of draw time per
+refresh; the scale is now baked into the canvas primitives instead. See
+`stage_scale_update()` in `main/cspider.c`.
+
 ---
 
 ### `spider`

@@ -542,6 +542,22 @@ static float s_foreshorten = 1.0f;
  * accident. */
 
 /* ------------------------------------------------------------------ */
+/* Life-stage size, as a multiplier on every canvas primitive.
+ *
+ * This used to be an LVGL transform scale on the canvas widget, which was the
+ * single most expensive thing in the frame: LVGL cannot blit a transformed
+ * image, so it took the per-pixel software transform path over the whole 96x160
+ * canvas every frame. Measured on hardware, that cost 9 ms of draw time per
+ * refresh (29.8 ms with the transform, 20.5 ms without) and pushed the refresh
+ * from 23.9 ms to 33.8 ms -- right up against the 33.3 ms frame budget, which is
+ * what made the game drop frames.
+ *
+ * Scaling the primitives instead is free: the canvas is drawn at full size and
+ * the circles, lines and shadow are simply smaller. The pivot is CANVAS_CX/CY
+ * either way, so the spider shrinks around the same point and the position math
+ * is unchanged. */
+static float s_stage_scale = 1.0f;
+
 /* Rotate a body-local (forward, right) offset into canvas coordinates.
  *
  * This is the whole point of the rewrite: the old renderer had to register
@@ -563,8 +579,10 @@ static void to_canvas(float fwd, float right, float heading,
     float ox = fx * f + rx * r;
     float oy = fy * f + ry * r;
 
-    *out_x = CANVAS_CX + (int32_t)ox;
-    *out_y = CANVAS_CY + (int32_t)oy + s_draw_dy;
+    /* The life-stage scale is applied here, to the offset from the pivot, rather
+     * than as an LVGL transform on the widget. See stage_scale_update(). */
+    *out_x = CANVAS_CX + (int32_t)(ox * s_stage_scale);
+    *out_y = CANVAS_CY + (int32_t)(oy * s_stage_scale) + s_draw_dy;
 }
 
 /* ------------------------------------------------------------------ */
@@ -690,17 +708,36 @@ bool cspider_hit(int32_t x, int32_t y)
 /* ------------------------------------------------------------------ */
 /* Render                                                              */
 /* ------------------------------------------------------------------ */
-/* Life-stage size, in 1/256 units for LVGL's transform scale. A spiderling is
- * visibly smaller than an adult, so the molt reads as growth rather than a
- * label change. */
-static int32_t stage_scale_256(void)
+/* Life-stage size, as a multiplier on every canvas primitive.
+ *
+ * This used to be an LVGL transform scale on the canvas widget, which was the
+ * single most expensive thing in the frame: LVGL cannot blit a transformed
+ * image, so it took the per-pixel software transform path over the whole 96x160
+ * canvas every frame. Measured on hardware, that cost 9 ms of draw time per
+ * refresh (29.8 ms with the transform, 20.5 ms without) and pushed the refresh
+ * from 23.9 ms to 33.8 ms -- right up against the 33.3 ms frame budget, which is
+ * what made the game drop frames.
+ *
+ * Scaling the primitives instead is free: the canvas is drawn at full size and
+ * the circles, lines and shadow are simply smaller. The pivot is CANVAS_CX/CY
+ * either way, so the spider shrinks around the same point and the position math
+ * is unchanged. */
+static void stage_scale_update(void)
 {
     switch (g.stage) {
-    case STAGE_SPIDERLING: return 192;  /* 75%  */
-    case STAGE_JUVENILE:   return 224;  /* 87.5% */
-    case STAGE_ADULT:      return 256;  /* 100% */
-    default:               return 256;
+    case STAGE_SPIDERLING: s_stage_scale = 0.75f;  break;
+    case STAGE_JUVENILE:   s_stage_scale = 0.875f; break;
+    case STAGE_ADULT:      s_stage_scale = 1.0f;   break;
+    default:               s_stage_scale = 1.0f;   break;
     }
+}
+
+/* Scale a primitive's size argument. Radii and stroke widths go through this so
+ * a spiderling is drawn smaller rather than drawn full size and shrunk. */
+static inline int32_t stage_px(int32_t v)
+{
+    int32_t s = (int32_t)lroundf((float)v * s_stage_scale);
+    return s < 1 ? 1 : s;
 }
 
 /* Sickness is shown by dulling the palette, never by making the canvas
@@ -871,6 +908,10 @@ void cspider_render(uint32_t now_ms)
     int32_t abd_r = (int32_t)lroundf((float)ABD_R * breath);
     if (abd_r < ABD_R - 1) abd_r = ABD_R - 1;
     if (abd_r > ABD_R + 1) abd_r = ABD_R + 1;
+    /* Life-stage size. Applied to every radius and stroke below, so the whole
+     * creature shrinks together instead of the widget being transform-scaled. */
+    stage_scale_update();
+    abd_r = stage_px(abd_r);
 
     /* --- clear ------------------------------------------------------
      * Zero alpha is transparent, so the tank shows through everywhere the
@@ -900,7 +941,8 @@ void cspider_render(uint32_t now_ms)
      *
      * The ellipse is WIDER than the leg span so the feet do not cover it
      * completely. */
-    fill_shadow(CANVAS_CX, CANVAS_CY + SHADOW_DROP + s_draw_dy, 34, 12, 150);
+    fill_shadow(CANVAS_CX, CANVAS_CY + stage_px(SHADOW_DROP) + s_draw_dy,
+                stage_px(34), stage_px(12), 150);
 
     /* --- legs -------------------------------------------------------
      * Drawn first so the body covers the hips. The far side is drawn first so
@@ -914,8 +956,8 @@ void cspider_render(uint32_t now_ms)
             to_canvas(pose.hf, pose.hr, heading, 1, 1, &hx, &hy);
             to_canvas(pose.kf, pose.kr, heading, 1, 1, &kx, &ky);
             to_canvas(pose.ff, pose.fr, heading, 1, 1, &fx, &fy);
-            draw_line(hx, hy, kx, ky, LEG_WIDTH, col_leg);
-            draw_line(kx, ky, fx, fy, LEG_WIDTH, col_leg);
+            draw_line(hx, hy, kx, ky, stage_px(LEG_WIDTH), col_leg);
+            draw_line(kx, ky, fx, fy, stage_px(LEG_WIDTH), col_leg);
         }
     }
 
@@ -924,15 +966,15 @@ void cspider_render(uint32_t now_ms)
     fill_circle(x, y, abd_r, col_base);
 
     to_canvas(ABD_FWD - 1.5f, -1.5f, heading, sx, sy, &x, &y);
-    fill_circle(x, y, abd_r - 3, col_mid);
+    fill_circle(x, y, abd_r - stage_px(3), col_mid);
 
     to_canvas(ABD_FWD - 3.0f, -3.0f, heading, sx, sy, &x, &y);
-    fill_circle(x, y, abd_r - 7, col_hi);
+    fill_circle(x, y, abd_r - stage_px(7), col_hi);
 
     /* Fuzzy rim. */
     for (int i = 0; i < FUZZ_COUNT; i++) {
         float a = (float)i * 2.0f * PI_F / (float)FUZZ_COUNT;
-        int32_t fr = FUZZ_R - (i % 2);
+        int32_t fr = stage_px(FUZZ_R - (i % 2));
         to_canvas(ABD_FWD + cosf(a) * (float)(abd_r + FUZZ_OUT),
                   sinf(a) * (float)(abd_r + FUZZ_OUT),
                   heading, sx, sy, &x, &y);
@@ -941,17 +983,17 @@ void cspider_render(uint32_t now_ms)
 
     /* --- cephalothorax ---------------------------------------------- */
     to_canvas(CEPH_FWD, 0.0f, heading, sx, sy, &x, &y);
-    fill_circle(x, y, CEPH_R, col_base);
+    fill_circle(x, y, stage_px(CEPH_R), col_base);
 
     to_canvas(CEPH_FWD - 1.5f, -1.5f, heading, sx, sy, &x, &y);
-    fill_circle(x, y, CEPH_R - 3, col_mid);
+    fill_circle(x, y, stage_px(CEPH_R) - stage_px(3), col_mid);
 
     to_canvas(CEPH_FWD - 3.0f, -3.0f, heading, sx, sy, &x, &y);
-    fill_circle(x, y, CEPH_R - 6, col_hi);
+    fill_circle(x, y, stage_px(CEPH_R) - stage_px(6), col_hi);
 
     for (int i = 0; i < FUZZ_COUNT; i++) {
         float a = (float)i * 2.0f * PI_F / (float)FUZZ_COUNT;
-        int32_t fr = FUZZ_R - (i % 2);
+        int32_t fr = stage_px(FUZZ_R - (i % 2));
         to_canvas(CEPH_FWD + cosf(a) * (float)(CEPH_R + FUZZ_OUT),
                   sinf(a) * (float)(CEPH_R + FUZZ_OUT),
                   heading, sx, sy, &x, &y);
@@ -961,13 +1003,13 @@ void cspider_render(uint32_t now_ms)
     /* --- secondary eyes --------------------------------------------- */
     const uint32_t col_sec = sick_aware(0x6b7280);
     to_canvas(CEPH_FWD + EYE_MID_FWD, -EYE_MID_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_SMALL_R, col_sec);
+    fill_circle(x, y, stage_px(EYE_SMALL_R), col_sec);
     to_canvas(CEPH_FWD + EYE_MID_FWD, +EYE_MID_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_SMALL_R, col_sec);
+    fill_circle(x, y, stage_px(EYE_SMALL_R), col_sec);
     to_canvas(CEPH_FWD + EYE_REAR_FWD, -EYE_REAR_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_SMALL_R, col_sec);
+    fill_circle(x, y, stage_px(EYE_SMALL_R), col_sec);
     to_canvas(CEPH_FWD + EYE_REAR_FWD, +EYE_REAR_DX, heading, sx, sy, &x, &y);
-    fill_circle(x, y, EYE_SMALL_R, col_sec);
+    fill_circle(x, y, stage_px(EYE_SMALL_R), col_sec);
 
     /* --- primary eyes -----------------------------------------------
      * Asleep: the eyes go black, so the spider reads as resting rather than
@@ -991,13 +1033,13 @@ void cspider_render(uint32_t now_ms)
                       heading, sx, sy, &lx0, &ly0);
             to_canvas(CEPH_FWD + EYE_FWD, side * EYE_DX + EYE_R * 0.8f,
                       heading, sx, sy, &lx1, &ly1);
-            draw_line(lx0, ly0, lx1, ly1, 2, sick_aware(0x2a2233));
+            draw_line(lx0, ly0, lx1, ly1, stage_px(2), sick_aware(0x2a2233));
         }
     } else {
         to_canvas(CEPH_FWD + EYE_FWD, -EYE_DX, heading, sx, sy, &x, &y);
-        fill_circle(x, y, EYE_R, col_eye);
+        fill_circle(x, y, stage_px(EYE_R), col_eye);
         to_canvas(CEPH_FWD + EYE_FWD, +EYE_DX, heading, sx, sy, &x, &y);
-        fill_circle(x, y, EYE_R, col_eye);
+        fill_circle(x, y, stage_px(EYE_R), col_eye);
     }
 
     /* --- pupils and glints ------------------------------------------ */
@@ -1005,9 +1047,9 @@ void cspider_render(uint32_t now_ms)
         /* The glance shifts the pupils across the eye, not the whole head. */
         float gx = glance * 2.0f;
         to_canvas(CEPH_FWD + EYE_FWD + 1.0f, -EYE_DX + gx, heading, sx, sy, &x, &y);
-        fill_circle(x, y, PUPIL_R, col_pup);
+        fill_circle(x, y, stage_px(PUPIL_R), col_pup);
         to_canvas(CEPH_FWD + EYE_FWD + 1.0f, +EYE_DX + gx, heading, sx, sy, &x, &y);
-        fill_circle(x, y, PUPIL_R, col_pup);
+        fill_circle(x, y, stage_px(PUPIL_R), col_pup);
 
         to_canvas(CEPH_FWD + EYE_FWD + 2.0f, -EYE_DX - 2.0f + gx, heading, sx, sy, &x, &y);
         fill_circle(x, y, 1, sick_aware(0xffffff));
@@ -1048,18 +1090,17 @@ void cspider_render(uint32_t now_ms)
      * The ramp lives in decor.c so stepping on and off is a short climb rather
      * than a teleport. */
     /* --- position ---------------------------------------------------
-     * Centre the canvas on the spider, then scale it by life stage so a
-     * spiderling reads as small and an adult as full size. The canvas is a
-     * fixed 96x96 buffer; scaling the widget keeps the pixel art crisp and
-     * costs nothing per frame.
+     * Centre the canvas on the spider. The life-stage size is baked into the
+     * primitives (see stage_scale_update()), NOT applied as an LVGL transform:
+     * a transformed image cannot be blitted, so LVGL took the per-pixel
+     * software transform path over the whole canvas every frame. That cost
+     * 9 ms of draw time per refresh and pushed the refresh to 33.8 ms against a
+     * 33.3 ms budget, which is what made the game drop frames.
      *
-     * Every setter below invalidates the object, and the canvas is 96x96 -- so
+     * Every setter below invalidates the object, and the canvas is 96x160 -- so
      * a redundant call is not free, it is a full re-blend of the sprite. The
-     * pivot, the scale and the opacity are constant for a given life stage, so
-     * they are only pushed when they actually change. That was five wasted
-     * invalidations per frame. */
+     * position and opacity are only pushed when they actually change. */
     static int32_t s_last_x = 0x7fffffff, s_last_y = 0x7fffffff;
-    static int32_t s_last_scale = -1;
     static bool s_last_opa_cover;
     int32_t px = g.spider_x - CANVAS_CX;
     int32_t py = g.spider_y - CANVAS_CY + lift;
@@ -1067,27 +1108,6 @@ void cspider_render(uint32_t now_ms)
         s_last_x = px;
         s_last_y = py;
         lv_obj_set_pos(s_canvas, px, py);
-    }
-    int32_t scale = stage_scale_256();
-    if (scale != s_last_scale) {
-        s_last_scale = scale;
-        if (scale == 256) {
-            /* Identity scale: REMOVE the transform rather than setting it to
-             * 256. LVGL takes a different, much slower path for any object with
-             * a transform set -- it cannot use the plain blit -- and an adult
-             * spider is the common case. Clearing the transform lets the canvas
-             * blit directly, which is the difference between a full-screen
-             * software transform every frame and a 96x96 copy. */
-            lv_obj_remove_local_style_prop(s_canvas, LV_STYLE_TRANSFORM_SCALE_X, 0);
-            lv_obj_remove_local_style_prop(s_canvas, LV_STYLE_TRANSFORM_SCALE_Y, 0);
-            lv_obj_remove_local_style_prop(s_canvas, LV_STYLE_TRANSFORM_PIVOT_X, 0);
-            lv_obj_remove_local_style_prop(s_canvas, LV_STYLE_TRANSFORM_PIVOT_Y, 0);
-        } else {
-            lv_obj_set_style_transform_pivot_x(s_canvas, CANVAS_CX, 0);
-            lv_obj_set_style_transform_pivot_y(s_canvas, CANVAS_CY, 0);
-            lv_obj_set_style_transform_scale_x(s_canvas, scale, 0);
-            lv_obj_set_style_transform_scale_y(s_canvas, scale, 0);
-        }
     }
     /* The canvas is always fully opaque. Sickness is expressed by the palette
      * (see sick_aware), not by widget opacity: a translucent spider let the

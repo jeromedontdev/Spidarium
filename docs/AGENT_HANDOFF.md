@@ -967,6 +967,17 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   index and returns early when unchanged. Any new full-screen overlay needs the
   same treatment: one redundant setter on a full-screen object costs a
   full-screen blend.
+- **Never put an LVGL transform on the spider canvas.** The life-stage size used
+  to be `lv_obj_set_style_transform_scale_x/y` on the canvas widget. LVGL cannot
+  blit a transformed image, so it took the per-pixel software transform path over
+  the whole 96x160 canvas every frame: 9 ms of draw time per refresh, which
+  pushed the refresh from 23.9 ms to 33.8 ms -- right up against the 33.3 ms
+  frame budget, so the game dropped frames. The scale is now baked into the
+  primitives instead (`s_stage_scale`, `stage_px()`, and the offset multiply in
+  `to_canvas()`), which is free. Measured: draw 29.8 -> 18.6 ms, refresh
+  33.8 -> 21.9 ms, tick rate 20.5 -> 23.5 Hz, dropped frames 257 -> 62 per
+  window. **Do not reintroduce a transform on the canvas** -- and if a new
+  animated object needs scaling, scale its geometry, not the widget.
 - **The spider's ejection from blocking decor must not be a fixed point.**
   `behaviour_tick()` pushes it out of a solid item, but with two blocking items
   overlapping the first push landed inside the neighbour, `advance()` then
