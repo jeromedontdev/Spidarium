@@ -479,10 +479,9 @@ void game_on_placement_layer(lv_event_t *e)
  * redundant: the bottom row already does that, and the player had no way to
  * switch to a different item without cancelling out to the menu and starting
  * again. Cycling the selection is the thing that was actually missing. */
-void game_on_placement_item(lv_event_t *e)
+static void placement_step_item(int step)
 {
-    if (!g_decor_mode || g_decor_move_slot < 0) return;
-    int step = (int)(intptr_t)lv_event_get_user_data(e);
+    if (!g_decor_mode || g_decor_move_slot < 0 || step == 0) return;
     int slots = decor_slot_count();
     if (slots <= 0) return;
     /* Walk to the next occupied slot in the requested direction, wrapping. A
@@ -501,6 +500,11 @@ void game_on_placement_item(lv_event_t *e)
         ui_hud_set_place_mode(true, "Slide to move; Done saves");
         return;
     }
+}
+
+void game_on_placement_item(lv_event_t *e)
+{
+    placement_step_item((int)(intptr_t)lv_event_get_user_data(e));
 }
 void game_on_placement_put_away(lv_event_t *e)
 {
@@ -2928,6 +2932,68 @@ static bool test_furniture_pointer(void)
     return held && staged && moved && gift_moved && cancelled && created && actions && lights && paths && layers;
 }
 
+/* The top placement arrows select the ITEM, not the layer.
+ *
+ * They used to be a second copy of the layer control, which was redundant and
+ * left no way to switch to a different placed item without cancelling out to the
+ * menu and starting again. This is a separate test from the pointer test so a
+ * failure here is not masked by the pre-existing pointer baseline. */
+static bool test_placement_item_selector(void)
+{
+    game_state_t *original = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!original) { ESP_LOGE(TAG, "item selector test backup allocation failed"); return false; }
+    *original = g;
+    decor_item_t *original_extra = decor_detach_extra();
+    uint32_t original_owned = g.decor_owned;
+    s_testing_placement = true;
+    decor_clear();
+    /* decor_place() refuses an unowned kind, and the surrounding uitest may have
+     * reset ownership, so grant the cheapest kind explicitly. */
+    g.decor_owned |= 1u << DECOR_ROCK_SMALL;
+    int first = decor_place(DECOR_ROCK_SMALL, 120, 150);
+    decor_place(DECOR_ROCK_SMALL, 220, 150);
+    decor_place(DECOR_ROCK_SMALL, 320, 150);
+    terrarium_refresh_decor();
+
+    char label[48];
+    bool ok = first >= 0 && decor_placed_count() == 3;
+    decor_begin_move(first);
+    ok = ok && game_placement_item_label(label, sizeof label) &&
+         strstr(label, "1 / 3") != NULL;
+    /* Step forward twice: first -> second -> third. */
+    placement_step_item(1);
+    ok = ok && g_decor_move_slot == 1 &&
+         game_placement_item_label(label, sizeof label) && strstr(label, "2 / 3");
+    placement_step_item(1);
+    ok = ok && g_decor_move_slot == 2 &&
+         game_placement_item_label(label, sizeof label) && strstr(label, "3 / 3");
+    /* And wrap back to the first. */
+    placement_step_item(1);
+    ok = ok && g_decor_move_slot == first;
+    /* The staged position follows the selection, so the preview is over the
+     * newly selected item rather than the old one. */
+    ok = ok && s_place_x == decor_at(first)->x && s_place_y == decor_at(first)->y;
+    /* Stepping backwards from the first wraps to the last. */
+    placement_step_item(-1);
+    ok = ok && g_decor_move_slot == 2;
+    /* A new item has no slot to cycle, so the row is hidden. */
+    game_on_placement_cancel(NULL);
+    decor_begin_placement(0);
+    ok = ok && !game_placement_item_label(label, sizeof label);
+    game_on_placement_cancel(NULL);
+
+    decor_clear();
+    g = *original;
+    g.decor_owned = original_owned;
+    decor_restore_extra(original_extra);
+    terrarium_refresh_decor();
+    terrarium_refresh_gift();
+    s_testing_placement = false;
+    heap_caps_free(original);
+    ESP_LOGI(TAG, "placement item selector: %s", ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 static bool test_hunt_pointer(int32_t target_x, int32_t target_y)
 {
     test_pointer_t pointer = {0};
@@ -3431,7 +3497,8 @@ static void ui_service_request(void)
         companion_ok = s_memory_slot == 255 && companion_ok;
         s_open_menu = MENU_DIARY;
         bool decor_ok = decor_test();
-        bool pointer_ok = test_furniture_pointer();        bool original_muted = audio_muted();
+        bool pointer_ok = test_furniture_pointer();
+        bool selector_ok = test_placement_item_selector();        bool original_muted = audio_muted();
         uint8_t original_music = g.music_enabled;
         s_testing_placement = true;
         on_sound_pick(1);
@@ -3526,12 +3593,12 @@ static void ui_service_request(void)
         keep_gift_in_playfield();
         bool gift_bounds = g.gift.x == g_play.left && g.gift.y == g_play.bottom;
         g.gift = original_gift;
-        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d bounds=%d sound=%d music=%d sd_feedback=%d borders=%d shop_gates=%d help=%d rewards=%d molt=%d companion=%d life=%d\n",
+        printf("%s uitest pages=%d keyboard=%d editor=%d hud=%d backgrounds=%d hunger=%d power=%d save=%d decor=%d pointer=%d selector=%d bounds=%d sound=%d music=%d sd_feedback=%d borders=%d shop_gates=%d help=%d rewards=%d molt=%d companion=%d life=%d\n",
                menu_ok && hud_ok && backgrounds_ok && gift_bounds && hunger_ok &&
-               power_ok && save_ok && decor_ok && pointer_ok && sound_ok && music_ok && sd_feedback &&
+               power_ok && save_ok && decor_ok && pointer_ok && selector_ok && sound_ok && music_ok && sd_feedback &&
                borders_route && shop_gates && help_routes && rewards && molt && companion_ok && life_ok ? "OK" : "ERR",
                menu_ok, menu_ok, menu_ok, hud_ok, backgrounds_ok, hunger_ok,
-               power_ok, save_ok, decor_ok, pointer_ok, gift_bounds, sound_ok, music_ok, sd_feedback,
+               power_ok, save_ok, decor_ok, pointer_ok, selector_ok, gift_bounds, sound_ok, music_ok, sd_feedback,
                borders_route, shop_gates, help_routes, rewards, molt, companion_ok, life_ok);
         break;
     }
