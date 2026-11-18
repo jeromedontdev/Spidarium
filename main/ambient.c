@@ -20,6 +20,7 @@
 #include "game.h"
 #include "game_config.h"
 #include "theme.h"
+#include "terrarium.h"
 #include "ui_hud.h"
 
 #include "esp_log.h"
@@ -104,6 +105,11 @@ typedef struct {
     int32_t last_x, last_y;
     uint8_t last_opa;
     uint8_t last_size;
+    /* Whether the object is currently hidden. Tracked separately from last_opa
+     * because 0xFF is used as the "force a re-push" sentinel: overloading the
+     * two meant a particle that activated after ambient_set_visible() was never
+     * unhidden, so it stayed invisible for its whole life. */
+    bool hidden;
 } particle_t;
 
 static particle_t s_particles[AMBIENT_PARTICLES];
@@ -144,14 +150,38 @@ static void mote_reset(mote_t *m, bool anywhere)
     m->sway_amp = 2.0f + (float)(esp_random() % 100) / 100.0f * 4.0f;
 }
 
-/* Anchor zones for the web, as fractions of the playfield. The corners get more
- * strands than the middle, which is how a web actually accumulates. */
-static const struct { float fx, fy; } k_web_zones[] = {
-    { 0.07f, 0.06f },   /* top-left corner */
-    { 0.93f, 0.05f },   /* top-right corner */
-    { 0.34f, 0.03f },   /* upper left-of-centre */
+/* Anchor zones for the web, as fractions of the playfield. A web is spun where
+ * the spider can anchor it, which is the frame of the enclosure -- so the zones
+ * run all the way around the edges rather than only along the top. The corners
+ * get more strands than the sides, which is how a web actually accumulates.
+ *
+ * `base` is the direction the strands from that zone fan out in, in radians,
+ * using LVGL's rotation convention: 0 points DOWN the screen, +pi/2 points
+ * left, pi points up, -pi/2 points right. A strand anchored to the bottom of the
+ * tank has to point up or it is drawn off the panel, and one anchored to a side
+ * has to point inward -- so the direction is a property of the zone, not a
+ * global constant. */
+static const struct { float fx, fy, base; } k_web_zones[] = {
+    { 0.06f, 0.05f, -0.79f },   /* top-left corner, fanning down-right */
+    { 0.94f, 0.04f,  0.79f },   /* top-right corner, fanning down-left */
+    { 0.30f, 0.03f,  0.00f },   /* upper left-of-centre, fanning down */
+    { 0.68f, 0.03f,  0.00f },   /* upper right-of-centre, fanning down */
+    { 0.03f, 0.30f, -1.57f },   /* left edge, upper, fanning right */
+    { 0.97f, 0.34f,  1.57f },   /* right edge, upper, fanning left */
+    { 0.04f, 0.68f, -2.36f },   /* left edge, lower, fanning up-right */
+    { 0.96f, 0.72f,  2.36f },   /* right edge, lower, fanning up-left */
+    { 0.07f, 0.95f, -2.36f },   /* bottom-left corner, fanning up-right */
+    { 0.93f, 0.94f,  2.36f },   /* bottom-right corner, fanning up-left */
+    { 0.42f, 0.97f,  3.14f },   /* bottom edge, left-of-centre, fanning up */
+    { 0.74f, 0.96f,  3.14f },   /* bottom edge, right-of-centre, fanning up */
 };
 #define WEB_ZONES ((int)(sizeof k_web_zones / sizeof k_web_zones[0]))
+
+/* Half-width of the fan around a zone's inward direction. It has to be narrow
+ * enough that a strand anchored on an edge still points into the tank: a wider
+ * fan let a bottom-corner strand point straight down and be drawn off the
+ * panel. */
+#define WEB_FAN 0.6f
 
 /* One anchor per zone, jittered once at init and then FIXED for the life of the
  * boot. Strands respawn into these same points, so the web keeps its shape as
@@ -172,6 +202,7 @@ static void web_anchors_init(void)
         if (s_anchor_x[z] < g_play.left + 12) s_anchor_x[z] = g_play.left + 12;
         if (s_anchor_x[z] > g_play.right - 12) s_anchor_x[z] = g_play.right - 12;
         if (s_anchor_y[z] < g_play.top + 8) s_anchor_y[z] = g_play.top + 8;
+        if (s_anchor_y[z] > g_play.bottom - 8) s_anchor_y[z] = g_play.bottom - 8;
     }
 }
 
@@ -195,7 +226,12 @@ static void strand_spawn(strand_t *s, int zone)
      * cross-strands and long anchor lines at every angle from near-vertical to
      * near-horizontal. */
     s->length = 18.0f + (float)(esp_random() % 100) / 100.0f * 62.0f;
-    s->base_angle = 0.35f + (float)(esp_random() % 100) / 100.0f * 2.44f;
+    /* The fan is centred on the zone's own inward direction, so a strand
+     * anchored to the bottom of the tank points up into the tank instead of
+     * being drawn off the panel. The spread is wide enough that strands sharing
+     * an anchor still cross each other. */
+    s->base_angle = k_web_zones[zone].base
+                  + ((float)(esp_random() % 100) / 100.0f - 0.5f) * 2.0f * WEB_FAN;
     s->sway_phase = (float)(esp_random() % 628) / 100.0f;
     /* Sway rates spread wide so the strands never move in step. */
     s->sway_rate = 0.12f + (float)(esp_random() % 100) / 100.0f * 0.55f;
@@ -294,10 +330,18 @@ void ambient_init(void)
 
     /* Particles are created once and hidden until claimed. Creating them up
      * front rather than on demand is what keeps the cost constant: no
-     * allocation happens while the tank is running. */
+     * allocation happens while the tank is running.
+     *
+     * They are parented to the dedicated particle layer, NOT to the background's
+     * parent. A particle spawns at the position of the decor item that shed it,
+     * so in the background band it was drawn underneath that item's artwork and
+     * was effectively invisible -- which is why the effect could not be seen at
+     * all despite the emitter running. */
+    lv_obj_t *particle_parent = terrarium_particle_layer();
+    if (!particle_parent) particle_parent = ui.bg_canvas ? lv_obj_get_parent(ui.bg_canvas) : NULL;
     for (int i = 0; i < AMBIENT_PARTICLES; i++) {
         particle_t *p = &s_particles[i];
-        p->obj = lv_obj_create(ui.bg_canvas ? lv_obj_get_parent(ui.bg_canvas) : NULL);
+        p->obj = lv_obj_create(particle_parent);
         if (!p->obj) {
             ESP_LOGW(TAG, "particle %d could not be created", i);
             continue;
@@ -310,6 +354,8 @@ void ambient_init(void)
         lv_obj_set_size(p->obj, 2, 2);
         lv_obj_set_hidden(p->obj, true);
         p->active = false;
+        p->hidden = true;
+        p->last_opa = 0;
     }
 
     s_ready = true;
@@ -466,14 +512,14 @@ static void particle_spawn(ambient_emit_t style, int32_t x, int32_t y)
         p->vx = ((float)(esp_random() % 100) / 100.0f - 0.5f) * 6.0f;
         p->vy = -(4.0f + (float)(esp_random() % 100) / 100.0f * 5.0f);
         p->life_max = 2.4f + (float)(esp_random() % 100) / 100.0f * 1.6f;
-        p->size = (uint8_t)(3 + esp_random() % 2);
+        p->size = (uint8_t)(4 + esp_random() % 3);
         break;
     case AMBIENT_EMIT_GLINT:
         /* Barely moves; it is a flash, not a drift. */
         p->vx = 0.0f;
         p->vy = -(1.0f + (float)(esp_random() % 100) / 100.0f * 2.0f);
         p->life_max = 0.5f + (float)(esp_random() % 100) / 100.0f * 0.5f;
-        p->size = (uint8_t)(3 + esp_random() % 2);
+        p->size = (uint8_t)(4 + esp_random() % 3);
         break;
     case AMBIENT_EMIT_DUST:
     default:
@@ -481,10 +527,15 @@ static void particle_spawn(ambient_emit_t style, int32_t x, int32_t y)
         p->vx = ((float)(esp_random() % 100) / 100.0f - 0.5f) * 3.0f;
         p->vy = 2.0f + (float)(esp_random() % 100) / 100.0f * 3.0f;
         p->life_max = 2.0f + (float)(esp_random() % 100) / 100.0f * 2.0f;
-        p->size = (uint8_t)(2 + esp_random() % 2);
+        p->size = (uint8_t)(3 + esp_random() % 3);
         break;
     }
     p->life = p->life_max;
+    /* Force the next present to push the opacity. The object is created at
+     * LV_OPA_60 and the peak is 255, so leaving last_opa at its initial value
+     * would make the first comparison a no-op and the particle would spend its
+     * whole life at 60/255 -- invisible on a mid-tone substrate. */
+    p->last_opa = 0;
 }
 
 /* Spawn particles for whatever is on screen. Called on a slow cadence, not per
@@ -527,6 +578,23 @@ static void particles_emit(uint32_t now_ms)
     if (g.gift.used) particle_spawn(ambient_emit_for_gift(g.gift.kind), g.gift.x, g.gift.y);
 }
 
+/* Push a colour toward white so it reads against the substrate.
+ *
+ * The theme's `dust` is a mid-tone that sits close to the cork and soil colours
+ * it is drawn over, so a particle tinted with it was invisible even once it was
+ * correctly layered above the decor. A particle is a 3-5 px dot: it has no shape
+ * to read, only contrast, so it has to be the brightest thing in its
+ * neighbourhood. Mixing 55% white keeps the theme's hue while guaranteeing that
+ * contrast on every background. */
+static uint32_t brighten(uint32_t rgb, int percent)
+{
+    uint32_t r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+    r += (255u - r) * (uint32_t)percent / 100u;
+    g += (255u - g) * (uint32_t)percent / 100u;
+    b += (255u - b) * (uint32_t)percent / 100u;
+    return (r << 16) | (g << 8) | b;
+}
+
 void ambient_retint(void)
 {
     const theme_def_t *t = theme_current();
@@ -547,11 +615,12 @@ void ambient_retint(void)
         if (!s_strands[i].obj) continue;
         lv_obj_set_style_bg_color(s_strands[i].obj, lv_color_hex(t->web), 0);
     }
-    /* Particles take the theme's dust colour. They are tinted once here rather
-     * than per spawn, so a spawn costs no colour work. */
+    /* Particles take the theme's dust colour, brightened so a 3-5 px dot reads
+     * against the substrate. They are tinted once here rather than per spawn, so
+     * a spawn costs no colour work. */
     for (int i = 0; i < AMBIENT_PARTICLES; i++) {
         if (!s_particles[i].obj) continue;
-        lv_obj_set_style_bg_color(s_particles[i].obj, lv_color_hex(t->dust), 0);
+        lv_obj_set_style_bg_color(s_particles[i].obj, lv_color_hex(brighten(t->dust, 55)), 0);
     }
 }
 
@@ -575,7 +644,8 @@ void ambient_set_visible(bool visible)
     for (int i = 0; i < AMBIENT_PARTICLES; i++) {
         if (!s_particles[i].obj) continue;
         lv_obj_set_hidden(s_particles[i].obj, !visible || !s_particles[i].active);
-        s_particles[i].last_opa = 0xFF;
+        s_particles[i].hidden = !visible || !s_particles[i].active;
+        s_particles[i].last_opa = 0;
         s_particles[i].last_size = 0;
     }
 }
@@ -691,31 +761,11 @@ static void ambient_simulate(float dt, uint32_t now_ms)
  * a pixel per tick, so most ticks land on the same pixel and cost nothing.
  *
  * This matters more than it looks: the tank runs at 30 Hz and there are 16
- * motes, 6 spores, 6 strands and up to 48 particles. Touching all of them every
+ * motes, 6 spores, 18 strands and up to 48 particles. Touching all of them every
  * frame was ~76 invalidations per frame, which is what made the spider look like
  * it had slowed down -- the render budget was being spent on dust. */
-static void ambient_present(void)
+static void ambient_present_strands(void)
 {
-    for (int i = 0; i < AMBIENT_MOTES; i++) {
-        mote_t *m = &s_motes[i];
-        if (!m->obj) continue;
-        float x = m->x + sinf(m->sway_phase) * m->sway_amp;
-        int32_t ix = (int32_t)lroundf(x), iy = (int32_t)lroundf(m->y);
-        if (ix == m->last_x && iy == m->last_y) continue;
-        m->last_x = ix;
-        m->last_y = iy;
-        lv_obj_set_pos(m->obj, ix, iy);
-    }
-    for (int i = 0; i < AMBIENT_SPORES; i++) {
-        spore_t *p = &s_spores[i];
-        if (!p->obj) continue;
-        float x = p->x + sinf(p->wobble_phase) * 3.0f;
-        int32_t ix = (int32_t)lroundf(x), iy = (int32_t)lroundf(p->y);
-        if (ix == p->last_x && iy == p->last_y) continue;
-        p->last_x = ix;
-        p->last_y = iy;
-        lv_obj_set_pos(p->obj, ix, iy);
-    }
     for (int i = 0; i < AMBIENT_STRANDS; i++) {
         strand_t *s = &s_strands[i];
         if (!s->obj) continue;
@@ -745,19 +795,46 @@ static void ambient_present(void)
         s->last_deg = deg;
         lv_obj_set_style_transform_rotation(s->obj, deg * 10, 0);
     }
+}
+
+static void ambient_present(void)
+{
+    for (int i = 0; i < AMBIENT_MOTES; i++) {
+        mote_t *m = &s_motes[i];
+        if (!m->obj) continue;
+        float x = m->x + sinf(m->sway_phase) * m->sway_amp;
+        int32_t ix = (int32_t)lroundf(x), iy = (int32_t)lroundf(m->y);
+        if (ix == m->last_x && iy == m->last_y) continue;
+        m->last_x = ix;
+        m->last_y = iy;
+        lv_obj_set_pos(m->obj, ix, iy);
+    }
+    for (int i = 0; i < AMBIENT_SPORES; i++) {
+        spore_t *p = &s_spores[i];
+        if (!p->obj) continue;
+        float x = p->x + sinf(p->wobble_phase) * 3.0f;
+        int32_t ix = (int32_t)lroundf(x), iy = (int32_t)lroundf(p->y);
+        if (ix == p->last_x && iy == p->last_y) continue;
+        p->last_x = ix;
+        p->last_y = iy;
+        lv_obj_set_pos(p->obj, ix, iy);
+    }
     for (int i = 0; i < AMBIENT_PARTICLES; i++) {
         particle_t *p = &s_particles[i];
         if (!p->obj) continue;
         if (!p->active) {
             /* Only hide once. lv_obj_set_hidden() on an already-hidden object
              * still walks the style list. */
-            if (p->last_opa != 0) {
-                p->last_opa = 0;
+            if (!p->hidden) {
+                p->hidden = true;
                 lv_obj_set_hidden(p->obj, true);
             }
             continue;
         }
-        if (p->last_opa == 0) lv_obj_set_hidden(p->obj, false);
+        if (p->hidden) {
+            p->hidden = false;
+            lv_obj_set_hidden(p->obj, false);
+        }
         /* The size is per-particle, so it has to be pushed rather than set once
          * at creation -- but only when it changes, which is once per spawn. */
         if (p->size != p->last_size) {
@@ -765,9 +842,10 @@ static void ambient_present(void)
             lv_obj_set_size(p->obj, p->size, p->size);
         }
         /* Fade out over the last third of the life, so a particle never pops
-         * out of existence. */
+         * out of existence. The peak is full opacity: a 3-5 px dot at 200/255
+         * over a mid-tone substrate was too faint to see at all. */
         float frac = p->life / p->life_max;
-        uint8_t opa = (uint8_t)(frac > 0.34f ? 200 : (int)(200.0f * frac / 0.34f));
+        uint8_t opa = (uint8_t)(frac > 0.34f ? 255 : (int)(255.0f * frac / 0.34f));
         if (opa != p->last_opa) {
             p->last_opa = opa;
             lv_obj_set_style_bg_opa(p->obj, opa, 0);
@@ -784,6 +862,7 @@ void ambient_tick(uint32_t now_ms)
 {
     static uint32_t s_last;
     static uint32_t s_last_present;
+    static uint32_t s_last_strands;
     if (!s_ready) return;
     uint32_t elapsed = s_last ? now_ms - s_last : 0;
     s_last = now_ms;
@@ -795,7 +874,7 @@ void ambient_tick(uint32_t now_ms)
      *
      * This is the single biggest lever on the frame budget, and it is not
      * obvious: the cost of an ambient object is not its CPU time (a few float
-     * writes) but the DIRTY RECTANGLE it adds. Sixteen motes, six spores, six
+     * writes) but the DIRTY RECTANGLE it adds. Sixteen motes, six spores, the
      * strands and up to forty-eight particles are scattered across the whole
      * tank, so every frame they move the flush has to cover most of the screen.
      * Measured: the layer cost ~4.5 Hz of frame rate at 30 Hz.
@@ -804,9 +883,26 @@ void ambient_tick(uint32_t now_ms)
      * per update -- the motion is identical to the eye, at a third of the
      * invalidations. The simulation still runs every tick, so nothing changes
      * speed; only how often the result is pushed to LVGL. */
-    if (s_last_present && now_ms - s_last_present < AMBIENT_PRESENT_MS) return;
-    s_last_present = now_ms;
-    ambient_present();
+    if (!s_last_present || now_ms - s_last_present >= AMBIENT_PRESENT_MS) {
+        s_last_present = now_ms;
+        ambient_present();
+    }
+
+    /* Strands are presented on their own, slower cadence.
+     *
+     * Each strand is a ROTATED object, so LVGL classifies it as
+     * LV_LAYER_TYPE_TRANSFORM and allocates an intermediate layer for it on
+     * every refresh. That is far more expensive per object than a plain
+     * rectangle, and it is why raising the strand count from 6 to 18 tripled the
+     * ambient cost and halved the frame rate when they shared the 10 Hz present.
+     *
+     * A strand sways at 0.05-0.21 rad/s, so a whole degree of rotation takes
+     * 80-350 ms. Presenting them at 4 Hz therefore loses nothing visible while
+     * cutting their invalidations by 60%. */
+    if (!s_last_strands || now_ms - s_last_strands >= AMBIENT_STRAND_PRESENT_MS) {
+        s_last_strands = now_ms;
+        ambient_present_strands();
+    }
 }
 
 float ambient_breath(void)

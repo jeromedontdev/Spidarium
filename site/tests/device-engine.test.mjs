@@ -81,7 +81,7 @@ test('browser object-score callback is compatible and preserves setup/theme/colo
 });
 test('native automation has padding-stable ABI, v2 migration, and gated entries',async()=>{
   const [header,config,save,behaviour,prey]=await Promise.all(['game.h','game_config.h','save.c','behaviour.c','prey.c'].map(native));
-  assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 3104/);
+  assert.match(header,/_Static_assert\(sizeof\(game_state_t\) == 3116/);
   assert.match(header,/offsetof\(game_state_t, auto_feed\) == 129/);
   assert.match(header,/offsetof\(game_state_t, auto_hunt\) == 130/);
   assert.match(header,/offsetof\(game_state_t, volume\) == 131/);
@@ -89,7 +89,7 @@ test('native automation has padding-stable ABI, v2 migration, and gated entries'
   assert.match(header,/offsetof\(game_state_t, daily_day\) == 136/);
   assert.match(header,/offsetof\(game_state_t, decor_owned\) == 160/);
   assert.match(header,/offsetof\(game_state_t, decor\) == 164/);
-  assert.match(config,/#define SAVE_VERSION\s+23/);
+  assert.match(config,/#define SAVE_VERSION\s+24/);
   assert.match(save,/version == 2\)[\s\S]*?state->auto_feed = 0;[\s\S]*?state->auto_hunt = 0;/);
   assert.match(save,/migrate_automation\(state, header\.version\)/);
   assert.match(save,/state->auto_feed = 0xA5;[\s\S]*?state->auto_hunt = 0x5A;[\s\S]*?migrate_automation\(state, header\.version\)/);

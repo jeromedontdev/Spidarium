@@ -602,6 +602,18 @@ static uint8_t daily_task_for_day(uint32_t day)
     return (uint8_t)(day % DAILY_TASK_COUNT);
 }
 
+/* Which task kind occupies Today slot `slot` on `day`.
+ *
+ * The set rotates as a whole: slot 0 is the day's own task and the other slots
+ * step forward from it, so every day offers three different kinds and the set
+ * changes daily. Deriving it from the day number keeps it deterministic -- a
+ * reload cannot reroll the offer. */
+uint8_t needs_daily_task_at(uint8_t slot)
+{
+    if (slot >= DAILY_TASK_SLOTS) slot = 0;
+    return (uint8_t)((daily_task_for_day(needs_daily_today()) + slot) % DAILY_TASK_COUNT);
+}
+
 /* Each task counts a different lifetime counter. The snapshot taken when the
  * day began is subtracted, so progress is "since this day started" without
  * needing a separate per-day counter in the save. */
@@ -615,15 +627,27 @@ static uint32_t daily_counter(uint8_t task)
     }
 }
 
-uint32_t needs_daily_task_goal(void)
+uint32_t needs_daily_task_goal_at(uint8_t slot)
 {
-    switch (needs_daily_task()) {
+    switch (needs_daily_task_at(slot)) {
     case 0: return 3;   /* catch three prey */
     case 1: return 2;   /* clean twice */
     case 2: return 3;   /* play three times */
     default: return 4;  /* pet four times */
     }
 }
+
+const char *needs_daily_task_name_at(uint8_t slot)
+{
+    switch (needs_daily_task_at(slot)) {
+    case 0: return "Catch 3 Prey";
+    case 1: return "Clean 2 Times";
+    case 2: return "Play 3 Times";
+    default: return "Pet 4 Times";
+    }
+}
+
+uint32_t needs_daily_task_goal(void) { return needs_daily_task_goal_at(0); }
 
 const char *needs_daily_task_name(uint8_t task)
 {
@@ -650,22 +674,52 @@ static void daily_ensure_base(void)
     g.daily_base_day = today;
     g.daily_task_base = daily_counter(daily_task_for_day(today));
     g.daily_task_done = 0;
+    for (int i = 1; i < DAILY_TASK_SLOTS; i++) {
+        g.daily_task_base_extra[i - 1] =
+            daily_counter((uint8_t)((daily_task_for_day(today) + i) % DAILY_TASK_COUNT));
+    }
+    g.daily_task_done_extra = 0;
 }
 
-uint32_t needs_daily_task_progress(void)
+static uint32_t daily_task_base_at(uint8_t slot)
 {
-    uint32_t now = daily_counter(needs_daily_task());
-    uint32_t base = g.daily_task_base;
+    return slot == 0 ? g.daily_task_base : g.daily_task_base_extra[slot - 1];
+}
+
+static bool daily_task_done_at(uint8_t slot)
+{
+    return slot == 0 ? g.daily_task_done != 0
+                     : (g.daily_task_done_extra & (1u << (slot - 1))) != 0;
+}
+
+uint32_t needs_daily_task_progress_at(uint8_t slot)
+{
+    if (slot >= DAILY_TASK_SLOTS) slot = 0;
+    uint32_t now = daily_counter(needs_daily_task_at(slot));
+    uint32_t base = daily_task_base_at(slot);
     if (now < base) return 0;
     uint32_t done = now - base;
-    uint32_t goal = needs_daily_task_goal();
+    uint32_t goal = needs_daily_task_goal_at(slot);
     return done > goal ? goal : done;
 }
 
-bool needs_daily_task_ready(void)
+bool needs_daily_task_ready_at(uint8_t slot)
 {
-    if (g.daily_task_done) return false;
-    return needs_daily_task_progress() >= needs_daily_task_goal();
+    if (slot >= DAILY_TASK_SLOTS) slot = 0;
+    if (daily_task_done_at(slot)) return false;
+    return needs_daily_task_progress_at(slot) >= needs_daily_task_goal_at(slot);
+}
+
+uint32_t needs_daily_task_progress(void) { return needs_daily_task_progress_at(0); }
+
+bool needs_daily_task_ready(void) { return needs_daily_task_ready_at(0); }
+
+/* True when any of today's tasks is complete and unclaimed. */
+bool needs_daily_any_task_ready(void)
+{
+    for (int i = 0; i < DAILY_TASK_SLOTS; i++)
+        if (needs_daily_task_ready_at((uint8_t)i)) return true;
+    return false;
 }
 
 bool needs_daily_available(void)
@@ -711,13 +765,21 @@ uint32_t needs_daily_claim(void)
 
 uint32_t needs_daily_task_claim(void)
 {
-    if (!needs_daily_task_ready()) return 0;
-    g.daily_task_done = 1;
+    return needs_daily_task_claim_at(0);
+}
+
+uint32_t needs_daily_task_claim_at(uint8_t slot)
+{
+    if (slot >= DAILY_TASK_SLOTS) slot = 0;
+    if (!needs_daily_task_ready_at(slot)) return 0;
+    if (slot == 0) g.daily_task_done = 1;
+    else g.daily_task_done_extra |= (uint8_t)(1u << (slot - 1));
     game_add_xp(DAILY_TASK_XP);
     game_add_silk(DAILY_TASK_SILK);
     audio_play(SFX_PERFECT);
-    ESP_LOGI(TAG, "daily task %u complete -> xp=%u silk=%u",
-             (unsigned)needs_daily_task(), DAILY_TASK_XP, DAILY_TASK_SILK);
+    ESP_LOGI(TAG, "daily task %u (slot %u) complete -> xp=%u silk=%u",
+             (unsigned)needs_daily_task_at(slot), (unsigned)slot,
+             DAILY_TASK_XP, DAILY_TASK_SILK);
     return DAILY_TASK_XP;
 }
 
@@ -738,6 +800,10 @@ void needs_daily_force_day(uint32_t day)
     g.daily_base_day = day;
     g.daily_task_base = daily_counter(daily_task_for_day(day));
     g.daily_task_done = 0;
+    for (int i = 1; i < DAILY_TASK_SLOTS; i++)
+        g.daily_task_base_extra[i - 1] =
+            daily_counter((uint8_t)((daily_task_for_day(day) + i) % DAILY_TASK_COUNT));
+    g.daily_task_done_extra = 0;
     ESP_LOGI(TAG, "daily: forced to day %u (task %u, base %lu)",
              (unsigned)day, (unsigned)daily_task_for_day(day),
              (unsigned long)g.daily_task_base);

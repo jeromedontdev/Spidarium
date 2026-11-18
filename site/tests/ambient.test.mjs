@@ -318,6 +318,39 @@ test('web strands radiate from shared anchors, not evenly spaced', () => {
   assert.ok(Math.max(...lengths) - Math.min(...lengths) > 20, 'strand lengths are too uniform');
 });
 
+test('web strands are anchored all the way around the enclosure, not only at the top', () => {
+  const bounds = { left: 8, top: 8, right: 472, bottom: 472 };
+  const a = strandsAt(0, bounds);
+  const midX = (bounds.left + bounds.right) / 2;
+  const midY = (bounds.top + bounds.bottom) / 2;
+  // A web is spun where the spider can anchor it, which is the frame of the
+  // enclosure. Anchors confined to the top band was the reported bug.
+  assert.ok(a.some(t => t.ay < midY), 'no strand anchored in the top half');
+  assert.ok(a.some(t => t.ay > midY), 'no strand anchored in the bottom half');
+  assert.ok(a.some(t => t.ax < midX), 'no strand anchored on the left half');
+  assert.ok(a.some(t => t.ax > midX), 'no strand anchored on the right half');
+  // And there must be enough of it to read as a web rather than a few lines.
+  assert.ok(a.length >= 14, `only ${a.length} strands, the web is too sparse`);
+});
+
+test('web strands fan inward from their edge so none is drawn off the panel', () => {
+  const bounds = { left: 8, top: 8, right: 472, bottom: 472 };
+  const midX = (bounds.left + bounds.right) / 2;
+  const midY = (bounds.top + bounds.bottom) / 2;
+  for (const t of strandsAt(0, bounds)) {
+    const ex = t.ax + Math.cos(t.angle) * t.length;
+    const ey = t.ay + Math.sin(t.angle) * t.length;
+    // A strand anchored to the bottom of the tank has to point up, and one
+    // anchored to a side has to point inward, or its far end leaves the panel.
+    // Only the zones that actually sit on an edge are checked; the ones near
+    // the middle are free to fan in any direction.
+    if (t.ay > midY + 100) assert.ok(ey < t.ay, `bottom strand points down: ${t.ay} -> ${ey}`);
+    if (t.ay < midY - 100) assert.ok(ey > t.ay, `top strand points up: ${t.ay} -> ${ey}`);
+    if (t.ax < bounds.left + 60) assert.ok(ex > t.ax, `left strand points left: ${t.ax} -> ${ex}`);
+    if (t.ax > bounds.right - 60) assert.ok(ex < t.ax, `right strand points right: ${t.ax} -> ${ex}`);
+  }
+});
+
 test('web strands are dynamic: they fade in, expire and respawn at the same anchor', () => {
   const bounds = { left: 8, top: 8, right: 472, bottom: 472 };
 

@@ -421,6 +421,27 @@ bool game_placement_existing(void)
     return (g_decor_mode && g_decor_move_slot >= 0) || (g.gift_mode && s_gift_moving);
 }
 
+/* Which placed item is being moved, as "name  n / total", for the top selector.
+ * Returns false when there is nothing to cycle (a new item, or a gift). */
+bool game_placement_item_label(char *buf, size_t len)
+{
+    if (!buf || len == 0) return false;
+    buf[0] = '\0';
+    if (!g_decor_mode || g_decor_move_slot < 0) return false;
+    int slots = decor_slot_count();
+    int total = 0, index = 0;
+    for (int i = 0; i < slots; i++) {
+        if (!decor_at(i)) continue;
+        total++;
+        if (i == g_decor_move_slot) index = total;
+    }
+    const decor_item_t *item = decor_at(g_decor_move_slot);
+    if (!item || total < 2) return false;
+    const decor_def_t *def = decor_def(item->kind);
+    snprintf(buf, len, "%s\n%d / %d", def ? def->name : "Decor", index, total);
+    return true;
+}
+
 void game_on_placement_blocking(lv_event_t *e)
 {
     (void)e;
@@ -450,6 +471,36 @@ void game_on_placement_layer(lv_event_t *e)
     s_place_layer = next;
     placement_position(s_place_x, s_place_y);
     ui_hud_set_place_mode(true, NULL);
+}
+
+/* Step the item being moved to the previous/next placed decor item.
+ *
+ * The top arrows used to be a second copy of the layer control, which was
+ * redundant: the bottom row already does that, and the player had no way to
+ * switch to a different item without cancelling out to the menu and starting
+ * again. Cycling the selection is the thing that was actually missing. */
+void game_on_placement_item(lv_event_t *e)
+{
+    if (!g_decor_mode || g_decor_move_slot < 0) return;
+    int step = (int)(intptr_t)lv_event_get_user_data(e);
+    int slots = decor_slot_count();
+    if (slots <= 0) return;
+    /* Walk to the next occupied slot in the requested direction, wrapping. A
+     * full lap with no other item placed leaves the selection where it was. */
+    int slot = g_decor_move_slot;
+    for (int i = 0; i < slots; i++) {
+        slot = (slot + step + slots) % slots;
+        if (slot == g_decor_move_slot) break;
+        if (!decor_at(slot)) continue;
+        g_decor_move_slot = slot;
+        s_place_blocking = decor_at(slot)->blocking;
+        s_place_layer = decor_layer_index(slot);
+        g_decor_selected = decor_at(slot)->kind;
+        s_place_dragging = false;
+        placement_position(decor_at(slot)->x, decor_at(slot)->y);
+        ui_hud_set_place_mode(true, "Slide to move; Done saves");
+        return;
+    }
 }
 void game_on_placement_put_away(lv_event_t *e)
 {
@@ -713,7 +764,7 @@ static void remember_menu_page(int page)
 static ui_menu_item_t s_menu_items[DECOR_COUNT + 1];
 /* Slot whose per-item decor menu is open. */
 static int s_decor_item_slot = -1;
-static uint8_t s_request_slot, s_memory_slot;
+static uint8_t s_memory_slot;
 static uint8_t s_trick_slot, s_retired_slot, s_photo_slot;
 static bool s_pet_change_waiting;
 static lv_obj_t *s_daylight_overlay, *s_weather[6], *s_visitor;
@@ -1072,18 +1123,6 @@ static void back_to_diary(void)
     if (s_memory_slot < g.companion.diary_count)
         ui_menu_set_page((g.companion.diary_count - 1 - s_memory_slot) / 4);
 }
-static void on_request_pick(uint8_t id)
-{
-    /* Today shows one request row and no submenu. Tapping an unfinished
-     * request dismisses it; a finished one has already been paid, so the tap
-     * only re-renders. */
-    if (id == 2) {
-        if (s_request_slot < 2 && !g.companion.requests[s_request_slot].state)
-            companion_dismiss(s_request_slot);
-        menu_open(MENU_TODAY);
-    }
-    else if (id == 3 || id == 4) on_daily_pick(id - 3);
-}
 static void on_memory_pick(uint8_t id)
 {
     if (id < g.companion.diary_count) { s_memory_slot = id; menu_open(MENU_MEMORY); }
@@ -1215,18 +1254,21 @@ static void on_photo_delete_pick(uint8_t id)
     } else if (id == 1) menu_open(MENU_PHOTO_ACTIONS);
 }
 
+/* Today's rows carry their own ids: 3 is the check-in and 4..4+SLOTS-1 are the
+ * claimable tasks. The callback is wired straight to this function, so the ids
+ * are what arrives here -- there is no longer a translating shim. */
 static void on_daily_pick(uint8_t id)
 {
-    if (id == 0) {
+    if (id == 3) {
         uint32_t xp = needs_daily_claim();
         if (xp == 0) ESP_LOGI(TAG, "daily: nothing to claim");
         game_save_now();
         menu_open(MENU_TODAY);
         return;
     }
-    if (id == 1) {
-        uint32_t xp = needs_daily_task_claim();
-        if (xp == 0) ESP_LOGI(TAG, "daily: task not ready");
+    if (id >= 4 && id < 4 + DAILY_TASK_SLOTS) {
+        uint32_t xp = needs_daily_task_claim_at((uint8_t)(id - 4));
+        if (xp == 0) ESP_LOGI(TAG, "daily: task %u not ready", (unsigned)(id - 4));
         game_save_now();
         menu_open(MENU_TODAY);
         return;
@@ -1516,14 +1558,16 @@ static void back_to_main(void)
 
 static const uint8_t k_track_background[AUDIO_MUSIC_TRACK_COUNT] = {2,18,6,14,1,13,29,45,37,21};
 
-static const char *request_icon(uint8_t kind)
+/* The icon for a task kind. Each kind gets its own artwork, which is also what
+ * keeps the three Today rows visually distinct -- a list of three identical
+ * icons reads as one repeated row rather than three goals. */
+static const char *task_icon(uint8_t task)
 {
-    switch (kind) {
-    case COMPANION_PET: return "request_pet";
-    case COMPANION_PLAY: return "request_play";
-    case COMPANION_HUNT: return "request_hunt";
-    case COMPANION_VISIT: return "request_visit";
-    default: return "request_clean";
+    switch (task) {
+    case 0: return "request_hunt";
+    case 1: return "request_clean";
+    case 2: return "request_play";
+    default: return "request_pet";
     }
 }
 
@@ -1536,9 +1580,17 @@ static const char *memory_icon(uint8_t kind)
     return icons[kind <= 8 ? kind : 0];
 }
 
+/* Today's rows: the check-in, then DAILY_TASK_SLOTS claimable tasks.
+ *
+ * Every row is something the player CLAIMS. The companion request used to be a
+ * third row that could only be dismissed, which made Today read as a chore list
+ * with one optional extra; merging it into the task rotation means every row is
+ * a goal with a payout. */
 static void daily_items(ui_menu_item_t *items)
 {
-    static char claim_sub[64], task_sub[64], task_name[48];
+    static char claim_sub[64];
+    static char task_sub[DAILY_TASK_SLOTS][64];
+    static char task_name[DAILY_TASK_SLOTS][48];
     uint32_t today = needs_daily_today();
     if (needs_daily_available()) {
         uint32_t next = (g.daily_day != DAILY_NEVER && g.daily_day + 1 == today &&
@@ -1554,17 +1606,22 @@ static void daily_items(ui_menu_item_t *items)
         snprintf(claim_sub, sizeof claim_sub, "Claimed / Streak %u", (unsigned)g.daily_streak);
     }
     items[0] = (ui_menu_item_t){"Check In", claim_sub, needs_daily_available(), false, false, 3};
-    uint8_t task = needs_daily_task();
-    ui_menu_format_name(task_name, sizeof task_name, needs_daily_task_name(task));
-    if (g.daily_task_done) {
-        snprintf(task_sub, sizeof task_sub, "Done / +%u XP +%u Silk", DAILY_TASK_XP, DAILY_TASK_SILK);
-    } else if (needs_daily_task_ready()) {
-        snprintf(task_sub, sizeof task_sub, "Complete / Tap to Claim");
-    } else {
-        snprintf(task_sub, sizeof task_sub, "%lu of %lu",
-                 (unsigned long)needs_daily_task_progress(), (unsigned long)needs_daily_task_goal());
+    for (int i = 0; i < DAILY_TASK_SLOTS; i++) {
+        ui_menu_format_name(task_name[i], sizeof task_name[i], needs_daily_task_name_at((uint8_t)i));
+        if (!needs_daily_task_ready_at((uint8_t)i) &&
+            needs_daily_task_progress_at((uint8_t)i) >= needs_daily_task_goal_at((uint8_t)i)) {
+            snprintf(task_sub[i], sizeof task_sub[i], "Done / +%u XP +%u Silk",
+                     DAILY_TASK_XP, DAILY_TASK_SILK);
+        } else if (needs_daily_task_ready_at((uint8_t)i)) {
+            snprintf(task_sub[i], sizeof task_sub[i], "Complete / Tap to Claim");
+        } else {
+            snprintf(task_sub[i], sizeof task_sub[i], "%lu of %lu",
+                     (unsigned long)needs_daily_task_progress_at((uint8_t)i),
+                     (unsigned long)needs_daily_task_goal_at((uint8_t)i));
+        }
+        items[1 + i] = (ui_menu_item_t){task_name[i], task_sub[i],
+            needs_daily_task_ready_at((uint8_t)i), false, false, (uint8_t)(4 + i)};
     }
-    items[1] = (ui_menu_item_t){task_name, task_sub, needs_daily_task_ready(), false, false, 4};
 }
 
 static void menu_open(int which)
@@ -1590,10 +1647,10 @@ static void menu_open(int which)
         /* Every row carries a subtext. A list where some rows have a second
          * line and others do not reads as unfinished, and it also makes the
          * rows different heights, so the eye cannot scan the column. */
-        static char daily_sub[48], ach_sub[32], species_sub[32];
+        static char daily_sub[48], ach_sub[32], species_sub[32], decor_sub[48];
         if (needs_daily_available()) {
             snprintf(daily_sub, sizeof daily_sub, "Check In Ready");
-        } else if (needs_daily_task_ready()) {
+        } else if (needs_daily_any_task_ready()) {
             snprintf(daily_sub, sizeof daily_sub, "Task Complete");
         } else {
             snprintf(daily_sub, sizeof daily_sub, "Streak %u", (unsigned)g.daily_streak);
@@ -1609,32 +1666,40 @@ static void menu_open(int which)
         }
         snprintf(species_sub, sizeof species_sub, "%d of %d Unlocked",
                  unlocked, PREY_SPECIES_COUNT);
-        items[0] = (ui_menu_item_t){ "Your Spider", "Personality and Favorites", true, false, true, MENU_PERSONALITY };
-        items[1] = (ui_menu_item_t){ "Today", daily_sub, true, false, true, MENU_TODAY };
-        items[2] = (ui_menu_item_t){ "Training", "Learn Gentle Tricks", true, false, true, MENU_TRAINING };
-        items[3] = (ui_menu_item_t){ "Calendar", "Rhythms, Seasons and Visitors", true, false, true, MENU_CALENDAR };
-        items[4] = (ui_menu_item_t){ "Treats", "Spend Silk", true, false, true, MENU_SHOP };
-        items[5] = (ui_menu_item_t){ "Achievements", ach_sub, true, false, true, MENU_ACHIEVEMENTS };
-        items[6] = (ui_menu_item_t){ "Prey Species", species_sub, true, false, true, MENU_SPECIES };
-        static char decor_sub[48];
         snprintf(decor_sub, sizeof decor_sub, "%d Placed", decor_placed_count());
-        items[7] = (ui_menu_item_t){ "Diary", "Memories Together", true, false, true, MENU_DIARY };
-        items[8] = (ui_menu_item_t){ "Photo Album", "Capture and Revisit Moments", true, false, true, MENU_ALBUM };
-        items[9] = (ui_menu_item_t){ "Generations", "Optional / Keep Every Spider Safe", true, false, true, MENU_GENERATIONS };
-        items[10] = (ui_menu_item_t){ "Decor", decor_sub, true, false, true, MENU_DECOR };
-        items[11] = (ui_menu_item_t){ "Backgrounds", "Enclosure Themes", true, false, true, MENU_THEME };
-        items[12] = (ui_menu_item_t){ "Borders", "Mix and Match Frames", true, false, true, MENU_BORDERS };
+        /* Page order is deliberate. The first page is the four things a player
+         * reaches for while looking at the tank -- Decor, Treats, Backgrounds,
+         * Borders -- and the last page is the reference material: Photo Album,
+         * Help and Settings. The middle pages hold the progress screens, whose
+         * order does not matter. With a page size of four and fifteen rows, the
+         * last page holds three, so indices 12..14 must be the reference rows. */
+        items[0] = (ui_menu_item_t){ "Decor", decor_sub, true, false, true, MENU_DECOR };
+        items[1] = (ui_menu_item_t){ "Treats", "Spend Silk", true, false, true, MENU_SHOP };
+        items[2] = (ui_menu_item_t){ "Backgrounds", "Enclosure Themes", true, false, true, MENU_THEME };
+        items[3] = (ui_menu_item_t){ "Borders", "Mix and Match Frames", true, false, true, MENU_BORDERS };
+        items[4] = (ui_menu_item_t){ "Your Spider", "Personality and Favorites", true, false, true, MENU_PERSONALITY };
+        items[5] = (ui_menu_item_t){ "Today", daily_sub, true, false, true, MENU_TODAY };
+        items[6] = (ui_menu_item_t){ "Training", "Learn Gentle Tricks", true, false, true, MENU_TRAINING };
+        items[7] = (ui_menu_item_t){ "Calendar", "Rhythms, Seasons and Visitors", true, false, true, MENU_CALENDAR };
+        items[8] = (ui_menu_item_t){ "Achievements", ach_sub, true, false, true, MENU_ACHIEVEMENTS };
+        items[9] = (ui_menu_item_t){ "Prey Species", species_sub, true, false, true, MENU_SPECIES };
+        items[10] = (ui_menu_item_t){ "Diary", "Memories Together", true, false, true, MENU_DIARY };
+        items[11] = (ui_menu_item_t){ "Generations", "Optional / Keep Every Spider Safe", true, false, true, MENU_GENERATIONS };
+        items[12] = (ui_menu_item_t){ "Photo Album", "Capture and Revisit Moments", true, false, true, MENU_ALBUM };
         items[13] = (ui_menu_item_t){ "Help Guide", "All Features and Controls", true, false, true, MENU_HELP };
         items[14] = (ui_menu_item_t){ "Settings", "Sound, Display, WiFi", true, false, true, MENU_SETTINGS };
         ui_menu_open("Spidarium", items, 15, on_main_pick);
-        ui_menu_set_item_icon(0, sprite_icon_index("personality"));
-        ui_menu_set_item_icon(1, sprite_icon_index("today"));
-        ui_menu_set_item_icon(2, sprite_icon_index("training"));
-        ui_menu_set_item_icon(3, sprite_icon_index("calendar"));
-        ui_menu_set_item_icon(7, sprite_icon_index("diary"));
-        ui_menu_set_item_icon(8, sprite_icon_index("album"));
-        ui_menu_set_item_icon(9, sprite_icon_index("generations"));
-        ui_menu_set_item_icon(12, sprite_border_index(g.border_id == 255 ? g.background_id : g.border_id));
+        ui_menu_set_item_icon(0, sprite_icon_index("decor"));
+        ui_menu_set_item_icon(1, sprite_icon_index("treats"));
+        ui_menu_set_item_icon(2, sprite_icon_index("backgrounds"));
+        ui_menu_set_item_icon(3, sprite_border_index(g.border_id == 255 ? g.background_id : g.border_id));
+        ui_menu_set_item_icon(4, sprite_icon_index("personality"));
+        ui_menu_set_item_icon(5, sprite_icon_index("today"));
+        ui_menu_set_item_icon(6, sprite_icon_index("training"));
+        ui_menu_set_item_icon(7, sprite_icon_index("calendar"));
+        ui_menu_set_item_icon(10, sprite_icon_index("diary"));
+        ui_menu_set_item_icon(11, sprite_icon_index("generations"));
+        ui_menu_set_item_icon(12, sprite_icon_index("album"));
         break;
     }
     case MENU_ALBUM: {
@@ -1868,26 +1933,14 @@ static void menu_open(int which)
                 items[count++] = (ui_menu_item_t){labels[i], rows[i].detail, false, false, false, i};
         } else if (which == MENU_TODAY) {
             heading = g.companion.clock_mode == 1 ? "Today" : "Today / Play Day";
-            callback = on_request_pick;
-            for (int i = 0; i < 2; i++) companion_request_text(i, rows[i].title, sizeof rows[i].title,
-                                                                rows[i].detail, sizeof rows[i].detail);
+            callback = on_daily_pick;
+            /* Every row is claimable: the check-in plus three rotating tasks.
+             * The companion request used to be a third row that could only be
+             * dismissed, which made Today read as a chore list with one optional
+             * extra; merging it into the task rotation means every row is a goal
+             * with a payout. */
             daily_items(items);
-            count = 2;
-            /* One request row, no submenu. Two dismissible rows plus a
-             * "Not Today" confirmation made Today read as a chore list; the
-             * rotating daily task is a single tap, so the request is too. The
-             * first request that has not been dismissed is the one shown, so a
-             * completed request stays visible with its "Complete" line. */
-            s_request_slot = 0;
-            while (s_request_slot < 2 && g.companion.requests[s_request_slot].state == 2)
-                s_request_slot++;
-            if (s_request_slot < 2) {
-                items[count++] = (ui_menu_item_t){rows[s_request_slot].title,
-                    rows[s_request_slot].detail, true, false, false, 2};
-            } else {
-                items[count++] = (ui_menu_item_t){"Requests Done", "New Ones Tomorrow",
-                    false, false, false, 2};
-            }
+            count = 1 + DAILY_TASK_SLOTS;
         } else {
             heading = "Diary";
             callback = on_memory_pick;
@@ -1933,9 +1986,7 @@ static void menu_open(int which)
                 static const char *const icons[] = {"bond", "favorite_treat", "favorite_place", "favorite_game"};
                 icon = icons[i];
             } else if (which == MENU_TODAY) {
-                icon = i == 0 ? "checkin" : i == 1 ? "daily_task" :
-                       s_request_slot < 2 ? request_icon(g.companion.requests[s_request_slot].kind)
-                                          : "dismiss";
+                icon = i == 0 ? "checkin" : task_icon(needs_daily_task_at((uint8_t)(i - 1)));
             } else if (which == MENU_MEMORY) {
                 icon = i == 0 ? memory_icon(g.companion.diary[s_memory_slot].kind) :
                        g.companion.diary[s_memory_slot].pinned ? "unpin" : "pin";
@@ -3303,9 +3354,9 @@ static void ui_service_request(void)
         life_ok = life_ok && !strcmp(s_menu_items[0].label, "Retire and Raise Another");
         menu_open(MENU_MAIN);
         static const char *const root_order[] = {
-            "Your Spider", "Today", "Training", "Calendar", "Treats", "Achievements",
-            "Prey Species", "Diary", "Photo Album", "Generations", "Decor",
-            "Backgrounds", "Borders", "Help Guide", "Settings"
+            "Decor", "Treats", "Backgrounds", "Borders", "Your Spider", "Today",
+            "Training", "Calendar", "Achievements", "Prey Species", "Diary",
+            "Generations", "Photo Album", "Help Guide", "Settings"
         };
         for (unsigned i = 0; i < sizeof root_order / sizeof root_order[0]; i++)
             life_ok = life_ok && !strcmp(s_menu_items[i].label, root_order[i]);
@@ -3345,11 +3396,11 @@ static void ui_service_request(void)
         companion_ok = ui_menu_visible() && ui_menu_test_distinct_icons() &&
                        !strcmp(s_menu_items[0].label, "Check In") &&
                        s_menu_items[0].id == 3 && s_menu_items[1].id == 4 &&
-                       s_menu_items[2].id == 2 && companion_ok;
-        /* Today has no request submenu: the request row is a single tap that
-         * dismisses, exactly like the rotating daily task. */
-        companion_ok = ui_menu_test_pick(2) && companion_ok;
-        companion_ok = s_open_menu == MENU_TODAY && companion_ok;
+                       s_menu_items[2].id == 5 && s_menu_items[3].id == 6 && companion_ok;
+        /* Every Today row is claimable: the check-in plus three rotating tasks.
+         * There is no dismissible request row any more. */
+        companion_ok = s_menu_items[1].label[0] && s_menu_items[2].label[0] &&
+                       s_menu_items[3].label[0] && companion_ok;
         menu_open(MENU_DAILY);
         companion_ok = s_open_menu == MENU_TODAY && !strcmp(s_menu_items[0].label, "Check In") && companion_ok;
         game_state_t *daily_backup = heap_caps_malloc(sizeof g, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

@@ -476,9 +476,19 @@ static void apply_rotation(lv_obj_t *screen, uint8_t rotation)
         lv_obj_set_style_pad_all(s_rotor, 0, 0);
         lv_obj_set_scrollable(s_rotor, false);
     }
-    lv_obj_set_style_transform_pivot_x(s_rotor, lv_pct(50), 0);
-    lv_obj_set_style_transform_pivot_y(s_rotor, lv_pct(50), 0);
-    lv_obj_set_style_transform_rotation(s_rotor, (int32_t)rotation * 900, 0);
+    /* A non-zero transform_rotation makes LVGL classify this object as
+     * LV_LAYER_TYPE_TRANSFORM. Because the wrapper covers the whole panel, that
+     * costs a full 480x480 intermediate layer plus a transformed blend of every
+     * pixel, every frame - even at rotation 0, where the transform is the
+     * identity. Removing the property instead of setting it to zero keeps the
+     * common upright case on the plain draw path. */
+    if (rotation == 0) {
+        lv_obj_remove_local_style_prop(s_rotor, LV_STYLE_TRANSFORM_ROTATION, 0);
+    } else {
+        lv_obj_set_style_transform_pivot_x(s_rotor, lv_pct(50), 0);
+        lv_obj_set_style_transform_pivot_y(s_rotor, lv_pct(50), 0);
+        lv_obj_set_style_transform_rotation(s_rotor, (int32_t)rotation * 900, 0);
+    }
     lv_obj_invalidate(s_rotor);
 }
 

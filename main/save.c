@@ -48,7 +48,7 @@ typedef struct {
 _Static_assert(offsetof(game_state_t, companion) == 268, "v14 prefix changed");
 _Static_assert(offsetof(game_state_t, usb_sounds) == 267, "USB sounds ABI changed");
 _Static_assert(offsetof(game_state_t, life) == 860, "v15 save ABI changed");
-_Static_assert(sizeof(game_state_t) == 3104, "v22 save ABI changed");
+_Static_assert(sizeof(game_state_t) == 3116, "v24 save ABI changed");
 _Static_assert(offsetof(companion_state_t, request_day) == 0, "day ABI changed");
 _Static_assert(offsetof(companion_state_t, seen_achievements) == 4, "achievement ABI changed");
 _Static_assert(offsetof(companion_state_t, requests) == 8, "request ABI changed");
@@ -75,10 +75,12 @@ _Static_assert(offsetof(companion_memory_t, calendar) == 7, "memory calendar ABI
 
 static size_t payload_prefix(uint16_t version)
 {
-    /* v22 grew the payload to 3104. A v18..v21 blob is 3100 bytes, so the
-     * prefix must be the size that version actually wrote, not the current
-     * struct size, or every older save would be rejected as short. */
-    return version >= 22 ? sizeof(game_state_t) :
+    /* v24 grew the payload to 3116 for the three-task Today list. A v22..v23
+     * blob is 3104 bytes, so the prefix must be the size that version actually
+     * wrote, not the current struct size, or every older save would be rejected
+     * as short. */
+    return version >= 24 ? sizeof(game_state_t) :
+           version >= 22 ? 3104u :
            version >= 18 ? 3100u :
            version >= 16 ? 3096 :
            version >= 15 ? 860 : version >= 12 ? 268 : 260;
@@ -210,6 +212,14 @@ static void migrate_automation(game_state_t *state, uint16_t version)
     if (version < 23) {
         state->companion.play_counts[3] = 0;
         state->companion.play_counts[4] = 0;
+    }
+    /* v24 offers three claimable tasks in Today instead of one. Slot 0 keeps
+     * using daily_task_base/daily_task_done, so an existing save keeps whatever
+     * progress it had; the two new slots start from the same snapshot rule and
+     * are re-snapshotted on the next day rollover. */
+    if (version < 24) {
+        for (int i = 0; i < DAILY_TASK_SLOTS - 1; i++) state->daily_task_base_extra[i] = 0;
+        state->daily_task_done_extra = 0;
     }
 }
 
@@ -644,7 +654,7 @@ static bool raw_valid_state(const void *src, size_t len, game_state_t *state)
         hdr.version != 10 && hdr.version != 11 && hdr.version != 12 && hdr.version != 13 &&
         hdr.version != 14 && hdr.version != 15 && hdr.version != 16 && hdr.version != 17 &&
         hdr.version != 18 && hdr.version != 19 && hdr.version != 20 &&
-        hdr.version != 21 && hdr.version != 22) {
+        hdr.version != 21 && hdr.version != 22 && hdr.version != 23) {
         ESP_LOGW(TAG, "raw write: version %u != %u",
                  (unsigned)hdr.version, (unsigned)SAVE_VERSION);
         return false;

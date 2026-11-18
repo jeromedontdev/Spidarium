@@ -12,6 +12,7 @@
 #include "decor.h"
 #include "companion.h"
 #include "life.h"
+#include "game_config.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -250,9 +251,17 @@ typedef struct {
      * next appended field can use them without another version bump. */
     uint8_t gift_layer;       /* 0 = backmost within the band */
     uint8_t reserved_v22[3];  /* padding to the 4-byte alignment boundary */
+    /* Appended in v24: Today offers three claimable tasks instead of one.
+     *
+     * Slot 0 reuses daily_task_base/daily_task_done, so an existing save keeps
+     * the progress it already had on its single task. Slots 1 and 2 are new and
+     * start from the same snapshot rule. */
+    uint32_t daily_task_base_extra[DAILY_TASK_SLOTS - 1];
+    uint8_t  daily_task_done_extra;  /* bit N = slot N+1 paid */
+    uint8_t  reserved_v24[3];        /* padding to the 4-byte boundary */
 } game_state_t;
 
-_Static_assert(sizeof(game_state_t) == 3104, "save payload ABI changed");
+_Static_assert(sizeof(game_state_t) == 3116, "save payload ABI changed");
 _Static_assert(offsetof(game_state_t, life) == 860, "life ABI changed");
 _Static_assert(offsetof(game_state_t, companion) == 268, "companion ABI changed");
 _Static_assert(offsetof(game_state_t, usb_sounds) == 267, "USB chime setting ABI changed");
@@ -284,6 +293,9 @@ _Static_assert(offsetof(game_state_t, decor_locked) == 3096, "decor lock ABI cha
 _Static_assert(offsetof(game_state_t, auto_clean) == 3097, "auto clean ABI changed");
 _Static_assert(offsetof(game_state_t, gift_path) == 3098, "gift path ABI changed");
 _Static_assert(offsetof(game_state_t, climb_owned) == 3099, "climb ownership ABI changed");
+_Static_assert(offsetof(game_state_t, gift_layer) == 3100, "gift layer ABI changed");
+_Static_assert(offsetof(game_state_t, daily_task_base_extra) == 3104, "daily task slots ABI changed");
+_Static_assert(offsetof(game_state_t, daily_task_done_extra) == 3112, "daily task done ABI changed");
 
 /* Live LVGL object handles. */
 typedef struct {
@@ -454,7 +466,11 @@ int game_placement_layer(void);
 int game_placement_layers(void);
 
 void game_on_placement_layer(lv_event_t *e);
+void game_on_placement_item(lv_event_t *e);
 bool game_placement_existing(void);
+/* Which placed item is being moved, as "name  n / total", for the top selector.
+ * Returns false when there is nothing to cycle (a new item, or a gift). */
+bool game_placement_item_label(char *buf, size_t len);
 
 /* WiFi menu actions, marshalled from menu callbacks onto the LVGL task. */
 void game_ui_start_wifi_scan(void);
@@ -509,6 +525,18 @@ uint32_t needs_daily_task_goal(void);
 bool needs_daily_task_ready(void);
 /* Pay today's task if it is complete. Returns the XP paid (0 if not ready). */
 uint32_t needs_daily_task_claim(void);
+
+/* Today offers DAILY_TASK_SLOTS tasks at once, all claimable. Slot 0 is the
+ * day's own rotating task; the others step forward from it, so the set changes
+ * every day and every kind still comes around. */
+uint8_t needs_daily_task_at(uint8_t slot);
+const char *needs_daily_task_name_at(uint8_t slot);
+uint32_t needs_daily_task_goal_at(uint8_t slot);
+uint32_t needs_daily_task_progress_at(uint8_t slot);
+bool needs_daily_task_ready_at(uint8_t slot);
+uint32_t needs_daily_task_claim_at(uint8_t slot);
+/* True when any of today's tasks is complete and unclaimed. */
+bool needs_daily_any_task_ready(void);
 
 /* Force the in-game day, for the serial console. Snapshots the task baseline
  * exactly as a real rollover does. */

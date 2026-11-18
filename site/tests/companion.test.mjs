@@ -231,7 +231,7 @@ function uiFixture(){
   });
   return ui;
 }
-test('menus combine check-in, daily task and requests in Today; Daily aliases Today',()=>{
+test('menus combine check-in and three claimable tasks in Today; Daily aliases Today',()=>{
   const ui=uiFixture();ui.open('Menu');
   for(const [name,icon] of [['Your Spider','personality'],['Today','today'],['Diary','diary']])
     assert.equal(ui.rows.find(r=>r.label===name).icon,`ui_${icon}`);
@@ -241,12 +241,13 @@ test('menus combine check-in, daily task and requests in Today; Daily aliases To
   assert.deepEqual(ui.rows.map(r=>r.icon),['personality','bond','favorite_treat','favorite_place','favorite_game'].map(i=>`ui_${i}`));
   assert.equal(ui.rows[2].detail,'Still discovering');
   for(const menu of ['Your Spider','Today','Diary']){ui.back(menu);assert.equal(ui.modal.name,'Menu');}
-  ui.open('Today');assert.equal(ui.rows.length,3);
-  assert.deepEqual(ui.rows.slice(0,2).map(r=>r.icon),['ui_checkin','ui_daily_task']);
-  /* Today has no request submenu: the request row is a single tap that
-   * dismisses, exactly like the rotating daily task. */
-  ui.rows[2].click();assert.equal(ui.modal.name,'Today');
-  assert.equal(ui.state.companion.requests[0].state,2);assert.equal(ui.saved,1);
+  /* Every Today row is claimable: the check-in plus three rotating tasks. The
+   * dismissible request row is gone -- requests still pay out passively when
+   * their event happens, but they are no longer a chore on this screen. */
+  ui.open('Today');assert.equal(ui.rows.length,4);
+  assert.deepEqual(ui.rows.map(r=>r.icon),
+    ['ui_checkin','ui_daily_task','ui_daily_task','ui_daily_task']);
+  assert.equal(new Set(ui.rows.slice(1).map(r=>r.label)).size,3);
   E.companionAddMemory(ui.state,6,0);E.companionAddMemory(ui.state,4,1);
   ui.open('Diary');assert.match(ui.rows[0].label,/Bond reached 25/);
   ui.rows[0].click();assert.equal(ui.detail.label,'Pin');ui.detail.action();
@@ -256,7 +257,7 @@ test('menus combine check-in, daily task and requests in Today; Daily aliases To
   assert.equal(ui.detail.actionIcon,'ui_pin');
 });
 
-test('Today claims preserve streak and both legacy rewards without replay or request payouts',()=>{
+test('Today claims preserve streak and both legacy rewards without replay',()=>{
   const ui=uiFixture(),s=ui.state;
   s.daily_override=100;s.daily_day=99;s.daily_streak=2;
   E.dailyEnsureBase(s);s.meals+=3; // Day 100 uses the catch-prey task.
@@ -282,16 +283,35 @@ test('Today claims preserve streak and both legacy rewards without replay or req
   assert.equal(ui.rows[0].enabled,true);assert.match(ui.rows[0].detail,/Day 4/);
   ui.rows[0].click();assert.equal(ui.state.daily_streak,4);
   ui.open('Menu');assert.match(ui.rows.find(r=>r.label==='Today').detail,/Claimed/);
-  ui.state.companion.requests=[request(1),request(6)];
-  const requestBalance=ui.state.silk;
-  for(let i=0;i<3;i++)note(ui.state,1);
-  assert.equal(ui.state.silk,requestBalance+5);
-  ui.open('Today');assert.match(ui.rows[2].detail,/Complete \/ \+5 Silk paid/);
-  /* No submenu: the request row is a single tap. A completed request has
-   * already been paid, so the tap only re-renders Today. */
-  ui.rows[2].click();assert.equal(ui.modal.name,'Today');
-  ui.rows[0].click();note(ui.state,1);
-  assert.equal(ui.state.silk,requestBalance+5);
+});
+
+test('each Today task slot claims independently and only once',()=>{
+  const ui=uiFixture(),s=ui.state;
+  s.daily_override=100;s.daily_day=99;s.daily_streak=2;
+  E.dailyEnsureBase(s);
+  /* Slot 0 is catch-prey, slot 1 clean, slot 2 play on day 100. */
+  s.meals+=3;s.cleans+=2;s.plays+=3;
+  ui.open('Today');
+  assert.equal(ui.rows.length,4);
+  for(let i=1;i<4;i++)assert.equal(ui.rows[i].enabled,true,`slot ${i-1} not ready`);
+  const silk=s.silk;
+  ui.rows[1].click();
+  assert.equal(s.silk,silk+E.CONFIG.DAILY_TASK_SILK);
+  assert.equal(s.daily_task_done,1);
+  assert.equal(s.daily_task_done_extra,0);
+  ui.rows[2].click();
+  assert.equal(s.silk,silk+2*E.CONFIG.DAILY_TASK_SILK);
+  assert.equal(s.daily_task_done_extra,1);
+  ui.rows[3].click();
+  assert.equal(s.silk,silk+3*E.CONFIG.DAILY_TASK_SILK);
+  assert.equal(s.daily_task_done_extra,3);
+  /* A second tap on any slot pays nothing. */
+  ui.rows[1].click();ui.rows[2].click();ui.rows[3].click();
+  assert.equal(s.silk,silk+3*E.CONFIG.DAILY_TASK_SILK);
+  /* The day rollover re-snapshots all three slots. */
+  s.daily_override=101;E.dailyEnsureBase(s);
+  assert.equal(s.daily_task_done,0);assert.equal(s.daily_task_done_extra,0);
+  assert.equal(E.dailyAnyTaskReady(s),false);
 });
 
 test('request and memory kinds keep dedicated icons in lists and details without visible UTC',()=>{
@@ -299,10 +319,13 @@ test('request and memory kinds keep dedicated icons in lists and details without
   /* open('Today') re-runs companionTick() with the real clock, so pin the
    * request day to today or the day rollover regenerates the requests. */
   ui.state.companion.request_day=Math.floor(Date.now()/DAY);
+  /* Requests are no longer a Today row, so their icons are checked through the
+   * text helper that still renders them in the diary and the HUD. */
   for(const [kind,icon] of [[1,'pet'],[2,'play'],[3,'hunt'],[4,'visit'],[6,'clean']]){
     ui.state.companion.requests=[request(kind,kind===3||kind===4?0:255),request(6)];
-    ui.open('Today');assert.equal(ui.rows[2].icon,`ui_request_${icon}`);
-    assert.doesNotMatch(ui.rows[2].detail,/\bUTC\b/i);
+    const text=E.companionRequestText(ui.state,0,{species:E.SPECIES,gifts:E.GIFTS});
+    assert.equal(text.icon,`ui_request_${icon}`);
+    assert.doesNotMatch(text.detail,/\bUTC\b/i);
   }
   const kinds=['treat','place','game','bond','growth','recovery','achievement','requests'];
   for(let i=0;i<kinds.length;i++){

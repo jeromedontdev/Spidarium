@@ -11873,3 +11873,117 @@ seen to pop, but they have not been watched for a full cycle by a human.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+---
+
+## Round 134 -- Webs around the whole frame, visible particles, item selector, three claimable tasks
+
+Six reports in one batch. Two of them turned out to be the same class of bug:
+a value that was correct in isolation but wrong where it was used.
+
+### Decisions made
+
+- **Webs go all the way around the frame, not just the top.** `k_web_zones[]`
+  grew from 3 top zones to 12 -- four corners, four edge midpoints, four edge
+  thirds -- and `AMBIENT_STRANDS` from 6 to 18. Each zone now also carries a
+  `base` fan direction, because a strand anchored to the bottom of the tank has
+  to point UP or it is drawn off the panel. The fan half-width is `WEB_FAN`
+  (0.6 rad); a wider fan let a bottom-corner strand point straight down, which
+  the new browser test caught.
+- **Strands get their own, slower present cadence.** Each strand is a ROTATED
+  object, so LVGL classifies it as `LV_LAYER_TYPE_TRANSFORM` and allocates an
+  intermediate layer for it on every refresh. Raising the count 6 -> 18 tripled
+  the ambient cost (443 -> 2026 us/tick) and halved the frame rate when they
+  shared the 10 Hz present. `AMBIENT_STRAND_PRESENT_MS` (250 ms) gives them 4 Hz
+  instead; a strand sways at 0.05-0.21 rad/s, so a whole degree takes 80-350 ms
+  and nothing visible is lost.
+- **Particles were invisible for three separate reasons, all now fixed.**
+  1. They were parented to the background's parent, which put them BELOW the
+     decor band -- a particle spawned at an item's own position was drawn behind
+     that item's artwork. They now have `terrarium_particle_layer()`, created
+     last in `terrarium_init()` and raised with the canopy.
+  2. `last_opa` was initialised to `0xFF`, which equals the real peak of 255, so
+     the first opacity comparison was a no-op and a particle spent its whole life
+     at its creation value of 60/255. It now starts at 0.
+  3. `ambient_set_visible()` reused `last_opa == 0` as "hidden", so a particle
+     that activated afterwards was never unhidden. `particle_t.hidden` now tracks
+     visibility separately.
+  The tint was also the theme's `dust`, a mid-tone that sits close to the cork
+  and soil it is drawn over; `brighten(dust, 55)` mixes toward white and the peak
+  opacity is 255 rather than 200.
+- **The top placement arrows select the ITEM; the bottom row selects the LAYER.**
+  They were a second copy of the layer control, which was redundant and left no
+  way to switch items without cancelling out to the menu. `game_on_placement_item()`
+  steps `g_decor_move_slot` to the next occupied slot and re-stages through the
+  same path `decor_begin_move()` uses; `game_placement_item_label()` supplies the
+  "name / n of m" caption and returns false when there is nothing to cycle.
+- **Today is all claimable.** The dismissible request row is gone: Today is the
+  check-in plus three rotating tasks, each independently claimable. Slot 0 is the
+  day's own task and the others step forward from it, so the set changes daily and
+  every kind still comes around. Requests still pay out passively when their event
+  happens; they are simply no longer a chore on this screen. Save v24 appends the
+  two extra baselines and the done bitmask (3104 -> 3116); slot 0 reuses
+  `daily_task_base`/`daily_task_done` so an existing save keeps its progress.
+- **Root menu page order.** Page 0 is Decor, Treats, Backgrounds, Borders; the
+  last page is Photo Album, Help Guide, Settings. With a page size of four and
+  fifteen rows the last page holds three, so indices 12..14 must be the reference
+  rows. The browser menu mirrors the same order.
+- **A zero rotation must not be expressed as a transform.** `apply_rotation()`
+  set `transform_rotation` to `rotation * 900` unconditionally, including 0. LVGL
+  classifies any object with a non-zero `transform_rotation` as
+  `LV_LAYER_TYPE_TRANSFORM` and allocates a full 480x480 intermediate layer plus a
+  transformed blend of every pixel, every frame, even when the transform is the
+  identity. At rotation 0 the property is now removed instead of set to zero.
+
+### Two test bugs found and fixed
+
+- `behaviour_gift_block_test()` did not pin the spider's state, so a WANDERING
+  spider moved under its own steam and the tick read that as a gift push. It now
+  pins `SPIDER_IDLE` and pushes `s_idle_until` out. The assertion is also on
+  distance from the gift rather than the exact pixel, because the integrator
+  rounds its sub-pixel position each tick and an idle spider can drift one pixel.
+- `on_daily_pick()` was still keyed on ids 0/1 while the rows carry ids 3 and
+  4..6, so tapping Check In did nothing. It now matches the ids the rows emit.
+
+### Evidence
+
+Build exit 0, zero main warnings. Flash exit 0.
+
+```
+AMBIENT ok=1                      x10
+AMBIENT motes=16 inside=16 visible=1 spores=6 strands=18 particles=48 live=12..15
+MEM cmd internal=93407 largest=63488 dma=85675 psram=1592396
+RENDER ticks=500 largest_drift=0 per_tick_us=32993
+LOOP ok=5 failed=0 largest_drift=0
+DECORTEST placed=74 slots=12
+run_tests.py COM7                 passed=50 failed=2
+uitest                            hud=0 pointer=0, every other flag 1
+stability_check.py COM7 40        VERDICT: PASS, FAULTS/ERRORS: 0
+site: node --test tests/*.test.mjs  309/309
+```
+
+The two `run_tests.py` failures are the documented baseline: both are `uitest`
+with `hud=0 pointer=0`, unchanged from before this round.
+
+Render cost, measured with `rendercost` over 12 s windows, before and after the
+strand cadence split:
+
+```
+baseline 82d94f2   ticks=38..45  ambient=355..470 us
+18 strands @10 Hz  ticks=17..24  ambient=2026 us      <- regression
+18 strands @4 Hz   ticks=34..42  ambient=385..523 us  <- back to baseline
+```
+
+### Honest boundaries
+
+The render tick is still ~3 Hz on this board, not the 30 Hz `RENDER_HZ` asks
+for. That is pre-existing (Round 133 measured the same on `1073241`), and this
+round neither caused nor fixed it. The render callback is only ~2-3 ms of the
+cycle; the rest is LVGL's own flush. It needs its own round.
+
+Whether 18 strands reads as "much more web" rather than as clutter is a
+judgement call. The screenshots show strands on all four edges, but they have not
+been watched for a full fade cycle by a human.
+
+The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
+Behind, Holo Garden gift (kind 34) at (240,300).

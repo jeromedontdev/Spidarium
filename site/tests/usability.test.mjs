@@ -14,8 +14,8 @@ function menu() {
 
 test('device and browser menus share gameplay-first ordering and Settings has no screenshot action',async()=>{
   const ui=menu();ui.open('Menu');
-  const order=['Your Spider','Today','Training','Calendar','Treats','Achievements',
-    'Prey Species','Diary','Photo Album','Generations','Decor','Backgrounds','Borders','Help Guide','Settings'];
+  const order=['Decor','Treats','Backgrounds','Borders','Your Spider','Today','Training',
+    'Calendar','Achievements','Prey Species','Diary','Generations','Photo Album','Help Guide','Settings'];
   assert.deepEqual(ui.rows.map(row=>row.label),order);
   const native=await readFile(new URL('../../main/game.c',import.meta.url),'utf8');
   const root=native.slice(native.indexOf('case MENU_MAIN: {'),native.indexOf('case MENU_ALBUM: {'));

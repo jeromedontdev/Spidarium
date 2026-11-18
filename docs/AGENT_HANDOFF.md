@@ -44,6 +44,40 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
     same shape from a hash of the time bucket -- the result reads the same and is
     stable under test, which matters because a test that asserts "the spider
     blinks" must not be flaky.
+  - **Web strands run all the way around the frame.** `k_web_zones[]` holds
+    twelve anchor zones -- four corners, four edge midpoints, four edge
+    thirds -- because a web is spun where the spider can anchor it, which is the
+    enclosure frame, not only the top. Each zone also carries a `base` fan
+    direction: a strand anchored to the bottom of the tank has to point UP or it
+    is drawn off the panel, and one anchored to a side has to point inward. The
+    fan half-width is `WEB_FAN` (0.6 rad); a wider fan let a bottom-corner strand
+    point straight down. `AMBIENT_STRANDS` is 18.
+  - **Strands are presented on their own, slower cadence.** Each strand is a
+    ROTATED object, so LVGL classifies it as `LV_LAYER_TYPE_TRANSFORM` and
+    allocates an intermediate layer for it on every refresh -- far more expensive
+    per object than a plain rectangle. Raising the count from 6 to 18 tripled the
+    ambient cost (443 -> 2026 us/tick) and halved the frame rate when they shared
+    the 10 Hz present. `AMBIENT_STRAND_PRESENT_MS` (250 ms) gives them a 4 Hz
+    cadence instead: a strand sways at 0.05-0.21 rad/s, so a whole degree of
+    rotation takes 80-350 ms and nothing visible is lost. Measured back at
+    baseline afterwards (385-523 us/tick, 34-42 ticks per 12 s).
+  - **Decor particles are parented to their own layer, above the decor.**
+    `terrarium_particle_layer()` is created last in `terrarium_init()` and raised
+    with the canopy. They used to be parented to the background's parent, which
+    put them BELOW the decor band -- so a particle spawned at an item's own
+    position was drawn behind that item's artwork and was never visible. That was
+    the whole reason the effect could not be seen despite the emitter running.
+  - **Particles are brightened and fully opaque.** The theme's `dust` is a
+    mid-tone that sits close to the cork and soil colours it is drawn over, so a
+    3-5 px dot tinted with it had no contrast. `brighten(dust, 55)` mixes toward
+    white, and the peak opacity is 255 rather than 200.
+  - **Two sentinel bugs made particles invisible even once layered correctly.**
+    `last_opa` was initialised to `0xFF`, which equals the real peak of 255, so
+    the first opacity comparison was a no-op and a particle spent its whole life
+    at its creation value of 60/255. And `ambient_set_visible()` reused
+    `last_opa == 0` as "hidden", so a particle that activated afterwards was
+    never unhidden. `particle_t.hidden` now tracks visibility separately and
+    `last_opa` starts at 0.
 - **Draw order is proximity-based.** `decor_layer_count_at()` counts only items
   whose ARTWORK OVERLAPS the one being ordered, because draw order is only
   visible where two sprites cover the same pixels. Ordering a fern against a rock
@@ -98,9 +132,10 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   budget. Aliveness comes from many small things that move independently.
 - **Aliveness is four cheap layers, not one expensive effect.** Dust motes
   (16 small squares rising with a sway), spores (6 larger, slower specks crossing
-  the tank on both axes), web strands (6 thin lines radiating from shared anchors,
-  pivoting rather than translating), and decor/gift particles. Each is a handful
-  of LVGL objects created once and moved; nothing is allocated per frame.
+  the tank on both axes), web strands (18 thin lines radiating from shared anchors
+  all the way around the frame, pivoting rather than translating), and
+  decor/gift particles. Each is a handful of LVGL objects created once and moved;
+  nothing is allocated per frame.
   The two air layers use different palette columns (`dust` and `web`) so they
   read as depth rather than as one noisy field.
   The counts are deliberately generous. The first pass used 8 motes, 3 spores,
@@ -119,6 +154,9 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
      pushes the layer at 10 Hz while `ambient_simulate()` still runs every tick.
      Dust drifts at 4-12 px/s, so at 10 Hz it still advances less than a pixel
      per update -- identical to the eye, a third of the invalidations.
+     The strands get their own, slower cadence (`AMBIENT_STRAND_PRESENT_MS`,
+     250 ms) because each one is a rotated object and therefore a transform
+     layer; see the strand note above.
   2. **Dirty-check every setter.** Motes, spores, strands and particles cache
      their last integer position, opacity and size and only call LVGL when the
      value changed. A mote moves a fraction of a pixel per tick, so most ticks
@@ -137,7 +175,18 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   lines, which is exactly the bug that made the web read as "too robotic".
   `strand_spawn()` is therefore pure (no `lv_*`) -- it is called from
   `ambient_simulate()`, which the console task runs during the self-test. The
-  object is updated by `ambient_present()` when it sees the `dirty` flag.
+  object is updated by `ambient_present_strands()` when it sees the `dirty` flag.
+- **A zero rotation must not be expressed as a transform.** `apply_rotation()` in
+  `power.c` wraps every UI layer in a full-screen `s_rotor` object and used to
+  set `transform_rotation` to `rotation * 900` unconditionally -- including 0.
+  LVGL classifies any object with a non-zero `transform_rotation` as
+  `LV_LAYER_TYPE_TRANSFORM` and allocates a full 480x480 intermediate layer plus
+  a transformed blend of every pixel, every frame, even when the transform is the
+  identity. At rotation 0 the property is now REMOVED
+  (`lv_obj_remove_local_style_prop(s_rotor, LV_STYLE_TRANSFORM_ROTATION, 0)`)
+  instead of set to zero, which keeps the common upright case on the plain draw
+  path. Note that `lv_obj_remove_style_transform_*` helpers do not exist; the
+  generic `lv_obj_remove_local_style_prop()` is the working API.
 - **Decor and gift particles are a FIXED POOL, not one emitter per item.** The
   tank can hold twelve decor slots plus a gift, and per-item emitters would make
   the cost scale with how much the player has bought -- the worst possible
@@ -181,8 +230,16 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   count depends on which items the item currently overlaps and that changes under
   the player's finger. Without it the row only updated on a button press, so the
   control appeared dead until Done was pressed and the item picked up again.
-  The same control is duplicated at the top of the screen, where the hand already
-  is while dragging.
+- **The top arrows select the ITEM, the bottom row selects the LAYER.** The top
+  arrows used to be a second copy of the layer control, which was redundant: the
+  bottom row already does that, and there was no way to switch to a different
+  placed item without cancelling out to the menu and starting again.
+  `game_on_placement_item()` steps `g_decor_move_slot` to the next occupied slot
+  (wrapping, and a full lap with nothing else placed leaves the selection alone)
+  and re-stages through the same path `decor_begin_move()` uses.
+  `game_placement_item_label()` supplies the "name / n of m" caption and returns
+  false when there is nothing to cycle, which is what hides the row for a new
+  item or a gift.
 - **`life_clock_now()` is the single clock read.** `life_visual_tick()` used to
   call `time(NULL)` directly while the mind used `life_period_now()`, so `rtcset`
   changed what the brain saw but not what the screen showed. Everything that
@@ -327,6 +384,14 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   remain stable and add two mood. Manual catches only, completed minigames,
   completed gift visits, accepted petting and needed cleaning feed requests.
   Two requests/day pay five Silk automatically once; Not Today has no penalty.
+  **Today is now all claimable.** The dismissible request row is gone: Today is
+  the check-in plus `DAILY_TASK_SLOTS` (3) rotating tasks, each independently
+  claimable. Slot 0 is the day's own task and the others step forward from it, so
+  the set changes daily and every kind still comes around. Requests still pay out
+  passively when their event happens; they are simply no longer a chore on this
+  screen. Save v24 appends the two extra task baselines and the done bitmask
+  (3104 -> 3116); slot 0 reuses `daily_task_base`/`daily_task_done` so an existing
+  save keeps its progress.
   UTC is used internally when reliable, without visible UTC labels; otherwise
   use explicit play days. Backward time
   cannot reroll; acquiring calendar time retains the current pair/progress.
@@ -411,6 +476,13 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   logical position on the floor so steering/hunting/hit-testing are untouched;
   a contact shadow follows the body under its feet. Offered only for kinds with
   a climb height.
+- **Root menu page order is deliberate.** Page 0 is the four things a player
+  reaches for while looking at the tank -- Decor, Treats, Backgrounds, Borders --
+  and the last page is the reference material: Photo Album, Help Guide, Settings.
+  The middle pages hold the progress screens, whose order does not matter. With a
+  page size of four and fifteen rows the last page holds three, so indices 12..14
+  must be the reference rows. `ui_menu_set_item_icon()` indices must be updated
+  with the array, and `site/lib/device-ui.js` mirrors the same order.
   Two climb families exist. The 53 small props (64x64, drawn at radius*16)
   snap to their full climb height anywhere inside the footprint. The six large
   structures (decor kinds 68..73, authored 96x96, drawn at LVGL scale 512 which

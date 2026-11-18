@@ -303,22 +303,24 @@ export class DeviceGame {
     let rows;
     switch (name) {
       case 'Menu': rows = [
-        row('Your Spider', () => this.open('Your Spider'), 'Personality and Favorites', { submenu: true }),
-        row('Today', () => this.open('Today'), `${this.dailyDetail()} / One Optional Request`, { submenu: true }),
-        row('Training', () => this.open('Training'), 'Three Tricks / No Silk Rewards', {submenu:true}),
-        row('Calendar', () => this.open('Calendar'), 'Activity, Visitors and Seasons', {submenu:true}),
-        row('Treats', () => this.open('Treats'), 'Spend Silk', { submenu: true }),
-        row('Achievements', () => this.open('Achievements'), this.achievementDetail(), { submenu: true }),
-        row('Prey Species', () => this.open('Prey Species'), this.speciesDetail(), { submenu: true }),
-        row('Diary', () => this.open('Diary'), 'Memories and Pinned Moments', { submenu: true }),
-        row('Photo Album', () => this.open('Photo Album'), 'Eight Persistent Browser Photos', {submenu:true}),
-        row('Generations', () => this.open('Generations'), 'Optional / Keep Every Spider', {submenu:true}),
+        /* Page order is deliberate and mirrors the firmware: the first page is
+         * the four things a player reaches for while looking at the tank, and
+         * the last page is the reference material. */
         row('Decor', () => this.open('Decor'), `${E.decorPlacedCount(this.state)} Placed`,
           { submenu: true }),
+        row('Treats', () => this.open('Treats'), 'Spend Silk', { submenu: true }),
         row('Backgrounds', () => this.open('Backgrounds'), 'Enclosure Themes', { submenu: true }),
         row('Borders', () => this.open('Borders'), 'Mix and Match Frames',
           { submenu: true,icon:`border_${this.state.background}_0` }),
-        /* Settings is always the last row: it is the least-used entry. */
+        row('Your Spider', () => this.open('Your Spider'), 'Personality and Favorites', { submenu: true }),
+        row('Today', () => this.open('Today'), this.dailyDetail(), { submenu: true }),
+        row('Training', () => this.open('Training'), 'Three Tricks / No Silk Rewards', {submenu:true}),
+        row('Calendar', () => this.open('Calendar'), 'Activity, Visitors and Seasons', {submenu:true}),
+        row('Achievements', () => this.open('Achievements'), this.achievementDetail(), { submenu: true }),
+        row('Prey Species', () => this.open('Prey Species'), this.speciesDetail(), { submenu: true }),
+        row('Diary', () => this.open('Diary'), 'Memories and Pinned Moments', { submenu: true }),
+        row('Generations', () => this.open('Generations'), 'Optional / Keep Every Spider', {submenu:true}),
+        row('Photo Album', () => this.open('Photo Album'), 'Eight Persistent Browser Photos', {submenu:true}),
         row('Help Guide',()=>this.open('Help Guide'),'All Features and Controls'),
         row('Settings', () => this.open('Settings'), 'Sound, Display, WiFi', { submenu: true }),
       ]; break;
@@ -409,32 +411,26 @@ export class DeviceGame {
           ? `Day ${next} / +${E.CONFIG.DAILY_XP_BASE + step * E.CONFIG.DAILY_XP_PER_DAY} XP ` +
             `+${E.CONFIG.DAILY_SILK_BASE + step * E.CONFIG.DAILY_SILK_PER_DAY} Silk`
           : `Claimed / Streak ${this.state.daily_streak}`;
-        const task = E.dailyTask(this.state);
-        const taskDetail = this.state.daily_task_done
-          ? `Done / +${E.CONFIG.DAILY_TASK_XP} XP +${E.CONFIG.DAILY_TASK_SILK} Silk`
-          : E.dailyTaskReady(this.state) ? 'Complete / Tap to Claim'
-            : `${E.dailyTaskProgress(this.state)} of ${E.dailyTaskGoal(this.state)}`;
+        const taskRows = [];
+        const slots = E.CONFIG.DAILY_TASK_SLOTS ?? 3;
+        for (let i = 0; i < slots; i++) {
+          const ready = E.dailyTaskReadyAt(this.state, i);
+          const done = !ready && E.dailyTaskProgressAt(this.state, i) >= E.dailyTaskGoalAt(this.state, i);
+          const detail = done
+            ? `Done / +${E.CONFIG.DAILY_TASK_XP} XP +${E.CONFIG.DAILY_TASK_SILK} Silk`
+            : ready ? 'Complete / Tap to Claim'
+              : `${E.dailyTaskProgressAt(this.state, i)} of ${E.dailyTaskGoalAt(this.state, i)}`;
+          taskRows.push(row(E.dailyTaskNameAt(this.state, i),
+            () => { E.dailyTaskClaimAt(this.state, i); this.persist(); this.open('Today'); },
+            detail, { enabled: ready, icon:'ui_daily_task' }));
+        }
+        /* Every row is claimable: the check-in plus three rotating tasks. The
+         * companion request used to be a third row that could only be dismissed,
+         * which made Today read as a chore list with one optional extra. */
         rows = [
           row('Check In', () => { E.dailyClaim(this.state); this.persist(); this.open('Today'); },
             claimDetail, { enabled: available }),
-          row(E.dailyTaskName(task),
-            () => { E.dailyTaskClaim(this.state); this.persist(); this.open('Today'); },
-            taskDetail, { enabled: E.dailyTaskReady(this.state), icon:'ui_daily_task' }),
-          /* One request row, no submenu. Two dismissible rows plus a "Not Today"
-           * confirmation made Today read as a chore list; the rotating daily
-           * task is a single tap, so the request is too. The first request that
-           * has not been dismissed is the one shown, so a completed request
-           * stays visible with its "Complete" line. */
-          (() => {
-            const slot = this.state.companion.requests.findIndex(r => r.state !== 2);
-            if (slot < 0) return row('Requests Done', null, 'New Ones Tomorrow', { icon:'ui_dismiss' });
-            const request = this.state.companion.requests[slot];
-            const text = E.companionRequestText(this.state, slot, {species:E.SPECIES,gifts:E.GIFTS});
-            return row(text.title, () => {
-              if (!request.state) E.companionDismiss(this.state, slot);
-              this.persist(); this.open('Today');
-            }, text.detail, { icon:text.icon });
-          })(),
+          ...taskRows,
         ];
         break;
       }
@@ -750,7 +746,7 @@ export class DeviceGame {
   /** Today's subtitle: what is waiting for the player right now. */
   dailyDetail() {
     if (E.dailyAvailable(this.state)) return 'Check In Ready';
-    if (E.dailyTaskReady(this.state)) return 'Task Complete';
+    if (E.dailyAnyTaskReady(this.state)) return 'Task Complete';
     return `Check In Claimed / Streak ${this.state.daily_streak}`;
   }
   achievementDetail() {

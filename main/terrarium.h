@@ -69,6 +69,9 @@ int terrarium_pest_count(void);
 void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_t y,
                             uint8_t path, int layer);
 void terrarium_raise_canopy(void);
+/* The layer ambient particles are parented to: above the decor and canopy bands
+ * so an emitted particle is never hidden behind the artwork that emitted it. */
+lv_obj_t *terrarium_particle_layer(void);
 bool terrarium_preview_test(uint8_t path, int layer);
 void terrarium_preview_show(int32_t x, int32_t y, int32_t radius);
 void terrarium_preview_hide(void);

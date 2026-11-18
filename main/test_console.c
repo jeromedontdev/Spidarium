@@ -213,6 +213,13 @@ static void cmd_stat(void)
            (unsigned long)g.meals, (unsigned long)g.cleans,
            (unsigned long)g.plays, (unsigned long)g.pets,
            (unsigned)g.pet_xp_today, (unsigned)PET_XP_DAILY_MAX);
+    for (int i = 0; i < DAILY_TASK_SLOTS; i++)
+        printf("DAILYTASK slot=%d kind=%u name=\"%s\" progress=%lu/%lu ready=%d\n",
+               i, (unsigned)needs_daily_task_at((uint8_t)i),
+               needs_daily_task_name_at((uint8_t)i),
+               (unsigned long)needs_daily_task_progress_at((uint8_t)i),
+               (unsigned long)needs_daily_task_goal_at((uint8_t)i),
+               needs_daily_task_ready_at((uint8_t)i) ? 1 : 0);
     printf("OK stat\n");
 }
 
@@ -551,6 +558,9 @@ static void cmd_save_schema(void)
         {"daily_task_base", "u32", offsetof(game_state_t, daily_task_base), 0, 6},
         {"daily_streak", "u8", offsetof(game_state_t, daily_streak), 0, 6},
         {"daily_task_done", "u8", offsetof(game_state_t, daily_task_done), 0, 6},
+        {"daily_task_base_extra", "u32[2]", offsetof(game_state_t, daily_task_base_extra),
+         sizeof g.daily_task_base_extra, 24},
+        {"daily_task_done_extra", "u8", offsetof(game_state_t, daily_task_done_extra), 0, 24},
         {"pet_xp_day", "u32", offsetof(game_state_t, pet_xp_day), 0, 7},
         {"pet_xp_today", "u8", offsetof(game_state_t, pet_xp_today), 0, 7},
         {"decor_owned", "u32", offsetof(game_state_t, decor_owned), 0, 8},
@@ -814,15 +824,20 @@ static void cmd_daily(const char *arg)
         return;
     }
     if (!strcmp(arg, "task")) {
-        uint32_t xp = needs_daily_task_claim();
-        if (xp == 0) {
+        /* `daily task` claims the first ready slot, so the console exercises the
+         * same path the menu does without needing a slot argument. */
+        int slot = -1;
+        for (int i = 0; i < DAILY_TASK_SLOTS; i++)
+            if (needs_daily_task_ready_at((uint8_t)i)) { slot = i; break; }
+        if (slot < 0) {
             printf("ERR daily task not ready (%lu/%lu)\n",
-                   (unsigned long)needs_daily_task_progress(),
-                   (unsigned long)needs_daily_task_goal());
+                   (unsigned long)needs_daily_task_progress_at(0),
+                   (unsigned long)needs_daily_task_goal_at(0));
             return;
         }
+        uint32_t xp = needs_daily_task_claim_at((uint8_t)slot);
         game_save_now();
-        printf("OK daily task xp=%lu silk=%lu\n", (unsigned long)xp,
+        printf("OK daily task slot=%d xp=%lu silk=%lu\n", slot, (unsigned long)xp,
                (unsigned long)g.silk);
         return;
     }
@@ -834,6 +849,8 @@ static void cmd_daily(const char *arg)
         g.daily_task_base = 0;
         g.daily_streak = 0;
         g.daily_task_done = 0;
+        for (int i = 0; i < DAILY_TASK_SLOTS - 1; i++) g.daily_task_base_extra[i] = 0;
+        g.daily_task_done_extra = 0;
         g.pet_xp_day = DAILY_NEVER;
         g.pet_xp_today = 0;
         game_save_now();

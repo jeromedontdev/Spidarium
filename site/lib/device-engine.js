@@ -51,6 +51,7 @@ export const CONFIG = Object.freeze({
   XP_DAY:10, XP_MOLT:8, PLAY_MARGIN:34, MAX_PREY:3, MAX_POOP:8, STRIDE_PX:24,
   DAILY_STREAK_MAX:7, DAILY_XP_BASE:6, DAILY_XP_PER_DAY:2, DAILY_SILK_BASE:4,
   DAILY_SILK_PER_DAY:2, DAILY_TASK_XP:12, DAILY_TASK_SILK:8, DAILY_TASK_COUNT:4,
+  DAILY_TASK_SLOTS:3,
   DAILY_NEVER:0xFFFFFFFF,
   TREAT_COUNT:12, TREAT_HUNGER_COST:6, TREAT_MOOD_COST:8, TREAT_ENERGY_COST:10,
   TREAT_HUNGER_GAIN:25, TREAT_MOOD_GAIN:30, TREAT_ENERGY_GAIN:35,
@@ -741,13 +742,23 @@ export function dailyToday(s){
 export function dailyTaskForDay(day){return day%C.DAILY_TASK_COUNT;}
 export function dailyTask(s){return dailyTaskForDay(dailyToday(s));}
 const DAILY_COUNTERS=['meals','cleans','plays','pets'];
-export function dailyTaskGoal(s){
-  switch(dailyTask(s)){case 0:return 3;case 1:return 2;case 2:return 3;default:return 4;}
+/** Which task kind occupies Today slot `slot`. The set rotates as a whole: slot
+ * 0 is the day's own task and the others step forward from it, so every day
+ * offers three different kinds and the set changes daily. */
+export function dailyTaskAt(s,slot){
+  const n=C.DAILY_TASK_SLOTS??3;
+  if(slot<0||slot>=n)slot=0;
+  return (dailyTaskForDay(dailyToday(s))+slot)%C.DAILY_TASK_COUNT;
 }
+export function dailyTaskGoalAt(s,slot){
+  switch(dailyTaskAt(s,slot)){case 0:return 3;case 1:return 2;case 2:return 3;default:return 4;}
+}
+export function dailyTaskGoal(s){return dailyTaskGoalAt(s,0);}
 export function dailyTaskName(task){
   switch(task){case 0:return 'Catch 3 Prey';case 1:return 'Clean 2 Times';
     case 2:return 'Play 3 Times';default:return 'Pet 4 Times';}
 }
+export function dailyTaskNameAt(s,slot){return dailyTaskName(dailyTaskAt(s,slot));}
 /** Snapshot the task baseline when the day turns over. Taking it lazily would
  * capture the baseline AFTER the player acted, so progress would read 0. */
 export function dailyEnsureBase(s){
@@ -756,15 +767,38 @@ export function dailyEnsureBase(s){
   s.daily_base_day=today;
   s.daily_task_base=s[DAILY_COUNTERS[dailyTaskForDay(today)]]??0;
   s.daily_task_done=0;
+  const n=C.DAILY_TASK_SLOTS??3;
+  s.daily_task_base_extra=[];
+  for(let i=1;i<n;i++)
+    s.daily_task_base_extra[i-1]=s[DAILY_COUNTERS[(dailyTaskForDay(today)+i)%C.DAILY_TASK_COUNT]]??0;
+  s.daily_task_done_extra=0;
 }
-export function dailyTaskProgress(s){
-  const now=s[DAILY_COUNTERS[dailyTask(s)]]??0;
-  const base=s.daily_task_base??0;
+function dailyTaskBaseAt(s,slot){
+  return slot===0?(s.daily_task_base??0):(s.daily_task_base_extra?.[slot-1]??0);
+}
+function dailyTaskDoneAt(s,slot){
+  return slot===0?!!s.daily_task_done:!!((s.daily_task_done_extra??0)&(1<<(slot-1)));
+}
+export function dailyTaskProgressAt(s,slot){
+  const n=C.DAILY_TASK_SLOTS??3;
+  if(slot<0||slot>=n)slot=0;
+  const now=s[DAILY_COUNTERS[dailyTaskAt(s,slot)]]??0;
+  const base=dailyTaskBaseAt(s,slot);
   if(now<base)return 0;
-  return Math.min(now-base,dailyTaskGoal(s));
+  return Math.min(now-base,dailyTaskGoalAt(s,slot));
 }
-export function dailyTaskReady(s){
-  return !s.daily_task_done&&dailyTaskProgress(s)>=dailyTaskGoal(s);
+export function dailyTaskProgress(s){return dailyTaskProgressAt(s,0);}
+export function dailyTaskReadyAt(s,slot){
+  const n=C.DAILY_TASK_SLOTS??3;
+  if(slot<0||slot>=n)slot=0;
+  return !dailyTaskDoneAt(s,slot)&&dailyTaskProgressAt(s,slot)>=dailyTaskGoalAt(s,slot);
+}
+export function dailyTaskReady(s){return dailyTaskReadyAt(s,0);}
+/** True when any of today's tasks is complete and unclaimed. */
+export function dailyAnyTaskReady(s){
+  const n=C.DAILY_TASK_SLOTS??3;
+  for(let i=0;i<n;i++)if(dailyTaskReadyAt(s,i))return true;
+  return false;
 }
 /** A streak of 0 means "never claimed", which is self-healing: a save whose
  * daily_day happens to equal today but has no streak is treated as unclaimed. */
@@ -787,9 +821,13 @@ export function dailyClaim(s){
   return xp;
 }
 /** Pay today's task if complete. Returns the XP paid, or 0 if not ready. */
-export function dailyTaskClaim(s){
-  if(!dailyTaskReady(s))return 0;
-  s.daily_task_done=1;
+export function dailyTaskClaim(s){return dailyTaskClaimAt(s,0);}
+export function dailyTaskClaimAt(s,slot){
+  const n=C.DAILY_TASK_SLOTS??3;
+  if(slot<0||slot>=n)slot=0;
+  if(!dailyTaskReadyAt(s,slot))return 0;
+  if(slot===0)s.daily_task_done=1;
+  else s.daily_task_done_extra=(s.daily_task_done_extra??0)|(1<<(slot-1));
   addXP(s,C.DAILY_TASK_XP);addSilk(s,C.DAILY_TASK_SILK);
   return C.DAILY_TASK_XP;
 }

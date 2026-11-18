@@ -26,9 +26,12 @@ static lv_obj_t *s_stats[NUM_STATS], *s_values[NUM_STATS], *s_bars[NUM_STATS];
 static lv_obj_t *s_level, *s_progress, *s_resources, *s_hint, *s_bubble, *s_bubble_label;
 static lv_obj_t *s_care_button, *s_care_label, *s_place_done, *s_place_cancel;
 static lv_obj_t *s_place_away, *s_place_path, *s_place_path_label, *s_place_back, *s_place_front, *s_place_layer_label;
-/* The same layer control, duplicated at the top of the screen. While dragging an
- * item the player's hand is over the tank, so the bottom row is awkward to
- * reach; the top arrows sit where the hand already is. */
+/* The item selector, at the top of the screen. While dragging an item the
+ * player's hand is over the tank, so the bottom row is awkward to reach; these
+ * arrows sit where the hand already is and step between the placed items. They
+ * used to be a second copy of the layer control, which was redundant -- the
+ * bottom row already does that, and there was no way to switch items without
+ * cancelling out to the menu. */
 static lv_obj_t *s_place_top_back, *s_place_top_front, *s_place_top_label;
 static lv_obj_t *s_layer;
 static lv_obj_t *s_identity, *s_battery, *s_battery_fill, *s_battery_text, *s_charge;
@@ -358,15 +361,14 @@ void ui_hud_init(lv_obj_t *parent)
     lv_obj_set_pos(s_place_layer_label, 276, 364);
     lv_obj_set_style_text_align(s_place_layer_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_hidden(s_place_layer_label, true);
-    /* The same layer control at the top of the screen. While dragging an item
-     * the hand is over the tank, so the bottom row is awkward to reach; these
-     * sit where the hand already is. Same callbacks, so the two rows can never
-     * disagree. */
-    s_place_top_back = place_action(parent, 132, 12, 56, LV_SYMBOL_LEFT, game_on_placement_layer, -1);
-    s_place_top_front = place_action(parent, 292, 12, 56, LV_SYMBOL_RIGHT, game_on_placement_layer, 1);
+    /* The item selector at the top of the screen. While dragging an item the
+     * hand is over the tank, so the bottom row is awkward to reach; these step
+     * between the placed items instead of duplicating the layer control. */
+    s_place_top_back = place_action(parent, 96, 12, 56, LV_SYMBOL_LEFT, game_on_placement_item, -1);
+    s_place_top_front = place_action(parent, 328, 12, 56, LV_SYMBOL_RIGHT, game_on_placement_item, 1);
     s_place_top_label = make_label(parent, "", &lv_font_montserrat_12, COL_TEXT);
-    lv_obj_set_size(s_place_top_label, 100, 40);
-    lv_obj_set_pos(s_place_top_label, 190, 20);
+    lv_obj_set_size(s_place_top_label, 168, 40);
+    lv_obj_set_pos(s_place_top_label, 156, 20);
     lv_obj_set_style_text_align(s_place_top_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_hidden(s_place_top_label, true);
     lv_obj_set_hidden(s_place_top_back, true);
@@ -429,12 +431,15 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_place_back, !layer_row);
     lv_obj_set_hidden(s_place_front, !layer_row);
     lv_obj_set_hidden(s_place_layer_label, !layer_row);
-    /* The top arrows are the same control as the bottom layer row, placed where
-     * the player's hand already is while dragging. Both are shown together so
-     * the row is reachable without moving off the item. */
-    lv_obj_set_hidden(s_place_top_back, !layer_row);
-    lv_obj_set_hidden(s_place_top_front, !layer_row);
-    lv_obj_set_hidden(s_place_top_label, !layer_row);
+    /* The top arrows step between the placed items, so they are shown whenever
+     * there is more than one item to step through. The bottom row keeps the
+     * layer control. */
+    char item_label[48];
+    bool item_row = on && game_placement_item_label(item_label, sizeof item_label);
+    lv_obj_set_hidden(s_place_top_back, !item_row);
+    lv_obj_set_hidden(s_place_top_front, !item_row);
+    lv_obj_set_hidden(s_place_top_label, !item_row);
+    if (item_row) lv_label_set_text(s_place_top_label, item_label);
     if (path_row) {
         static const char *names[] = {"Walk Over", "Solid", "Walk Behind"};
         uint8_t path = game_placement_blocking();
@@ -461,20 +466,21 @@ void ui_hud_placement_changed(void)
     lv_obj_set_hidden(s_place_back, !layer_row);
     lv_obj_set_hidden(s_place_front, !layer_row);
     lv_obj_set_hidden(s_place_layer_label, !layer_row);
-    lv_obj_set_hidden(s_place_top_back, !layer_row);
-    lv_obj_set_hidden(s_place_top_front, !layer_row);
-    lv_obj_set_hidden(s_place_top_label, !layer_row);
+    /* The top arrows step between the placed items, not between layers. */
+    char item_label[48];
+    bool item_row = game_placement_item_label(item_label, sizeof item_label);
+    lv_obj_set_hidden(s_place_top_back, !item_row);
+    lv_obj_set_hidden(s_place_top_front, !item_row);
+    lv_obj_set_hidden(s_place_top_label, !item_row);
+    if (item_row) lv_label_set_text(s_place_top_label, item_label);
     if (!layer_row) return;
     uint8_t path = game_placement_blocking();
     int layer = game_placement_layer();
     int layers = game_placement_layers();
     lv_obj_set_state(s_place_back, LV_STATE_DISABLED, layer == 0);
     lv_obj_set_state(s_place_front, LV_STATE_DISABLED, layer >= layers - 1);
-    lv_obj_set_state(s_place_top_back, LV_STATE_DISABLED, layer == 0);
-    lv_obj_set_state(s_place_top_front, LV_STATE_DISABLED, layer >= layers - 1);
     const char *band = path == DECOR_WALK_BEHIND ? "Canopy" : "Floor";
     lv_label_set_text_fmt(s_place_layer_label, "%s\n%d / %d", band, layer + 1, layers);
-    lv_label_set_text_fmt(s_place_top_label, "%s %d / %d", band, layer + 1, layers);
 }
 
 void ui_hud_set_top(bool on)

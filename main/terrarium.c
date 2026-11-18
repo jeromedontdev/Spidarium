@@ -17,6 +17,13 @@
 
 static lv_obj_t *s_background, *s_decor_layer, *s_canopy_layer, *s_poop_layer,
                 *s_preview_ring, *s_preview_image;
+/* Ambient particles (spores, glints, dust) emitted by decor and the gift.
+ *
+ * They used to be parented to the background's parent, which put them BELOW the
+ * decor band -- so a particle spawned at an item's own position was drawn behind
+ * that item's artwork and never visible. The layer is created last and raised
+ * with the canopy so a particle is always in front of the thing that shed it. */
+static lv_obj_t *s_particle_layer;
 /* The gift is a single sprite, so it is parented DIRECTLY into the decor band it
  * belongs to instead of into a container of its own.
  *
@@ -464,6 +471,15 @@ void terrarium_raise_canopy(void)
 {
     lv_obj_move_foreground(s_canopy_layer);
     lv_obj_move_foreground(s_preview_ring);
+    if (s_particle_layer) lv_obj_move_foreground(s_particle_layer);
+}
+
+/* The layer ambient particles are parented to. Created by terrarium_init() and
+ * kept above the decor and canopy bands so an emitted particle is never hidden
+ * behind the artwork that emitted it. */
+lv_obj_t *terrarium_particle_layer(void)
+{
+    return s_particle_layer;
 }
 
 bool terrarium_preview_test(uint8_t path, int layer_index)
@@ -793,6 +809,9 @@ void terrarium_init(lv_obj_t *parent)
     lv_obj_set_clickable(s_preview_image, false);
     lv_obj_set_scrollable(s_preview_image, false);
     lv_obj_set_hidden(s_preview_image, true);
+    /* Created last so it starts above every other band; terrarium_raise_canopy()
+     * keeps it there. */
+    s_particle_layer = layer(parent);
     terrarium_refresh_decor();
     terrarium_refresh_gift();
 }

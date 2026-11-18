@@ -169,6 +169,11 @@
 #define DAILY_TASK_XP          12
 #define DAILY_TASK_SILK        8
 #define DAILY_TASK_COUNT       4
+/* How many tasks Today offers at once. The rotation is deterministic from the
+ * day number, so the same day always offers the same set and a reload cannot
+ * reroll it. Three of the four kinds are shown each day, which means the set
+ * changes every day while every kind still comes around. */
+#define DAILY_TASK_SLOTS       3
 
 /* ------------------------------------------------------------------ */
 /* Treats (recurring Silk sink)                                        */
@@ -586,6 +591,6 @@
  * unchanged, but the MEANING of bytes 76..77 changed, so this must be a new
  * version: two firmwares both claiming v22 with different layouts would each
  * read the other's save as valid and silently corrupt it. */
-#define SAVE_VERSION    23
+#define SAVE_VERSION    24
 #define SAVE_NAMESPACE         "spidarium"
 #define SAVE_KEY               "st"

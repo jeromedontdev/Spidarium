@@ -161,15 +161,38 @@ export function sporesAt(nowMs, bounds) {
  * and breaks down over a session instead of being a fixed decoration. The anchor
  * is deliberately NOT re-randomised on respawn -- that would dissolve the
  * clusters back into scattered lines. */
-export const STRAND_COUNT = 6;
+export const STRAND_COUNT = 18;
 
-/* Anchor zones, as fractions of the playfield. The corners get more strands than
- * the middle, which is how a web actually accumulates. */
+/* Anchor zones, as fractions of the playfield, plus the direction the strands
+ * from that zone fan out in (radians, canvas convention: 0 points right, +pi/2
+ * points down).
+ *
+ * A web is spun where the spider can anchor it, which is the frame of the
+ * enclosure -- so the zones run all the way around the edges rather than only
+ * along the top. The corners get more strands than the sides, which is how a web
+ * actually accumulates. The fan direction is a property of the zone: a strand
+ * anchored to the bottom of the tank has to point up or it is drawn off the
+ * panel, and one anchored to a side has to point inward. */
 const WEB_ZONES = [
-  [0.07, 0.06],   /* top-left corner */
-  [0.93, 0.05],   /* top-right corner */
-  [0.34, 0.03],   /* upper left-of-centre */
+  [0.06, 0.05, 0.79],    /* top-left corner, fanning down-right */
+  [0.94, 0.04, 2.36],    /* top-right corner, fanning down-left */
+  [0.30, 0.03, 1.57],    /* upper left-of-centre, fanning down */
+  [0.68, 0.03, 1.57],    /* upper right-of-centre, fanning down */
+  [0.03, 0.30, 0.00],    /* left edge, upper, fanning right */
+  [0.97, 0.34, 3.14],    /* right edge, upper, fanning left */
+  [0.04, 0.68, -0.79],   /* left edge, lower, fanning up-right */
+  [0.96, 0.72, -2.36],   /* right edge, lower, fanning up-left */
+  [0.07, 0.95, -0.79],   /* bottom-left corner, fanning up-right */
+  [0.93, 0.94, -2.36],   /* bottom-right corner, fanning up-left */
+  [0.42, 0.97, -1.57],   /* bottom edge, left-of-centre, fanning up */
+  [0.74, 0.96, -1.57],   /* bottom edge, right-of-centre, fanning up */
 ];
+
+/* Half-width of the fan around a zone's inward direction. It has to be narrow
+ * enough that a strand anchored on an edge still points into the tank: a wider
+ * fan let a bottom-corner strand point straight down and be drawn off the
+ * panel. */
+const WEB_FAN = 0.6;
 
 /* Fade envelope, in seconds. Matches the firmware: 1.5 s in, hold, 2.5 s out. */
 const STRAND_FADE_IN = 1.5;
@@ -190,8 +213,8 @@ export function strandsAt(nowMs, bounds) {
     let ax = left + 20 + Math.round(z[0] * (spanX - 40)) + Math.round(hash(seed) * 30) - 15;
     let ay = top + 12 + Math.round(z[1] * (spanY - 24)) + Math.round(hash(seed + 1) * 22) - 11;
     ax = Math.max(left + 12, Math.min(right - 12, ax));
-    ay = Math.max(top + 8, ay);
-    return [ax, ay];
+    ay = Math.max(top + 8, Math.min(bottom - 8, ay));
+    return [ax, ay, z[2]];
   });
 
   const t = nowMs / 1000;
@@ -199,7 +222,7 @@ export function strandsAt(nowMs, bounds) {
   for (let i = 0; i < STRAND_COUNT; i++) {
     const seed = i * 173 + 23;
     /* Round-robin across the anchors, so every cluster gets at least one. */
-    const [ax, ay] = anchors[i % anchors.length];
+    const [ax, ay, fan] = anchors[i % anchors.length];
 
     /* Each strand runs its own cycle: a life of 20-70 s, offset so the whole web
      * never vanishes at once. The cycle index is derived from the clock, which
@@ -212,7 +235,10 @@ export function strandsAt(nowMs, bounds) {
     /* Per-cycle random values, so a respawned strand is a different strand. */
     const cs = seed + cycle * 977;
     const length = 18 + hash(cs + 3) * 62;
-    const baseAngle = 0.35 + hash(cs + 4) * 2.44;
+    /* The fan is centred on the zone's own inward direction, so a strand
+     * anchored to the bottom of the tank points up into the tank instead of
+     * being drawn off the panel. */
+    const baseAngle = fan + (hash(cs + 4) - 0.5) * 2 * WEB_FAN;
     /* Sway rates spread wide so the strands never move in step. */
     const swayRate = 0.12 + hash(cs + 5) * 0.55;
     const swayAmp = 0.05 + hash(cs + 6) * 0.16;

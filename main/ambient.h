@@ -30,9 +30,10 @@
  * air reads as having two layers rather than one uniform field. */
 #define AMBIENT_SPORES 6
 
-/* How many web strands hang in the tank. Six is enough to read as a neglected
- * corner of an enclosure rather than as two stray lines. */
-#define AMBIENT_STRANDS 6
+/* How many web strands hang in the tank. The web is anchored all the way around
+ * the frame of the enclosure, so it needs enough strands to read as a web on
+ * every edge rather than as a few lines in the top corners. */
+#define AMBIENT_STRANDS 18
 
 /* How many decor/gift particles exist at once.
  *
@@ -57,6 +58,16 @@
  * was costing about 4.5 Hz of frame rate. Dust drifts at 4-12 px/s, so at 10 Hz
  * it still advances less than a pixel per update and looks identical. */
 #define AMBIENT_PRESENT_MS 100
+
+/* How often the web strands are pushed to LVGL, in milliseconds.
+ *
+ * Strands get their own, slower cadence because each one is a ROTATED object:
+ * LVGL classifies it as LV_LAYER_TYPE_TRANSFORM and allocates an intermediate
+ * layer for it on every refresh, which is far more expensive per object than a
+ * plain rectangle. A strand sways at 0.05-0.21 rad/s, so a whole degree of
+ * rotation takes 80-350 ms -- presenting them at 4 Hz loses nothing visible
+ * while cutting their invalidations by 60%. */
+#define AMBIENT_STRAND_PRESENT_MS 250
 
 /* There are no light shafts.
  *
