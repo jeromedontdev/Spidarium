@@ -246,6 +246,41 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   first version of the test fail. `test_placement_item_selector()` drives the
   helper directly and reports its own `selector=` flag in `uitest`, so a failure
   there is not masked by the pre-existing `pointer=0` baseline.
+- **A press ARMS the placement drag; it does not move the item.** The press
+  handler used to call `placement_position()` immediately, so a tap anywhere on
+  the tank snapped the item to the finger and missing a button by a few pixels
+  threw it across the enclosure. `s_place_armed` holds the grab and
+  `s_place_origin` records where the finger landed; the item moves only once the
+  finger travels past `ENCLOSURE_TAP_SLOP` (24 px), the same threshold the rest
+  of the tank uses to tell a tap from a drag. `game_on_terrarium_release()`
+  clears both.
+- **The placement preview must restore the PREVIOUS slot before hiding the new
+  one.** `terrarium_preview_item()` hides the real object so only the draggable
+  copy shows. Cycling with the arrows changed `s_preview_slot` without unhiding
+  the old one, so every item stepped away from stayed invisible for the rest of
+  the edit. `terrarium_refresh_decor()` would mask it, but it is not called while
+  cycling. `terrarium_decor_hidden()` exists so the selector test can assert the
+  invariant after every step.
+- **The layer row is shown whenever the band has any other item, not only when
+  the item currently overlaps one.** Hiding it at "1 / 1" made the control appear
+  to vanish: moving an item a few pixels out of contact removed the whole row,
+  which reads as a bug rather than as "nothing to order against". The arrows are
+  disabled at the ends of the range, so a lone item shows a truthful "1 / 1".
+  The caption also has to sit strictly BETWEEN the arrows -- it was at x=276 w=88
+  while the front arrow started at 368, so the label was drawn over the arrow.
+- **The placement rows are laid out on a computed grid, not by eye.** Height 56,
+  fill `LV_OPA_20`, border `LV_OPA_50`. Top row y=16, middle y=328, bottom y=400;
+  every row is inside the squircle's usable band with 8 px side margins and at
+  least 8 px between neighbours. The bottom row at y=416 with height 56 ended at
+  472 and clipped the corner wedge. The hint sits at `LV_ALIGN_BOTTOM_MID, 0,
+  -172`; at `-148` it overlapped the layer caption.
+- **`decor begin SLOT` enters the interactive overlay from the console.**
+  `decor move` commits directly, so there was no way to drive or screenshot the
+  overlay. It goes through the same `decor_begin_move()` the menu uses, and
+  `DECOR_EDIT_BEGIN` deliberately skips the save and the decor refresh: the item
+  is staged, not committed, and a refresh would unhide it under the preview.
+  `screenshot menu` captures the active screen WITH chrome; `screenshot
+  playfield` deliberately hides the HUD, so it cannot show the overlay.
 - **`life_clock_now()` is the single clock read.** `life_visual_tick()` used to
   call `time(NULL)` directly while the mind used `life_period_now()`, so `rtcset`
   changed what the brain saw but not what the screen showed. Everything that
@@ -891,6 +926,31 @@ hardware scans now succeed. Final acceptance evidence belongs in the latest
   Held gestures freeze AI/prey; stationary taps do not shoot. Pounce landing
   synchronizes subpixel position. Canvas gait is distance-driven with bounded
   local joint poses; duplicate renders cannot advance it.
+- **`behaviour_pos()` interpolates between logic ticks; do not "simplify" it back
+  to the raw position.** Logic runs at `LOGIC_HZ` (20) and rendering at
+  `RENDER_HZ` (30), so two frames in three land between logic ticks. Drawing the
+  raw logic position made the spider hold still for one frame and then jump
+  2.75 px (`MOVE_SPEED` 55 px/s / 20 Hz), which reads as a periodic frame skip.
+  The renderer now blends from the previous logic position to the current one
+  using the tick's own measured span (`s_tick_span_ms`), with `alpha` clamped to
+  1 so a late frame cannot overshoot past the committed position and
+  rubber-band. `behaviour_sync_position()` collapses the window so a teleport
+  (restore, respawn, test harness) is not drawn as a slide. `gait_update()` reads
+  the interpolated position, so the leg phase smooths out with it.
+- **The render tick is not the frame-rate bottleneck; LVGL's flush is.**
+  `rendercost` reports `RENDERCOST` (tick work), `RENDERSECT` (per-section) and
+  `RENDERSPREAD` (`gap_max_us`, `gap_last_us`, `over_2x`). Measured on hardware:
+  tick work is 3.1-4.1 ms against a 33,333 us budget, but the gap between
+  consecutive tick starts is ~118 ms. The remaining ~115 ms is LVGL's own
+  transfer, outside the tick. Do not "optimise" the tick to chase this.
+- **The spider's ejection from blocking decor must not be a fixed point.**
+  `behaviour_tick()` pushes it out of a solid item, but with two blocking items
+  overlapping the first push landed inside the neighbour, `advance()` then
+  refused every step out, and the spider was permanently stuck while the log
+  filled with one warning per tick. The push now widens the berth in 10 px steps
+  and fans sideways, alternating direction, until the candidate is genuinely
+  free; if nothing is free within reach it logs once per 5 s and leaves the
+  spider alone rather than moving it to another blocked point.
 - Care now uses a translucent page ear at (-1,-1), with a transparent
   44px touch target and four status boxes centered as a group at y=8.
   No word label or full-hunger press bubble. Tap the ear again to close;

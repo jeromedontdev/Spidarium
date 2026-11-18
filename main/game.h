@@ -432,7 +432,10 @@ typedef enum {
     GAME_UI_MENU_PICK,
 } game_ui_action_t;
 typedef enum {
-    DECOR_EDIT_STATUS, DECOR_EDIT_CLEAR, DECOR_EDIT_PLACE, DECOR_EDIT_MOVE, DECOR_EDIT_BLOCK
+    DECOR_EDIT_STATUS, DECOR_EDIT_CLEAR, DECOR_EDIT_PLACE, DECOR_EDIT_MOVE, DECOR_EDIT_BLOCK,
+    /* Enter the interactive placement overlay on an existing slot, so the
+     * console can drive and screenshot the same UI the player sees. */
+    DECOR_EDIT_BEGIN
 } decor_edit_t;
 bool game_ui_decor_edit(decor_edit_t operation, int value, int x, int y, int *count);
 const lv_draw_buf_t *game_screen_capture(void);

@@ -438,11 +438,18 @@ void terrarium_decor_report(int slot)
            (const void *)image, image ? (unsigned)image->header.w : 0u,
            image ? (unsigned)image->header.h : 0u,
            (int)lv_image_get_scale(obj), (int)lv_obj_get_x(obj), (int)lv_obj_get_y(obj),
-           (int)lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN),
+           (int)lv_obj_is_hidden(obj),
            lv_obj_get_parent(obj) == s_canopy_layer ? "canopy" : "floor");
 }
 
-/* A walk-behind item may only cover the spider with its TOP half. The sprite is * centred on the item, so its centre line is the halfway point: while the
+bool terrarium_decor_hidden(int slot)
+{
+    if (slot < 0 || slot >= s_decor_capacity || !s_decor_obj[slot]) return false;
+    return lv_obj_is_hidden(s_decor_obj[slot]);
+}
+
+/* A walk-behind item may only cover the spider with its TOP half. The sprite is
+ * centred on the item, so its centre line is the halfway point: while the
  * spider is above that line it is genuinely behind the item, and once it is
  * level with or below it the spider is standing in front of the base and the
  * item must drop behind it. Parenting the whole sprite to the canopy layer made
@@ -516,6 +523,20 @@ void terrarium_preview_item(bool gift, uint8_t kind, int slot, int32_t x, int32_
     if (!image) {
         ESP_LOGE("spidarium.tank", "placement preview unavailable: gift=%d kind=%u", gift, kind);
         return;
+    }
+    /* Restore whatever was staged before, BEFORE hiding the new one.
+     *
+     * The preview hides the real object so only the draggable copy is visible.
+     * Cycling to a different item with the arrows changed the slot but never
+     * unhid the previous one, so every item the player stepped away from stayed
+     * invisible for the rest of the edit -- the "other non active decor items go
+     * invisible" report. The gift needs the same treatment: stepping from the
+     * gift to a decor item left the gift hidden. */
+    if (s_preview_gift) {
+        if (s_gift_obj) lv_obj_set_hidden(s_gift_obj, false);
+    } else if (s_preview_slot >= 0 && s_preview_slot < s_decor_capacity &&
+               s_preview_slot != slot) {
+        lv_obj_set_hidden(s_decor_obj[s_preview_slot], decor_at(s_preview_slot) == NULL);
     }
     s_preview_slot = slot;
     s_preview_gift = gift;

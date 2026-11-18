@@ -394,6 +394,13 @@ void game_on_sleep(lv_event_t *e)
 
 static int16_t s_place_x, s_place_y, s_place_dx, s_place_dy;
 static bool s_place_dragging;
+/* A press that has grabbed the item but has not yet travelled far enough to be
+ * a drag. See game_on_terrarium_press(). */
+static bool s_place_armed;
+/* Where the arming press landed, so the drag threshold is measured from the
+ * finger's own start point rather than from the item. Distinct from
+ * s_tap_origin, which belongs to the enclosure tap gesture. */
+static lv_point_t s_place_origin;
 static uint8_t s_place_blocking;
 static int s_place_layer;
 static void placement_position(int32_t x, int32_t y);
@@ -781,6 +788,14 @@ static album_image_t s_album_loaded;
  * timer period and cannot see the difference. */
 static uint32_t s_render_us_total;
 static uint32_t s_render_ticks;
+/* Frame-interval spread. The average tick cost says nothing about smoothness: a
+ * run of 20 ms ticks with an occasional 120 ms one has a fine average and still
+ * reads as a skip. These track the worst interval and how many intervals
+ * exceeded twice the timer period, which is the number that matches what the
+ * eye sees. */
+static uint32_t s_frame_gap_max_us;
+static uint32_t s_frame_gap_over;
+static uint32_t s_frame_gap_last_us;
 /* Per-section accumulators, so a regression can be attributed to a subsystem
  * instead of guessed at. Only the sections that have ever been suspected of
  * costing too much are instrumented; the rest are the remainder. */
@@ -2697,7 +2712,7 @@ static void test_pointer_read(lv_indev_t *indev, lv_indev_data_t *data)
 
 bool game_ui_decor_edit(decor_edit_t operation, int value, int x, int y, int *count)
 {
-    if (s_ui_req != GAME_UI_NONE || (unsigned)operation > DECOR_EDIT_BLOCK ||
+    if (s_ui_req != GAME_UI_NONE || (unsigned)operation > DECOR_EDIT_BEGIN ||
         x < INT16_MIN || x > INT16_MAX || y < INT16_MIN || y > INT16_MAX) {
         ESP_LOGE(TAG, "decor edit request rejected: busy or invalid input");
         return false;
@@ -2976,11 +2991,98 @@ static bool test_placement_item_selector(void)
     /* Stepping backwards from the first wraps to the last. */
     placement_step_item(-1);
     ok = ok && g_decor_move_slot == 2;
+    /* Every item except the staged one must still be VISIBLE.
+     *
+     * The preview hides the real object so only the draggable copy shows. It
+     * used to hide the new slot without unhiding the old one, so each item the
+     * player stepped away from stayed invisible for the rest of the edit -- the
+     * "other non active decor items go invisible" report. This walks the whole
+     * ring and asserts the invariant after every step. */
+    for (int step = 0; step < 4 && ok; step++) {
+        placement_step_item(1);
+        for (int i = 0; i < decor_placed_count(); i++) {
+            bool hidden = terrarium_decor_hidden(i);
+            if (i == g_decor_move_slot) {
+                if (!hidden) {
+                    ESP_LOGE(TAG, "selector: staged slot %d is still visible", i);
+                    ok = false;
+                }
+            } else if (hidden) {
+                ESP_LOGE(TAG, "selector: non-staged slot %d went invisible", i);
+                ok = false;
+            }
+        }
+    }
     /* A new item has no slot to cycle, so the row is hidden. */
     game_on_placement_cancel(NULL);
     decor_begin_placement(0);
     ok = ok && !game_placement_item_label(label, sizeof label);
     game_on_placement_cancel(NULL);
+
+    /* A TAP must not move the item; only a drag may.
+     *
+     * The press handler used to call placement_position() immediately, so a tap
+     * anywhere on the tank snapped the item to the finger. Missing a button by a
+     * few pixels therefore threw the item across the enclosure. This drives the
+     * real LVGL pointer path and asserts the staged position is unchanged after
+     * a tap, then moves after a drag past the slop. */
+    {
+        int slot = decor_place(DECOR_ROCK_SMALL, 200, 250);
+        terrarium_refresh_decor();
+        decor_begin_move(slot);
+        int16_t before_x = s_place_x, before_y = s_place_y;
+
+        test_pointer_t pointer = {0};
+        lv_indev_t *indev = lv_indev_create();
+        if (!indev) {
+            ESP_LOGE(TAG, "placement tap test: pointer allocation failed");
+            ok = false;
+        } else {
+            lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+            lv_indev_set_read_cb(indev, test_pointer_read);
+            lv_indev_set_user_data(indev, &pointer);
+            lv_indev_set_mode(indev, LV_INDEV_MODE_EVENT);
+            lv_indev_set_long_press_time(indev, 0);
+            lv_obj_update_layout(ui.screen);
+
+            /* Tap well away from the item AND clear of every control row: the
+             * top row occupies y=16..72, the middle y=328..384 and the bottom
+             * y=400..456, so y=150 is bare tank. */
+            test_pointer_send(indev, &pointer, 400, 150, LV_INDEV_STATE_PRESSED);
+            test_pointer_send(indev, &pointer, 400, 150, LV_INDEV_STATE_RELEASED);
+            if (s_place_x != before_x || s_place_y != before_y) {
+                ESP_LOGE(TAG, "placement tap: item moved on a tap (%d,%d -> %d,%d)",
+                         before_x, before_y, s_place_x, s_place_y);
+                ok = false;
+            }
+
+            /* Tap ON the item: still nothing may move. Re-read the staged
+             * position first, so a failure above cannot cascade. */
+            before_x = s_place_x;
+            before_y = s_place_y;
+            test_pointer_send(indev, &pointer, before_x, before_y, LV_INDEV_STATE_PRESSED);
+            test_pointer_send(indev, &pointer, before_x, before_y, LV_INDEV_STATE_RELEASED);
+            if (s_place_x != before_x || s_place_y != before_y) {
+                ESP_LOGE(TAG, "placement tap: item moved on a tap on itself");
+                ok = false;
+            }
+
+            /* A real drag past the slop must move it. */
+            before_x = s_place_x;
+            before_y = s_place_y;
+            test_pointer_send(indev, &pointer, before_x, before_y, LV_INDEV_STATE_PRESSED);
+            test_pointer_send(indev, &pointer, before_x + 60, before_y + 40,
+                              LV_INDEV_STATE_PRESSED);
+            test_pointer_send(indev, &pointer, before_x + 60, before_y + 40,
+                              LV_INDEV_STATE_RELEASED);
+            if (s_place_x == before_x && s_place_y == before_y) {
+                ESP_LOGE(TAG, "placement tap: a drag did not move the item");
+                ok = false;
+            }
+            lv_indev_delete(indev);
+        }
+        game_on_placement_cancel(NULL);
+    }
 
     decor_clear();
     g = *original;
@@ -3312,9 +3414,20 @@ static void ui_service_request(void)
             break;
         case DECOR_EDIT_MOVE: ok = decor_move(value, s_decor_edit.x, s_decor_edit.y); break;
         case DECOR_EDIT_BLOCK: ok = decor_toggle_blocking(value); break;
+        case DECOR_EDIT_BEGIN:
+            /* Open the interactive overlay on an existing slot. This is the same
+             * path the decor menu takes, so the console exercises the real UI
+             * rather than a parallel one. */
+            ok = decor_at(value) != NULL;
+            if (ok) decor_begin_move(value);
+            break;
         }
         if (s_decor_edit.operation != DECOR_EDIT_PLACE) s_decor_edit.count = decor_placed_count();
-        if (ok && s_decor_edit.operation != DECOR_EDIT_STATUS) {
+        /* BEGIN opens the overlay and must not save or rebuild: the item is
+         * staged, not committed, and a refresh would unhide it under the
+         * preview. */
+        if (ok && s_decor_edit.operation != DECOR_EDIT_STATUS &&
+            s_decor_edit.operation != DECOR_EDIT_BEGIN) {
             terrarium_refresh_decor();
             ok = game_save_now();
         }
@@ -3702,8 +3815,18 @@ void game_on_terrarium_press(lv_event_t *e)
         bool grabbed = abs(p.x - s_place_x) <= reach && abs(p.y - s_place_y) <= reach;
         s_place_dx = grabbed ? s_place_x - p.x : 0;
         s_place_dy = grabbed ? s_place_y - p.y : 0;
-        s_place_dragging = true;
-        placement_position(p.x + s_place_dx, p.y + s_place_dy);
+        /* A press only ARMS the drag; it does not move the item.
+         *
+         * This used to call placement_position() immediately, so a tap anywhere
+         * on the tank snapped the item to the finger. Missing a button by a few
+         * pixels therefore threw the item across the enclosure, which is the
+         * "tapping shouldn't move the decor item" report. The item now moves
+         * only once the finger has travelled past ENCLOSURE_TAP_SLOP, which is
+         * the same threshold the rest of the tank uses to tell a tap from a
+         * drag. */
+        s_place_dragging = false;
+        s_place_armed = grabbed;
+        s_place_origin = p;
         return;
     }
     if (!behaviour_aim_active()) return;
@@ -3737,9 +3860,17 @@ void game_on_terrarium_pressing(lv_event_t *e)
     }
     if (g.gift_mode || g_decor_mode) {
         lv_indev_t *indev = lv_indev_active();
-        if (s_place_dragging && indev) {
+        if (s_place_armed && indev) {
             lv_point_t p;
             lv_indev_get_point(indev, &p);
+            /* Promote the armed press to a real drag only once the finger has
+             * moved past the tap slop. Until then the item stays exactly where
+             * it was, so a tap that misses a button cannot displace it. */
+            if (!s_place_dragging) {
+                int dx = p.x - s_place_origin.x, dy = p.y - s_place_origin.y;
+                if (dx * dx + dy * dy <= ENCLOSURE_TAP_SLOP * ENCLOSURE_TAP_SLOP) return;
+                s_place_dragging = true;
+            }
             placement_position(p.x + s_place_dx, p.y + s_place_dy);
         }
         return;
@@ -3758,6 +3889,7 @@ void game_on_terrarium_release(lv_event_t *e)
     if (g.gift_mode || g_decor_mode) {
         game_on_terrarium_pressing(e);
         s_place_dragging = false;
+        s_place_armed = false;
         return;
     }
     if (ui_hud_chrome_visible() || ui_menu_visible() || game_paused() || g.gift_mode ||
@@ -4060,13 +4192,21 @@ void game_render_cost_report(void)
     uint32_t total = s_render_us_total;
     uint32_t terr = s_sec_terrarium_us, amb = s_sec_ambient_us;
     uint32_t spid = s_sec_spider_us, hud = s_sec_hud_us;
+    uint32_t gap_max = s_frame_gap_max_us, gap_over = s_frame_gap_over;
+    uint32_t gap_last = s_frame_gap_last_us;
     s_render_ticks = 0;
     s_render_us_total = 0;
     s_sec_terrarium_us = s_sec_ambient_us = s_sec_spider_us = s_sec_hud_us = 0;
+    s_frame_gap_max_us = 0;
+    s_frame_gap_over = 0;
     printf("RENDERCOST ticks=%lu avg_us=%lu budget_us=%d\n",
            (unsigned long)ticks,
            (unsigned long)(ticks ? total / ticks : 0),
            1000000 / RENDER_HZ);
+    /* The spread, not the average, is what "choppy" means. `over` counts
+     * intervals longer than two timer periods -- each one is a visible skip. */
+    printf("RENDERSPREAD gap_max_us=%lu gap_last_us=%lu over_2x=%lu\n",
+           (unsigned long)gap_max, (unsigned long)gap_last, (unsigned long)gap_over);
     /* Per-section averages. `other` is the remainder: life_visual_tick, the
      * enclosure lights, the depth sorts and the timer overhead. */
     if (ticks) {
@@ -4220,6 +4360,21 @@ void game_tick_render(lv_timer_t *timer)
      * 33,333 us per tick; anything approaching that is a stutter. */
     s_render_us_total += (uint32_t)(esp_timer_get_time() - render_start);
     s_render_ticks++;
+
+    /* Frame-interval spread. `render_start` is the moment this tick began, so
+     * the gap between consecutive starts is the interval the eye actually sees.
+     * A tick that overruns its period shows up here as a long gap on the NEXT
+     * tick, which is exactly the "frame skip" the player reports. */
+    {
+        static int64_t s_prev_start;
+        if (s_prev_start) {
+            uint32_t gap = (uint32_t)(render_start - s_prev_start);
+            s_frame_gap_last_us = gap;
+            if (gap > s_frame_gap_max_us) s_frame_gap_max_us = gap;
+            if (gap > (uint32_t)(2 * RENDER_PERIOD_MS * 1000)) s_frame_gap_over++;
+        }
+        s_prev_start = render_start;
+    }
 }
 
 /* ------------------------------------------------------------------ */

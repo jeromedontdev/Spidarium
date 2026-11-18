@@ -165,14 +165,18 @@ static lv_obj_t *place_action(lv_obj_t *parent, int x, int y, int w,
                               const char *name, lv_event_cb_t cb, intptr_t value)
 {
     lv_obj_t *obj = make_action(parent, x, y, w, "", name, cb);
-    lv_obj_set_height(obj, 48);
     /* Placement controls sit over the tank, so they are deliberately see-through:
      * the item being positioned and the spider must stay readable underneath.
-     * The border keeps the button legible without a solid fill. */
-    lv_obj_set_style_bg_opa(obj, LV_OPA_30, 0);
-    lv_obj_set_style_border_opa(obj, LV_OPA_60, 0);
-    lv_obj_set_style_outline_opa(obj, LV_OPA_40, 0);
-    lv_obj_set_style_bg_opa(obj, LV_OPA_60, LV_STATE_PRESSED);
+     * The border keeps the button legible without a solid fill.
+     *
+     * The fill is 15% rather than 30%: at 30% the row still read as a solid bar
+     * across the bottom of the tank, which is what "make them more transparent"
+     * was about. The border and the label carry the legibility instead. */
+    lv_obj_set_height(obj, 56);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_20, 0);
+    lv_obj_set_style_border_opa(obj, LV_OPA_50, 0);
+    lv_obj_set_style_outline_opa(obj, LV_OPA_30, 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_50, LV_STATE_PRESSED);
     lv_obj_t *label = lv_obj_get_child(obj, -1);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
     lv_obj_center(label);
@@ -346,29 +350,38 @@ void ui_hud_init(lv_obj_t *parent)
      * above them stays clear. The old layout stacked three path buttons, a
      * layer row, Put Away and Cancel/Done up the middle of the screen and
      * covered most of the terrarium. The rows stop short of the squircle's
-     * corner wedges, which have no pixels and would clip the outer buttons. */
-    s_place_cancel = place_action(parent, 48, 412, 120, "Cancel", game_on_placement_cancel, 0);
-    s_place_done = place_action(parent, 312, 412, 120, "Done", game_on_placement_done, 0);
-    s_place_away = place_action(parent, 176, 412, 128, "Put Away", game_on_placement_put_away, 0);
+     * corner wedges, which have no pixels and would clip the outer buttons.
+     *
+     * The rows are laid out on a 480 px panel with 40 px corner wedges, so the
+     * usable band is x = 40..440. Every button is at least 8 px from its
+     * neighbour and 12 px from the wedge, and the two rows are 56 px apart so a
+     * thumb cannot hit the wrong one. */
+    s_place_cancel = place_action(parent, 48, 400, 120, "Cancel", game_on_placement_cancel, 0);
+    s_place_done = place_action(parent, 312, 400, 120, "Done", game_on_placement_done, 0);
+    s_place_away = place_action(parent, 180, 400, 120, "Put Away", game_on_placement_put_away, 0);
     /* One cycling button instead of three: the path is a single choice, and
      * three 112px buttons were the widest part of the overlay. */
-    s_place_path = place_action(parent, 48, 364, 152, "Walk Over", game_on_placement_blocking, 0);
+    s_place_path = place_action(parent, 48, 328, 140, "Walk Over", game_on_placement_blocking, 0);
     s_place_path_label = lv_obj_get_child(s_place_path, -1);
-    s_place_back = place_action(parent, 208, 364, 64, LV_SYMBOL_LEFT, game_on_placement_layer, -1);
-    s_place_front = place_action(parent, 368, 364, 64, LV_SYMBOL_RIGHT, game_on_placement_layer, 1);
+    /* The layer row: back arrow, caption, front arrow. The caption sits BETWEEN
+     * the arrows rather than on top of the front one -- it used to be placed at
+     * x=276 with a 88 px width while the front arrow started at x=368, so the
+     * two overlapped and the arrow was drawn under the label. */
+    s_place_back = place_action(parent, 200, 328, 64, LV_SYMBOL_LEFT, game_on_placement_layer, -1);
+    s_place_front = place_action(parent, 368, 328, 64, LV_SYMBOL_RIGHT, game_on_placement_layer, 1);
     s_place_layer_label = make_label(parent, "", &lv_font_montserrat_12, COL_TEXT);
-    lv_obj_set_size(s_place_layer_label, 88, 48);
-    lv_obj_set_pos(s_place_layer_label, 276, 364);
+    lv_obj_set_size(s_place_layer_label, 88, 56);
+    lv_obj_set_pos(s_place_layer_label, 272, 328);
     lv_obj_set_style_text_align(s_place_layer_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_hidden(s_place_layer_label, true);
     /* The item selector at the top of the screen. While dragging an item the
      * hand is over the tank, so the bottom row is awkward to reach; these step
      * between the placed items instead of duplicating the layer control. */
-    s_place_top_back = place_action(parent, 96, 12, 56, LV_SYMBOL_LEFT, game_on_placement_item, -1);
-    s_place_top_front = place_action(parent, 328, 12, 56, LV_SYMBOL_RIGHT, game_on_placement_item, 1);
+    s_place_top_back = place_action(parent, 48, 16, 64, LV_SYMBOL_LEFT, game_on_placement_item, -1);
+    s_place_top_front = place_action(parent, 368, 16, 64, LV_SYMBOL_RIGHT, game_on_placement_item, 1);
     s_place_top_label = make_label(parent, "", &lv_font_montserrat_12, COL_TEXT);
-    lv_obj_set_size(s_place_top_label, 168, 40);
-    lv_obj_set_pos(s_place_top_label, 156, 20);
+    lv_obj_set_size(s_place_top_label, 240, 56);
+    lv_obj_set_pos(s_place_top_label, 120, 16);
     lv_obj_set_style_text_align(s_place_top_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_hidden(s_place_top_label, true);
     lv_obj_set_hidden(s_place_top_back, true);
@@ -376,10 +389,10 @@ void ui_hud_init(lv_obj_t *parent)
     lv_obj_set_hidden(s_place_away, true);
     lv_obj_set_hidden(s_place_done, true);
     lv_obj_set_hidden(s_place_cancel, true);
-    s_hint = make_label(parent, "Slide to position; Done saves",
+    s_hint = make_label(parent, "Drag to position; Done saves",
                          &lv_font_montserrat_12, 0xf5c86b);
     /* Just above the two control rows. */
-    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -124);
+    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -172);
     lv_obj_set_hidden(s_hint, true);
     s_bubble = lv_obj_create(parent);
     lv_obj_remove_style_all(s_bubble);
@@ -421,11 +434,16 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     lv_obj_set_hidden(s_place_cancel, !on);
     /* A gift gets the layer control but NOT the path control: it is always
      * walked over. Its layer orders it against the decor sharing its band,
-     * which is what the player is actually arranging. When the band holds
-     * nothing but the gift there is nothing to order against, so the whole
-     * layer row is hidden rather than showing a meaningless "1 / 1". */
+     * which is what the player is actually arranging.
+     *
+     * The layer row is shown whenever the item is in a band that has ANY other
+     * item, not only when it currently overlaps one. Hiding it at "1 / 1" made
+     * the control appear to vanish: the player moved an item a few pixels out of
+     * contact and the whole row disappeared, which read as a bug rather than as
+     * "there is nothing to order against". The arrows are disabled at the ends
+     * of the range, so a single-item band still shows a truthful "1 / 1". */
     bool path_row = on && g_decor_mode;
-    bool layer_row = on && (g_decor_mode || g.gift_mode) && game_placement_layers() > 1;
+    bool layer_row = on && (g_decor_mode || g.gift_mode) && game_placement_layers() >= 1;
     lv_obj_set_hidden(s_place_away, !on || !game_placement_existing());
     lv_obj_set_hidden(s_place_path, !path_row);
     lv_obj_set_hidden(s_place_back, !layer_row);
@@ -456,13 +474,14 @@ void ui_hud_set_place_mode(bool on, const char *hint)
     ui_hud_placement_changed();
     /* Keep the hint just above the control rows, which are pinned to the bottom
      * of the screen so the tank above them stays clear. */
-    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -124);
+    lv_obj_align(s_hint, LV_ALIGN_BOTTOM_MID, 0, -172);
 }
 
 void ui_hud_placement_changed(void)
 {
     if (!g_decor_mode && !g.gift_mode) return;
-    bool layer_row = game_placement_layers() > 1;
+    /* Always visible while placing: see the note in ui_hud_set_place_mode(). */
+    bool layer_row = game_placement_layers() >= 1;
     lv_obj_set_hidden(s_place_back, !layer_row);
     lv_obj_set_hidden(s_place_front, !layer_row);
     lv_obj_set_hidden(s_place_layer_label, !layer_row);

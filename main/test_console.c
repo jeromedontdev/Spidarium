@@ -952,6 +952,15 @@ static void cmd_decor(const char *arg)
         printf("OK decor move slot=%d\n", slot);
         return;
     }
+    if (!strncmp(arg, "begin ", 6)) {
+        int slot = atoi(arg + 6);
+        if (!game_ui_decor_edit(DECOR_EDIT_BEGIN, slot, 0, 0, NULL)) {
+            printf("ERR decor begin %d: empty slot or request failed\n", slot);
+            return;
+        }
+        printf("OK decor begin slot=%d\n", slot);
+        return;
+    }
     if (!strncmp(arg, "block ", 6)) {
         int slot = atoi(arg + 6);
         if (!game_ui_decor_edit(DECOR_EDIT_BLOCK, slot, 0, 0, NULL)) {
@@ -976,7 +985,7 @@ static void cmd_decor(const char *arg)
         printf("OK decor place kind=%d slot=%d\n", kind, slot);
         return;
     }
-    printf("ERR usage: decor [place K X Y|move S X Y|block SLOT|item SLOT|clear]\n");
+    printf("ERR usage: decor [place K X Y|move S X Y|begin SLOT|block SLOT|item SLOT|clear]\n");
 }
 
 static void cmd_play(void)

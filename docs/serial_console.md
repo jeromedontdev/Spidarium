@@ -507,7 +507,7 @@ cancellation.
 `preytest` verifies all eight level thresholds, random eligibility and rejected
 locked/invalid explicit spawns, restoring the original level/prey count.
 
-### `decortest`, `decor [place K X Y | move S X Y | block SLOT | item SLOT | clear]`
+### `decortest`, `decor [place K X Y | move S X Y | begin SLOT | block SLOT | item SLOT | clear]`
 
 `decortest` places one of every decor kind through the real placement path,
 refreshes the decor layer, and asserts that every placed item has a visible
@@ -520,14 +520,21 @@ footprint radius, blocking flag and whether the kind is owned, then reports the
 Silk balance and placed slots (placement can grow beyond twelve). `decor place KIND X Y`
 grants the Silk and level needed for the kind (test-only), buys it if it is not
 owned, and places it. `decor move SLOT X Y` repositions a placed item, keeping
-its slot, kind and path. `decor block SLOT` cycles Walk Over (0), Solid (1),
-Walk Behind (2), Climb (3), rather than toggling a boolean. Only Solid affects
-steering; Climb is skipped for kinds with no climb height. `decor item SLOT`
-opens the same inline drag/path/layer controls as a long press.
+its slot, kind and path. `decor begin SLOT` opens the interactive placement
+overlay on an existing slot without committing anything, which is the only way
+to drive or screenshot that overlay from the console -- `decor move` commits
+directly and never enters placement mode. `decor block SLOT` cycles Walk Over
+(0), Solid (1), Walk Behind (2), Climb (3), rather than toggling a boolean. Only
+Solid affects steering; Climb is skipped for kinds with no climb height.
+`decor item SLOT` opens the same inline drag/path/layer controls as a long press.
 Done saves position/path/layer; Cancel discards edits. Back/Front arrows order
 decor within Floor or Canopy (Walk Behind). `decor clear` empties the enclosure.
 Mutating console commands persist and refresh the layer; opening controls does
 not save. The UI offers Put Away while preserving ownership.
+
+To screenshot the overlay, use `screenshot menu` after `decor begin SLOT`:
+`screenshot playfield` deliberately hides the HUD chrome, so it captures the
+tank without the controls.
 
 Kinds 68..73 are the large climb structures (branch, vine, root, ivy, boulder,
 driftwood). They are authored 192x192 and drawn 1:1, and their lift ramps from

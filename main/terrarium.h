@@ -29,6 +29,10 @@ void terrarium_gift_report(void);
 void terrarium_refresh_decor(void);
 /* Report one placed decor object's live geometry, for console diagnosis. */
 void terrarium_decor_report(int slot);
+/* True when the placed object for `slot` is currently hidden. The placement
+ * preview hides the staged item so only the draggable copy shows; the selector
+ * test asserts that every OTHER item stays visible. */
+bool terrarium_decor_hidden(int slot);
 /* Re-parent walk-behind items so only their top half covers the spider. Cheap
  * enough for the render tick: it only touches items whose side changed. */
 void terrarium_decor_depth(void);

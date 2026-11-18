@@ -109,6 +109,22 @@ bool behaviour_trick(unsigned kind)
 static float    s_px, s_py;
 static bool     s_pos_init;
 
+/* Render interpolation state.
+ *
+ * Logic runs at 20 Hz and rendering at 30 Hz, so two frames in three land
+ * between logic ticks. Without interpolation the spider's drawn position only
+ * changes on the frames that happen to follow a logic tick, which reads as a
+ * periodic "frame skip": move, move, hold, move, move, hold. At MOVE_SPEED the
+ * step is 2.75 px, so the hold is plainly visible.
+ *
+ * The renderer therefore draws a position interpolated between the previous and
+ * current logic positions. `s_tick_ms` is when the last logic tick ran and
+ * `s_tick_span_ms` how long it was, so alpha is simply how far into the next
+ * tick the frame falls. */
+static float    s_px_prev, s_py_prev;
+static uint32_t s_tick_ms;
+static uint32_t s_tick_span_ms = 50;
+
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
@@ -400,12 +416,52 @@ static void clamp_to_playfield(void)
             int slot = decor_hit_test(bx, by);
             float r = slot >= 0 ? decor_block_radius(slot) : 24.0f;
             if (r < 24.0f) r = 24.0f;
-            g.spider_x = (int16_t)((float)bx + ax / ad * r);
-            g.spider_y = (int16_t)((float)by + ay / ad * r);
-            s_px = (float)g.spider_x;
-            s_py = (float)g.spider_y;
-            ESP_LOGW("spidarium.behaviour", "spider was inside blocking decor; moved to (%d,%d)",
-                     (int)g.spider_x, (int)g.spider_y);
+            /* Overlapping items can leave the first push still inside a
+             * neighbour. That made the ejection a FIXED POINT: the spider was
+             * pushed to the same blocked spot every tick, advance() refused
+             * every step out of it, and the spider was permanently stuck while
+             * the log filled with one warning per tick. Widen the berth until
+             * the candidate is genuinely free, and fan out sideways if straight
+             * away is still blocked. */
+            int16_t nx = g.spider_x, ny = g.spider_y;
+            bool clear = false;
+            for (int attempt = 0; attempt < 12 && !clear; attempt++) {
+                float rr = r + (float)attempt * 10.0f;
+                /* Alternate the fan direction so a wall of items on one side
+                 * does not trap the spider against it. */
+                float spread = (attempt % 2 ? 1.0f : -1.0f) * (float)(attempt / 2) * 0.35f;
+                float ca = cosf(spread), sa = sinf(spread);
+                float ux = (ax * ca - ay * sa) / ad;
+                float uy = (ax * sa + ay * ca) / ad;
+                nx = (int16_t)((float)bx + ux * rr);
+                ny = (int16_t)((float)by + uy * rr);
+                if (nx < (int16_t)g_play.left)   nx = (int16_t)g_play.left;
+                if (nx > (int16_t)g_play.right)  nx = (int16_t)g_play.right;
+                if (ny < (int16_t)g_play.top)    ny = (int16_t)g_play.top;
+                if (ny > (int16_t)g_play.bottom) ny = (int16_t)g_play.bottom;
+                clear = !decor_blocks_point(nx, ny);
+            }
+            if (clear && (nx != g.spider_x || ny != g.spider_y)) {
+                g.spider_x = nx;
+                g.spider_y = ny;
+                s_px = (float)g.spider_x;
+                s_py = (float)g.spider_y;
+                ESP_LOGW("spidarium.behaviour",
+                         "spider was inside blocking decor; moved to (%d,%d)",
+                         (int)g.spider_x, (int)g.spider_y);
+            } else if (!clear) {
+                /* Nothing free within reach. Say so once rather than every
+                 * tick, and leave the spider where it is: moving it to another
+                 * blocked point would only hide the problem. */
+                static uint32_t s_last_trap_log;
+                uint32_t now = lv_tick_get();
+                if (!s_last_trap_log || now - s_last_trap_log > 5000u) {
+                    s_last_trap_log = now;
+                    ESP_LOGW("spidarium.behaviour",
+                             "spider trapped in blocking decor at (%d,%d); no free point within %d px",
+                             (int)g.spider_x, (int)g.spider_y, (int)(r + 110.0f));
+                }
+            }
         }
     }
 }
@@ -774,16 +830,47 @@ void behaviour_pos(float *x, float *y)
     if (!s_pos_init) {
         s_px = (float)g.spider_x;
         s_py = (float)g.spider_y;
+        s_px_prev = s_px;
+        s_py_prev = s_py;
         s_pos_init = true;
     }
-    if (x) *x = s_px;
-    if (y) *y = s_py;
+    /* Interpolate between the last two logic positions.
+     *
+     * Rendering runs at 30 Hz and logic at 20 Hz, so most frames fall between
+     * ticks. Drawing the raw logic position makes the spider hold still for one
+     * frame in three and then jump 2.75 px, which is the "frame skip" the player
+     * sees. Extrapolating from the previous tick to the current one spreads that
+     * step across the frames that actually occur.
+     *
+     * alpha is clamped to 1: a frame that arrives late (a long flush, a menu
+     * rebuild) must not overshoot past the position the logic has already
+     * committed to, or the spider would visibly rubber-band. */
+    float alpha = 1.0f;
+    if (s_tick_span_ms > 0) {
+        /* Signed: a test harness can stamp a tick in the future, and an
+         * unsigned subtraction would wrap to a huge value. A negative delta
+         * means the render clock has not reached the tick stamp yet, which only
+         * happens in synthetic tests; the position is already committed, so
+         * draw it rather than the previous one. */
+        int32_t since = (int32_t)(lv_tick_get() - s_tick_ms);
+        if (since >= 0) {
+            alpha = (float)since / (float)s_tick_span_ms;
+            if (alpha > 1.0f) alpha = 1.0f;
+        }
+    }
+    if (x) *x = s_px_prev + (s_px - s_px_prev) * alpha;
+    if (y) *y = s_py_prev + (s_py - s_py_prev) * alpha;
 }
 
 void behaviour_sync_position(void)
 {
     s_px = g.spider_x;
     s_py = g.spider_y;
+    /* Collapse the interpolation window: a teleport (restore, respawn, test
+     * harness) must not be drawn as a slide from the old position. */
+    s_px_prev = s_px;
+    s_py_prev = s_py;
+    s_tick_ms = lv_tick_get();
     s_pos_init = true;
 }
 
@@ -927,6 +1014,19 @@ void behaviour_tick(uint32_t now_ms, float dt_s)
         reported_auto_hunt = g.auto_hunt;
         ESP_LOGI("spidarium.behaviour", "auto hunt=%u (manual aim unchanged)", g.auto_hunt);
     }
+    /* Snapshot the position the renderer was interpolating toward, then stamp
+     * this tick. behaviour_pos() blends from the snapshot to the new position
+     * over the tick's own duration, which is what removes the 20 Hz/30 Hz
+     * beat. */
+    s_px_prev = s_px;
+    s_py_prev = s_py;
+    if (s_tick_ms) {
+        uint32_t span = now_ms - s_tick_ms;
+        /* Ignore absurd spans (a stall, a menu rebuild) so one hitch cannot
+         * stretch the interpolation window for the next second of frames. */
+        if (span > 0 && span <= 200) s_tick_span_ms = span;
+    }
+    s_tick_ms = now_ms;
     /* Player aiming owns the creature; AI cannot wander/crouch or auto-fire
      * midway through a held drag. Prey uses the same signal to hold position. */
     if (s_dragging && behaviour_aim_active()) return;

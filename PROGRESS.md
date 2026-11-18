@@ -11995,3 +11995,139 @@ been watched for a full fade cycle by a human.
 
 The board was left as found: Driftwood Ramp (kind 73) at (190,275) on Walk
 Behind, Holo Garden gift (kind 34) at (240,300).
+
+---
+
+## Round 135 -- Placement overlay relayout, tap-vs-drag, and the 20/30 Hz beat
+
+Five reports. Two were layout, one was a missing state restore, one was a
+gesture that fired on the wrong event, and one was a frame-rate beat that had
+been there since the renderer was split from the logic tick.
+
+### Decisions made
+
+- **The frame skip was a 20 Hz logic / 30 Hz render beat, not a slow tick.**
+  `behaviour_tick()` runs at `LOGIC_HZ` (20) and `cspider_render()` at
+  `RENDER_HZ` (30), so two frames in three land between logic ticks. Drawing the
+  raw logic position made the spider hold still for one frame and then jump
+  2.75 px (`MOVE_SPEED` 55 px/s / 20 Hz), which is exactly the "moves forward a
+  bit then skips a frame" report. `behaviour_pos()` now interpolates between the
+  previous and current logic positions using the tick's own measured span, so the
+  step is spread across the frames that actually occur. `alpha` is clamped to 1
+  so a late frame cannot overshoot past the committed position and rubber-band.
+  `behaviour_sync_position()` collapses the window, so a teleport (restore,
+  respawn, test harness) is not drawn as a slide.
+- **The render tick is NOT the bottleneck, and the instrumentation now says so.**
+  `rendercost` gained `RENDERSPREAD gap_max_us / gap_last_us / over_2x`. Measured
+  on hardware: tick work is 3.1-4.1 ms against a 33,333 us budget, but the gap
+  between consecutive tick starts is 118 ms and `over_2x` counts most of them.
+  The remaining ~115 ms is LVGL's own flush, which is pre-existing and outside
+  the tick. Recording it stops the next round from re-deriving this.
+- **Cycling items left every item stepped away from invisible.** The preview
+  hides the real object so only the draggable copy shows, but
+  `terrarium_preview_item()` changed `s_preview_slot` without unhiding the old
+  one. It now restores the previously staged slot (or the gift) before hiding the
+  new one. `terrarium_refresh_decor()` would have masked this, but it is not
+  called while cycling.
+- **The layer row was hidden by a label/arrow overlap, and by a `> 1` test.**
+  The caption sat at x=276 w=88 (ending 364) while the front arrow started at
+  368, so the label was drawn over the arrow. The row is also now shown whenever
+  the item is in a band with any other item (`>= 1`) rather than only when it
+  currently overlaps one: moving an item a few pixels out of contact made the
+  whole row vanish, which reads as a bug rather than as "nothing to order
+  against". The arrows are disabled at the ends, so a lone item shows a truthful
+  "1 / 1".
+- **A press now only ARMS the drag; it does not move the item.** The press
+  handler called `placement_position()` immediately, so a tap anywhere on the
+  tank snapped the item to the finger -- missing a button by a few pixels threw
+  the item across the enclosure. `s_place_armed` holds the grab and
+  `s_place_origin` records where the finger landed; the item moves only once the
+  finger travels past `ENCLOSURE_TAP_SLOP` (24 px), the same threshold the rest
+  of the tank uses to tell a tap from a drag.
+- **The controls are larger, more transparent, and laid out on a grid.** Height
+  48 -> 56, fill `LV_OPA_30` -> `LV_OPA_20`, border `LV_OPA_60` -> `LV_OPA_50`.
+  Every row is now inside the squircle's usable band with 8 px side margins and
+  at least 8 px between neighbours: top y=16, middle y=328, bottom y=400. The
+  bottom row at y=416 with height 56 ended at 472, which clipped the corner
+  wedge; the geometry was computed rather than eyeballed. The hint moved to
+  `-172` because at `-148` it overlapped the layer caption.
+- **The spider could be permanently stuck inside overlapping decor.** The
+  ejection in `behaviour_tick()` pushed to a fixed point: with two blocking items
+  overlapping, the first push landed inside the neighbour, `advance()` then
+  refused every step out, and the log filled with one warning per tick while the
+  spider never moved. It now widens the berth in 10 px steps and fans sideways,
+  alternating direction, until the candidate is genuinely free; if nothing is
+  free within reach it logs once per 5 s and leaves the spider alone rather than
+  moving it to another blocked point.
+- **`decor begin SLOT` added to the console.** There was no way to enter the
+  interactive placement overlay from the serial console -- `decor move` commits
+  directly -- so the overlay could not be driven or screenshotted. It goes
+  through the same `decor_begin_move()` the menu uses, and `DECOR_EDIT_BEGIN`
+  deliberately skips the save and the decor refresh, because the item is staged,
+  not committed, and a refresh would unhide it under the preview.
+
+### Tests added
+
+- `test_placement_item_selector()` now walks the whole item ring and asserts,
+  after every step, that the staged slot is hidden and every other slot is
+  visible. `terrarium_decor_hidden()` was added for this.
+- The same test drives a synthetic LVGL pointer through the real press/pressing/
+  release handlers and asserts: a tap on bare tank does not move the item, a tap
+  on the item does not move it, and a drag past the slop does. The first version
+  called the handlers directly, which does not work -- `lv_indev_active()` is
+  only populated by LVGL's own dispatch, so the drag assertion failed. The tap
+  point also had to move from (60,60) to (400,150): (60,60) is inside the top
+  item-selector arrow, so the "tap" was really pressing a button.
+
+### Evidence
+
+Build exit 0, zero main warnings. Flash exit 0.
+
+```
+MEM cmd internal=137031 largest=63488 dma=129299 psram=1616572
+RENDER ticks=500 largest_drift=0 per_tick_us=33001
+LOOP ok=5 failed=0 largest_drift=0
+run_tests.py COM7                 passed=50 failed=2
+uitest                            hud=0 pointer=0, every other flag 1
+                                  placement item selector: PASS
+stability_check.py COM7 40        VERDICT: PASS, FAULTS/ERRORS: 0
+site: node --test tests/*.test.mjs  309/309
+```
+
+The two `run_tests.py` failures are the documented baseline: both are `uitest`
+with `hud=0 pointer=0`, unchanged from before this round.
+
+Render spread, measured with `rendercost` over 10 s windows with the tank
+visible:
+
+```
+RENDERCOST   ticks=88  avg_us=3525  budget_us=33333
+RENDERSECT   terrarium=8 ambient=1584 spider=1847 hud=55 other=30
+RENDERSPREAD gap_max_us=162999 gap_last_us=118001 over_2x=82
+```
+
+The tick does 3.5 ms of work in a 33 ms budget; the 118 ms gaps are LVGL's
+flush, not this code.
+
+Ejection fix, three overlapping blocking items placed on the spider:
+
+```
+before  W spider was inside blocking decor; moved to (211,281)   <- every tick, forever
+after   W spider was inside blocking decor; moved to (267,204)   <- once
+        ejection warnings in the next 8 s: 0
+```
+
+Placement overlay captured with `screenshot menu` after `decor begin 0` with
+three overlapping items: top row shows "Large Rock / 1 / 3" between the item
+arrows, middle row shows "Solid" plus "Floor / 1 / 3" between the layer arrows,
+bottom row shows Cancel / Put Away / Done, and the hint sits clear above the
+middle row.
+
+### Honest limits
+
+- The 118 ms flush gap is measured, not fixed. It is LVGL's own transfer and is
+  unchanged by this round; the interpolation removes the visible beat but does
+  not raise the frame rate.
+- The overlay was verified from a captured framebuffer, not by touching the
+  panel. Physical touch targets, drag feel and the transparency over a bright
+  background still need a human look.
